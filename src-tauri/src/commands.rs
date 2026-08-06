@@ -105,10 +105,52 @@ pub async fn mysql_query(
     state: State<'_, AppState>,
     id: String,
     sql: String,
+    database: Option<String>,
 ) -> Result<Vec<Map<String, Value>>, String> {
     let connections = state.connections.lock().await;
     match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql::query(pool, &sql).await,
+        Some(DbHandle::Mysql(pool)) => mysql::query(pool, &sql, database.as_deref()).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mysql_list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql::list_databases(pool).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mysql_list_tables(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+) -> Result<Vec<String>, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql::list_tables(pool, &database).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mysql_table_data(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    page: i64,
+    page_size: i64,
+) -> Result<mysql::TablePage, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql::table_data(pool, &database, &table, page, page_size).await,
         Some(_) => Err("Connection is not a MySQL connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }

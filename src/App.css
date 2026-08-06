@@ -107,7 +107,9 @@ body {
 
 .tab-panel {
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .login-view {
@@ -339,9 +341,8 @@ textarea {
 
 table {
   border-collapse: collapse;
-  width: 100%;
-  overflow-x: auto;
-  display: block;
+  width: auto;
+  min-width: 100%;
   font-size: 0.9em;
 }
 
@@ -351,10 +352,144 @@ td {
   padding: 4px 8px;
   text-align: left;
   white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mysql-table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f6f6f6;
 }
 
 .error {
   color: #d32f2f;
+}
+
+.mysql-cell-null {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.mysql-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  gap: 0.75rem;
+}
+
+.mysql-header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.mysql-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mysql-db-select {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mysql-content-tabs {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.mysql-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  gap: 1rem;
+}
+
+.mysql-sidebar {
+  flex: 0 0 200px;
+  overflow-y: auto;
+  border-right: 1px solid rgba(128, 128, 128, 0.25);
+  padding-right: 0.75rem;
+}
+
+.mysql-sidebar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.mysql-sidebar-empty {
+  padding: 0.5rem 0.6rem;
+}
+
+.mysql-table-item {
+  width: 100%;
+  text-align: left;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mysql-table-item:hover {
+  background: rgba(128, 128, 128, 0.15);
+  border-color: transparent;
+}
+
+.mysql-table-item-active {
+  background: rgba(57, 108, 216, 0.15);
+  color: #396cd8;
+  font-weight: 600;
+}
+
+.mysql-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.mysql-table-view {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  gap: 0.6rem;
+}
+
+.mysql-table-scroll {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.mysql-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-shrink: 0;
 }
 
 .result {
@@ -464,5 +599,9 @@ button {
 
   .context-menu {
     background-color: #2f2f2f;
+  }
+
+  .mysql-table-scroll thead th {
+    background: #2f2f2f;
   }
 }

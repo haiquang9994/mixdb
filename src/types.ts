@@ -33,3 +33,9 @@ export const DEFAULT_PORTS: Record<DbKind, number> = {
   mongo: 27017,
   redis: 6379,
 };
+
+export interface MysqlTablePage {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  total: number;
+}

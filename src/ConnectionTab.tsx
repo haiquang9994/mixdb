@@ -8,6 +8,7 @@ import {
   updateSavedConnection,
 } from "./savedConnections";
 import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
+import MysqlWorkspace from "./mysql/MysqlWorkspace";
 
 interface Props {
   onTitleChange: (title: string) => void;
@@ -47,12 +48,10 @@ function ConnectionTab({ onTitleChange }: Props) {
   const [error, setError] = useState("");
   const [tunnelStatus, setTunnelStatus] = useState("");
 
-  const [sql, setSql] = useState("SELECT 1");
   const [mongoCollection, setMongoCollection] = useState("");
   const [mongoFilter, setMongoFilter] = useState("{}");
   const [redisArgs, setRedisArgs] = useState("PING");
 
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [rawResult, setRawResult] = useState("");
 
   useEffect(() => {
@@ -264,24 +263,8 @@ function ConnectionTab({ onTitleChange }: Props) {
     await invoke("disconnect_db", { id: connectionId });
     setConnectionId(null);
     setStatus("");
-    setRows([]);
     setRawResult("");
     onTitleChange("New Connection");
-  }
-
-  async function runMysqlQuery() {
-    if (!connectionId) return;
-    setError("");
-    try {
-      const result = await invoke<Record<string, unknown>[]>("mysql_query", {
-        id: connectionId,
-        sql,
-      });
-      setRows(result);
-      setRawResult("");
-    } catch (e) {
-      setError(String(e));
-    }
   }
 
   async function runMongoFind() {
@@ -296,7 +279,6 @@ function ConnectionTab({ onTitleChange }: Props) {
         limit: 100,
       });
       setRawResult(JSON.stringify(result, null, 2));
-      setRows([]);
     } catch (e) {
       setError(String(e));
     }
@@ -309,13 +291,10 @@ function ConnectionTab({ onTitleChange }: Props) {
       const args = redisArgs.trim().split(/\s+/);
       const result = await invoke("redis_command", { id: connectionId, args });
       setRawResult(JSON.stringify(result, null, 2));
-      setRows([]);
     } catch (e) {
       setError(String(e));
     }
   }
-
-  const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
 
   const connectionForm = (
     <>
@@ -565,6 +544,18 @@ function ConnectionTab({ onTitleChange }: Props) {
     );
   }
 
+  if (kind === "mysql") {
+    return (
+      <MysqlWorkspace
+        connectionId={connectionId}
+        initialDatabase={database}
+        status={status}
+        error={error}
+        onDisconnect={disconnect}
+      />
+    );
+  }
+
   return (
     <div className="workspace">
       <div className="row">
@@ -573,16 +564,6 @@ function ConnectionTab({ onTitleChange }: Props) {
       </div>
 
       {error && <p className="error">{error}</p>}
-
-      {kind === "mysql" && (
-        <fieldset>
-          <legend>Query</legend>
-          <textarea rows={4} value={sql} onChange={(e) => setSql(e.target.value)} />
-          <div className="row">
-            <button onClick={runMysqlQuery}>Run</button>
-          </div>
-        </fieldset>
-      )}
 
       {kind === "mongo" && (
         <fieldset>
@@ -620,27 +601,6 @@ function ConnectionTab({ onTitleChange }: Props) {
             <button onClick={runRedisCommand}>Execute</button>
           </div>
         </fieldset>
-      )}
-
-      {columns.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              {columns.map((c) => (
-                <th key={c}>{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={i}>
-                {columns.map((c) => (
-                  <td key={c}>{String(row[c] ?? "")}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
       )}
 
       {rawResult && <pre className="result">{rawResult}</pre>}

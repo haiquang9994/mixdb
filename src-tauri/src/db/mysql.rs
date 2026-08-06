@@ -1,6 +1,7 @@
+use serde::Serialize;
 use serde_json::{Map, Value};
 use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlRow, MySqlSslMode};
-use sqlx::{Column, MySqlPool, Row};
+use sqlx::{Column, MySqlPool, Row, TypeInfo};
 
 pub async fn connect(
     host: &str,
@@ -38,11 +39,22 @@ pub async fn connect(
         .map_err(|e| e.to_string())
 }
 
-pub async fn query(pool: &MySqlPool, sql: &str) -> Result<Vec<Map<String, Value>>, String> {
+pub async fn query(
+    pool: &MySqlPool,
+    sql: &str,
+    database: Option<&str>,
+) -> Result<Vec<Map<String, Value>>, String> {
     // Querying a &Pool directly requires 'static query text (sqlx's Executor
     // impl for &Pool boxes the acquire+execute future); acquiring a connection
     // first lets us run borrowed, non-'static SQL text instead.
     let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+    if let Some(db) = database.filter(|d| !d.is_empty()) {
+        let use_sql = format!("USE {}", quote_ident(db));
+        sqlx::query(sqlx::AssertSqlSafe(use_sql))
+            .execute(&mut *conn)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
     // AssertSqlSafe opts out of sqlx's SQL-injection speed bump: this client
     // runs arbitrary, user-authored SQL by design, not app-embedded queries.
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
@@ -51,6 +63,81 @@ pub async fn query(pool: &MySqlPool, sql: &str) -> Result<Vec<Map<String, Value>
         .map_err(|e| e.to_string())?;
 
     Ok(rows.iter().map(row_to_json).collect())
+}
+
+/// Backtick-quotes an identifier (database/table name) for interpolation into
+/// SQL text, doubling embedded backticks — MySQL's own escaping rule.
+fn quote_ident(ident: &str) -> String {
+    format!("`{}`", ident.replace('`', "``"))
+}
+
+pub async fn list_databases(pool: &MySqlPool) -> Result<Vec<String>, String> {
+    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+    let rows = sqlx::query("SHOW DATABASES")
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(rows.iter().map(|r| r.get::<String, _>(0)).collect())
+}
+
+pub async fn list_tables(pool: &MySqlPool, database: &str) -> Result<Vec<String>, String> {
+    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+    let sql = format!("SHOW TABLES FROM {}", quote_ident(database));
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(rows.iter().map(|r| r.get::<String, _>(0)).collect())
+}
+
+#[derive(Debug, Serialize)]
+pub struct TablePage {
+    pub columns: Vec<String>,
+    pub rows: Vec<Map<String, Value>>,
+    pub total: i64,
+}
+
+pub async fn table_data(
+    pool: &MySqlPool,
+    database: &str,
+    table: &str,
+    page: i64,
+    page_size: i64,
+) -> Result<TablePage, String> {
+    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+    let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
+
+    // SHOW COLUMNS gives us the column list (in table order) even when the
+    // table has zero rows, which a `SELECT * ... LIMIT n` result set can't.
+    let columns_sql = format!("SHOW COLUMNS FROM {qualified}");
+    let column_rows = sqlx::query(sqlx::AssertSqlSafe(columns_sql))
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(|e| e.to_string())?;
+    let columns: Vec<String> = column_rows
+        .iter()
+        .map(|r| r.get::<String, _>("Field"))
+        .collect();
+
+    let count_sql = format!("SELECT COUNT(*) FROM {qualified}");
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql))
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let page_size = page_size.clamp(1, 1000);
+    let offset = page.max(0) * page_size;
+    let data_sql = format!("SELECT * FROM {qualified} LIMIT {page_size} OFFSET {offset}");
+    let rows = sqlx::query(sqlx::AssertSqlSafe(data_sql))
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(TablePage {
+        columns,
+        rows: rows.iter().map(row_to_json).collect(),
+        total,
+    })
 }
 
 fn row_to_json(row: &MySqlRow) -> Map<String, Value> {
@@ -63,27 +150,63 @@ fn row_to_json(row: &MySqlRow) -> Map<String, Value> {
 
 // sqlx has no single "decode as any type" API, so we try common Rust types in
 // order of likelihood and fall back to a lossy string/base64 representation.
+//
+// i64/u64 are tried before bool: sqlx-mysql's `bool::compatible()` accepts
+// *any* MySQL integer column type (TINYINT, INT, BIGINT, ...), not just
+// TINYINT(1), because the wire protocol doesn't distinguish them. Checking
+// bool first would decode every non-zero id/FK integer column as `true`.
 fn column_value(row: &MySqlRow, i: usize) -> Value {
+    if let Ok(v) = row.try_get::<Option<i64>, _>(i) {
+        return v.map(Value::from).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<u64>, _>(i) {
+        return v.map(Value::from).unwrap_or(Value::Null);
+    }
     if let Ok(v) = row.try_get::<Option<bool>, _>(i) {
         return v.map(Value::from).unwrap_or(Value::Null);
     }
-    if let Ok(v) = row.try_get::<Option<i64>, _>(i) {
-        return v.map(Value::from).unwrap_or(Value::Null);
+    // DECIMAL/NUMERIC is explicitly excluded from f64 by sqlx (different
+    // rounding semantics) and needs its own decoder. Rendered as a string to
+    // preserve exact precision instead of going through a lossy f64 roundtrip.
+    if let Ok(v) = row.try_get::<Option<rust_decimal::Decimal>, _>(i) {
+        return v
+            .map(|d| Value::String(d.to_string()))
+            .unwrap_or(Value::Null);
     }
     if let Ok(v) = row.try_get::<Option<f64>, _>(i) {
         return v
             .and_then(|n| serde_json::Number::from_f64(n).map(Value::Number))
             .unwrap_or(Value::Null);
     }
-    if let Ok(v) = row.try_get::<Option<chrono::NaiveDateTime>, _>(i) {
+    // `NaiveDateTime` only declares itself compatible with MySQL's DATETIME
+    // column type, not TIMESTAMP (a distinct wire type) — so TIMESTAMP
+    // columns like created_at/updated_at would fall through to Null. Decode
+    // as `DateTime<Utc>` instead, which sqlx-mysql accepts for both.
+    if let Ok(v) = row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(i) {
         return v
-            .map(|d| Value::String(d.to_string()))
+            .map(|d| Value::String(d.naive_utc().to_string()))
             .unwrap_or(Value::Null);
     }
     if let Ok(v) = row.try_get::<Option<chrono::NaiveDate>, _>(i) {
         return v
             .map(|d| Value::String(d.to_string()))
             .unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<chrono::NaiveTime>, _>(i) {
+        return v
+            .map(|t| Value::String(t.to_string()))
+            .unwrap_or(Value::Null);
+    }
+    // `Json<T>::compatible()` also matches plain VARCHAR/TEXT columns (MySQL
+    // has historically transmitted JSON as CHAR), so it's gated on the
+    // column's actual reported type name instead of just trying it broadly —
+    // otherwise a TEXT column that merely *contains* JSON-encoded text (e.g.
+    // PHP's json_encode) would get silently reparsed into a structured value,
+    // reordering its keys (this app's serde_json has no `preserve_order`).
+    if row.column(i).type_info().name() == "JSON" {
+        if let Ok(v) = row.try_get::<Option<sqlx::types::Json<Value>>, _>(i) {
+            return v.map(|j| j.0).unwrap_or(Value::Null);
+        }
     }
     if let Ok(v) = row.try_get::<Option<String>, _>(i) {
         return v.map(Value::String).unwrap_or(Value::Null);

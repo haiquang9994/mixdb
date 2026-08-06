@@ -119,55 +119,70 @@ pub async fn open_tunnel(
         .port();
 
     let remote_host = remote_host.to_string();
+    let session = Arc::new(session);
     let task: JoinHandle<()> = tokio::spawn(async move {
         loop {
-            let (mut local_stream, _) = match listener.accept().await {
+            let (local_stream, _) = match listener.accept().await {
                 Ok(pair) => pair,
                 Err(_) => break,
             };
-            let opened = timeout(
-                CHANNEL_OPEN_TIMEOUT,
-                session.channel_open_direct_tcpip(
-                    remote_host.clone(),
-                    remote_port as u32,
-                    "127.0.0.1",
-                    0,
-                ),
-            )
-            .await;
-            let mut channel = match opened {
-                Ok(Ok(c)) => c,
-                // Either the SSH server rejected/never answered the forward
-                // request (e.g. it can't reach remote_host:remote_port itself,
-                // or AllowTcpForwarding/PermitOpen blocks it). Drop this local
-                // connection so the DB client sees a closed socket instead of
-                // hanging indefinitely, and wait for the next attempt.
-                Ok(Err(_)) | Err(_) => continue,
-            };
-
-            let mut buf = [0u8; 8192];
-            loop {
-                tokio::select! {
-                    result = local_stream.read(&mut buf) => {
-                        match result {
-                            Ok(0) => { let _ = channel.eof().await; break; }
-                            Ok(n) => { if channel.data(&buf[..n]).await.is_err() { break; } }
-                            Err(_) => break,
-                        }
-                    }
-                    msg = channel.wait() => {
-                        match msg {
-                            Some(ChannelMsg::Data { data }) => {
-                                if local_stream.write_all(&data).await.is_err() { break; }
-                            }
-                            Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
-                            _ => {}
-                        }
-                    }
-                }
-            }
+            // A DB connection pool (or multiple in-flight queries) can hold
+            // several physical connections open at once, so each accepted
+            // local connection gets its own bridging task instead of being
+            // handled inline — an inline loop would block `accept()` for as
+            // long as that one connection stays open, starving every other
+            // connection the pool tries to establish through this tunnel.
+            let session = Arc::clone(&session);
+            let remote_host = remote_host.clone();
+            tokio::spawn(async move {
+                bridge_connection(&session, local_stream, &remote_host, remote_port).await;
+            });
         }
     });
 
     Ok((local_port, task))
+}
+
+async fn bridge_connection(
+    session: &client::Handle<TunnelHandler>,
+    mut local_stream: tokio::net::TcpStream,
+    remote_host: &str,
+    remote_port: u16,
+) {
+    let opened = timeout(
+        CHANNEL_OPEN_TIMEOUT,
+        session.channel_open_direct_tcpip(remote_host.to_string(), remote_port as u32, "127.0.0.1", 0),
+    )
+    .await;
+    let mut channel = match opened {
+        Ok(Ok(c)) => c,
+        // Either the SSH server rejected/never answered the forward request
+        // (e.g. it can't reach remote_host:remote_port itself, or
+        // AllowTcpForwarding/PermitOpen blocks it). Drop this local
+        // connection so the DB client sees a closed socket instead of
+        // hanging indefinitely.
+        Ok(Err(_)) | Err(_) => return,
+    };
+
+    let mut buf = [0u8; 8192];
+    loop {
+        tokio::select! {
+            result = local_stream.read(&mut buf) => {
+                match result {
+                    Ok(0) => { let _ = channel.eof().await; break; }
+                    Ok(n) => { if channel.data(&buf[..n]).await.is_err() { break; } }
+                    Err(_) => break,
+                }
+            }
+            msg = channel.wait() => {
+                match msg {
+                    Some(ChannelMsg::Data { data }) => {
+                        if local_stream.write_all(&data).await.is_err() { break; }
+                    }
+                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
+                    _ => {}
+                }
+            }
+        }
+    }
 }

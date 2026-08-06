@@ -25,7 +25,8 @@ serde_json = "1"
 tokio = { version = "1.53.1", features = ["full"] }
 mongodb = "3.8.0"
 redis = { version = "1.5.0", features = ["tokio-comp"] }
-sqlx = { version = "0.9.0", features = ["mysql", "runtime-tokio", "tls-native-tls", "chrono", "json"] }
+sqlx = { version = "0.9.0", features = ["mysql", "runtime-tokio", "tls-native-tls", "chrono", "json", "rust_decimal"] }
+rust_decimal = "1.36"
 russh = { version = "0.62.5", default-features = false, features = ["ring", "flate2", "rsa"] }
 tauri-plugin-store = "2.4.4"
 uuid = { version = "1.24.0", features = ["v4"] }
