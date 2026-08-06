@@ -21,10 +21,21 @@
   -webkit-text-size-adjust: 100%;
 }
 
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+}
+
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   text-align: left;
 }
 
@@ -87,24 +98,40 @@
 
 .tab-content {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
   padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-panel {
+  flex: 1;
+  min-height: 0;
 }
 
 .login-view {
   display: flex;
   gap: 1.5rem;
-  align-items: flex-start;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
 }
 
 .saved-list {
   flex: 0 0 220px;
   border-right: 1px solid rgba(128, 128, 128, 0.25);
   padding-right: 1rem;
+  overflow-y: auto;
+  min-height: 0;
 }
 
-.saved-list h3 {
-  margin-top: 0;
+.saved-list-header {
+  margin-bottom: 0.5rem;
+}
+
+.saved-list-header h3 {
+  margin: 0;
 }
 
 .saved-list ul {
@@ -125,20 +152,104 @@
 .saved-item {
   flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.15rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
   text-align: left;
   padding: 0.5rem 0.6rem;
 }
 
-.saved-item small {
-  opacity: 0.65;
-  font-weight: 400;
+.saved-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.saved-item-delete {
-  padding: 0 0.5em;
+.saved-item-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.2rem;
+  height: 1.6rem;
+  padding: 0 0.3rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.kind-mysql {
+  background: rgba(0, 117, 143, 0.18);
+  color: #00758f;
+}
+
+.kind-mongo {
+  background: rgba(77, 179, 61, 0.18);
+  color: #4db33d;
+}
+
+.kind-redis {
+  background: rgba(211, 47, 47, 0.18);
+  color: #d32f2f;
+}
+
+.kind-new {
+  background: rgba(57, 108, 216, 0.15);
+  color: #396cd8;
+  font-size: 0.95rem;
+}
+
+.saved-item-active {
+  border-color: #396cd8;
+  box-shadow: 0 0 0 1px #396cd8 inset;
+}
+
+.saved-item-new {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.saved-item-new:hover {
+  opacity: 1;
+}
+
+.context-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  background: #ffffff;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  padding: 0.25rem;
+  gap: 0.1rem;
+}
+
+.context-menu button {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  text-align: left;
+  border-radius: 6px;
+  padding: 0.5em 0.8em;
+}
+
+.context-menu button:hover {
+  background: rgba(128, 128, 128, 0.15);
+  border-color: transparent;
+}
+
+.context-menu-delete {
+  color: #d32f2f;
 }
 
 .muted {
@@ -149,6 +260,14 @@
 .login-form {
   flex: 1;
   min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.workspace {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 fieldset {
@@ -166,6 +285,49 @@ fieldset .row {
 
 fieldset .row:last-child {
   align-items: center;
+}
+
+.method-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  margin-bottom: 1rem;
+}
+
+.method-tab {
+  border-radius: 6px 6px 0 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0.5em 1.1em;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  opacity: 0.65;
+}
+
+.method-tab:hover {
+  opacity: 1;
+}
+
+.method-tab-active {
+  opacity: 1;
+  border-bottom-color: #396cd8;
+  background: rgba(57, 108, 216, 0.08);
+}
+
+.row-name {
+  margin-bottom: 1.25rem;
+}
+
+.field-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.field-name input {
+  flex: 1;
 }
 
 textarea {
@@ -217,6 +379,19 @@ td {
 .row {
   display: flex;
   justify-content: center;
+}
+
+.row-actions {
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.row-actions-left,
+.row-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
 }
 
 a {
@@ -285,5 +460,9 @@ button {
   }
   button:active {
     background-color: #0f0f0f69;
+  }
+
+  .context-menu {
+    background-color: #2f2f2f;
   }
 }

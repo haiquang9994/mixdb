@@ -70,7 +70,11 @@ function App() {
 
       <div className="tab-content">
         {tabs.map((tab) => (
-          <div key={tab.id} style={{ display: tab.id === activeId ? "block" : "none" }}>
+          <div
+            key={tab.id}
+            className="tab-panel"
+            style={{ display: tab.id === activeId ? "flex" : "none" }}
+          >
             <ConnectionTab onTitleChange={(title) => renameTab(tab.id, title)} />
           </div>
         ))}

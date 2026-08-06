@@ -28,6 +28,13 @@ export async function addSavedConnection(entry: SavedConnection): Promise<SavedC
   return next;
 }
 
+export async function updateSavedConnection(entry: SavedConnection): Promise<SavedConnection[]> {
+  const list = await loadSavedConnections();
+  const next = list.map((c) => (c.id === entry.id ? entry : c));
+  await persist(next);
+  return next;
+}
+
 export async function removeSavedConnection(id: string): Promise<SavedConnection[]> {
   const list = await loadSavedConnections();
   const next = list.filter((c) => c.id !== id);
