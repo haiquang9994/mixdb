@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ConnectionTab from "./ConnectionTab";
 import "./App.css";
 
@@ -39,6 +39,21 @@ function App() {
   function renameTab(id: string, title: string) {
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
   }
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const shortcutKey = e.ctrlKey || e.metaKey;
+      if (shortcutKey && e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        openTab();
+      } else if (shortcutKey && e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        closeTab(activeId);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeId]);
 
   return (
     <main className="app">
