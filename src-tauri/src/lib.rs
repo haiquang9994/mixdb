@@ -1,0 +1,28 @@
+mod commands;
+mod db;
+mod models;
+mod ssh_tunnel;
+mod state;
+
+use state::AppState;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AppState::default())
+        .invoke_handler(tauri::generate_handler![
+            commands::connect_db,
+            commands::disconnect_db,
+            commands::test_ssh_tunnel,
+            commands::mysql_query,
+            commands::mongo_list_databases,
+            commands::mongo_list_collections,
+            commands::mongo_find,
+            commands::redis_command,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
