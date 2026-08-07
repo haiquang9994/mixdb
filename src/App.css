@@ -523,6 +523,9 @@ thead th {
 .mysql-cell-textarea {
   display: block;
   width: 100%;
+  /* 75% of the th/td max-width (320px) so the column doesn't collapse when
+     the cell being edited is replaced by an input shorter than its text. */
+  min-width: 240px;
   box-sizing: border-box;
   padding: 4px 8px;
   margin: 0;
