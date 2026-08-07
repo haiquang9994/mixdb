@@ -461,15 +461,38 @@ thead th {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  gap: 0.5rem;
+  gap: 0.2rem;
 }
 
 .mysql-sidebar {
-  flex: 0 0 200px;
+  flex: 0 0 auto;
   overflow-y: auto;
-  border-right: 1px solid rgba(128, 128, 128, 0.25);
-  padding-right: 0.25rem;
+  padding-right: 0.15rem;
   overscroll-behavior: contain;
+}
+
+.mysql-sidebar-resizer {
+  flex: 0 0 5px;
+  align-self: stretch;
+  cursor: col-resize;
+  position: relative;
+}
+
+.mysql-sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: rgba(128, 128, 128, 0.25);
+}
+
+.mysql-sidebar-resizer:hover::after,
+.mysql-sidebar-resizer:active::after {
+  left: 1px;
+  width: 3px;
+  background: #396cd8;
 }
 
 .mysql-sidebar ul {

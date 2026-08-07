@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import ConnectionTab from "./ConnectionTab";
 import "./App.css";
 
@@ -24,21 +24,21 @@ function App() {
   function closeTab(id: string) {
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== id);
-      if (next.length === 0) {
-        const fresh = newTab();
-        setActiveId(fresh.id);
-        return [fresh];
-      }
-      if (id === activeId) {
-        setActiveId(next[next.length - 1].id);
-      }
-      return next;
+      return next.length > 0 ? next : [newTab()];
     });
   }
 
   function renameTab(id: string, title: string) {
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
   }
+
+  // Keeps activeId pointing at a real tab whenever the active one disappears
+  // (e.g. closing the last remaining tab spawns a fresh one that must be focused).
+  useLayoutEffect(() => {
+    if (!tabs.some((t) => t.id === activeId)) {
+      setActiveId(tabs[tabs.length - 1].id);
+    }
+  }, [tabs, activeId]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {

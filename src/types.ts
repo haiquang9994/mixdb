@@ -26,6 +26,7 @@ export interface SavedConnection {
   id: string;
   name: string;
   config: ConnectionConfig;
+  sidebarWidth?: number;
 }
 
 export const DEFAULT_PORTS: Record<DbKind, number> = {

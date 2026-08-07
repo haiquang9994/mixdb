@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { mysqlListDatabases, mysqlListTables, mysqlTableData } from "./api";
 import Select from "../components/Select";
 
@@ -8,13 +8,18 @@ interface Props {
   status: string;
   error: string;
   onDisconnect: () => void;
+  sidebarWidth?: number;
+  onSidebarWidthChange?: (width: number) => void;
 }
 
 type ContentMode = "data";
 
 const PAGE_SIZES = [100, 200, 500, 1000];
+const DEFAULT_SIDEBAR_WIDTH = 200;
+const MIN_SIDEBAR_WIDTH = 140;
+const MAX_SIDEBAR_WIDTH = 480;
 
-function MysqlWorkspace({ connectionId, initialDatabase, error }: Props) {
+function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, onSidebarWidthChange }: Props) {
   const [databases, setDatabases] = useState<string[]>([]);
   const [selectedDb, setSelectedDb] = useState(initialDatabase ?? "");
   const [tables, setTables] = useState<string[]>([]);
@@ -29,6 +34,45 @@ function MysqlWorkspace({ connectionId, initialDatabase, error }: Props) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
+  const resizing = useRef(false);
+
+  useEffect(() => {
+    setWidth(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
+  }, [sidebarWidth]);
+
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      resizing.current = true;
+      const startX = e.clientX;
+      const startWidth = width;
+
+      function onMouseMove(ev: MouseEvent) {
+        const next = Math.min(
+          MAX_SIDEBAR_WIDTH,
+          Math.max(MIN_SIDEBAR_WIDTH, startWidth + (ev.clientX - startX)),
+        );
+        setWidth(next);
+      }
+
+      function onMouseUp(ev: MouseEvent) {
+        resizing.current = false;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        const finalWidth = Math.min(
+          MAX_SIDEBAR_WIDTH,
+          Math.max(MIN_SIDEBAR_WIDTH, startWidth + (ev.clientX - startX)),
+        );
+        onSidebarWidthChange?.(finalWidth);
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    },
+    [width, onSidebarWidthChange],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -133,7 +177,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error }: Props) {
       {(error || localError) && <p className="error">{error || localError}</p>}
 
       <div className="mysql-body">
-        <aside className="mysql-sidebar">
+        <aside className="mysql-sidebar" style={{ flexBasis: width }}>
           <ul>
             {tables.map((t) => (
               <li key={t}>
@@ -149,6 +193,14 @@ function MysqlWorkspace({ connectionId, initialDatabase, error }: Props) {
             {tables.length === 0 && <li className="muted mysql-sidebar-empty">No tables</li>}
           </ul>
         </aside>
+
+        <div
+          className="mysql-sidebar-resizer"
+          onMouseDown={handleResizeStart}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+        />
 
         <section className="mysql-content">
           {contentMode === "data" && !selectedTable && (

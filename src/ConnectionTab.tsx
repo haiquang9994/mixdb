@@ -259,6 +259,14 @@ function ConnectionTab({ onTitleChange }: Props) {
     connect(entry.config, entry.name);
   }
 
+  async function updateSidebarWidth(width: number) {
+    if (!editingId) return;
+    const entry = savedConnections.find((c) => c.id === editingId);
+    if (!entry || entry.sidebarWidth === width) return;
+    const next = await updateSavedConnection({ ...entry, sidebarWidth: width });
+    setSavedConnections(next);
+  }
+
   async function disconnect() {
     if (!connectionId) return;
     await invoke("disconnect_db", { id: connectionId });
@@ -547,6 +555,7 @@ function ConnectionTab({ onTitleChange }: Props) {
   }
 
   if (kind === "mysql") {
+    const activeSavedConnection = savedConnections.find((c) => c.id === editingId);
     return (
       <MysqlWorkspace
         connectionId={connectionId}
@@ -554,6 +563,8 @@ function ConnectionTab({ onTitleChange }: Props) {
         status={status}
         error={error}
         onDisconnect={disconnect}
+        sidebarWidth={activeSavedConnection?.sidebarWidth}
+        onSidebarWidthChange={updateSidebarWidth}
       />
     );
   }
