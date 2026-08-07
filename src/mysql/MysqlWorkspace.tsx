@@ -201,20 +201,24 @@ function MysqlWorkspace({ connectionId, initialDatabase, status, error, onDiscon
               <div className="mysql-pagination">
                 <button
                   type="button"
+                  className="mysql-page-btn"
+                  aria-label="Previous page"
                   disabled={page <= 0 || loading}
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                 >
-                  Prev
+                  ‹
                 </button>
                 <span>
                   Page {page + 1} of {pageCount} · {total} rows
                 </span>
                 <button
                   type="button"
+                  className="mysql-page-btn"
+                  aria-label="Next page"
                   disabled={page + 1 >= pageCount || loading}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Next
+                  ›
                 </button>
                 <select
                   value={pageSize}
