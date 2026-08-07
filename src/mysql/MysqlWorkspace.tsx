@@ -43,6 +43,8 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   const [databases, setDatabases] = useState<string[]>([]);
   const [selectedDb, setSelectedDb] = useState(initialDatabase ?? "");
   const [tables, setTables] = useState<string[]>([]);
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [tableFilter, setTableFilter] = useState("");
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [contentMode, setContentMode] = useState<ContentMode>("data");
   const [localError, setLocalError] = useState("");
@@ -157,6 +159,39 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     [width, onSidebarWidthChange],
   );
 
+  const handleResizeDoubleClick = useCallback(() => {
+    if (tables.length === 0) {
+      setWidth(DEFAULT_SIDEBAR_WIDTH);
+      onSidebarWidthChange?.(DEFAULT_SIDEBAR_WIDTH);
+      return;
+    }
+    const longest = tables.reduce((a, b) => (b.length > a.length ? b : a), "");
+    const probe = document.createElement("button");
+    probe.className = "mysql-table-item";
+    probe.style.position = "fixed";
+    probe.style.top = "-9999px";
+    probe.style.left = "-9999px";
+    probe.style.width = "auto";
+    probe.style.whiteSpace = "nowrap";
+    probe.textContent = longest;
+    document.body.appendChild(probe);
+    const style = getComputedStyle(probe);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    let textWidth = probe.scrollWidth;
+    if (ctx) {
+      ctx.font = style.font;
+      textWidth = ctx.measureText(longest).width;
+    }
+    const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    document.body.removeChild(probe);
+    const sidebarPadding = 4; // .mysql-sidebar's own right padding, plus a little breathing room
+    const target = Math.ceil(textWidth + horizontalPadding + sidebarPadding);
+    const next = Math.min(MAX_SIDEBAR_WIDTH, Math.max(DEFAULT_SIDEBAR_WIDTH, target));
+    setWidth(next);
+    onSidebarWidthChange?.(next);
+  }, [tables, onSidebarWidthChange]);
+
   useEffect(() => {
     let cancelled = false;
     mysqlListDatabases(connectionId)
@@ -172,6 +207,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   }, [connectionId]);
 
   useEffect(() => {
+    setTableFilter("");
     if (!selectedDb) {
       setTables([]);
       setSelectedTable(null);
@@ -371,7 +407,19 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     }
   }
 
+  const reloadTables = useCallback(() => {
+    if (!selectedDb) return;
+    setTablesLoading(true);
+    mysqlListTables(connectionId, selectedDb)
+      .then((t) => setTables(t))
+      .catch((e) => setLocalError(String(e)))
+      .finally(() => setTablesLoading(false));
+  }, [connectionId, selectedDb]);
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const filteredTables = tableFilter.trim()
+    ? tables.filter((t) => t.toLowerCase().includes(tableFilter.trim().toLowerCase()))
+    : tables;
 
   return (
     <div className="mysql-workspace">
@@ -418,28 +466,69 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
 
       <div className="mysql-body">
         <aside className="mysql-sidebar" style={{ flexBasis: width }}>
-          <ul>
-            {tables.map((t) => (
-              <li key={t}>
-                <button
-                  type="button"
-                  className={`mysql-table-item${t === selectedTable ? " mysql-table-item-active" : ""}`}
-                  onClick={() => selectTable(t)}
-                >
-                  {t}
-                </button>
-              </li>
-            ))}
-            {tables.length === 0 && <li className="muted mysql-sidebar-empty">No tables</li>}
-          </ul>
+          <input
+            type="text"
+            className="mysql-sidebar-search"
+            placeholder="Search tables..."
+            value={tableFilter}
+            onChange={(e) => setTableFilter(e.target.value)}
+          />
+          <div className="mysql-sidebar-list">
+            <ul>
+              {filteredTables.map((t) => (
+                <li key={t}>
+                  <button
+                    type="button"
+                    className={`mysql-table-item${t === selectedTable ? " mysql-table-item-active" : ""}`}
+                    onClick={() => selectTable(t)}
+                  >
+                    {t}
+                  </button>
+                </li>
+              ))}
+              {tables.length === 0 && <li className="muted mysql-sidebar-empty">No tables</li>}
+              {tables.length > 0 && filteredTables.length === 0 && (
+                <li className="muted mysql-sidebar-empty">No matching tables</li>
+              )}
+            </ul>
+          </div>
+          <div className="mysql-sidebar-actions">
+            <button
+              type="button"
+              className="mysql-sidebar-action"
+              aria-label="Reload tables"
+              title="Reload tables"
+              disabled={!selectedDb || tablesLoading}
+              onClick={reloadTables}
+            >
+              <svg
+                className={`mysql-sidebar-action-icon${tablesLoading ? " mysql-sidebar-action-icon-spinning" : ""}`}
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+              >
+                <path
+                  d="M13.5 8a5.5 5.5 0 1 1-1.6-3.89M13.5 2v3.2h-3.2"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
         </aside>
 
         <div
           className="mysql-sidebar-resizer"
           onMouseDown={handleResizeStart}
+          onDoubleClick={handleResizeDoubleClick}
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize sidebar"
+          title="Drag to resize, double-click to fit"
         />
 
         <section className="mysql-content">
