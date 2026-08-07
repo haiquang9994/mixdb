@@ -431,6 +431,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             value={selectedDb}
             onChange={(db) => {
               setSelectedDb(db);
+              setSelectedTable(null);
               setPage(0);
             }}
             placeholder="(none)"
