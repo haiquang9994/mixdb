@@ -10,6 +10,7 @@ import {
 import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
 import MysqlWorkspace from "./mysql/MysqlWorkspace";
 import Select from "./components/Select";
+import ErrorBanner from "./components/ErrorBanner";
 
 interface Props {
   onTitleChange: (title: string) => void;
@@ -522,19 +523,7 @@ function ConnectionTab({ onTitleChange }: Props) {
         </aside>
         <section className="login-form">
           {connectionForm}
-          {error && (
-            <p className="error">
-              {error}
-              <button
-                type="button"
-                className="error-dismiss"
-                aria-label="Dismiss error"
-                onClick={() => setError("")}
-              >
-                ×
-              </button>
-            </p>
-          )}
+          {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
         </section>
         {contextMenu && (
           <>
@@ -588,19 +577,7 @@ function ConnectionTab({ onTitleChange }: Props) {
         <span>{status}</span>
       </div>
 
-      {error && (
-        <p className="error">
-          {error}
-          <button
-            type="button"
-            className="error-dismiss"
-            aria-label="Dismiss error"
-            onClick={() => setError("")}
-          >
-            ×
-          </button>
-        </p>
-      )}
+      {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
 
       {kind === "mongo" && (
         <fieldset>

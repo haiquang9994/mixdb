@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { mysqlListDatabases, mysqlListTables, mysqlServerInfo, mysqlTableData, mysqlUpdateRow } from "./api";
 import Select from "../components/Select";
+import ErrorBanner from "../components/ErrorBanner";
 
 interface EditingCell {
   rowIndex: number;
@@ -474,17 +475,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       </div>
 
       {(error || localError) && (
-        <p className="error">
-          {error || localError}
-          <button
-            type="button"
-            className="error-dismiss"
-            aria-label="Dismiss error"
-            onClick={() => setLocalError("")}
-          >
-            ×
-          </button>
-        </p>
+        <ErrorBanner message={error || localError} onDismiss={() => setLocalError("")} />
       )}
 
       <div className="mysql-body">
