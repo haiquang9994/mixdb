@@ -91,8 +91,11 @@ pub async fn list_tables(pool: &MySqlPool, database: &str) -> Result<Vec<String>
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TablePage {
     pub columns: Vec<String>,
+    pub column_types: Map<String, Value>,
+    pub primary_key: Vec<String>,
     pub rows: Vec<Map<String, Value>>,
     pub total: i64,
 }
@@ -118,6 +121,20 @@ pub async fn table_data(
         .iter()
         .map(|r| r.get::<String, _>("Field"))
         .collect();
+    let column_types: Map<String, Value> = column_rows
+        .iter()
+        .map(|r| {
+            (
+                r.get::<String, _>("Field"),
+                Value::String(r.get::<String, _>("Type")),
+            )
+        })
+        .collect();
+    let primary_key: Vec<String> = column_rows
+        .iter()
+        .filter(|r| r.get::<String, _>("Key") == "PRI")
+        .map(|r| r.get::<String, _>("Field"))
+        .collect();
 
     let count_sql = format!("SELECT COUNT(*) FROM {qualified}");
     let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql))
@@ -135,9 +152,92 @@ pub async fn table_data(
 
     Ok(TablePage {
         columns,
+        column_types,
+        primary_key,
         rows: rows.iter().map(row_to_json).collect(),
         total,
     })
+}
+
+/// Binds a JSON value (always `Null` or `String` — the frontend only ever
+/// sends edited text or an explicit null) as an `Option<&str>`, letting MySQL
+/// coerce the text to the column's real type on write.
+fn bind_value<'q>(
+    query: sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments>,
+    value: &'q Value,
+) -> sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments> {
+    match value {
+        Value::String(s) => query.bind(Some(s.as_str())),
+        _ => query.bind(None::<&str>),
+    }
+}
+
+/// Updates exactly one row, identified by `key` (primary key columns, or —
+/// when a table has none — every column as a fallback). Runs inside a
+/// transaction that first verifies the key predicate matches exactly one
+/// row, so the no-PK fallback can't silently clobber a duplicate row.
+pub async fn update_row(
+    pool: &MySqlPool,
+    database: &str,
+    table: &str,
+    updates: &Map<String, Value>,
+    key: &Map<String, Value>,
+) -> Result<(), String> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+    if key.is_empty() {
+        return Err("Cannot update a row without any identifying columns".to_string());
+    }
+
+    let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
+    let set_clause = updates
+        .keys()
+        .map(|c| format!("{} = ?", quote_ident(c)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    // `<=>` is MySQL's NULL-safe equality operator, so a key column that is
+    // itself NULL still matches (plain `=` never matches NULL).
+    let where_clause = key
+        .keys()
+        .map(|c| format!("{} <=> ?", quote_ident(c)))
+        .collect::<Vec<_>>()
+        .join(" AND ");
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    let count_sql = format!("SELECT COUNT(*) FROM {qualified} WHERE {where_clause}");
+    let mut count_query = sqlx::query(sqlx::AssertSqlSafe(count_sql));
+    for v in key.values() {
+        count_query = bind_value(count_query, v);
+    }
+    let matched: i64 = count_query
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .get::<i64, _>(0);
+    if matched != 1 {
+        tx.rollback().await.map_err(|e| e.to_string())?;
+        return Err(format!(
+            "Expected to match exactly 1 row, matched {matched} — update aborted"
+        ));
+    }
+
+    let update_sql = format!("UPDATE {qualified} SET {set_clause} WHERE {where_clause}");
+    let mut update_query = sqlx::query(sqlx::AssertSqlSafe(update_sql));
+    for v in updates.values() {
+        update_query = bind_value(update_query, v);
+    }
+    for v in key.values() {
+        update_query = bind_value(update_query, v);
+    }
+    update_query
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn row_to_json(row: &MySqlRow) -> Map<String, Value> {

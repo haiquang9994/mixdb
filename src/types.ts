@@ -37,6 +37,8 @@ export const DEFAULT_PORTS: Record<DbKind, number> = {
 
 export interface MysqlTablePage {
   columns: string[];
+  columnTypes: Record<string, string>;
+  primaryKey: string[];
   rows: Record<string, unknown>[];
   total: number;
 }

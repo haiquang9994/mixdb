@@ -21,6 +21,7 @@ pub fn run() {
             commands::mysql_list_databases,
             commands::mysql_list_tables,
             commands::mysql_table_data,
+            commands::mysql_update_row,
             commands::mongo_list_databases,
             commands::mongo_list_collections,
             commands::mongo_find,

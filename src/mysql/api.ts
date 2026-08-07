@@ -26,3 +26,13 @@ export function mysqlQuery(
 ): Promise<Record<string, unknown>[]> {
   return invoke<Record<string, unknown>[]>("mysql_query", { id, sql, database });
 }
+
+export function mysqlUpdateRow(
+  id: string,
+  database: string,
+  table: string,
+  updates: Record<string, string | null>,
+  key: Record<string, string | null>
+): Promise<void> {
+  return invoke<void>("mysql_update_row", { id, database, table, updates, key });
+}

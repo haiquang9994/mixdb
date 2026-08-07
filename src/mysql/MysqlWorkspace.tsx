@@ -1,6 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { mysqlListDatabases, mysqlListTables, mysqlTableData } from "./api";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { mysqlListDatabases, mysqlListTables, mysqlTableData, mysqlUpdateRow } from "./api";
 import Select from "../components/Select";
+
+interface EditingCell {
+  rowIndex: number;
+  col: string;
+}
+
+function normalizeCellValue(raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null;
+  return typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+}
+
+function displayValue(raw: unknown): string {
+  return normalizeCellValue(raw) ?? "NULL";
+}
+
+function isMultilineType(type: string | undefined): boolean {
+  if (!type) return false;
+  const t = type.toLowerCase();
+  return t.includes("text") || t.includes("json") || t.includes("blob");
+}
 
 interface Props {
   connectionId: string;
@@ -31,9 +51,56 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   const [pageSize, setPageSize] = useState(100);
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
+  const [columnTypes, setColumnTypes] = useState<Record<string, string>>({});
+  const [primaryKey, setPrimaryKey] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const [editingCell, setEditingCellState] = useState<EditingCell | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const editingCellRef = useRef<EditingCell | null>(null);
+  const pendingRowRef = useRef<{
+    rowIndex: number;
+    changes: Record<string, string | null>;
+    original: Record<string, unknown>;
+  } | null>(null);
+  const editInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const currentTableRef = useRef({ db: selectedDb, table: selectedTable });
+  const thRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+
+  function setEditingCell(next: EditingCell | null) {
+    editingCellRef.current = next;
+    setEditingCellState(next);
+  }
+
+  function measureColumnWidths() {
+    const widths: Record<string, number> = {};
+    for (const c of columns) {
+      const el = thRefs.current.get(c);
+      if (el) widths[c] = el.offsetWidth;
+    }
+    setColumnWidths(widths);
+  }
+
+  useEffect(() => {
+    currentTableRef.current = { db: selectedDb, table: selectedTable };
+  }, [selectedDb, selectedTable]);
+
+  useEffect(() => {
+    const el = editInputRef.current;
+    if (!editingCell || !el) return;
+    el.focus();
+    el.select();
+  }, [editingCell]);
+
+  useEffect(() => {
+    const el = editInputRef.current;
+    if (!editingCell || !(el instanceof HTMLTextAreaElement)) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [editValue, editingCell]);
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -41,6 +108,22 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   useEffect(() => {
     setWidth(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   }, [sidebarWidth]);
+
+  // Re-measure each column's rendered width whenever the data or layout that
+  // could affect it changes, so the edit input/textarea can be pinned to it
+  // (auto table-layout would otherwise resize the column around the input's
+  // own intrinsic size, causing a visible jump when entering edit mode).
+  useLayoutEffect(() => {
+    measureColumnWidths();
+  }, [columns, rows, width]);
+
+  useEffect(() => {
+    function onResize() {
+      measureColumnWidths();
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [columns]);
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -107,9 +190,13 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   }, [connectionId, selectedDb]);
 
   useEffect(() => {
+    setEditingCell(null);
+    pendingRowRef.current = null;
     if (!selectedDb || !selectedTable) {
       setRows([]);
       setColumns([]);
+      setColumnTypes({});
+      setPrimaryKey([]);
       setTotal(0);
       return;
     }
@@ -120,6 +207,8 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
         if (cancelled) return;
         setRows(result.rows);
         setColumns(result.columns);
+        setColumnTypes(result.columnTypes);
+        setPrimaryKey(result.primaryKey);
         setTotal(result.total);
       })
       .catch((e) => setLocalError(String(e)))
@@ -141,6 +230,145 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   function selectTable(table: string) {
     setSelectedTable(table);
     setPage(0);
+  }
+
+  function commitEditingCell() {
+    const cell = editingCellRef.current;
+    if (!cell) return;
+    const { rowIndex, col } = cell;
+    const row = rows[rowIndex];
+    if (!row) return;
+    const oldNorm = normalizeCellValue(row[col]);
+    const newVal = editValue === "NULL" ? null : editValue;
+    if (newVal === oldNorm) return;
+    const prev = pendingRowRef.current;
+    const sameRow = prev && prev.rowIndex === rowIndex;
+    const changes = { ...(sameRow ? prev.changes : {}), [col]: newVal };
+    const original = { ...(sameRow ? prev.original : {}) };
+    if (!(col in original)) original[col] = row[col];
+    pendingRowRef.current = { rowIndex, changes, original };
+    // Optimistically reflect the edit in read mode immediately — the actual
+    // UPDATE is still batched/deferred via pendingRowRef.
+    setRows((prevRows) => prevRows.map((r, i) => (i === rowIndex ? { ...r, [col]: newVal } : r)));
+  }
+
+  async function flushPendingRow() {
+    const pending = pendingRowRef.current;
+    pendingRowRef.current = null;
+    if (!pending || Object.keys(pending.changes).length === 0) return;
+    const row = rows[pending.rowIndex];
+    if (!row || !selectedDb || !selectedTable) return;
+    const dbAtFlush = selectedDb;
+    const tableAtFlush = selectedTable;
+    const keyCols = primaryKey.length > 0 ? primaryKey : columns;
+    const key: Record<string, string | null> = {};
+    for (const c of keyCols) {
+      // Key columns already optimistically edited must use their pre-edit
+      // value — `row` reflects the optimistic update, not what's in MySQL yet.
+      key[c] = c in pending.original ? normalizeCellValue(pending.original[c]) : normalizeCellValue(row[c]);
+    }
+    try {
+      await mysqlUpdateRow(connectionId, dbAtFlush, tableAtFlush, pending.changes, key);
+    } catch (e) {
+      setLocalError(String(e));
+      setRows((prevRows) => {
+        if (currentTableRef.current.db !== dbAtFlush || currentTableRef.current.table !== tableAtFlush) {
+          return prevRows;
+        }
+        return prevRows.map((r, i) => (i === pending.rowIndex ? { ...r, ...pending.original } : r));
+      });
+    }
+  }
+
+  async function commitAndExit() {
+    commitEditingCell();
+    setEditingCell(null);
+    await flushPendingRow();
+  }
+
+  async function moveEditTo(rowIndex: number, col: string) {
+    const leavingRow = editingCellRef.current?.rowIndex;
+    commitEditingCell();
+    if (leavingRow !== undefined && leavingRow !== rowIndex) {
+      await flushPendingRow();
+    }
+    setEditingCell({ rowIndex, col });
+    setEditValue(displayValue(rows[rowIndex]?.[col]));
+  }
+
+  function handleCellMouseDown(e: React.MouseEvent<HTMLTableCellElement>, rowIndex: number, col: string) {
+    const current = editingCellRef.current;
+    if (current && current.rowIndex === rowIndex && current.col === col) {
+      return;
+    }
+    if (e.detail >= 2) {
+      e.preventDefault();
+      void moveEditTo(rowIndex, col);
+      return;
+    }
+    if (current) {
+      e.preventDefault();
+      void commitAndExit();
+    }
+  }
+
+  function handleInputBlur(rowIndex: number, col: string) {
+    const current = editingCellRef.current;
+    if (!current || current.rowIndex !== rowIndex || current.col !== col) return;
+    void commitAndExit();
+  }
+
+  function handleEditChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    setEditValue(e.target.value);
+  }
+
+  function handleEditKeyDown(e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    const cell = editingCellRef.current;
+    if (!cell) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      const pending = pendingRowRef.current;
+      if (pending && pending.rowIndex === cell.rowIndex) {
+        pendingRowRef.current = null;
+        setRows((prevRows) =>
+          prevRows.map((r, i) => (i === pending.rowIndex ? { ...r, ...pending.original } : r)),
+        );
+      }
+      setEditingCell(null);
+      return;
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void commitAndExit();
+      return;
+    }
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const colIdx = columns.indexOf(cell.col);
+      const nextColIdx = colIdx + (e.shiftKey ? -1 : 1);
+      if (nextColIdx < 0 || nextColIdx >= columns.length) return;
+      void moveEditTo(cell.rowIndex, columns[nextColIdx]);
+      return;
+    }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      const nextRow = cell.rowIndex + (e.key === "ArrowUp" ? -1 : 1);
+      if (nextRow < 0 || nextRow >= rows.length) return;
+      void moveEditTo(nextRow, cell.col);
+      return;
+    }
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      const target = e.currentTarget;
+      const atStart = target.selectionStart === 0 && target.selectionEnd === 0;
+      const atEnd = target.selectionStart === target.value.length && target.selectionEnd === target.value.length;
+      if (e.key === "ArrowLeft" && !atStart) return;
+      if (e.key === "ArrowRight" && !atEnd) return;
+      const colIdx = columns.indexOf(cell.col);
+      const nextColIdx = colIdx + (e.key === "ArrowLeft" ? -1 : 1);
+      if (nextColIdx < 0 || nextColIdx >= columns.length) return;
+      e.preventDefault();
+      void moveEditTo(cell.rowIndex, columns[nextColIdx]);
+    }
   }
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -213,7 +441,15 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                   <thead>
                     <tr>
                       {columns.map((c) => (
-                        <th key={c}>{c}</th>
+                        <th
+                          key={c}
+                          ref={(el) => {
+                            if (el) thRefs.current.set(c, el);
+                            else thRefs.current.delete(c);
+                          }}
+                        >
+                          {c}
+                        </th>
                       ))}
                     </tr>
                   </thead>
@@ -221,6 +457,40 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                     {rows.map((row, i) => (
                       <tr key={i}>
                         {columns.map((c) => {
+                          const isEditing = editingCell?.rowIndex === i && editingCell.col === c;
+                          if (isEditing) {
+                            const multiline = isMultilineType(columnTypes[c]);
+                            const cellWidth = columnWidths[c];
+                            return (
+                              <td
+                                key={c}
+                                className="mysql-cell-editing"
+                                style={cellWidth ? { width: cellWidth } : undefined}
+                              >
+                                {multiline ? (
+                                  <textarea
+                                    ref={editInputRef as React.RefObject<HTMLTextAreaElement>}
+                                    value={editValue}
+                                    onChange={handleEditChange}
+                                    onKeyDown={handleEditKeyDown}
+                                    onBlur={() => handleInputBlur(i, c)}
+                                    className="mysql-cell-textarea"
+                                    rows={1}
+                                  />
+                                ) : (
+                                  <input
+                                    ref={editInputRef as React.RefObject<HTMLInputElement>}
+                                    type="text"
+                                    value={editValue}
+                                    onChange={handleEditChange}
+                                    onKeyDown={handleEditKeyDown}
+                                    onBlur={() => handleInputBlur(i, c)}
+                                    className="mysql-cell-input"
+                                  />
+                                )}
+                              </td>
+                            );
+                          }
                           const raw = row[c];
                           const isNull = raw === null || raw === undefined;
                           const value = isNull
@@ -228,8 +498,19 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                             : typeof raw === "object"
                               ? JSON.stringify(raw)
                               : String(raw);
+                          const isDirty =
+                            pendingRowRef.current?.rowIndex === i &&
+                            Object.prototype.hasOwnProperty.call(pendingRowRef.current.changes, c);
+                          const cellClassName = [isNull && "mysql-cell-null", isDirty && "mysql-cell-dirty"]
+                            .filter(Boolean)
+                            .join(" ");
                           return (
-                            <td key={c} title={value} className={isNull ? "mysql-cell-null" : undefined}>
+                            <td
+                              key={c}
+                              title={value}
+                              className={cellClassName || undefined}
+                              onMouseDown={(e) => handleCellMouseDown(e, i, c)}
+                            >
                               {value}
                             </td>
                           );

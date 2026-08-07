@@ -157,6 +157,23 @@ pub async fn mysql_table_data(
 }
 
 #[tauri::command]
+pub async fn mysql_update_row(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    updates: Map<String, Value>,
+    key: Map<String, Value>,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql::update_row(pool, &database, &table, &updates, &key).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn mongo_list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, String> {
     let connections = state.connections.lock().await;
     match connections.get(&id).map(|c| &c.handle) {
