@@ -64,6 +64,7 @@
 
 .ui-select-listbox {
   z-index: 1000;
+  width: max-content;
   overflow-y: auto;
   overscroll-behavior: contain;
   margin: 0;

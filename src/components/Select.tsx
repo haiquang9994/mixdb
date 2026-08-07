@@ -40,6 +40,7 @@ function Select<T extends string | number>({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const skipScrollRef = useRef(false);
 
   const selectedIndex = options.findIndex((o) => o.value === value);
   const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined;
@@ -58,7 +59,9 @@ function Select<T extends string | number>({
 
   useEffect(() => {
     if (!open) return;
-    function close() {
+    function close(e?: Event) {
+      const target = e?.target as Node | null;
+      if (target && listRef.current?.contains(target)) return;
       setOpen(false);
     }
     window.addEventListener("resize", close);
@@ -79,7 +82,8 @@ function Select<T extends string | number>({
     setMenuStyle({
       position: "fixed",
       left: rect.left,
-      width: rect.width,
+      minWidth: rect.width,
+      maxWidth: window.innerWidth - rect.left - VIEWPORT_MARGIN,
       ...(openUp
         ? { bottom: window.innerHeight - rect.top + MENU_GAP, maxHeight: spaceAbove }
         : { top: rect.bottom + MENU_GAP, maxHeight: spaceBelow }),
@@ -94,6 +98,10 @@ function Select<T extends string | number>({
 
   useEffect(() => {
     if (!open || activeIndex < 0) return;
+    if (skipScrollRef.current) {
+      skipScrollRef.current = false;
+      return;
+    }
     const el = listRef.current?.children[activeIndex] as HTMLElement | undefined;
     el?.scrollIntoView({ block: "nearest" });
   }, [open, activeIndex]);
@@ -188,7 +196,10 @@ function Select<T extends string | number>({
                   i === activeIndex ? " ui-select-option-active" : ""
                 }${opt.disabled ? " ui-select-option-disabled" : ""}`}
                 style={{ textAlign: optionAlign }}
-                onMouseEnter={() => setActiveIndex(i)}
+                onMouseEnter={() => {
+                  skipScrollRef.current = true;
+                  setActiveIndex(i);
+                }}
                 onClick={() => commit(i)}
               >
                 {opt.optionLabel ?? opt.label}
