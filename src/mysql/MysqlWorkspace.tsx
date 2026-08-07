@@ -402,7 +402,19 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
         </div>
       </div>
 
-      {(error || localError) && <p className="error">{error || localError}</p>}
+      {(error || localError) && (
+        <p className="error">
+          {error || localError}
+          <button
+            type="button"
+            className="error-dismiss"
+            aria-label="Dismiss error"
+            onClick={() => setLocalError("")}
+          >
+            ×
+          </button>
+        </p>
+      )}
 
       <div className="mysql-body">
         <aside className="mysql-sidebar" style={{ flexBasis: width }}>

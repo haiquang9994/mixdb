@@ -522,7 +522,19 @@ function ConnectionTab({ onTitleChange }: Props) {
         </aside>
         <section className="login-form">
           {connectionForm}
-          {error && <p className="error">{error}</p>}
+          {error && (
+            <p className="error">
+              {error}
+              <button
+                type="button"
+                className="error-dismiss"
+                aria-label="Dismiss error"
+                onClick={() => setError("")}
+              >
+                ×
+              </button>
+            </p>
+          )}
         </section>
         {contextMenu && (
           <>
@@ -576,7 +588,19 @@ function ConnectionTab({ onTitleChange }: Props) {
         <span>{status}</span>
       </div>
 
-      {error && <p className="error">{error}</p>}
+      {error && (
+        <p className="error">
+          {error}
+          <button
+            type="button"
+            className="error-dismiss"
+            aria-label="Dismiss error"
+            onClick={() => setError("")}
+          >
+            ×
+          </button>
+        </p>
+      )}
 
       {kind === "mongo" && (
         <fieldset>

@@ -413,7 +413,55 @@ thead th {
 }
 
 .error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   color: #d32f2f;
+  margin: 0;
+}
+
+.error-dismiss {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  background-color: rgba(211, 47, 47, 0.15);
+  box-shadow: none;
+  color: #d32f2f;
+  font-size: 0.95em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.error-dismiss:hover {
+  background-color: rgba(211, 47, 47, 0.3);
+  border-color: transparent;
+}
+
+.error-dismiss:active {
+  background-color: rgba(211, 47, 47, 0.4);
+  border-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  .error-dismiss {
+    background-color: rgba(255, 99, 99, 0.2);
+    color: #ff6b6b;
+  }
+
+  .error-dismiss:hover {
+    background-color: rgba(255, 99, 99, 0.35);
+  }
+
+  .error-dismiss:active {
+    background-color: rgba(255, 99, 99, 0.45);
+  }
 }
 
 .mysql-cell-null {
