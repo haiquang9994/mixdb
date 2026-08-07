@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { mysqlListDatabases, mysqlListTables, mysqlTableData } from "./api";
+import Select from "../components/Select";
 
 interface Props {
   connectionId: string;
@@ -11,9 +12,9 @@ interface Props {
 
 type ContentMode = "data";
 
-const PAGE_SIZES = [25, 50, 100, 200];
+const PAGE_SIZES = [100, 200, 500, 1000];
 
-function MysqlWorkspace({ connectionId, initialDatabase, status, error, onDisconnect }: Props) {
+function MysqlWorkspace({ connectionId, initialDatabase, error }: Props) {
   const [databases, setDatabases] = useState<string[]>([]);
   const [selectedDb, setSelectedDb] = useState(initialDatabase ?? "");
   const [tables, setTables] = useState<string[]>([]);
@@ -22,7 +23,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, status, error, onDiscon
   const [localError, setLocalError] = useState("");
 
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(100);
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
@@ -103,28 +104,18 @@ function MysqlWorkspace({ connectionId, initialDatabase, status, error, onDiscon
   return (
     <div className="mysql-workspace">
       <div className="mysql-header">
-        <div className="mysql-header-left">
-          <button type="button" onClick={onDisconnect}>
-            Disconnect
-          </button>
-          <span className="muted">{status}</span>
-        </div>
+        <div className="mysql-header-left"></div>
         <label className="mysql-db-select">
           Database{" "}
-          <select
+          <Select
             value={selectedDb}
-            onChange={(e) => {
-              setSelectedDb(e.target.value);
+            onChange={(db) => {
+              setSelectedDb(db);
               setPage(0);
             }}
-          >
-            {databases.length === 0 && <option value="">(none)</option>}
-            {databases.map((db) => (
-              <option key={db} value={db}>
-                {db}
-              </option>
-            ))}
-          </select>
+            placeholder="(none)"
+            options={databases.map((db) => ({ value: db, label: db }))}
+          />
         </label>
         <div className="method-tabs mysql-content-tabs" role="tablist">
           <button
@@ -220,19 +211,16 @@ function MysqlWorkspace({ connectionId, initialDatabase, status, error, onDiscon
                 >
                   ›
                 </button>
-                <select
+                <Select
                   value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
+                  onChange={(n) => {
+                    setPageSize(n);
                     setPage(0);
                   }}
-                >
-                  {PAGE_SIZES.map((n) => (
-                    <option key={n} value={n}>
-                      {n} / page
-                    </option>
-                  ))}
-                </select>
+                  className="mysql-page-size-select"
+                  optionAlign="right"
+                  options={PAGE_SIZES.map((n) => ({ value: n, label: `${n} / page`, optionLabel: n }))}
+                />
               </div>
             </div>
           )}

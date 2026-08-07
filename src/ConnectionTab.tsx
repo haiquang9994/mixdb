@@ -9,6 +9,7 @@ import {
 } from "./savedConnections";
 import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
 import MysqlWorkspace from "./mysql/MysqlWorkspace";
+import Select from "./components/Select";
 
 interface Props {
   onTitleChange: (title: string) => void;
@@ -403,13 +404,14 @@ function ConnectionTab({ onTitleChange }: Props) {
               </label>
               <label>
                 Auth{" "}
-                <select
+                <Select
                   value={sshAuthType}
-                  onChange={(e) => setSshAuthType(e.target.value as "password" | "privatekey")}
-                >
-                  <option value="password">Password</option>
-                  <option value="privatekey">Private key</option>
-                </select>
+                  onChange={(v) => setSshAuthType(v)}
+                  options={[
+                    { value: "password", label: "Password" },
+                    { value: "privatekey", label: "Private key" },
+                  ]}
+                />
               </label>
             </div>
             {sshAuthType === "password" && (

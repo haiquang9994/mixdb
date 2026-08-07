@@ -502,6 +502,15 @@ td {
   font-size: 1em;
 }
 
+.mysql-page-size-select {
+  min-width: 6.5em;
+}
+
+.mysql-page-size-select .ui-select-trigger {
+  height: 1.8em;
+  padding: 0 0.6em;
+}
+
 .result {
   text-align: left;
   overflow-x: auto;
