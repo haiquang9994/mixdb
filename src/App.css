@@ -372,7 +372,8 @@ textarea {
 }
 
 table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: auto;
   min-width: 100%;
   font-size: 0.9em;
@@ -380,13 +381,23 @@ table {
 
 th,
 td {
-  border: 1px solid #ccc;
+  border-right: 1px solid #ccc;
+  border-bottom: 1px solid #ccc;
   padding: 4px 8px;
   text-align: left;
   white-space: nowrap;
   max-width: 320px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+th:first-child,
+td:first-child {
+  border-left: 1px solid #ccc;
+}
+
+thead th {
+  border-top: 1px solid #ccc;
 }
 
 .mysql-table-scroll thead th {
