@@ -19,6 +19,7 @@ pub fn run() {
             commands::test_ssh_tunnel,
             commands::mysql_query,
             commands::mysql_list_databases,
+            commands::mysql_server_info,
             commands::mysql_list_tables,
             commands::mysql_table_data,
             commands::mysql_update_row,

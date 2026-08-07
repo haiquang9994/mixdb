@@ -9,6 +9,15 @@ export function mysqlListTables(id: string, database: string): Promise<string[]>
   return invoke<string[]>("mysql_list_tables", { id, database });
 }
 
+export interface MysqlServerInfo {
+  version: string;
+  os: string;
+}
+
+export function mysqlServerInfo(id: string): Promise<MysqlServerInfo> {
+  return invoke<MysqlServerInfo>("mysql_server_info", { id });
+}
+
 export function mysqlTableData(
   id: string,
   database: string,

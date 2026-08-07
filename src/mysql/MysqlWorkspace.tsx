@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { mysqlListDatabases, mysqlListTables, mysqlTableData, mysqlUpdateRow } from "./api";
+import { mysqlListDatabases, mysqlListTables, mysqlServerInfo, mysqlTableData, mysqlUpdateRow } from "./api";
 import Select from "../components/Select";
 
 interface EditingCell {
@@ -48,6 +48,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [contentMode, setContentMode] = useState<ContentMode>("data");
   const [localError, setLocalError] = useState("");
+  const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
 
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(100);
@@ -201,6 +202,21 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
         setSelectedDb((prev) => (prev && dbs.includes(prev) ? prev : dbs[0] ?? ""));
       })
       .catch((e) => setLocalError(String(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setServerInfo(null);
+    mysqlServerInfo(connectionId)
+      .then((info) => {
+        if (!cancelled) setServerInfo(info);
+      })
+      .catch(() => {
+        // Non-critical display info — silently omit it on failure.
+      });
     return () => {
       cancelled = true;
     };
@@ -424,7 +440,13 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   return (
     <div className="mysql-workspace">
       <div className="mysql-header">
-        <div className="mysql-header-left"></div>
+        <div className="mysql-header-left">
+          {serverInfo && (
+            <span className="mysql-server-info">
+              {serverInfo.os} · MySQL {serverInfo.version}
+            </span>
+          )}
+        </div>
         <label className="mysql-db-select">
           Database{" "}
           <Select

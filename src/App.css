@@ -531,6 +531,12 @@ thead th {
   gap: 0.75rem;
 }
 
+.mysql-server-info {
+  opacity: 0.6;
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
 .mysql-db-select {
   display: flex;
   align-items: center;

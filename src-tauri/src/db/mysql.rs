@@ -71,6 +71,36 @@ fn quote_ident(ident: &str) -> String {
     format!("`{}`", ident.replace('`', "``"))
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerInfo {
+    pub version: String,
+    pub os: String,
+}
+
+pub async fn server_info(pool: &MySqlPool) -> Result<ServerInfo, String> {
+    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+    let rows = sqlx::query(
+        "SHOW VARIABLES WHERE Variable_name IN ('version', 'version_compile_os')",
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut version = String::new();
+    let mut os = String::new();
+    for row in &rows {
+        let name: String = row.get("Variable_name");
+        let value: String = row.get("Value");
+        match name.as_str() {
+            "version" => version = value,
+            "version_compile_os" => os = value,
+            _ => {}
+        }
+    }
+    Ok(ServerInfo { version, os })
+}
+
 pub async fn list_databases(pool: &MySqlPool) -> Result<Vec<String>, String> {
     let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
     let rows = sqlx::query("SHOW DATABASES")

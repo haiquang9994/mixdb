@@ -126,6 +126,16 @@ pub async fn mysql_list_databases(state: State<'_, AppState>, id: String) -> Res
 }
 
 #[tauri::command]
+pub async fn mysql_server_info(state: State<'_, AppState>, id: String) -> Result<mysql::ServerInfo, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql::server_info(pool).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn mysql_list_tables(
     state: State<'_, AppState>,
     id: String,
