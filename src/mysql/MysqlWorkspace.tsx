@@ -23,6 +23,16 @@ function isMultilineType(type: string | undefined): boolean {
   return t.includes("text") || t.includes("json") || t.includes("blob");
 }
 
+function tableCacheKey(db: string, table: string): string {
+  return `${db} :: ${table}`;
+}
+
+interface TableColumnsInfo {
+  columns: string[];
+  columnTypes: Record<string, string>;
+  primaryKey: string[];
+}
+
 interface Props {
   connectionId: string;
   initialDatabase?: string;
@@ -71,6 +81,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   } | null>(null);
   const editInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const currentTableRef = useRef({ db: selectedDb, table: selectedTable });
+  const columnsCacheRef = useRef<Map<string, TableColumnsInfo>>(new Map());
   const thRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
 
@@ -242,22 +253,48 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     };
   }, [connectionId, selectedDb]);
 
+  // Runs only when the selected table itself changes (not on page/pageSize
+  // changes). Applies a cached column layout immediately if we have one for
+  // this table, so the header can render right away without stale rows from
+  // the previous table; otherwise clears columns so the whole grid stays
+  // hidden until the fetch below resolves.
   useEffect(() => {
     setEditingCell(null);
     pendingRowRef.current = null;
+    setRows([]);
+    setTotal(0);
     if (!selectedDb || !selectedTable) {
-      setRows([]);
       setColumns([]);
       setColumnTypes({});
       setPrimaryKey([]);
-      setTotal(0);
       return;
     }
+    const cached = columnsCacheRef.current.get(tableCacheKey(selectedDb, selectedTable));
+    if (cached) {
+      setColumns(cached.columns);
+      setColumnTypes(cached.columnTypes);
+      setPrimaryKey(cached.primaryKey);
+    } else {
+      setColumns([]);
+      setColumnTypes({});
+      setPrimaryKey([]);
+    }
+  }, [selectedDb, selectedTable]);
+
+  useEffect(() => {
+    if (!selectedDb || !selectedTable) return;
+    const db = selectedDb;
+    const table = selectedTable;
     let cancelled = false;
     setLoading(true);
-    mysqlTableData(connectionId, selectedDb, selectedTable, page, pageSize)
+    mysqlTableData(connectionId, db, table, page, pageSize)
       .then((result) => {
         if (cancelled) return;
+        columnsCacheRef.current.set(tableCacheKey(db, table), {
+          columns: result.columns,
+          columnTypes: result.columnTypes,
+          primaryKey: result.primaryKey,
+        });
         setRows(result.rows);
         setColumns(result.columns);
         setColumnTypes(result.columnTypes);
@@ -549,7 +586,10 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           {contentMode === "data" && !selectedTable && (
             <p className="muted">Select a table to view its data.</p>
           )}
-          {contentMode === "data" && selectedTable && (
+          {contentMode === "data" && selectedTable && columns.length === 0 && (
+            <p className="muted">Loading...</p>
+          )}
+          {contentMode === "data" && selectedTable && columns.length > 0 && (
             <div className="mysql-table-view">
               <div className="mysql-table-scroll" ref={scrollRef}>
                 <table>
