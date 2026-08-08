@@ -1,21 +1,21 @@
 .input {
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   border: 1px solid transparent;
   font-weight: 500;
   font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+  color: var(--control-color);
+  background-color: var(--control-bg);
+  box-shadow: var(--control-shadow);
   transition: border-color 0.25s;
   outline: none;
 }
 
 .input:hover:not(:disabled) {
-  border-color: #396cd8;
+  border-color: var(--control-border-focus);
 }
 
 .input:focus:not(:disabled) {
-  border-color: #396cd8;
+  border-color: var(--control-border-focus);
 }
 
 .input:disabled {
@@ -40,11 +40,4 @@
   padding: 0.6em 1.2em;
   font-size: 1em;
   line-height: 1.5;
-}
-
-@media (prefers-color-scheme: dark) {
-  .input {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
 }

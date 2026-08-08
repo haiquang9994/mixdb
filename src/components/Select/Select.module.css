@@ -10,13 +10,13 @@
   justify-content: space-between;
   gap: 0.6em;
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   border: 1px solid transparent;
   font-weight: 500;
   font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+  color: var(--control-color);
+  background-color: var(--control-bg);
+  box-shadow: var(--control-shadow);
   cursor: pointer;
   transition: border-color 0.2s;
   text-align: left;
@@ -42,17 +42,17 @@
 }
 
 .trigger:hover {
-  border-color: #396cd8;
+  border-color: var(--control-border-focus);
 }
 
 .trigger:focus-visible {
-  outline: 2px solid #396cd8;
+  outline: 2px solid var(--control-border-focus);
   outline-offset: 1px;
 }
 
 .select[aria-expanded="true"] .trigger,
 .trigger[aria-expanded="true"] {
-  border-color: #396cd8;
+  border-color: var(--control-border-focus);
 }
 
 .disabled .trigger {
@@ -126,11 +126,6 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .trigger {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-
   .listbox {
     background: #2f2f2f;
     border-color: rgba(255, 255, 255, 0.15);
