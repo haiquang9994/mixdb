@@ -22,6 +22,7 @@
   --control-bg: #ffffff;
   --control-bg-active: #e8e8e8;
   --control-border-focus: #396cd8;
+  --surface-bg: #ffffff;
 }
 
 html,
@@ -88,10 +89,25 @@ body {
 }
 
 .brand {
+  font-family: inherit;
+  font-size: inherit;
   font-weight: 700;
   padding: 0 0.75rem 0 0.25rem;
+  margin: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
   opacity: 0.7;
   white-space: nowrap;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.brand:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.12);
+  border-color: transparent;
 }
 
 .tab {
@@ -266,7 +282,7 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 140px;
-  background: #ffffff;
+  background: var(--surface-bg);
   border: 1px solid rgba(128, 128, 128, 0.25);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
@@ -598,21 +614,32 @@ textarea {
   outline: none;
 }
 
+:root[data-theme="dark"] {
+  color: #f6f6f6;
+  background-color: #2f2f2f;
+
+  --control-color: #ffffff;
+  --control-bg: #0f0f0f98;
+  --control-bg-active: #0f0f0f69;
+  --surface-bg: #2f2f2f;
+}
+
+:root[data-theme="dark"] a:hover {
+  color: #24c8db;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     color: #f6f6f6;
     background-color: #2f2f2f;
 
     --control-color: #ffffff;
     --control-bg: #0f0f0f98;
     --control-bg-active: #0f0f0f69;
+    --surface-bg: #2f2f2f;
   }
 
-  a:hover {
+  :root:not([data-theme]) a:hover {
     color: #24c8db;
-  }
-
-  .context-menu {
-    background-color: #2f2f2f;
   }
 }

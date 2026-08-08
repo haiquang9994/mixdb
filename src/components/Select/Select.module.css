@@ -125,17 +125,30 @@
   opacity: 0.6;
 }
 
+:root[data-theme="dark"] .listbox {
+  background: #2f2f2f;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+:root[data-theme="dark"] .optionActive {
+  background: rgba(57, 108, 216, 0.25);
+}
+
+:root[data-theme="dark"] .optionSelected.optionActive {
+  background: rgba(57, 108, 216, 0.32);
+}
+
 @media (prefers-color-scheme: dark) {
-  .listbox {
+  :root:not([data-theme]) .listbox {
     background: #2f2f2f;
     border-color: rgba(255, 255, 255, 0.15);
   }
 
-  .optionActive {
+  :root:not([data-theme]) .optionActive {
     background: rgba(57, 108, 216, 0.25);
   }
 
-  .optionSelected.optionActive {
+  :root:not([data-theme]) .optionSelected.optionActive {
     background: rgba(57, 108, 216, 0.32);
   }
 }

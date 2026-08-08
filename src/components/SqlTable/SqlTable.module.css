@@ -97,8 +97,12 @@
   flex-shrink: 0;
 }
 
+:root[data-theme="dark"] .scroll thead th {
+  background: #2f2f2f;
+}
+
 @media (prefers-color-scheme: dark) {
-  .scroll thead th {
+  :root:not([data-theme]) .scroll thead th {
     background: #2f2f2f;
   }
 }

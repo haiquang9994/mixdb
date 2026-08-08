@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import ConnectionTab from "./ConnectionTab";
+import SettingsModal from "./components/SettingsModal";
+import { useTheme } from "./theme";
 import "./App.css";
 
 interface TabInfo {
@@ -14,6 +16,8 @@ function newTab(): TabInfo {
 function App() {
   const [tabs, setTabs] = useState<TabInfo[]>([newTab()]);
   const [activeId, setActiveId] = useState(tabs[0].id);
+  const [theme, setTheme] = useTheme();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   function openTab() {
     const tab = newTab();
@@ -58,7 +62,14 @@ function App() {
   return (
     <main className="app">
       <div className="tab-bar">
-        <span className="brand">MixDB</span>
+        <button
+          type="button"
+          className="brand"
+          onClick={() => setSettingsOpen(true)}
+          title="Cài đặt"
+        >
+          MixDB
+        </button>
         {tabs.map((tab) => (
           <div
             key={tab.id}
@@ -94,6 +105,10 @@ function App() {
           </div>
         ))}
       </div>
+
+      {settingsOpen && (
+        <SettingsModal theme={theme} onThemeChange={setTheme} onClose={() => setSettingsOpen(false)} />
+      )}
     </main>
   );
 }
