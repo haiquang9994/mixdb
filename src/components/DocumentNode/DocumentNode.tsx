@@ -390,6 +390,15 @@ export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: Va
   );
 }
 
+/** Blurs whatever editor input is currently focused so it runs its own commit path
+ * (ValueEditor's auto-commit / the rename input's onBlur) before the caller moves the
+ * inline editor elsewhere. Without this the open input is unmounted by the switch
+ * before it can ever fire blur, silently dropping what was typed in it. */
+function blurActiveEditor() {
+  const el = document.activeElement;
+  if (el instanceof HTMLElement && el !== document.body) el.blur();
+}
+
 export type DocumentEditMode = "value" | "rename";
 
 export interface DocumentNodeProps {
@@ -591,11 +600,16 @@ function DocumentNode({
           <span
             className={styles.key}
             tabIndex={-1}
-            onMouseDown={() => {
-              // Uses mousedown (not click) so switching from another field's still-open
-              // input lands before that input's own blur handler fires and reflows the
-              // row — a click event fired after that reflow can miss its target entirely.
+            onMouseDown={(e) => {
+              // Uses mousedown (not click) so the switch is decided while the pointer is
+              // still over this row — committing the previously open input reflows the
+              // rows, and a click event fired after that reflow can miss its target.
               if (!documentEditing || readOnly || marked || parentKind !== "object") return;
+              // mousedown's default action focuses its target; that target is this span,
+              // which the switch is about to replace with an input. Letting it run would
+              // yank focus off the freshly auto-focused input and blur it straight back shut.
+              e.preventDefault();
+              blurActiveEditor();
               startRenaming();
             }}
             onDoubleClick={() => {
@@ -631,12 +645,16 @@ function DocumentNode({
             <span
               className={marked ? `${styles.value} ${styles.markedForDeletion}` : styles.value}
               tabIndex={-1}
-              onMouseDown={() => {
-                // Uses mousedown (not click) so switching from another field's still-open
-                // input — including this same node's rename input — lands before that
-                // input's own blur handler fires and reflows the row; a click event fired
-                // after that reflow can miss its target entirely.
+              onMouseDown={(e) => {
+                // Uses mousedown (not click) so the switch — including from this same
+                // node's rename input — is decided while the pointer is still over this
+                // row; committing the previously open input reflows the rows, and a click
+                // event fired after that reflow can miss its target.
                 if (!documentEditing || readOnly || marked || !isEditableKind(kind)) return;
+                // See the key span above: without this the browser's post-mousedown focus
+                // lands on this (already replaced) span and closes the new editor at once.
+                e.preventDefault();
+                blurActiveEditor();
                 onActivateEdit(path, "value");
               }}
               onDoubleClick={() => {
