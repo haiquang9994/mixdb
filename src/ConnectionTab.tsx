@@ -248,7 +248,7 @@ function ConnectionTab({ onTitleChange }: Props) {
       const id = await invoke<string>("connect_db", { config });
       setConnectionId(id);
       setStatus(`Connected (${id.slice(0, 8)})`);
-      onTitleChange(title ?? `${config.kind} · ${config.host}`);
+      onTitleChange(title ?? (saveAsName.trim() || `${config.kind} · ${config.host}`));
     } catch (e) {
       setStatus("");
       setError(String(e));
