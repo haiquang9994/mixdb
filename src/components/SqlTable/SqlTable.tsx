@@ -320,8 +320,8 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   }
 
   return (
-    <div className="sql-table-view">
-      <div className="sql-table-scroll" ref={scrollRef}>
+    <div className="ui-sql-table">
+      <div className="ui-sql-table-scroll" ref={scrollRef}>
         <table>
           <thead>
             <tr>
@@ -349,7 +349,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
                     return (
                       <td
                         key={c}
-                        className="sql-cell-editing"
+                        className="ui-sql-table-cell-editing"
                         style={cellWidth ? { width: cellWidth } : undefined}
                       >
                         {multiline ? (
@@ -359,7 +359,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
                             onChange={handleEditChange}
                             onKeyDown={handleEditKeyDown}
                             onBlur={() => handleInputBlur(i, c)}
-                            className="sql-cell-textarea"
+                            className="ui-sql-table-cell-textarea"
                             rows={1}
                             autoComplete="off"
                             autoCorrect="off"
@@ -374,7 +374,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
                             onChange={handleEditChange}
                             onKeyDown={handleEditKeyDown}
                             onBlur={() => handleInputBlur(i, c)}
-                            className="sql-cell-input"
+                            className="ui-sql-table-cell-input"
                             autoComplete="off"
                             autoCorrect="off"
                             autoCapitalize="off"
@@ -394,7 +394,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
                   const isDirty =
                     pendingRowRef.current?.rowIndex === i &&
                     Object.prototype.hasOwnProperty.call(pendingRowRef.current.changes, c);
-                  const cellClassName = [isNull && "sql-cell-null", isDirty && "sql-cell-dirty"]
+                  const cellClassName = [isNull && "ui-sql-table-cell-null", isDirty && "ui-sql-table-cell-dirty"]
                     .filter(Boolean)
                     .join(" ");
                   return (
