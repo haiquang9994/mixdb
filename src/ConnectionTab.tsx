@@ -452,6 +452,7 @@ function ConnectionTab({ onTitleChange }: Props) {
                 <Select
                   value={sshAuthType}
                   onChange={(v) => setSshAuthType(v)}
+                  size="large"
                   options={[
                     { value: "password", label: "Password" },
                     { value: "privatekey", label: "Private key" },

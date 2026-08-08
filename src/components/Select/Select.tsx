@@ -10,12 +10,15 @@ export interface SelectOption<T extends string | number> {
   disabled?: boolean;
 }
 
+export type SelectSize = "small" | "normal" | "large";
+
 interface SelectProps<T extends string | number> {
   value: T;
   options: SelectOption<T>[];
   onChange: (value: T) => void;
   placeholder?: string;
   disabled?: boolean;
+  size?: SelectSize;
   className?: string;
   triggerClassName?: string;
   ariaLabel?: string;
@@ -31,6 +34,7 @@ function Select<T extends string | number>({
   onChange,
   placeholder = "Select...",
   disabled,
+  size = "normal",
   className,
   triggerClassName,
   ariaLabel,
@@ -165,7 +169,7 @@ function Select<T extends string | number>({
       <button
         ref={triggerRef}
         type="button"
-        className={`${styles.trigger}${triggerClassName ? ` ${triggerClassName}` : ""}`}
+        className={`${styles.trigger} ${styles[size]}${triggerClassName ? ` ${triggerClassName}` : ""}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}

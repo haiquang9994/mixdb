@@ -51,6 +51,7 @@ function Pagination({
       <Select
         value={pageSize}
         onChange={onPageSizeChange}
+        size="small"
         className={styles.pageSizeSelect}
         triggerClassName={styles.pageSizeSelectTrigger}
         optionAlign="right"

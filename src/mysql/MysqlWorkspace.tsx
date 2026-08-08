@@ -188,6 +188,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
               setSelectedTable(null);
             }}
             placeholder="(none)"
+            size="normal"
             options={databases.map((db) => ({ value: db, label: db }))}
           />
         </label>
