@@ -1,5 +1,5 @@
 import Select from "../Select";
-import "./Pagination.css";
+import styles from "./Pagination.module.css";
 
 interface Props {
   page: number;
@@ -25,10 +25,10 @@ function Pagination({
   className,
 }: Props) {
   return (
-    <div className={`ui-pagination${className ? ` ${className}` : ""}`}>
+    <div className={`${styles.pagination}${className ? ` ${className}` : ""}`}>
       <button
         type="button"
-        className="ui-pagination-btn"
+        className={styles.btn}
         aria-label="Previous page"
         disabled={page <= 0 || loading}
         onClick={() => onPageChange(Math.max(0, page - 1))}
@@ -40,7 +40,7 @@ function Pagination({
       </span>
       <button
         type="button"
-        className="ui-pagination-btn"
+        className={styles.btn}
         aria-label="Next page"
         disabled={page + 1 >= pageCount || loading}
         onClick={() => onPageChange(page + 1)}
@@ -50,7 +50,7 @@ function Pagination({
       <Select
         value={pageSize}
         onChange={onPageSizeChange}
-        className="ui-pagination-page-size-select"
+        className={styles.pageSizeSelect}
         optionAlign="right"
         options={pageSizeOptions.map((n) => ({ value: n, label: `${n} / page`, optionLabel: n }))}
       />

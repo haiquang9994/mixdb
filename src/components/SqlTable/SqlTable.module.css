@@ -1,4 +1,4 @@
-.ui-sql-table table {
+.sqlTable table {
   border-collapse: separate;
   border-spacing: 0;
   width: auto;
@@ -6,8 +6,8 @@
   font-size: 0.9em;
 }
 
-.ui-sql-table th,
-.ui-sql-table td {
+.sqlTable th,
+.sqlTable td {
   border-right: 1px solid #ccc;
   border-bottom: 1px solid #ccc;
   padding: 4px 8px;
@@ -18,41 +18,41 @@
   text-overflow: ellipsis;
 }
 
-.ui-sql-table th:first-child,
-.ui-sql-table td:first-child {
+.sqlTable th:first-child,
+.sqlTable td:first-child {
   border-left: 1px solid #ccc;
 }
 
-.ui-sql-table thead th {
+.sqlTable thead th {
   border-top: 1px solid #ccc;
 }
 
-.ui-sql-table-scroll thead th {
+.scroll thead th {
   position: sticky;
   top: 0;
   z-index: 1;
   background: #f6f6f6;
 }
 
-.ui-sql-table-cell-null {
+.cellNull {
   opacity: 0.5;
   font-style: italic;
 }
 
-.ui-sql-table-cell-dirty {
+.cellDirty {
   background: rgba(255, 179, 0, 0.18);
   box-shadow: inset 0 0 0 1px rgba(255, 179, 0, 0.55);
 }
 
-.ui-sql-table-cell-editing {
+.cellEditing {
   padding: 0;
   overflow: visible;
   white-space: normal;
   box-sizing: border-box;
 }
 
-.ui-sql-table-cell-input,
-.ui-sql-table-cell-textarea {
+.cellInput,
+.cellTextarea {
   display: block;
   width: 100%;
   /* 75% of the th/td max-width (320px) so the column doesn't collapse when
@@ -68,11 +68,11 @@
   font: inherit;
 }
 
-.ui-sql-table-cell-input {
+.cellInput {
   height: 100%;
 }
 
-.ui-sql-table-cell-textarea {
+.cellTextarea {
   resize: none;
   overflow-y: auto;
   max-height: 300px;
@@ -80,7 +80,7 @@
   white-space: pre-wrap;
 }
 
-.ui-sql-table {
+.sqlTable {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -89,7 +89,7 @@
   gap: 0.5rem;
 }
 
-.ui-sql-table-scroll {
+.scroll {
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -98,7 +98,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .ui-sql-table-scroll thead th {
+  .scroll thead th {
     background: #2f2f2f;
   }
 }

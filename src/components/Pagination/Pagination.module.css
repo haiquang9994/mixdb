@@ -1,4 +1,4 @@
-.ui-pagination {
+.pagination {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -7,7 +7,7 @@
   font-size: 0.9em;
 }
 
-.ui-pagination-btn {
+.btn {
   width: 1.8em;
   height: 1.8em;
   padding: 0;
@@ -15,11 +15,11 @@
   font-size: 1em;
 }
 
-.ui-pagination-page-size-select {
+.pageSizeSelect {
   min-width: 6.5em;
 }
 
-.ui-pagination-page-size-select .ui-select-trigger {
+.pageSizeSelect :global(.ui-select-trigger) {
   height: 1.8em;
   padding: 0 0.6em;
 }

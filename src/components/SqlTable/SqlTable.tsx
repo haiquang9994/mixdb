@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
 import Pagination from "../Pagination/Pagination";
-import "./SqlTable.css";
+import styles from "./SqlTable.module.css";
 
 interface EditingCell {
   rowIndex: number;
@@ -320,8 +320,8 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   }
 
   return (
-    <div className="ui-sql-table">
-      <div className="ui-sql-table-scroll" ref={scrollRef}>
+    <div className={styles.sqlTable}>
+      <div className={styles.scroll} ref={scrollRef}>
         <table>
           <thead>
             <tr>
@@ -349,7 +349,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
                     return (
                       <td
                         key={c}
-                        className="ui-sql-table-cell-editing"
+                        className={styles.cellEditing}
                         style={cellWidth ? { width: cellWidth } : undefined}
                       >
                         {multiline ? (
@@ -359,7 +359,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
                             onChange={handleEditChange}
                             onKeyDown={handleEditKeyDown}
                             onBlur={() => handleInputBlur(i, c)}
-                            className="ui-sql-table-cell-textarea"
+                            className={styles.cellTextarea}
                             rows={1}
                             autoComplete="off"
                             autoCorrect="off"
@@ -374,7 +374,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
                             onChange={handleEditChange}
                             onKeyDown={handleEditKeyDown}
                             onBlur={() => handleInputBlur(i, c)}
-                            className="ui-sql-table-cell-input"
+                            className={styles.cellInput}
                             autoComplete="off"
                             autoCorrect="off"
                             autoCapitalize="off"
@@ -394,7 +394,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
                   const isDirty =
                     pendingRowRef.current?.rowIndex === i &&
                     Object.prototype.hasOwnProperty.call(pendingRowRef.current.changes, c);
-                  const cellClassName = [isNull && "ui-sql-table-cell-null", isDirty && "ui-sql-table-cell-dirty"]
+                  const cellClassName = [isNull && styles.cellNull, isDirty && styles.cellDirty]
                     .filter(Boolean)
                     .join(" ");
                   return (
