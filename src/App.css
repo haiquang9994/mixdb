@@ -472,8 +472,6 @@ textarea {
   min-width: 0;
   box-sizing: border-box;
   margin-bottom: 0.4rem;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.85rem;
 }
 
 .mysql-sidebar-actions {

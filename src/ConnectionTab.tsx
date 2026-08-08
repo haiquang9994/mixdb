@@ -12,6 +12,7 @@ import MysqlWorkspace from "./mysql/MysqlWorkspace";
 import Select from "./components/Select";
 import ErrorBanner from "./components/ErrorBanner";
 import Button from "./components/Button";
+import Input from "./components/Input";
 
 interface Props {
   onTitleChange: (title: string) => void;
@@ -333,14 +334,11 @@ function ConnectionTab({ onTitleChange }: Props) {
       <div className="row row-name">
         <label className="field-name">
           {editingId ? "Name" : "Save as"}{" "}
-          <input
+          <Input
+            size="large"
             value={saveAsName}
             onChange={(e) => setSaveAsName(e.target.value)}
             placeholder="Connection name"
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
           />
         </label>
       </div>
@@ -364,59 +362,36 @@ function ConnectionTab({ onTitleChange }: Props) {
         <div className="row">
           <label>
             Host{" "}
-            <input
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-            />
+            <Input size="large" value={host} onChange={(e) => setHost(e.target.value)} />
           </label>
           <label>
             Port{" "}
-            <input
+            <Input
+              size="large"
               type="number"
               value={port}
               onChange={(e) => setPort(Number(e.target.value))}
-              autoComplete="off"
             />
           </label>
         </div>
         <div className="row">
           <label>
             User{" "}
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-            />
+            <Input size="large" value={username} onChange={(e) => setUsername(e.target.value)} />
           </label>
           <label>
             Password{" "}
-            <input
+            <Input
+              size="large"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
             />
           </label>
           <label>
             {kind === "redis" ? "DB index" : "Database"}{" "}
-            <input
-              value={database}
-              onChange={(e) => setDatabase(e.target.value)}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-            />
+            <Input size="large" value={database} onChange={(e) => setDatabase(e.target.value)} />
           </label>
         </div>
 
@@ -457,34 +432,20 @@ function ConnectionTab({ onTitleChange }: Props) {
             <div className="row">
               <label>
                 SSH host{" "}
-                <input
-                  value={sshHost}
-                  onChange={(e) => setSshHost(e.target.value)}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                />
+                <Input size="large" value={sshHost} onChange={(e) => setSshHost(e.target.value)} />
               </label>
               <label>
                 SSH port{" "}
-                <input
+                <Input
+                  size="large"
                   type="number"
                   value={sshPort}
                   onChange={(e) => setSshPort(Number(e.target.value))}
-                  autoComplete="off"
                 />
               </label>
               <label>
                 SSH user{" "}
-                <input
-                  value={sshUser}
-                  onChange={(e) => setSshUser(e.target.value)}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                />
+                <Input size="large" value={sshUser} onChange={(e) => setSshUser(e.target.value)} />
               </label>
               <label>
                 Auth{" "}
@@ -502,14 +463,12 @@ function ConnectionTab({ onTitleChange }: Props) {
               <div className="row">
                 <label>
                   SSH password{" "}
-                  <input
+                  <Input
+                    size="large"
                     type="password"
                     value={sshPassword}
                     onChange={(e) => setSshPassword(e.target.value)}
                     autoComplete="new-password"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
                   />
                 </label>
               </div>
@@ -518,14 +477,11 @@ function ConnectionTab({ onTitleChange }: Props) {
               <div className="row">
                 <label>
                   Private key file{" "}
-                  <input
+                  <Input
+                    size="large"
                     value={sshKeyPath}
                     onChange={(e) => setSshKeyPath(e.target.value)}
                     placeholder="C:\Users\you\.ssh\id_rsa"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
                   />
                 </label>
                 <Button size="large" onClick={browseForPrivateKey}>
@@ -533,15 +489,13 @@ function ConnectionTab({ onTitleChange }: Props) {
                 </Button>
                 <label>
                   Key passphrase{" "}
-                  <input
+                  <Input
+                    size="large"
                     type="password"
                     value={sshPassphrase}
                     onChange={(e) => setSshPassphrase(e.target.value)}
                     placeholder="(leave blank if none)"
                     autoComplete="new-password"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
                   />
                 </label>
               </div>

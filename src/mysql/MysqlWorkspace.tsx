@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { mysqlListDatabases, mysqlListTables, mysqlServerInfo } from "./api";
 import Select from "../components/Select";
 import ErrorBanner from "../components/ErrorBanner";
+import Input from "../components/Input";
 import SqlTable from "../components/SqlTable";
 
 interface Props {
@@ -209,16 +210,12 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
 
       <div className="mysql-body">
         <aside className="mysql-sidebar" style={{ flexBasis: width }}>
-          <input
-            type="text"
+          <Input
+            size="normal"
             className="mysql-sidebar-search"
             placeholder="Search tables..."
             value={tableFilter}
             onChange={(e) => setTableFilter(e.target.value)}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
           />
           <div className="mysql-sidebar-list">
             <ul>
