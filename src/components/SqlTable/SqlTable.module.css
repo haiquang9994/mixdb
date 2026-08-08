@@ -97,6 +97,12 @@
   overscroll-behavior: contain;
 }
 
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
 @media (prefers-color-scheme: dark) {
   .scroll thead th {
     background: #2f2f2f;

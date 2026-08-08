@@ -415,19 +415,21 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
         {loading && <p className="muted">Loading...</p>}
         {!loading && rows.length === 0 && <p className="muted">No rows.</p>}
       </div>
-      <Pagination
-        page={page}
-        pageCount={pageCount}
-        total={total}
-        pageSize={pageSize}
-        pageSizeOptions={PAGE_SIZES}
-        loading={loading}
-        onPageChange={setPage}
-        onPageSizeChange={(n) => {
-          setPageSize(n);
-          setPage(0);
-        }}
-      />
+      <div className={styles.footer}>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          total={total}
+          pageSize={pageSize}
+          pageSizeOptions={PAGE_SIZES}
+          loading={loading}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => {
+            setPageSize(n);
+            setPage(0);
+          }}
+        />
+      </div>
     </div>
   );
 }
