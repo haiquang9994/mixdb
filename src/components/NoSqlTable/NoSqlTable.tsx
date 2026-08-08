@@ -86,7 +86,6 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
   const [addingRootProp, setAddingRootProp] = useState<number | null>(null);
   const [newRootKey, setNewRootKey] = useState("");
   const [collapsedCards, setCollapsedCards] = useState<Set<number>>(new Set());
-  const [editingCards, setEditingCards] = useState<Set<number>>(new Set());
   const [activeEdit, setActiveEdit] = useState<Map<number, ActiveEdit>>(new Map());
   const [deleteMarks, setDeleteMarks] = useState<Map<number, Set<string>>>(new Map());
   const [confirmingDeleteIndex, setConfirmingDeleteIndex] = useState<number | null>(null);
@@ -119,7 +118,6 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
         setDocuments(result.documents);
         setTotal(result.total);
         setCollapsedCards(new Set());
-        setEditingCards(new Set());
         setActiveEdit(new Map());
         setDeleteMarks(new Map());
         setConfirmingDeleteIndex(null);
@@ -163,22 +161,9 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
     );
   }
 
-  function enterEditMode(index: number) {
-    setEditingCards((prev) => {
-      if (prev.has(index)) return prev;
-      const next = new Set(prev);
-      next.add(index);
-      return next;
-    });
-  }
-
+  /** Clears any active field editor and pending delete marks for a document,
+   * used after a save or discard to reset its transient edit state. */
   function exitEditMode(index: number) {
-    setEditingCards((prev) => {
-      if (!prev.has(index)) return prev;
-      const next = new Set(prev);
-      next.delete(index);
-      return next;
-    });
     setActiveEdit((prev) => {
       if (!prev.has(index)) return prev;
       const next = new Map(prev);
@@ -194,7 +179,6 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
   }
 
   function activateEditAt(index: number, path: string[], mode: EditMode) {
-    enterEditMode(index);
     setActiveEdit((prev) => {
       const next = new Map(prev);
       next.set(index, { path: path.join("."), mode });
@@ -202,9 +186,13 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
     });
   }
 
-  function finishEdit(index: number) {
+  /** Closes the active editor at index/path/mode — a no-op if the document has already
+   * switched to editing a different field (e.g. via a mousedown-driven field switch that
+   * beat this field's own blur-triggered close), so that close can't clobber the switch. */
+  function finishEdit(index: number, path: string, mode: EditMode) {
     setActiveEdit((prev) => {
-      if (!prev.has(index)) return prev;
+      const current = prev.get(index);
+      if (!current || current.path !== path || current.mode !== mode) return prev;
       const next = new Map(prev);
       next.delete(index);
       return next;
@@ -212,7 +200,6 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
   }
 
   function toggleDeleteMark(index: number, path: string[]) {
-    enterEditMode(index);
     const pathStr = path.join(".");
     setDeleteMarks((prev) => {
       const next = new Map(prev);
@@ -231,13 +218,18 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
       pending = { set: {}, originalSnapshot: documents[index] };
       pendingOpsRef.current.set(index, pending);
     }
-    enterEditMode(index);
     return pending;
   }
 
   function setValueAt(index: number, path: string[], value: TypedValue) {
     const pending = ensurePending(index);
-    pending.set[path.join(".")] = value;
+    const pathStr = path.join(".");
+    const originalValue = getAtPath(pending.originalSnapshot, path);
+    if (JSON.stringify(originalValue) === JSON.stringify(value)) {
+      delete pending.set[pathStr];
+    } else {
+      pending.set[pathStr] = value;
+    }
     setDocuments((prev) => prev.map((d, i) => (i === index ? (setAtPath(d, path, value) as TypedDocument) : d)));
   }
 
@@ -413,8 +405,11 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
             const marks = deleteMarks.get(i);
             const pendingCount = (pending ? Object.keys(pending.set).length : 0) + (marks ? marks.size : 0);
             const collapsed = collapsedCards.has(i);
-            const isEditing = editingCards.has(i);
             const active = activeEdit.get(i) ?? null;
+            // "Edit mode" (field click affordances, always-visible delete icons) reflects
+            // whether a prop-name/value input is actually open right now — it's separate
+            // from "has unsaved changes", which drives the Save/Discard buttons below.
+            const isEditing = active !== null || addingRootProp === i;
             return (
               <div key={i} className={styles.docCard}>
                 <div className={styles.docCardHeader}>
@@ -431,11 +426,9 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
                     {idPreviewText(idValue)}
                   </span>
                   <div className={styles.docHeaderSpacer} />
-                  {isEditing && (
+                  {pendingCount > 0 && (
                     <>
-                      {pendingCount > 0 && (
-                        <span className={styles.unsaved}>{t("noSqlTable.unsavedChanges", { n: pendingCount })}</span>
-                      )}
+                      <span className={styles.unsaved}>{t("noSqlTable.unsavedChanges", { n: pendingCount })}</span>
                       <button type="button" className={styles.saveBtn} onClick={() => void saveDocument(i)}>
                         {t("common.save")}
                       </button>
@@ -444,7 +437,7 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
                       </button>
                     </>
                   )}
-                  {!isEditing && savedFlash.has(i) && (
+                  {pendingCount === 0 && savedFlash.has(i) && (
                     <span className={styles.savedFlash}>✓ {t("noSqlTable.savedFlash")}</span>
                   )}
                   {confirmingDeleteIndex === i ? (
@@ -486,9 +479,9 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
                       activeEditPath={active?.path ?? null}
                       activeEditMode={active?.mode ?? null}
                       deletedPaths={marks ?? EMPTY_SET}
-                      onRequestEdit={() => enterEditMode(i)}
+                      onRequestEdit={() => {}}
                       onActivateEdit={(path, mode) => activateEditAt(i, path, mode)}
-                      onFinishEdit={() => finishEdit(i)}
+                      onFinishEdit={(path, mode) => finishEdit(i, path.join("."), mode)}
                       onToggleDelete={(path) => toggleDeleteMark(i, path)}
                       onSetValue={(path, value) => setValueAt(i, path, value)}
                       onRenameProp={(path, newKey) => void renameAt(i, path, newKey)}
@@ -506,9 +499,9 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
                         activeEditPath={active?.path ?? null}
                         activeEditMode={active?.mode ?? null}
                         deletedPaths={marks ?? EMPTY_SET}
-                        onRequestEdit={() => enterEditMode(i)}
+                        onRequestEdit={() => {}}
                         onActivateEdit={(path, mode) => activateEditAt(i, path, mode)}
-                        onFinishEdit={() => finishEdit(i)}
+                        onFinishEdit={(path, mode) => finishEdit(i, path.join("."), mode)}
                         onToggleDelete={(path) => toggleDeleteMark(i, path)}
                         onSetValue={(path, value) => setValueAt(i, path, value)}
                         onRenameProp={(path, newKey) => void renameAt(i, path, newKey)}

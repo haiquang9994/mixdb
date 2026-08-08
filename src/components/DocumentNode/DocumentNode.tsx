@@ -406,12 +406,14 @@ export interface DocumentNodeProps {
   activeEditMode: DocumentEditMode | null;
   /** Dotted paths within this document marked for deletion, pending Save. */
   deletedPaths: Set<string>;
-  /** Switches the whole document into edit mode without activating a specific field. */
+  /** Fired on double-clicking a non-renameable, non-editable key (e.g. an array index over a
+   * nested container) — no field can be activated, so callers may leave this a no-op. */
   onRequestEdit: () => void;
   /** Switches the whole document into edit mode (if needed) and moves the inline editor to this field. */
   onActivateEdit: (path: string[], mode: DocumentEditMode) => void;
-  /** Closes the currently active inline editor for this document. */
-  onFinishEdit: () => void;
+  /** Closes the inline editor at `path`/`mode` for this document — a no-op if the
+   * document has since switched to editing a different field. */
+  onFinishEdit: (path: string[], mode: DocumentEditMode) => void;
   /** Toggles whether this prop is marked for deletion (actual removal happens on Save). */
   onToggleDelete: (path: string[]) => void;
   onSetValue: (path: string[], value: TypedValue) => void;
@@ -470,7 +472,7 @@ function DocumentNode({
     renameCommittedRef.current = true;
     const trimmed = renameDraft.trim();
     if (trimmed && trimmed !== propKey) onRenameProp(path, trimmed);
-    onFinishEdit();
+    onFinishEdit(path, "rename");
   }
 
   function startRenaming() {
@@ -579,7 +581,7 @@ function DocumentNode({
               if (e.key === "Enter") commitRename();
               else if (e.key === "Escape") {
                 renameCommittedRef.current = true;
-                onFinishEdit();
+                onFinishEdit(path, "rename");
               }
             }}
             onBlur={commitRename}
@@ -589,13 +591,17 @@ function DocumentNode({
           <span
             className={styles.key}
             tabIndex={-1}
-            onClick={() => {
+            onMouseDown={() => {
+              // Uses mousedown (not click) so switching from another field's still-open
+              // input lands before that input's own blur handler fires and reflows the
+              // row — a click event fired after that reflow can miss its target entirely.
               if (!documentEditing || readOnly || marked || parentKind !== "object") return;
               startRenaming();
             }}
             onDoubleClick={() => {
               if (readOnly || marked) return;
               if (parentKind === "object") startRenaming();
+              else if (!container && isEditableKind(kind)) onActivateEdit(path, "value");
               else onRequestEdit();
             }}
           >
@@ -616,16 +622,20 @@ function DocumentNode({
             autoCommit
             onCommit={(v) => {
               onSetValue(path, v);
-              onFinishEdit();
+              onFinishEdit(path, "value");
             }}
-            onCancel={onFinishEdit}
+            onCancel={() => onFinishEdit(path, "value")}
           />
         ) : (
           !container && (
             <span
               className={marked ? `${styles.value} ${styles.markedForDeletion}` : styles.value}
               tabIndex={-1}
-              onClick={() => {
+              onMouseDown={() => {
+                // Uses mousedown (not click) so switching from another field's still-open
+                // input — including this same node's rename input — lands before that
+                // input's own blur handler fires and reflows the row; a click event fired
+                // after that reflow can miss its target entirely.
                 if (!documentEditing || readOnly || marked || !isEditableKind(kind)) return;
                 onActivateEdit(path, "value");
               }}
