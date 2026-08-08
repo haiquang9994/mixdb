@@ -102,6 +102,7 @@ const en = {
     confirmAdd: "Confirm",
     cancelAdd: "Cancel",
     deleteProperty: "Delete property",
+    undoDeleteProperty: "Undo delete",
     deleteItem: "Delete item",
     renameProperty: "Rename property",
     confirmRename: "Confirm rename",

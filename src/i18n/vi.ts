@@ -104,6 +104,7 @@ const vi: TranslationDict = {
     confirmAdd: "Xác nhận",
     cancelAdd: "Hủy",
     deleteProperty: "Xóa property",
+    undoDeleteProperty: "Hoàn tác xóa",
     deleteItem: "Xóa item",
     renameProperty: "Đổi tên property",
     confirmRename: "Xác nhận đổi tên",

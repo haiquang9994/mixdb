@@ -18,20 +18,45 @@ interface Props {
 
 interface PendingOps {
   set: Record<string, TypedValue>;
-  unset: Set<string>;
   originalSnapshot: TypedDocument;
 }
 
-const DOC_PAGE_SIZES = [20, 50, 100, 200];
+type EditMode = "value" | "rename";
 
-function collapseArrayPendingOps(pending: PendingOps, arrayPathStr: string) {
-  const prefix = `${arrayPathStr}.`;
-  for (const key of Object.keys(pending.set)) {
-    if (key === arrayPathStr || key.startsWith(prefix)) delete pending.set[key];
+interface ActiveEdit {
+  path: string;
+  mode: EditMode;
+}
+
+const DOC_PAGE_SIZES = [20, 50, 100, 200];
+const EMPTY_SET: Set<string> = new Set();
+
+function collapseOpsUnderPrefix(setOps: Record<string, TypedValue>, unsetOps: Set<string>, prefix: string) {
+  const dotted = `${prefix}.`;
+  for (const key of Object.keys(setOps)) {
+    if (key === prefix || key.startsWith(dotted)) delete setOps[key];
   }
-  for (const key of Array.from(pending.unset)) {
-    if (key === arrayPathStr || key.startsWith(prefix)) pending.unset.delete(key);
+  for (const key of Array.from(unsetOps)) {
+    if (key === prefix || key.startsWith(dotted)) unsetOps.delete(key);
   }
+}
+
+/** Sorts deletion paths so array elements are removed highest-index-first,
+ * keeping lower indices of the same array stable while multiple siblings
+ * are being deleted in one flush. */
+function comparePathsForDeletion(a: string, b: string): number {
+  const aParts = a.split(".");
+  const bParts = b.split(".");
+  const len = Math.min(aParts.length, bParts.length);
+  for (let idx = 0; idx < len; idx++) {
+    if (aParts[idx] !== bParts[idx]) {
+      const an = Number(aParts[idx]);
+      const bn = Number(bParts[idx]);
+      if (!Number.isNaN(an) && !Number.isNaN(bn)) return bn - an;
+      return aParts[idx] < bParts[idx] ? -1 : 1;
+    }
+  }
+  return bParts.length - aParts.length;
 }
 
 function idPreviewText(idValue: TypedValue): string {
@@ -61,6 +86,9 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
   const [addingRootProp, setAddingRootProp] = useState<number | null>(null);
   const [newRootKey, setNewRootKey] = useState("");
   const [collapsedCards, setCollapsedCards] = useState<Set<number>>(new Set());
+  const [editingCards, setEditingCards] = useState<Set<number>>(new Set());
+  const [activeEdit, setActiveEdit] = useState<Map<number, ActiveEdit>>(new Map());
+  const [deleteMarks, setDeleteMarks] = useState<Map<number, Set<string>>>(new Map());
   const [confirmingDeleteIndex, setConfirmingDeleteIndex] = useState<number | null>(null);
   const [deletingIndex, setDeletingIndex] = useState<number | null>(null);
   const [savedFlash, setSavedFlash] = useState<Set<number>>(new Set());
@@ -68,7 +96,6 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
 
   const pendingOpsRef = useRef<Map<number, PendingOps>>(new Map());
   const originalIdsRef = useRef<Map<number, TypedValue>>(new Map());
-  const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const flashTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
@@ -92,6 +119,9 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
         setDocuments(result.documents);
         setTotal(result.total);
         setCollapsedCards(new Set());
+        setEditingCards(new Set());
+        setActiveEdit(new Map());
+        setDeleteMarks(new Map());
         setConfirmingDeleteIndex(null);
       })
       .catch((e) => onError(String(e)))
@@ -133,42 +163,82 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
     );
   }
 
+  function enterEditMode(index: number) {
+    setEditingCards((prev) => {
+      if (prev.has(index)) return prev;
+      const next = new Set(prev);
+      next.add(index);
+      return next;
+    });
+  }
+
+  function exitEditMode(index: number) {
+    setEditingCards((prev) => {
+      if (!prev.has(index)) return prev;
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
+    setActiveEdit((prev) => {
+      if (!prev.has(index)) return prev;
+      const next = new Map(prev);
+      next.delete(index);
+      return next;
+    });
+    setDeleteMarks((prev) => {
+      if (!prev.has(index)) return prev;
+      const next = new Map(prev);
+      next.delete(index);
+      return next;
+    });
+  }
+
+  function activateEditAt(index: number, path: string[], mode: EditMode) {
+    enterEditMode(index);
+    setActiveEdit((prev) => {
+      const next = new Map(prev);
+      next.set(index, { path: path.join("."), mode });
+      return next;
+    });
+  }
+
+  function finishEdit(index: number) {
+    setActiveEdit((prev) => {
+      if (!prev.has(index)) return prev;
+      const next = new Map(prev);
+      next.delete(index);
+      return next;
+    });
+  }
+
+  function toggleDeleteMark(index: number, path: string[]) {
+    enterEditMode(index);
+    const pathStr = path.join(".");
+    setDeleteMarks((prev) => {
+      const next = new Map(prev);
+      const current = new Set(next.get(index) ?? []);
+      if (current.has(pathStr)) current.delete(pathStr);
+      else current.add(pathStr);
+      if (current.size === 0) next.delete(index);
+      else next.set(index, current);
+      return next;
+    });
+  }
+
   function ensurePending(index: number): PendingOps {
     let pending = pendingOpsRef.current.get(index);
     if (!pending) {
-      pending = { set: {}, unset: new Set(), originalSnapshot: documents[index] };
+      pending = { set: {}, originalSnapshot: documents[index] };
       pendingOpsRef.current.set(index, pending);
     }
+    enterEditMode(index);
     return pending;
   }
 
   function setValueAt(index: number, path: string[], value: TypedValue) {
-    const pathStr = path.join(".");
     const pending = ensurePending(index);
-    pending.unset.delete(pathStr);
-    pending.set[pathStr] = value;
+    pending.set[path.join(".")] = value;
     setDocuments((prev) => prev.map((d, i) => (i === index ? (setAtPath(d, path, value) as TypedDocument) : d)));
-  }
-
-  function deletePropAt(index: number, path: string[]) {
-    const doc = documents[index];
-    if (!doc) return;
-    const parentPath = path.slice(0, -1);
-    const parentValue = parentPath.length === 0 ? doc : getAtPath(doc, parentPath);
-    const pending = ensurePending(index);
-    const newDoc = deleteAtPath(doc, path) as TypedDocument;
-
-    if (Array.isArray(parentValue)) {
-      const arrayPathStr = parentPath.join(".");
-      const newArray = getAtPath(newDoc, parentPath);
-      collapseArrayPendingOps(pending, arrayPathStr);
-      pending.set[arrayPathStr] = newArray ?? [];
-    } else {
-      const pathStr = path.join(".");
-      delete pending.set[pathStr];
-      pending.unset.add(pathStr);
-    }
-    setDocuments((prev) => prev.map((d, i) => (i === index ? newDoc : d)));
   }
 
   function addChildAt(index: number, parentPath: string[], key: string | undefined, value: TypedValue) {
@@ -184,21 +254,48 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
 
   async function flushDocument(index: number) {
     const pending = pendingOpsRef.current.get(index);
-    if (!pending) return;
-    if (Object.keys(pending.set).length === 0 && pending.unset.size === 0) {
+    const marks = deleteMarks.get(index);
+    const hasSetChanges = !!pending && Object.keys(pending.set).length > 0;
+    const hasMarks = !!marks && marks.size > 0;
+    if (!hasSetChanges && !hasMarks) {
       pendingOpsRef.current.delete(index);
       return;
     }
     const docId = originalIdsRef.current.get(index);
     if (docId === undefined) return;
-    const ops: DocUpdateOps = { set: pending.set, unset: Array.from(pending.unset), rename: {} };
+
+    const originalSnapshot = pending?.originalSnapshot ?? documents[index];
+    const setOps: Record<string, TypedValue> = { ...(pending?.set ?? {}) };
+    const unsetOps = new Set<string>();
+    let workingDoc = documents[index];
+
+    if (marks) {
+      for (const pathStr of Array.from(marks).sort(comparePathsForDeletion)) {
+        const path = pathStr.split(".");
+        const parentPath = path.slice(0, -1);
+        const parentValue = parentPath.length === 0 ? workingDoc : getAtPath(workingDoc, parentPath);
+        const newDoc = deleteAtPath(workingDoc, path) as TypedDocument;
+        if (Array.isArray(parentValue)) {
+          const arrayPathStr = parentPath.join(".");
+          collapseOpsUnderPrefix(setOps, unsetOps, arrayPathStr);
+          setOps[arrayPathStr] = getAtPath(newDoc, parentPath) ?? [];
+        } else {
+          delete setOps[pathStr];
+          unsetOps.add(pathStr);
+        }
+        workingDoc = newDoc;
+      }
+    }
+
     pendingOpsRef.current.delete(index);
+    const ops: DocUpdateOps = { set: setOps, unset: Array.from(unsetOps), rename: {} };
     try {
       await mongoUpdateDocument(connectionId, selectedDb, selectedCollection, docId, ops);
+      setDocuments((prev) => prev.map((d, i) => (i === index ? workingDoc : d)));
       flashSaved(index);
     } catch (e) {
       onError(String(e));
-      setDocuments((prev) => prev.map((d, i) => (i === index ? pending.originalSnapshot : d)));
+      setDocuments((prev) => prev.map((d, i) => (i === index ? originalSnapshot : d)));
     }
   }
 
@@ -207,6 +304,16 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
     if (!pending) return;
     pendingOpsRef.current.delete(index);
     setDocuments((prev) => prev.map((d, i) => (i === index ? pending.originalSnapshot : d)));
+  }
+
+  function cancelEdit(index: number) {
+    discardDocument(index);
+    exitEditMode(index);
+  }
+
+  async function saveDocument(index: number) {
+    await flushDocument(index);
+    exitEditMode(index);
   }
 
   function flushAll(): Promise<void[]> {
@@ -265,13 +372,6 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
     }
   }
 
-  function handleCardBlur(index: number, e: React.FocusEvent<HTMLDivElement>) {
-    const card = cardRefs.current.get(index);
-    const next = e.relatedTarget as Node | null;
-    if (card && next && card.contains(next)) return;
-    void flushDocument(index);
-  }
-
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const trimmedQuery = query.trim().toLowerCase();
   const visibleIndices = useMemo(
@@ -310,18 +410,13 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
             const idValue = (doc._id ?? null) as TypedValue;
             const otherKeys = Object.keys(doc).filter((k) => k !== "_id");
             const pending = pendingOpsRef.current.get(i);
-            const pendingCount = pending ? Object.keys(pending.set).length + pending.unset.size : 0;
+            const marks = deleteMarks.get(i);
+            const pendingCount = (pending ? Object.keys(pending.set).length : 0) + (marks ? marks.size : 0);
             const collapsed = collapsedCards.has(i);
+            const isEditing = editingCards.has(i);
+            const active = activeEdit.get(i) ?? null;
             return (
-              <div
-                key={i}
-                className={styles.docCard}
-                ref={(el) => {
-                  if (el) cardRefs.current.set(i, el);
-                  else cardRefs.current.delete(i);
-                }}
-                onBlur={(e) => handleCardBlur(i, e)}
-              >
+              <div key={i} className={styles.docCard}>
                 <div className={styles.docCardHeader}>
                   <button
                     type="button"
@@ -336,18 +431,20 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
                     {idPreviewText(idValue)}
                   </span>
                   <div className={styles.docHeaderSpacer} />
-                  {pendingCount > 0 && (
+                  {isEditing && (
                     <>
-                      <span className={styles.unsaved}>{t("noSqlTable.unsavedChanges", { n: pendingCount })}</span>
-                      <button type="button" className={styles.saveBtn} onClick={() => void flushDocument(i)}>
+                      {pendingCount > 0 && (
+                        <span className={styles.unsaved}>{t("noSqlTable.unsavedChanges", { n: pendingCount })}</span>
+                      )}
+                      <button type="button" className={styles.saveBtn} onClick={() => void saveDocument(i)}>
                         {t("common.save")}
                       </button>
-                      <button type="button" className={styles.discardBtn} onClick={() => discardDocument(i)}>
+                      <button type="button" className={styles.discardBtn} onClick={() => cancelEdit(i)}>
                         {t("noSqlTable.discardChanges")}
                       </button>
                     </>
                   )}
-                  {pendingCount === 0 && savedFlash.has(i) && (
+                  {!isEditing && savedFlash.has(i) && (
                     <span className={styles.savedFlash}>✓ {t("noSqlTable.savedFlash")}</span>
                   )}
                   {confirmingDeleteIndex === i ? (
@@ -385,8 +482,15 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
                       parentKind="object"
                       readOnly
                       depth={0}
+                      documentEditing={isEditing}
+                      activeEditPath={active?.path ?? null}
+                      activeEditMode={active?.mode ?? null}
+                      deletedPaths={marks ?? EMPTY_SET}
+                      onRequestEdit={() => enterEditMode(i)}
+                      onActivateEdit={(path, mode) => activateEditAt(i, path, mode)}
+                      onFinishEdit={() => finishEdit(i)}
+                      onToggleDelete={(path) => toggleDeleteMark(i, path)}
                       onSetValue={(path, value) => setValueAt(i, path, value)}
-                      onDeleteProp={(path) => deletePropAt(i, path)}
                       onRenameProp={(path, newKey) => void renameAt(i, path, newKey)}
                       onAddChild={(parentPath, key, value) => addChildAt(i, parentPath, key, value)}
                     />
@@ -398,8 +502,15 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
                         value={doc[key]}
                         parentKind="object"
                         depth={0}
+                        documentEditing={isEditing}
+                        activeEditPath={active?.path ?? null}
+                        activeEditMode={active?.mode ?? null}
+                        deletedPaths={marks ?? EMPTY_SET}
+                        onRequestEdit={() => enterEditMode(i)}
+                        onActivateEdit={(path, mode) => activateEditAt(i, path, mode)}
+                        onFinishEdit={() => finishEdit(i)}
+                        onToggleDelete={(path) => toggleDeleteMark(i, path)}
                         onSetValue={(path, value) => setValueAt(i, path, value)}
-                        onDeleteProp={(path) => deletePropAt(i, path)}
                         onRenameProp={(path, newKey) => void renameAt(i, path, newKey)}
                         onAddChild={(parentPath, key2, value) => addChildAt(i, parentPath, key2, value)}
                       />

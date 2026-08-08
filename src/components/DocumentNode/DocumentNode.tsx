@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Select from "../Select";
 import Input from "../Input";
 import { useTranslation, type TranslationKey } from "../../i18n";
@@ -212,21 +212,41 @@ export interface ValueEditorProps {
   initialValue: TypedValue;
   onCommit: (value: TypedValue) => void;
   onCancel: () => void;
+  /** Hides the confirm/cancel buttons; clicking outside the editor commits the current draft instead. */
+  autoCommit?: boolean;
 }
 
 /** Type-aware value editor (BSON type selector + matching input) shared by
  * DocumentNode's own scalar/add-child editing and NoSqlTable's root-level
  * "add property" row — reused rather than re-implemented there, since it's
  * a substantial piece of type-dispatch logic, not a trivial form. */
-export function ValueEditor({ initialValue, onCommit, onCancel }: ValueEditorProps) {
+export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: ValueEditorProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<Draft>(() => draftFromValue(initialValue));
   const [error, setError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // The type <Select> renders its option list through a React portal (to
+  // document.body), so clicking an option isn't DOM-contained within
+  // rootRef. Track pointerdown targets ourselves so picking a type doesn't
+  // register as "clicked outside" and prematurely auto-commit the draft.
+  const pointerInsideRef = useRef(false);
 
   const initialKind = kindOf(initialValue);
   const typeOptions: EditableType[] = CREATABLE_TYPES.includes(initialKind as CreatableType)
     ? CREATABLE_TYPES
     : [...CREATABLE_TYPES, initialKind as EditableType];
+
+  useEffect(() => {
+    if (!autoCommit) return;
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target as Node | null;
+      const insideRoot = !!target && !!rootRef.current?.contains(target);
+      const insidePortalMenu = target instanceof Element && !!target.closest('[role="listbox"]');
+      pointerInsideRef.current = insideRoot || insidePortalMenu;
+    }
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [autoCommit]);
 
   function commit() {
     const result = draftToValue(draft);
@@ -247,8 +267,16 @@ export function ValueEditor({ initialValue, onCommit, onCancel }: ValueEditorPro
     }
   }
 
+  function handleBlur(e: React.FocusEvent<HTMLDivElement>) {
+    if (!autoCommit) return;
+    const next = e.relatedTarget as Node | null;
+    if (next && e.currentTarget.contains(next)) return;
+    if (pointerInsideRef.current) return;
+    commit();
+  }
+
   return (
-    <div className={styles.editor} onKeyDown={handleKeyDown}>
+    <div ref={rootRef} className={styles.editor} onKeyDown={handleKeyDown} onBlur={handleBlur}>
       <Select
         size="small"
         value={draft.type}
@@ -347,16 +375,22 @@ export function ValueEditor({ initialValue, onCommit, onCancel }: ValueEditorPro
           />
         </>
       )}
-      <button type="button" className={styles.editorConfirm} onClick={commit} title={t("noSqlTable.confirmAdd")}>
-        ✓
-      </button>
-      <button type="button" className={styles.editorCancel} onClick={onCancel} title={t("noSqlTable.cancelAdd")}>
-        ✕
-      </button>
+      {!autoCommit && (
+        <>
+          <button type="button" className={styles.editorConfirm} onClick={commit} title={t("noSqlTable.confirmAdd")}>
+            ✓
+          </button>
+          <button type="button" className={styles.editorCancel} onClick={onCancel} title={t("noSqlTable.cancelAdd")}>
+            ✕
+          </button>
+        </>
+      )}
       {error && <span className={styles.editorError}>{error}</span>}
     </div>
   );
 }
+
+export type DocumentEditMode = "value" | "rename";
 
 export interface DocumentNodeProps {
   path: string[];
@@ -365,8 +399,22 @@ export interface DocumentNodeProps {
   parentKind: "object" | "array";
   readOnly?: boolean;
   depth: number;
+  /** Whether the whole document this node belongs to is in edit mode. */
+  documentEditing: boolean;
+  /** Dotted path of the field currently showing an inline editor within this document, if any. */
+  activeEditPath: string | null;
+  activeEditMode: DocumentEditMode | null;
+  /** Dotted paths within this document marked for deletion, pending Save. */
+  deletedPaths: Set<string>;
+  /** Switches the whole document into edit mode without activating a specific field. */
+  onRequestEdit: () => void;
+  /** Switches the whole document into edit mode (if needed) and moves the inline editor to this field. */
+  onActivateEdit: (path: string[], mode: DocumentEditMode) => void;
+  /** Closes the currently active inline editor for this document. */
+  onFinishEdit: () => void;
+  /** Toggles whether this prop is marked for deletion (actual removal happens on Save). */
+  onToggleDelete: (path: string[]) => void;
   onSetValue: (path: string[], value: TypedValue) => void;
-  onDeleteProp: (path: string[]) => void;
   onRenameProp: (path: string[], newKey: string) => void;
   onAddChild: (parentPath: string[], key: string | undefined, value: TypedValue) => void;
 }
@@ -378,8 +426,15 @@ function DocumentNode({
   parentKind,
   readOnly,
   depth,
+  documentEditing,
+  activeEditPath,
+  activeEditMode,
+  deletedPaths,
+  onRequestEdit,
+  onActivateEdit,
+  onFinishEdit,
+  onToggleDelete,
   onSetValue,
-  onDeleteProp,
   onRenameProp,
   onAddChild,
 }: DocumentNodeProps) {
@@ -388,8 +443,6 @@ function DocumentNode({
   const container = isContainerKind(kind);
   const count = container ? containerCount(value) : 0;
   const [expanded, setExpanded] = useState(count <= CHILDREN_PREVIEW_COUNT);
-  const [editingValue, setEditingValue] = useState(false);
-  const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState(propKey);
   const [addingChild, setAddingChild] = useState(false);
   const [newChildKey, setNewChildKey] = useState("");
@@ -407,18 +460,23 @@ function DocumentNode({
     );
   }
 
+  const pathStr = path.join(".");
+  const marked = deletedPaths.has(pathStr);
+  const editingValue = documentEditing && !marked && activeEditPath === pathStr && activeEditMode === "value";
+  const renaming = documentEditing && !marked && activeEditPath === pathStr && activeEditMode === "rename";
+
   function commitRename() {
     if (renameCommittedRef.current) return;
     renameCommittedRef.current = true;
     const trimmed = renameDraft.trim();
     if (trimmed && trimmed !== propKey) onRenameProp(path, trimmed);
-    setRenaming(false);
+    onFinishEdit();
   }
 
   function startRenaming() {
     renameCommittedRef.current = false;
     setRenameDraft(propKey);
-    setRenaming(true);
+    onActivateEdit(path, "rename");
   }
 
   function renderChildren() {
@@ -447,8 +505,15 @@ function DocumentNode({
             // a compound _id is just as forbidden as replacing _id itself.
             readOnly={readOnly}
             depth={depth + 1}
+            documentEditing={documentEditing}
+            activeEditPath={activeEditPath}
+            activeEditMode={activeEditMode}
+            deletedPaths={deletedPaths}
+            onRequestEdit={onRequestEdit}
+            onActivateEdit={onActivateEdit}
+            onFinishEdit={onFinishEdit}
+            onToggleDelete={onToggleDelete}
             onSetValue={onSetValue}
-            onDeleteProp={onDeleteProp}
             onRenameProp={onRenameProp}
             onAddChild={onAddChild}
           />
@@ -464,6 +529,7 @@ function DocumentNode({
           </button>
         )}
         {!readOnly &&
+          !marked &&
           (addingChild ? (
             <div className={styles.addRow} style={{ paddingLeft: (depth + 1) * INDENT_PX }}>
               {childParentKind === "object" && (
@@ -513,14 +579,26 @@ function DocumentNode({
               if (e.key === "Enter") commitRename();
               else if (e.key === "Escape") {
                 renameCommittedRef.current = true;
-                setRenaming(false);
+                onFinishEdit();
               }
             }}
             onBlur={commitRename}
             className={styles.editorInput}
           />
         ) : (
-          <span className={styles.key}>
+          <span
+            className={styles.key}
+            tabIndex={-1}
+            onClick={() => {
+              if (!documentEditing || readOnly || marked || parentKind !== "object") return;
+              startRenaming();
+            }}
+            onDoubleClick={() => {
+              if (readOnly || marked) return;
+              if (parentKind === "object") startRenaming();
+              else onRequestEdit();
+            }}
+          >
             {parentKind === "array" ? `[${propKey}]` : propKey}
             {readOnly && <span className={styles.lock} title={t("noSqlTable.idReadOnlyTooltip")}>🔒</span>}
           </span>
@@ -535,18 +613,25 @@ function DocumentNode({
         {!container && editingValue && !readOnly && isEditableKind(kind) ? (
           <ValueEditor
             initialValue={value}
+            autoCommit
             onCommit={(v) => {
               onSetValue(path, v);
-              setEditingValue(false);
+              onFinishEdit();
             }}
-            onCancel={() => setEditingValue(false)}
+            onCancel={onFinishEdit}
           />
         ) : (
           !container && (
             <span
-              className={styles.value}
+              className={marked ? `${styles.value} ${styles.markedForDeletion}` : styles.value}
+              tabIndex={-1}
+              onClick={() => {
+                if (!documentEditing || readOnly || marked || !isEditableKind(kind)) return;
+                onActivateEdit(path, "value");
+              }}
               onDoubleClick={() => {
-                if (!readOnly && isEditableKind(kind)) setEditingValue(true);
+                if (readOnly || marked || !isEditableKind(kind)) return;
+                onActivateEdit(path, "value");
               }}
             >
               {kind === "Null" ? t("noSqlTable.typeLabel.null") : displayScalar(value)}
@@ -554,13 +639,19 @@ function DocumentNode({
           )
         )}
 
-        {!readOnly && parentKind === "object" && !renaming && (
-          <button type="button" className={styles.iconButton} title={t("noSqlTable.renameProperty")} onClick={startRenaming}>
-            ✎
-          </button>
-        )}
         {!readOnly && (
-          <button type="button" className={styles.iconButton} title={t("noSqlTable.deleteProperty")} onClick={() => onDeleteProp(path)}>
+          <button
+            type="button"
+            className={
+              marked
+                ? `${styles.iconButton} ${styles.deleteMarked}`
+                : documentEditing
+                  ? styles.iconButton
+                  : `${styles.iconButton} ${styles.hoverOnly}`
+            }
+            title={marked ? t("noSqlTable.undoDeleteProperty") : t("noSqlTable.deleteProperty")}
+            onClick={() => onToggleDelete(path)}
+          >
             🗑
           </button>
         )}

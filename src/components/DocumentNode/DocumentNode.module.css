@@ -23,6 +23,13 @@
   white-space: nowrap;
 }
 
+.key:focus-visible,
+.value:focus-visible {
+  outline: 2px solid rgba(74, 144, 217, 0.6);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
 .lock {
   margin-left: 0.25rem;
   opacity: 0.6;
@@ -59,6 +66,11 @@
   cursor: text;
 }
 
+.markedForDeletion {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
 .iconButton {
   flex-shrink: 0;
   border: none;
@@ -73,6 +85,29 @@
 .iconButton:hover {
   opacity: 1;
   background: rgba(128, 128, 128, 0.15);
+  border-radius: 4px;
+}
+
+.hoverOnly {
+  opacity: 0;
+}
+
+.row:hover .hoverOnly {
+  opacity: 0.5;
+}
+
+.hoverOnly:hover {
+  opacity: 1;
+}
+
+.deleteMarked {
+  opacity: 1;
+  color: #c94a4a;
+}
+
+.deleteMarked:hover {
+  opacity: 1;
+  background: rgba(201, 74, 74, 0.15);
   border-radius: 4px;
 }
 
