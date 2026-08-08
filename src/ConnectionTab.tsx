@@ -22,6 +22,21 @@ const KIND_BADGE: Record<DbKind, string> = {
   redis: "RDS",
 };
 
+// Key order isn't stable across sources (object literals vs. values that
+// round-tripped through the Tauri store's JSON), so a plain JSON.stringify
+// comparison would flag identical configs as different. Sort keys
+// recursively — and drop `undefined` props, matching JSON.stringify's own
+// behavior — to get an order-independent snapshot instead.
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj)
+    .filter((k) => obj[k] !== undefined)
+    .sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
+}
+
 function ConnectionTab({ onTitleChange }: Props) {
   const [kind, setKind] = useState<DbKind>("mysql");
   const [host, setHost] = useState("127.0.0.1");
@@ -43,6 +58,7 @@ function ConnectionTab({ onTitleChange }: Props) {
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
   const [saveAsName, setSaveAsName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   const [connectionId, setConnectionId] = useState<string | null>(null);
@@ -124,6 +140,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     }
     setEditingId(entry.id);
     setSaveAsName(entry.name);
+    setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
     setError("");
     onTitleChange(entry.name);
   }
@@ -131,6 +148,7 @@ function ConnectionTab({ onTitleChange }: Props) {
   function newConnectionForm() {
     setEditingId(null);
     setSaveAsName("");
+    setSavedSnapshot(null);
     setKind("mysql");
     setHost("127.0.0.1");
     setPort(DEFAULT_PORTS.mysql);
@@ -171,6 +189,7 @@ function ConnectionTab({ onTitleChange }: Props) {
       const entry: SavedConnection = { id: editingId, name, config: buildConnectionConfig() };
       const next = await updateSavedConnection(entry);
       setSavedConnections(next);
+      setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
     } else {
       const entry: SavedConnection = {
         id: crypto.randomUUID(),
@@ -180,6 +199,7 @@ function ConnectionTab({ onTitleChange }: Props) {
       const next = await addSavedConnection(entry);
       setSavedConnections(next);
       setEditingId(entry.id);
+      setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
     }
   }
 
@@ -194,6 +214,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     const next = await addSavedConnection(entry);
     setSavedConnections(next);
     setEditingId(entry.id);
+    setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
   }
 
   async function deleteSavedConnection(id: string) {
@@ -536,7 +557,15 @@ function ConnectionTab({ onTitleChange }: Props) {
 
       <div className="row row-actions">
         <div className="row-actions-left">
-          <button type="button" onClick={saveConnection} disabled={!saveAsName.trim()}>
+          <button
+            type="button"
+            onClick={saveConnection}
+            disabled={
+              !saveAsName.trim() ||
+              (editingId !== null &&
+                savedSnapshot === stableStringify({ name: saveAsName.trim(), config: buildConnectionConfig() }))
+            }
+          >
             {editingId ? "Update connection" : "Save connection"}
           </button>
           {editingId && (
