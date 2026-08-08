@@ -315,6 +315,10 @@ function ConnectionTab({ onTitleChange }: Props) {
             value={saveAsName}
             onChange={(e) => setSaveAsName(e.target.value)}
             placeholder="Connection name"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
           />
         </label>
       </div>
@@ -337,16 +341,37 @@ function ConnectionTab({ onTitleChange }: Props) {
         </div>
         <div className="row">
           <label>
-            Host <input value={host} onChange={(e) => setHost(e.target.value)} />
+            Host{" "}
+            <input
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+            />
           </label>
           <label>
             Port{" "}
-            <input type="number" value={port} onChange={(e) => setPort(Number(e.target.value))} />
+            <input
+              type="number"
+              value={port}
+              onChange={(e) => setPort(Number(e.target.value))}
+              autoComplete="off"
+            />
           </label>
         </div>
         <div className="row">
           <label>
-            User <input value={username} onChange={(e) => setUsername(e.target.value)} />
+            User{" "}
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+            />
           </label>
           <label>
             Password{" "}
@@ -354,11 +379,22 @@ function ConnectionTab({ onTitleChange }: Props) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
             />
           </label>
           <label>
             {kind === "redis" ? "DB index" : "Database"}{" "}
-            <input value={database} onChange={(e) => setDatabase(e.target.value)} />
+            <input
+              value={database}
+              onChange={(e) => setDatabase(e.target.value)}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+            />
           </label>
         </div>
 
@@ -398,7 +434,15 @@ function ConnectionTab({ onTitleChange }: Props) {
           <>
             <div className="row">
               <label>
-                SSH host <input value={sshHost} onChange={(e) => setSshHost(e.target.value)} />
+                SSH host{" "}
+                <input
+                  value={sshHost}
+                  onChange={(e) => setSshHost(e.target.value)}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                />
               </label>
               <label>
                 SSH port{" "}
@@ -406,10 +450,19 @@ function ConnectionTab({ onTitleChange }: Props) {
                   type="number"
                   value={sshPort}
                   onChange={(e) => setSshPort(Number(e.target.value))}
+                  autoComplete="off"
                 />
               </label>
               <label>
-                SSH user <input value={sshUser} onChange={(e) => setSshUser(e.target.value)} />
+                SSH user{" "}
+                <input
+                  value={sshUser}
+                  onChange={(e) => setSshUser(e.target.value)}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                />
               </label>
               <label>
                 Auth{" "}
@@ -431,6 +484,10 @@ function ConnectionTab({ onTitleChange }: Props) {
                     type="password"
                     value={sshPassword}
                     onChange={(e) => setSshPassword(e.target.value)}
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
                   />
                 </label>
               </div>
@@ -443,6 +500,10 @@ function ConnectionTab({ onTitleChange }: Props) {
                     value={sshKeyPath}
                     onChange={(e) => setSshKeyPath(e.target.value)}
                     placeholder="C:\Users\you\.ssh\id_rsa"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
                   />
                 </label>
                 <button type="button" onClick={browseForPrivateKey}>
@@ -455,6 +516,10 @@ function ConnectionTab({ onTitleChange }: Props) {
                     value={sshPassphrase}
                     onChange={(e) => setSshPassphrase(e.target.value)}
                     placeholder="(leave blank if none)"
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
                   />
                 </label>
               </div>
@@ -588,6 +653,10 @@ function ConnectionTab({ onTitleChange }: Props) {
               <input
                 value={mongoCollection}
                 onChange={(e) => setMongoCollection(e.target.value)}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
               />
             </label>
           </div>
@@ -596,6 +665,10 @@ function ConnectionTab({ onTitleChange }: Props) {
             value={mongoFilter}
             onChange={(e) => setMongoFilter(e.target.value)}
             placeholder="{}"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
           />
           <div className="row">
             <button onClick={runMongoFind}>Find</button>
@@ -610,6 +683,10 @@ function ConnectionTab({ onTitleChange }: Props) {
             value={redisArgs}
             onChange={(e) => setRedisArgs(e.target.value)}
             placeholder="GET mykey"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
           />
           <div className="row">
             <button onClick={runRedisCommand}>Execute</button>

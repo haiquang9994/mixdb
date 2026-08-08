@@ -523,6 +523,10 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             placeholder="Search tables..."
             value={tableFilter}
             onChange={(e) => setTableFilter(e.target.value)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
           />
           <div className="mysql-sidebar-list">
             <ul>
@@ -631,6 +635,10 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                                     onBlur={() => handleInputBlur(i, c)}
                                     className="mysql-cell-textarea"
                                     rows={1}
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                    autoCapitalize="off"
+                                    spellCheck={false}
                                   />
                                 ) : (
                                   <input
@@ -641,6 +649,10 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                                     onKeyDown={handleEditKeyDown}
                                     onBlur={() => handleInputBlur(i, c)}
                                     className="mysql-cell-input"
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                    autoCapitalize="off"
+                                    spellCheck={false}
                                   />
                                 )}
                               </td>
