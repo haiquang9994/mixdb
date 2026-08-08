@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import "./Select.css";
+import styles from "./Select.module.css";
 
 export interface SelectOption<T extends string | number> {
   value: T;
@@ -17,6 +17,7 @@ interface SelectProps<T extends string | number> {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  triggerClassName?: string;
   ariaLabel?: string;
   optionAlign?: "left" | "right" | "center";
 }
@@ -31,6 +32,7 @@ function Select<T extends string | number>({
   placeholder = "Select...",
   disabled,
   className,
+  triggerClassName,
   ariaLabel,
   optionAlign = "left",
 }: SelectProps<T>) {
@@ -158,12 +160,12 @@ function Select<T extends string | number>({
   return (
     <div
       ref={rootRef}
-      className={`ui-select${disabled ? " ui-select-disabled" : ""}${className ? ` ${className}` : ""}`}
+      className={`${styles.select}${disabled ? ` ${styles.disabled}` : ""}${className ? ` ${className}` : ""}`}
     >
       <button
         ref={triggerRef}
         type="button"
-        className="ui-select-trigger"
+        className={`${styles.trigger}${triggerClassName ? ` ${triggerClassName}` : ""}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
@@ -171,11 +173,11 @@ function Select<T extends string | number>({
         onClick={() => setOpen((o) => !o)}
         onKeyDown={onKeyDown}
       >
-        <span className="ui-select-value" style={{ textAlign: optionAlign }}>
+        <span className={styles.value} style={{ textAlign: optionAlign }}>
           {selected ? selected.label : placeholder}
         </span>
         <svg
-          className="ui-select-chevron"
+          className={styles.chevron}
           width="10"
           height="6"
           viewBox="0 0 10 6"
@@ -186,15 +188,15 @@ function Select<T extends string | number>({
       </button>
       {open &&
         createPortal(
-          <ul className="ui-select-listbox" role="listbox" ref={listRef} tabIndex={-1} style={menuStyle}>
+          <ul className={styles.listbox} role="listbox" ref={listRef} tabIndex={-1} style={menuStyle}>
             {options.map((opt, i) => (
               <li
                 key={String(opt.value)}
                 role="option"
                 aria-selected={opt.value === value}
-                className={`ui-select-option${opt.value === value ? " ui-select-option-selected" : ""}${
-                  i === activeIndex ? " ui-select-option-active" : ""
-                }${opt.disabled ? " ui-select-option-disabled" : ""}`}
+                className={`${styles.option}${opt.value === value ? ` ${styles.optionSelected}` : ""}${
+                  i === activeIndex ? ` ${styles.optionActive}` : ""
+                }${opt.disabled ? ` ${styles.optionDisabled}` : ""}`}
                 style={{ textAlign: optionAlign }}
                 onMouseEnter={() => {
                   skipScrollRef.current = true;
@@ -205,7 +207,7 @@ function Select<T extends string | number>({
                 {opt.optionLabel ?? opt.label}
               </li>
             ))}
-            {options.length === 0 && <li className="ui-select-empty">No options</li>}
+            {options.length === 0 && <li className={styles.empty}>No options</li>}
           </ul>,
           document.body,
         )}

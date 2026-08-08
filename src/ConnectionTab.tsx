@@ -9,7 +9,7 @@ import {
 } from "./savedConnections";
 import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
 import MysqlWorkspace from "./mysql/MysqlWorkspace";
-import Select from "./components/Select";
+import Select from "./components/Select/Select";
 import ErrorBanner from "./components/ErrorBanner";
 
 interface Props {

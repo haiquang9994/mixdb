@@ -19,7 +19,7 @@
   min-width: 6.5em;
 }
 
-.pageSizeSelect :global(.ui-select-trigger) {
+.pageSizeSelectTrigger {
   height: 1.8em;
   padding: 0 0.6em;
 }

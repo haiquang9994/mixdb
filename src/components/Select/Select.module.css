@@ -1,10 +1,10 @@
-.ui-select {
+.select {
   position: relative;
   display: inline-block;
   min-width: 8em;
 }
 
-.ui-select-trigger {
+.trigger {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -25,26 +25,26 @@
   text-align: left;
 }
 
-.ui-select-trigger:hover {
+.trigger:hover {
   border-color: #396cd8;
 }
 
-.ui-select-trigger:focus-visible {
+.trigger:focus-visible {
   outline: 2px solid #396cd8;
   outline-offset: 1px;
 }
 
-.ui-select[aria-expanded="true"] .ui-select-trigger,
-.ui-select-trigger[aria-expanded="true"] {
+.select[aria-expanded="true"] .trigger,
+.trigger[aria-expanded="true"] {
   border-color: #396cd8;
 }
 
-.ui-select-disabled .ui-select-trigger {
+.disabled .trigger {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.ui-select-value {
+.value {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -52,17 +52,17 @@
   white-space: nowrap;
 }
 
-.ui-select-chevron {
+.chevron {
   flex-shrink: 0;
   opacity: 0.6;
   transition: transform 0.15s;
 }
 
-.ui-select-trigger[aria-expanded="true"] .ui-select-chevron {
+.trigger[aria-expanded="true"] .chevron {
   transform: rotate(180deg);
 }
 
-.ui-select-listbox {
+.listbox {
   z-index: 1000;
   width: max-content;
   overflow-y: auto;
@@ -77,7 +77,7 @@
   box-sizing: border-box;
 }
 
-.ui-select-option {
+.option {
   padding: 0.5em 0.7em;
   border-radius: 6px;
   cursor: pointer;
@@ -86,45 +86,45 @@
   white-space: nowrap;
 }
 
-.ui-select-option-active {
+.optionActive {
   background: rgba(57, 108, 216, 0.12);
 }
 
-.ui-select-option-selected {
+.optionSelected {
   color: #396cd8;
   font-weight: 600;
 }
 
-.ui-select-option-selected.ui-select-option-active {
+.optionSelected.optionActive {
   background: rgba(57, 108, 216, 0.18);
 }
 
-.ui-select-option-disabled {
+.optionDisabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.ui-select-empty {
+.empty {
   padding: 0.5em 0.7em;
   opacity: 0.6;
 }
 
 @media (prefers-color-scheme: dark) {
-  .ui-select-trigger {
+  .trigger {
     color: #ffffff;
     background-color: #0f0f0f98;
   }
 
-  .ui-select-listbox {
+  .listbox {
     background: #2f2f2f;
     border-color: rgba(255, 255, 255, 0.15);
   }
 
-  .ui-select-option-active {
+  .optionActive {
     background: rgba(57, 108, 216, 0.25);
   }
 
-  .ui-select-option-selected.ui-select-option-active {
+  .optionSelected.optionActive {
     background: rgba(57, 108, 216, 0.32);
   }
 }

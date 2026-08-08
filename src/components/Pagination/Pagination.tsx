@@ -1,4 +1,4 @@
-import Select from "../Select";
+import Select from "../Select/Select";
 import styles from "./Pagination.module.css";
 
 interface Props {
@@ -51,6 +51,7 @@ function Pagination({
         value={pageSize}
         onChange={onPageSizeChange}
         className={styles.pageSizeSelect}
+        triggerClassName={styles.pageSizeSelectTrigger}
         optionAlign="right"
         options={pageSizeOptions.map((n) => ({ value: n, label: `${n} / page`, optionLabel: n }))}
       />
