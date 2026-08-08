@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
-import Select from "../Select";
+import Pagination from "../Pagination/Pagination";
 import "./SqlTable.css";
 
 interface EditingCell {
@@ -415,39 +415,19 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
         {loading && <p className="muted">Loading...</p>}
         {!loading && rows.length === 0 && <p className="muted">No rows.</p>}
       </div>
-      <div className="sql-pagination">
-        <button
-          type="button"
-          className="sql-page-btn"
-          aria-label="Previous page"
-          disabled={page <= 0 || loading}
-          onClick={() => setPage((p) => Math.max(0, p - 1))}
-        >
-          ‹
-        </button>
-        <span>
-          Page {page + 1} of {pageCount} · {total} rows
-        </span>
-        <button
-          type="button"
-          className="sql-page-btn"
-          aria-label="Next page"
-          disabled={page + 1 >= pageCount || loading}
-          onClick={() => setPage((p) => p + 1)}
-        >
-          ›
-        </button>
-        <Select
-          value={pageSize}
-          onChange={(n) => {
-            setPageSize(n);
-            setPage(0);
-          }}
-          className="sql-page-size-select"
-          optionAlign="right"
-          options={PAGE_SIZES.map((n) => ({ value: n, label: `${n} / page`, optionLabel: n }))}
-        />
-      </div>
+      <Pagination
+        page={page}
+        pageCount={pageCount}
+        total={total}
+        pageSize={pageSize}
+        pageSizeOptions={PAGE_SIZES}
+        loading={loading}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => {
+          setPageSize(n);
+          setPage(0);
+        }}
+      />
     </div>
   );
 }

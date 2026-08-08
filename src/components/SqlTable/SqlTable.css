@@ -97,32 +97,6 @@ thead th {
   overscroll-behavior: contain;
 }
 
-.sql-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  flex-shrink: 0;
-  font-size: 0.9em;
-}
-
-.sql-page-btn {
-  width: 1.8em;
-  height: 1.8em;
-  padding: 0;
-  line-height: 1;
-  font-size: 1em;
-}
-
-.sql-page-size-select {
-  min-width: 6.5em;
-}
-
-.sql-page-size-select .ui-select-trigger {
-  height: 1.8em;
-  padding: 0 0.6em;
-}
-
 @media (prefers-color-scheme: dark) {
   .sql-table-scroll thead th {
     background: #2f2f2f;
