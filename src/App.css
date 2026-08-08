@@ -543,6 +543,138 @@ textarea {
   flex-direction: column;
 }
 
+.mongo-workspace {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  gap: 0.75rem;
+}
+
+.mongo-header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.mongo-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mongo-kind-label {
+  opacity: 0.6;
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.mongo-db-select {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mongo-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  gap: 0.2rem;
+}
+
+.mongo-sidebar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding-right: 0.15rem;
+}
+
+.mongo-sidebar-resizer {
+  flex: 0 0 5px;
+  align-self: stretch;
+  cursor: col-resize;
+  position: relative;
+}
+
+.mongo-sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: rgba(128, 128, 128, 0.25);
+}
+
+.mongo-sidebar-resizer:hover::after,
+.mongo-sidebar-resizer:active::after {
+  left: 1px;
+  width: 3px;
+  background: #396cd8;
+}
+
+.mongo-sidebar-search {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-bottom: 0.4rem;
+}
+
+.mongo-sidebar-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding-top: 0.35rem;
+  margin-top: 0.35rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.mongo-sidebar-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  border-radius: 6px;
+  color: inherit;
+}
+
+.mongo-sidebar-action:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.15);
+  border-color: transparent;
+}
+
+.mongo-sidebar-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.mongo-sidebar-action-icon-spinning {
+  animation: mysql-sidebar-spin 0.8s linear infinite;
+}
+
+.mongo-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .result {
   text-align: left;
   overflow-x: auto;

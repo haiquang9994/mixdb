@@ -225,6 +225,44 @@ pub async fn mongo_find(
 }
 
 #[tauri::command]
+pub async fn mongo_collection_page(
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+    collection: String,
+    page: i64,
+    page_size: i64,
+) -> Result<mongo::CollectionPage, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mongo(client)) => {
+            mongo::collection_page(client, &db, &collection, page, page_size).await
+        }
+        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mongo_update_document(
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+    collection: String,
+    doc_id: Value,
+    ops: mongo::DocUpdateOps,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mongo(client)) => {
+            mongo::update_document(client, &db, &collection, &doc_id, &ops).await
+        }
+        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn redis_command(
     state: State<'_, AppState>,
     id: String,

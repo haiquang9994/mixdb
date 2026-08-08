@@ -42,3 +42,8 @@ export interface MysqlTablePage {
   rows: Record<string, unknown>[];
   total: number;
 }
+
+export interface MongoCollectionPage {
+  documents: Record<string, unknown>[];
+  total: number;
+}

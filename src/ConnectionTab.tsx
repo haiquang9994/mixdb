@@ -9,6 +9,7 @@ import {
 } from "./savedConnections";
 import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
 import MysqlWorkspace from "./mysql/MysqlWorkspace";
+import MongoWorkspace from "./mongo/MongoWorkspace";
 import Select from "./components/Select";
 import ErrorBanner from "./components/ErrorBanner";
 import Button from "./components/Button";
@@ -70,8 +71,6 @@ function ConnectionTab({ onTitleChange }: Props) {
   const [error, setError] = useState("");
   const [tunnelStatus, setTunnelStatus] = useState("");
 
-  const [mongoCollection, setMongoCollection] = useState("");
-  const [mongoFilter, setMongoFilter] = useState("{}");
   const [redisArgs, setRedisArgs] = useState("PING");
 
   const [rawResult, setRawResult] = useState("");
@@ -302,23 +301,6 @@ function ConnectionTab({ onTitleChange }: Props) {
     setStatus("");
     setRawResult("");
     onTitleChange(t("app.newConnectionTitle"));
-  }
-
-  async function runMongoFind() {
-    if (!connectionId) return;
-    setError("");
-    try {
-      const result = await invoke<unknown[]>("mongo_find", {
-        id: connectionId,
-        db: database,
-        collection: mongoCollection,
-        filter: mongoFilter,
-        limit: 100,
-      });
-      setRawResult(JSON.stringify(result, null, 2));
-    } catch (e) {
-      setError(String(e));
-    }
   }
 
   async function runRedisCommand() {
@@ -626,6 +608,21 @@ function ConnectionTab({ onTitleChange }: Props) {
     );
   }
 
+  if (kind === "mongo") {
+    const activeSavedConnection = savedConnections.find((c) => c.id === editingId);
+    return (
+      <MongoWorkspace
+        connectionId={connectionId}
+        initialDatabase={database}
+        status={status}
+        error={error}
+        onDisconnect={disconnect}
+        sidebarWidth={activeSavedConnection?.sidebarWidth}
+        onSidebarWidthChange={updateSidebarWidth}
+      />
+    );
+  }
+
   return (
     <div className="workspace">
       <div className="row">
@@ -634,38 +631,6 @@ function ConnectionTab({ onTitleChange }: Props) {
       </div>
 
       {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
-
-      {kind === "mongo" && (
-        <fieldset>
-          <legend>{t("connection.findLegend")}</legend>
-          <div className="row">
-            <label>
-              {t("connection.collection")}{" "}
-              <input
-                value={mongoCollection}
-                onChange={(e) => setMongoCollection(e.target.value)}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-              />
-            </label>
-          </div>
-          <textarea
-            rows={3}
-            value={mongoFilter}
-            onChange={(e) => setMongoFilter(e.target.value)}
-            placeholder="{}"
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-          />
-          <div className="row">
-            <Button onClick={runMongoFind}>{t("connection.findButton")}</Button>
-          </div>
-        </fieldset>
-      )}
 
       {kind === "redis" && (
         <fieldset>

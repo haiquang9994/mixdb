@@ -1,0 +1,65 @@
+.noSqlTable {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  gap: 0.5rem;
+}
+
+.scroll {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.docCard {
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: var(--control-radius, 6px);
+  padding: 0.4rem 0.5rem;
+  background: var(--surface-bg, transparent);
+  position: relative;
+}
+
+.addRootRow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 4px;
+  margin-top: 2px;
+}
+
+.addRootButton {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: #4a90d9;
+  font-size: 0.85em;
+  padding: 4px;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.addRootButton:hover {
+  text-decoration: underline;
+}
+
+.unsaved {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.5rem;
+  font-size: 0.75em;
+  color: rgb(190, 140, 0);
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}

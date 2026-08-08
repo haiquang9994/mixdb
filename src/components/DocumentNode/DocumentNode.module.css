@@ -1,0 +1,157 @@
+.node {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 2px 4px;
+  min-height: 24px;
+}
+
+.children {
+  display: flex;
+  flex-direction: column;
+}
+
+.key {
+  font-family: "Fira Code", monospace;
+  font-size: 0.9em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lock {
+  margin-left: 0.25rem;
+  opacity: 0.6;
+  font-size: 0.85em;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-family: "Fira Code", monospace;
+  font-size: 0.75em;
+  font-weight: 600;
+  background: rgba(74, 144, 217, 0.15);
+  color: #2f6fb8;
+  flex-shrink: 0;
+}
+
+.badgeReadOnly {
+  composes: badge;
+  background: rgba(128, 128, 128, 0.15);
+  color: inherit;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.value {
+  font-family: "Fira Code", monospace;
+  font-size: 0.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  cursor: text;
+}
+
+.iconButton {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 4px;
+  opacity: 0.5;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.iconButton:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.15);
+  border-radius: 4px;
+}
+
+.showMore,
+.addButton {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: #4a90d9;
+  font-size: 0.85em;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.showMore:hover,
+.addButton:hover {
+  text-decoration: underline;
+}
+
+.addRow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 2px 4px;
+}
+
+.editor {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.editorInput {
+  min-width: 140px;
+}
+
+.editorNarrow {
+  width: 70px;
+}
+
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+}
+
+.editorConfirm,
+.editorCancel {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 4px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.editorConfirm {
+  color: #2e9e4f;
+}
+
+.editorCancel {
+  color: #c94a4a;
+}
+
+.editorError {
+  color: #c94a4a;
+  font-size: 0.8em;
+}
+
+:root[data-theme="dark"] .badge {
+  background: rgba(74, 144, 217, 0.25);
+  color: #7fb3ec;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .badge {
+    background: rgba(74, 144, 217, 0.25);
+    color: #7fb3ec;
+  }
+}

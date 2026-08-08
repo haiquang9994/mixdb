@@ -26,6 +26,8 @@ pub fn run() {
             commands::mongo_list_databases,
             commands::mongo_list_collections,
             commands::mongo_find,
+            commands::mongo_collection_page,
+            commands::mongo_update_document,
             commands::redis_command,
         ])
         .run(tauri::generate_context!())
