@@ -109,7 +109,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       .then((dbs) => {
         if (cancelled) return;
         setDatabases(dbs);
-        setSelectedDb((prev) => (prev && dbs.includes(prev) ? prev : dbs[0] ?? ""));
+        setSelectedDb((prev) => (prev && dbs.includes(prev) ? prev : ""));
       })
       .catch((e) => setLocalError(String(e)));
     return () => {
