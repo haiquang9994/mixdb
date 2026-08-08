@@ -13,6 +13,7 @@ import Select from "./components/Select";
 import ErrorBanner from "./components/ErrorBanner";
 import Button from "./components/Button";
 import Input from "./components/Input";
+import { useTranslation } from "./i18n";
 
 interface Props {
   onTitleChange: (title: string) => void;
@@ -40,6 +41,7 @@ function stableStringify(value: unknown): string {
 }
 
 function ConnectionTab({ onTitleChange }: Props) {
+  const { t } = useTranslation();
   const [kind, setKind] = useState<DbKind>("mysql");
   const [host, setHost] = useState("127.0.0.1");
   const [port, setPort] = useState(DEFAULT_PORTS.mysql);
@@ -85,7 +87,7 @@ function ConnectionTab({ onTitleChange }: Props) {
 
   async function browseForPrivateKey() {
     const path = await open({
-      title: "Select private key",
+      title: t("connection.selectPrivateKeyDialogTitle"),
       multiple: false,
       directory: false,
     });
@@ -168,7 +170,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     setSshPassphrase("");
     setError("");
     setStatus("");
-    onTitleChange("New Connection");
+    onTitleChange(t("app.newConnectionTitle"));
   }
 
   function buildConnectionConfig(): ConnectionConfig {
@@ -249,7 +251,7 @@ function ConnectionTab({ onTitleChange }: Props) {
   }
 
   async function testTunnel() {
-    setTunnelStatus("Testing...");
+    setTunnelStatus(t("connection.testingTunnel"));
     const ssh = buildSshConfig();
     if (!ssh) {
       setTunnelStatus("");
@@ -257,21 +259,23 @@ function ConnectionTab({ onTitleChange }: Props) {
     }
     try {
       await invoke("test_ssh_tunnel", { ssh });
-      setTunnelStatus("✓ Tunnel OK — SSH auth succeeded");
+      setTunnelStatus(t("connection.tunnelOk"));
     } catch (e) {
-      setTunnelStatus(`✗ ${String(e)}`);
+      setTunnelStatus(t("connection.tunnelFailed", { error: String(e) }));
     }
   }
 
   async function connect(overrideConfig?: ConnectionConfig, title?: string) {
     setError("");
-    setStatus("Connecting...");
+    setStatus(t("connection.connecting"));
     const config = overrideConfig ?? buildConnectionConfig();
     try {
       const id = await invoke<string>("connect_db", { config });
       setConnectionId(id);
-      setStatus(`Connected (${id.slice(0, 8)})`);
-      onTitleChange(title ?? (saveAsName.trim() || `${config.kind} · ${config.host}`));
+      setStatus(t("connection.connectedStatus", { id: id.slice(0, 8) }));
+      onTitleChange(
+        title ?? (saveAsName.trim() || t("connection.fallbackTitle", { kind: config.kind, host: config.host })),
+      );
     } catch (e) {
       setStatus("");
       setError(String(e));
@@ -297,7 +301,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     setConnectionId(null);
     setStatus("");
     setRawResult("");
-    onTitleChange("New Connection");
+    onTitleChange(t("app.newConnectionTitle"));
   }
 
   async function runMongoFind() {
@@ -333,18 +337,18 @@ function ConnectionTab({ onTitleChange }: Props) {
     <>
       <div className="row row-name">
         <label className="field-name">
-          {editingId ? "Name" : "Save as"}{" "}
+          {editingId ? t("connection.nameLabel") : t("connection.saveAsLabel")}{" "}
           <Input
             size="large"
             value={saveAsName}
             onChange={(e) => setSaveAsName(e.target.value)}
-            placeholder="Connection name"
+            placeholder={t("connection.connectionNamePlaceholder")}
           />
         </label>
       </div>
 
       <fieldset>
-        <legend>Database</legend>
+        <legend>{t("connection.databaseLegend")}</legend>
         <div className="method-tabs" role="tablist">
           {(["mysql", "mongo", "redis"] as DbKind[]).map((k) => (
             <button
@@ -355,17 +359,17 @@ function ConnectionTab({ onTitleChange }: Props) {
               className={`method-tab${kind === k ? " method-tab-active" : ""}`}
               onClick={() => changeKind(k)}
             >
-              {k === "mysql" ? "MySQL" : k === "mongo" ? "MongoDB" : "Redis"}
+              {k === "mysql" ? t("connection.kindMysql") : k === "mongo" ? t("connection.kindMongo") : t("connection.kindRedis")}
             </button>
           ))}
         </div>
         <div className="row">
           <label>
-            Host{" "}
+            {t("common.host")}{" "}
             <Input size="large" value={host} onChange={(e) => setHost(e.target.value)} />
           </label>
           <label>
-            Port{" "}
+            {t("common.port")}{" "}
             <Input
               size="large"
               type="number"
@@ -376,11 +380,11 @@ function ConnectionTab({ onTitleChange }: Props) {
         </div>
         <div className="row">
           <label>
-            User{" "}
+            {t("common.user")}{" "}
             <Input size="large" value={username} onChange={(e) => setUsername(e.target.value)} />
           </label>
           <label>
-            Password{" "}
+            {t("common.password")}{" "}
             <Input
               size="large"
               type="password"
@@ -390,7 +394,7 @@ function ConnectionTab({ onTitleChange }: Props) {
             />
           </label>
           <label>
-            {kind === "redis" ? "DB index" : "Database"}{" "}
+            {kind === "redis" ? t("connection.dbIndexLabel") : t("common.database")}{" "}
             <Input size="large" value={database} onChange={(e) => setDatabase(e.target.value)} />
           </label>
         </div>
@@ -399,14 +403,14 @@ function ConnectionTab({ onTitleChange }: Props) {
           <div className="row">
             <label>
               <input type="checkbox" checked={useSsl} onChange={(e) => setUseSsl(e.target.checked)} />{" "}
-              Use SSL (uncheck if the server has no/legacy SSL, e.g. old self-signed certs)
+              {t("connection.useSslLabel")}
             </label>
           </div>
         )}
       </fieldset>
 
       <fieldset>
-        <legend>Connection method</legend>
+        <legend>{t("connection.connectionMethodLegend")}</legend>
         <div className="method-tabs" role="tablist">
           <button
             type="button"
@@ -415,7 +419,7 @@ function ConnectionTab({ onTitleChange }: Props) {
             className={`method-tab${tunnelType === "direct" ? " method-tab-active" : ""}`}
             onClick={() => setTunnelType("direct")}
           >
-            TCP/IP
+            {t("connection.methodTcpIp")}
           </button>
           <button
             type="button"
@@ -424,18 +428,18 @@ function ConnectionTab({ onTitleChange }: Props) {
             className={`method-tab${tunnelType === "ssh" ? " method-tab-active" : ""}`}
             onClick={() => setTunnelType("ssh")}
           >
-            SSH
+            {t("connection.methodSsh")}
           </button>
         </div>
         {tunnelType === "ssh" && (
           <>
             <div className="row">
               <label>
-                SSH host{" "}
+                {t("connection.sshHost")}{" "}
                 <Input size="large" value={sshHost} onChange={(e) => setSshHost(e.target.value)} />
               </label>
               <label>
-                SSH port{" "}
+                {t("connection.sshPort")}{" "}
                 <Input
                   size="large"
                   type="number"
@@ -444,18 +448,18 @@ function ConnectionTab({ onTitleChange }: Props) {
                 />
               </label>
               <label>
-                SSH user{" "}
+                {t("connection.sshUser")}{" "}
                 <Input size="large" value={sshUser} onChange={(e) => setSshUser(e.target.value)} />
               </label>
               <label>
-                Auth{" "}
+                {t("connection.auth")}{" "}
                 <Select
                   value={sshAuthType}
                   onChange={(v) => setSshAuthType(v)}
                   size="large"
                   options={[
-                    { value: "password", label: "Password" },
-                    { value: "privatekey", label: "Private key" },
+                    { value: "password", label: t("connection.authPassword") },
+                    { value: "privatekey", label: t("connection.authPrivateKey") },
                   ]}
                 />
               </label>
@@ -463,7 +467,7 @@ function ConnectionTab({ onTitleChange }: Props) {
             {sshAuthType === "password" && (
               <div className="row">
                 <label>
-                  SSH password{" "}
+                  {t("connection.sshPassword")}{" "}
                   <Input
                     size="large"
                     type="password"
@@ -477,25 +481,25 @@ function ConnectionTab({ onTitleChange }: Props) {
             {sshAuthType === "privatekey" && (
               <div className="row">
                 <label>
-                  Private key file{" "}
+                  {t("connection.privateKeyFile")}{" "}
                   <Input
                     size="large"
                     value={sshKeyPath}
                     onChange={(e) => setSshKeyPath(e.target.value)}
-                    placeholder="C:\Users\you\.ssh\id_rsa"
+                    placeholder={t("connection.privateKeyPlaceholder")}
                   />
                 </label>
                 <Button size="large" onClick={browseForPrivateKey}>
-                  Browse...
+                  {t("common.browse")}
                 </Button>
                 <label>
-                  Key passphrase{" "}
+                  {t("connection.keyPassphrase")}{" "}
                   <Input
                     size="large"
                     type="password"
                     value={sshPassphrase}
                     onChange={(e) => setSshPassphrase(e.target.value)}
-                    placeholder="(leave blank if none)"
+                    placeholder={t("connection.passphrasePlaceholder")}
                     autoComplete="new-password"
                   />
                 </label>
@@ -503,7 +507,7 @@ function ConnectionTab({ onTitleChange }: Props) {
             )}
             <div className="row">
               <Button size="large" onClick={testTunnel}>
-                Test tunnel
+                {t("connection.testTunnel")}
               </Button>
               <span>{tunnelStatus}</span>
             </div>
@@ -522,18 +526,18 @@ function ConnectionTab({ onTitleChange }: Props) {
                 savedSnapshot === stableStringify({ name: saveAsName.trim(), config: buildConnectionConfig() }))
             }
           >
-            {editingId ? "Update connection" : "Save connection"}
+            {editingId ? t("connection.updateConnection") : t("connection.saveConnection")}
           </Button>
           {editingId && (
             <Button size="large" onClick={saveConnectionAsNew} disabled={!saveAsName.trim()}>
-              Save as new
+              {t("connection.saveAsNew")}
             </Button>
           )}
         </div>
         <div className="row-actions-right">
           <span>{status}</span>
           <Button size="large" onClick={() => connect()}>
-            Connect
+            {t("common.connect")}
           </Button>
         </div>
       </div>
@@ -545,13 +549,13 @@ function ConnectionTab({ onTitleChange }: Props) {
       <div className="login-view">
         <aside className="saved-list">
           <div className="saved-list-header">
-            <h3>Connections</h3>
+            <h3>{t("connection.connections")}</h3>
           </div>
           <ul>
             <li>
               <button type="button" className="saved-item saved-item-new" onClick={newConnectionForm}>
                 <span className="saved-item-icon kind-new">+</span>
-                <strong>New connection</strong>
+                <strong>{t("connection.newConnection")}</strong>
               </button>
             </li>
             {savedConnections.map((c) => (
@@ -562,7 +566,7 @@ function ConnectionTab({ onTitleChange }: Props) {
                   onClick={() => applySavedConnection(c)}
                   onDoubleClick={() => openAndConnect(c)}
                   onContextMenu={(e) => openContextMenu(e, c.id)}
-                  title="Click to edit · double-click to connect · right-click for options"
+                  title={t("connection.savedItemTooltip")}
                 >
                   <span className={`saved-item-icon kind-${c.config.kind}`}>
                     {KIND_BADGE[c.config.kind]}
@@ -588,7 +592,7 @@ function ConnectionTab({ onTitleChange }: Props) {
                   closeContextMenu();
                 }}
               >
-                Duplicate
+                {t("common.duplicate")}
               </button>
               <button
                 type="button"
@@ -598,7 +602,7 @@ function ConnectionTab({ onTitleChange }: Props) {
                   closeContextMenu();
                 }}
               >
-                Delete
+                {t("common.delete")}
               </button>
             </div>
           </>
@@ -625,7 +629,7 @@ function ConnectionTab({ onTitleChange }: Props) {
   return (
     <div className="workspace">
       <div className="row">
-        <Button onClick={disconnect}>Disconnect</Button>
+        <Button onClick={disconnect}>{t("common.disconnect")}</Button>
         <span>{status}</span>
       </div>
 
@@ -633,10 +637,10 @@ function ConnectionTab({ onTitleChange }: Props) {
 
       {kind === "mongo" && (
         <fieldset>
-          <legend>Find</legend>
+          <legend>{t("connection.findLegend")}</legend>
           <div className="row">
             <label>
-              Collection{" "}
+              {t("connection.collection")}{" "}
               <input
                 value={mongoCollection}
                 onChange={(e) => setMongoCollection(e.target.value)}
@@ -658,14 +662,14 @@ function ConnectionTab({ onTitleChange }: Props) {
             spellCheck={false}
           />
           <div className="row">
-            <Button onClick={runMongoFind}>Find</Button>
+            <Button onClick={runMongoFind}>{t("connection.findButton")}</Button>
           </div>
         </fieldset>
       )}
 
       {kind === "redis" && (
         <fieldset>
-          <legend>Command</legend>
+          <legend>{t("connection.commandLegend")}</legend>
           <input
             value={redisArgs}
             onChange={(e) => setRedisArgs(e.target.value)}
@@ -676,7 +680,7 @@ function ConnectionTab({ onTitleChange }: Props) {
             spellCheck={false}
           />
           <div className="row">
-            <Button onClick={runRedisCommand}>Execute</Button>
+            <Button onClick={runRedisCommand}>{t("connection.execute")}</Button>
           </div>
         </fieldset>
       )}

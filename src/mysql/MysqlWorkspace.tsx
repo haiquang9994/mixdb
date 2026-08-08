@@ -6,6 +6,7 @@ import Input from "../components/Input";
 import SqlTable from "../components/SqlTable";
 import ItemList from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
+import { useTranslation } from "../i18n";
 
 interface Props {
   connectionId: string;
@@ -24,6 +25,7 @@ const MIN_SIDEBAR_WIDTH = 140;
 const MAX_SIDEBAR_WIDTH = 480;
 
 function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, onSidebarWidthChange }: Props) {
+  const { t } = useTranslation();
   const [databases, setDatabases] = useState<string[]>([]);
   const [selectedDb, setSelectedDb] = useState(initialDatabase ?? "");
   const [tables, setTables] = useState<string[]>([]);
@@ -172,7 +174,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     : tables;
 
   const tablesEmptyMessage =
-    tables.length === 0 ? "No tables" : filteredTables.length === 0 ? "No matching tables" : undefined;
+    tables.length === 0 ? t("mysql.noTables") : filteredTables.length === 0 ? t("mysql.noMatchingTables") : undefined;
 
   return (
     <div className="mysql-workspace">
@@ -180,19 +182,19 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
         <div className="mysql-header-left">
           {serverInfo && (
             <span className="mysql-server-info">
-              {serverInfo.os} · MySQL {serverInfo.version}
+              {t("mysql.serverInfo", { os: serverInfo.os, version: serverInfo.version })}
             </span>
           )}
         </div>
         <label className="mysql-db-select">
-          Database{" "}
+          {t("mysql.databaseLabel")}{" "}
           <Select
             value={selectedDb}
             onChange={(db) => {
               setSelectedDb(db);
               setSelectedTable(null);
             }}
-            placeholder="(none)"
+            placeholder={t("mysql.databasePlaceholder")}
             size="normal"
             options={databases.map((db) => ({ value: db, label: db }))}
           />
@@ -205,7 +207,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             className={`method-tab${contentMode === "data" ? " method-tab-active" : ""}`}
             onClick={() => setContentMode("data")}
           >
-            Data
+            {t("mysql.dataTab")}
           </button>
         </div>
       </div>
@@ -219,7 +221,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           <Input
             size="normal"
             className="mysql-sidebar-search"
-            placeholder="Search tables..."
+            placeholder={t("mysql.searchTablesPlaceholder")}
             value={tableFilter}
             onChange={(e) => setTableFilter(e.target.value)}
           />
@@ -233,8 +235,8 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             <button
               type="button"
               className="mysql-sidebar-action"
-              aria-label="Reload tables"
-              title="Reload tables"
+              aria-label={t("mysql.reloadTables")}
+              title={t("mysql.reloadTables")}
               disabled={!selectedDb || tablesLoading}
               onClick={reloadTables}
             >
@@ -264,13 +266,13 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           onDoubleClick={handleResizeDoubleClick}
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize sidebar"
-          title="Drag to resize, double-click to fit"
+          aria-label={t("mysql.resizeSidebar")}
+          title={t("mysql.resizeSidebarTooltip")}
         />
 
         <section className="mysql-content">
           {contentMode === "data" && !selectedTable && (
-            <p className="muted">Select a table to view its data.</p>
+            <p className="muted">{t("mysql.selectTablePrompt")}</p>
           )}
           {contentMode === "data" && selectedDb && selectedTable && (
             <SqlTable

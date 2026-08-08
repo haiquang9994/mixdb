@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "../../i18n";
 import styles from "./ErrorBanner.module.css";
 
 const AUTO_DISMISS_MS = 60_000;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 function ErrorBanner({ message, onDismiss }: Props) {
+  const { t } = useTranslation();
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
 
@@ -23,7 +25,7 @@ function ErrorBanner({ message, onDismiss }: Props) {
   return (
     <p className={styles.banner}>
       {message}
-      <button type="button" className={styles.dismiss} aria-label="Dismiss error" onClick={onDismiss}>
+      <button type="button" className={styles.dismiss} aria-label={t("errorBanner.dismiss")} onClick={onDismiss}>
         ×
       </button>
       <span className={styles.countdown}>

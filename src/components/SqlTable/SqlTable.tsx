@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
 import Pagination from "../Pagination";
+import { useTranslation } from "../../i18n";
 import styles from "./SqlTable.module.css";
 
 interface EditingCell {
@@ -44,6 +45,7 @@ interface Props {
 const PAGE_SIZES = [100, 200, 500, 1000];
 
 function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidth }: Props) {
+  const { t } = useTranslation();
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(100);
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
@@ -316,7 +318,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   if (columns.length === 0) {
-    return <p className="muted">Loading...</p>;
+    return <p className="muted">{t("sqlTable.loading")}</p>;
   }
 
   return (
@@ -412,8 +414,8 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
             ))}
           </tbody>
         </table>
-        {loading && <p className="muted">Loading...</p>}
-        {!loading && rows.length === 0 && <p className="muted">No rows.</p>}
+        {loading && <p className="muted">{t("sqlTable.loading")}</p>}
+        {!loading && rows.length === 0 && <p className="muted">{t("sqlTable.noRows")}</p>}
       </div>
       <div className={styles.footer}>
         <Pagination

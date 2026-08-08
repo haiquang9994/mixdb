@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import ConnectionTab from "./ConnectionTab";
 import SettingsModal from "./components/SettingsModal";
 import { useTheme } from "./theme";
+import { useTranslation } from "./i18n";
 import "./App.css";
 
 interface TabInfo {
@@ -9,11 +10,13 @@ interface TabInfo {
   title: string;
 }
 
-function newTab(): TabInfo {
-  return { id: crypto.randomUUID(), title: "New Connection" };
-}
-
 function App() {
+  const { t } = useTranslation();
+
+  function newTab(): TabInfo {
+    return { id: crypto.randomUUID(), title: t("app.newConnectionTitle") };
+  }
+
   const [tabs, setTabs] = useState<TabInfo[]>([newTab()]);
   const [activeId, setActiveId] = useState(tabs[0].id);
   const [theme, setTheme] = useTheme();
@@ -66,7 +69,7 @@ function App() {
           type="button"
           className="brand"
           onClick={() => setSettingsOpen(true)}
-          title="Cài đặt"
+          title={t("app.settings")}
         >
           MixDB
         </button>
@@ -83,13 +86,13 @@ function App() {
                 e.stopPropagation();
                 closeTab(tab.id);
               }}
-              title="Close tab"
+              title={t("app.closeTab")}
             >
               ×
             </button>
           </div>
         ))}
-        <button className="tab-new" onClick={openTab} title="New connection tab">
+        <button className="tab-new" onClick={openTab} title={t("app.newConnectionTab")}>
           +
         </button>
       </div>

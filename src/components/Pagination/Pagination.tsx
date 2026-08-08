@@ -1,5 +1,6 @@
 import Select from "../Select";
 import Button from "../Button";
+import { useTranslation } from "../../i18n";
 import styles from "./Pagination.module.css";
 
 interface Props {
@@ -25,24 +26,23 @@ function Pagination({
   onPageSizeChange,
   className,
 }: Props) {
+  const { t } = useTranslation();
   return (
     <div className={`${styles.pagination}${className ? ` ${className}` : ""}`}>
       <Button
         size="small"
         className={styles.btn}
-        aria-label="Previous page"
+        aria-label={t("pagination.previousPage")}
         disabled={page <= 0 || loading}
         onClick={() => onPageChange(Math.max(0, page - 1))}
       >
         ‹
       </Button>
-      <span>
-        Page {page + 1} of {pageCount} · {total} rows
-      </span>
+      <span>{t("pagination.status", { page: page + 1, pageCount, total })}</span>
       <Button
         size="small"
         className={styles.btn}
-        aria-label="Next page"
+        aria-label={t("pagination.nextPage")}
         disabled={page + 1 >= pageCount || loading}
         onClick={() => onPageChange(page + 1)}
       >
@@ -55,7 +55,7 @@ function Pagination({
         className={styles.pageSizeSelect}
         triggerClassName={styles.pageSizeSelectTrigger}
         optionAlign="right"
-        options={pageSizeOptions.map((n) => ({ value: n, label: `${n} / page`, optionLabel: n }))}
+        options={pageSizeOptions.map((n) => ({ value: n, label: t("pagination.perPage", { n }), optionLabel: n }))}
       />
     </div>
   );

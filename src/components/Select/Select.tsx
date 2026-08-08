@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "../../i18n";
 import styles from "./Select.module.css";
 
 export interface SelectOption<T extends string | number> {
@@ -32,7 +33,7 @@ function Select<T extends string | number>({
   value,
   options,
   onChange,
-  placeholder = "Select...",
+  placeholder,
   disabled,
   size = "normal",
   className,
@@ -40,6 +41,7 @@ function Select<T extends string | number>({
   ariaLabel,
   optionAlign = "left",
 }: SelectProps<T>) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
@@ -178,7 +180,7 @@ function Select<T extends string | number>({
         onKeyDown={onKeyDown}
       >
         <span className={styles.value} style={{ textAlign: optionAlign }}>
-          {selected ? selected.label : placeholder}
+          {selected ? selected.label : placeholder ?? t("select.placeholder")}
         </span>
         <svg
           className={styles.chevron}
@@ -211,7 +213,7 @@ function Select<T extends string | number>({
                 {opt.optionLabel ?? opt.label}
               </li>
             ))}
-            {options.length === 0 && <li className={styles.empty}>No options</li>}
+            {options.length === 0 && <li className={styles.empty}>{t("select.noOptions")}</li>}
           </ul>,
           document.body,
         )}
