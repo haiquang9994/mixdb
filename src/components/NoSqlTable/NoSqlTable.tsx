@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { mongoCollectionPage, mongoDeleteDocument, mongoUpdateDocument, type DocUpdateOps } from "../../mongo/api";
 import { deleteAtPath, getAtPath, renameKeyAtPath, setAtPath } from "../../mongo/docOps";
-import { isWrapper, type TypedDocument, type TypedValue } from "../../mongo/bsonTypes";
-import DocumentNode, { ValueEditor } from "../DocumentNode";
+import type { TypedDocument, TypedValue } from "../../mongo/bsonTypes";
+import Document from "../Document";
 import Pagination from "../Pagination";
 import Input from "../Input";
 import { useTranslation } from "../../i18n";
@@ -21,15 +21,7 @@ interface PendingOps {
   originalSnapshot: TypedDocument;
 }
 
-type EditMode = "value" | "rename";
-
-interface ActiveEdit {
-  path: string;
-  mode: EditMode;
-}
-
 const DOC_PAGE_SIZES = [20, 50, 100, 200];
-const EMPTY_SET: Set<string> = new Set();
 
 function collapseOpsUnderPrefix(setOps: Record<string, TypedValue>, unsetOps: Set<string>, prefix: string) {
   const dotted = `${prefix}.`;
@@ -59,18 +51,6 @@ function comparePathsForDeletion(a: string, b: string): number {
   return bParts.length - aParts.length;
 }
 
-function idPreviewText(idValue: TypedValue): string {
-  if (idValue === null || idValue === undefined) return "null";
-  if (typeof idValue === "string" || typeof idValue === "number" || typeof idValue === "boolean") {
-    return String(idValue);
-  }
-  if (isWrapper(idValue)) {
-    const v = idValue.$value;
-    return typeof v === "object" && v !== null ? JSON.stringify(v) : String(v);
-  }
-  return JSON.stringify(idValue);
-}
-
 function documentMatchesQuery(doc: TypedDocument, query: string): boolean {
   if (!query) return true;
   return JSON.stringify(doc).toLowerCase().includes(query);
@@ -83,12 +63,10 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
   const [documents, setDocuments] = useState<TypedDocument[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [addingRootProp, setAddingRootProp] = useState<number | null>(null);
-  const [newRootKey, setNewRootKey] = useState("");
-  const [collapsedCards, setCollapsedCards] = useState<Set<number>>(new Set());
-  const [activeEdit, setActiveEdit] = useState<Map<number, ActiveEdit>>(new Map());
+  // Bumped on every load so the rendered Documents remount and drop their view state
+  // (open editor, collapse, delete confirmation) instead of carrying it to the new page.
+  const [loadId, setLoadId] = useState(0);
   const [deleteMarks, setDeleteMarks] = useState<Map<number, Set<string>>>(new Map());
-  const [confirmingDeleteIndex, setConfirmingDeleteIndex] = useState<number | null>(null);
   const [deletingIndex, setDeletingIndex] = useState<number | null>(null);
   const [savedFlash, setSavedFlash] = useState<Set<number>>(new Set());
   const [query, setQuery] = useState("");
@@ -117,10 +95,8 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
         result.documents.forEach((doc, i) => originalIdsRef.current.set(i, doc._id ?? null));
         setDocuments(result.documents);
         setTotal(result.total);
-        setCollapsedCards(new Set());
-        setActiveEdit(new Map());
         setDeleteMarks(new Map());
-        setConfirmingDeleteIndex(null);
+        setLoadId((n) => n + 1);
       })
       .catch((e) => onError(String(e)))
       .finally(() => {
@@ -161,38 +137,9 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
     );
   }
 
-  /** Clears any active field editor and pending delete marks for a document,
-   * used after a save or discard to reset its transient edit state. */
-  function exitEditMode(index: number) {
-    setActiveEdit((prev) => {
-      if (!prev.has(index)) return prev;
-      const next = new Map(prev);
-      next.delete(index);
-      return next;
-    });
+  function clearDeleteMarks(index: number) {
     setDeleteMarks((prev) => {
       if (!prev.has(index)) return prev;
-      const next = new Map(prev);
-      next.delete(index);
-      return next;
-    });
-  }
-
-  function activateEditAt(index: number, path: string[], mode: EditMode) {
-    setActiveEdit((prev) => {
-      const next = new Map(prev);
-      next.set(index, { path: path.join("."), mode });
-      return next;
-    });
-  }
-
-  /** Closes the active editor at index/path/mode — a no-op if the document has already
-   * switched to editing a different field (e.g. via a mousedown-driven field switch that
-   * beat this field's own blur-triggered close), so that close can't clobber the switch. */
-  function finishEdit(index: number, path: string, mode: EditMode) {
-    setActiveEdit((prev) => {
-      const current = prev.get(index);
-      if (!current || current.path !== path || current.mode !== mode) return prev;
       const next = new Map(prev);
       next.delete(index);
       return next;
@@ -300,31 +247,21 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
 
   function cancelEdit(index: number) {
     discardDocument(index);
-    exitEditMode(index);
+    clearDeleteMarks(index);
   }
 
   async function saveDocument(index: number) {
     await flushDocument(index);
-    exitEditMode(index);
+    clearDeleteMarks(index);
   }
 
   function flushAll(): Promise<void[]> {
     return Promise.all(Array.from(pendingOpsRef.current.keys()).map((index) => flushDocument(index)));
   }
 
-  function toggleCollapse(index: number) {
-    setCollapsedCards((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
-  }
-
   async function deleteDocumentAt(index: number) {
     const docId = originalIdsRef.current.get(index);
     if (docId === undefined) return;
-    setConfirmingDeleteIndex(null);
     pendingOpsRef.current.delete(index);
     await flushAll();
     setDeletingIndex(index);
@@ -394,151 +331,28 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
       <div className={styles.scrollWrap}>
         <div className={styles.scroll}>
           {documents.length === 0 && !loading && <p className="muted">{t("noSqlTable.noDocuments")}</p>}
-          {documents.length > 0 && visibleIndices.length === 0 && (
-            <p className="muted">{t("noSqlTable.noMatches")}</p>
-          )}
+          {documents.length > 0 && visibleIndices.length === 0 && <p className="muted">{t("noSqlTable.noMatches")}</p>}
           {visibleIndices.map((i) => {
-            const doc = documents[i];
-            const idValue = (doc._id ?? null) as TypedValue;
-            const otherKeys = Object.keys(doc).filter((k) => k !== "_id");
-            const pending = pendingOpsRef.current.get(i);
             const marks = deleteMarks.get(i);
+            const pending = pendingOpsRef.current.get(i);
             const pendingCount = (pending ? Object.keys(pending.set).length : 0) + (marks ? marks.size : 0);
-            const collapsed = collapsedCards.has(i);
-            const active = activeEdit.get(i) ?? null;
-            // "Edit mode" (field click affordances, always-visible delete icons) reflects
-            // whether a prop-name/value input is actually open right now — it's separate
-            // from "has unsaved changes", which drives the Save/Discard buttons below.
-            const isEditing = active !== null || addingRootProp === i;
             return (
-              <div key={i} className={styles.docCard}>
-                <div className={styles.docCardHeader}>
-                  <button
-                    type="button"
-                    className={styles.collapseToggle}
-                    onClick={() => toggleCollapse(i)}
-                    title={collapsed ? t("noSqlTable.expandDocument") : t("noSqlTable.collapseDocument")}
-                  >
-                    {collapsed ? "▸" : "▾"}
-                  </button>
-                  <span className={styles.docIndex}>#{page * pageSize + i + 1}</span>
-                  <span className={styles.docIdPreview} title={idPreviewText(idValue)}>
-                    {idPreviewText(idValue)}
-                  </span>
-                  <div className={styles.docHeaderSpacer} />
-                  {pendingCount > 0 && (
-                    <>
-                      <span className={styles.unsaved}>{t("noSqlTable.unsavedChanges", { n: pendingCount })}</span>
-                      <button type="button" className={styles.saveBtn} onClick={() => void saveDocument(i)}>
-                        {t("common.save")}
-                      </button>
-                      <button type="button" className={styles.discardBtn} onClick={() => cancelEdit(i)}>
-                        {t("noSqlTable.discardChanges")}
-                      </button>
-                    </>
-                  )}
-                  {pendingCount === 0 && savedFlash.has(i) && (
-                    <span className={styles.savedFlash}>✓ {t("noSqlTable.savedFlash")}</span>
-                  )}
-                  {confirmingDeleteIndex === i ? (
-                    <span className={styles.confirmDelete}>
-                      {t("noSqlTable.confirmDeleteDocument")}
-                      <button type="button" className={styles.confirmDeleteYes} onClick={() => void deleteDocumentAt(i)}>
-                        {t("common.delete")}
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.confirmDeleteNo}
-                        onClick={() => setConfirmingDeleteIndex(null)}
-                      >
-                        {t("common.cancel")}
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className={styles.deleteDocButton}
-                      disabled={deletingIndex === i}
-                      title={t("noSqlTable.deleteDocument")}
-                      onClick={() => setConfirmingDeleteIndex(i)}
-                    >
-                      🗑
-                    </button>
-                  )}
-                </div>
-                {!collapsed && (
-                  <>
-                    <DocumentNode
-                      path={["_id"]}
-                      propKey="_id"
-                      value={idValue}
-                      parentKind="object"
-                      readOnly
-                      depth={0}
-                      documentEditing={isEditing}
-                      activeEditPath={active?.path ?? null}
-                      activeEditMode={active?.mode ?? null}
-                      deletedPaths={marks ?? EMPTY_SET}
-                      onRequestEdit={() => {}}
-                      onActivateEdit={(path, mode) => activateEditAt(i, path, mode)}
-                      onFinishEdit={(path, mode) => finishEdit(i, path.join("."), mode)}
-                      onToggleDelete={(path) => toggleDeleteMark(i, path)}
-                      onSetValue={(path, value) => setValueAt(i, path, value)}
-                      onRenameProp={(path, newKey) => void renameAt(i, path, newKey)}
-                      onAddChild={(parentPath, key, value) => addChildAt(i, parentPath, key, value)}
-                    />
-                    {otherKeys.map((key) => (
-                      <DocumentNode
-                        key={key}
-                        path={[key]}
-                        propKey={key}
-                        value={doc[key]}
-                        parentKind="object"
-                        depth={0}
-                        documentEditing={isEditing}
-                        activeEditPath={active?.path ?? null}
-                        activeEditMode={active?.mode ?? null}
-                        deletedPaths={marks ?? EMPTY_SET}
-                        onRequestEdit={() => {}}
-                        onActivateEdit={(path, mode) => activateEditAt(i, path, mode)}
-                        onFinishEdit={(path, mode) => finishEdit(i, path.join("."), mode)}
-                        onToggleDelete={(path) => toggleDeleteMark(i, path)}
-                        onSetValue={(path, value) => setValueAt(i, path, value)}
-                        onRenameProp={(path, newKey) => void renameAt(i, path, newKey)}
-                        onAddChild={(parentPath, key2, value) => addChildAt(i, parentPath, key2, value)}
-                      />
-                    ))}
-                    {addingRootProp === i ? (
-                      <div className={styles.addRootRow}>
-                        <Input
-                          size="small"
-                          autoFocus
-                          placeholder={t("noSqlTable.propertyNamePlaceholder")}
-                          value={newRootKey}
-                          onChange={(e) => setNewRootKey(e.target.value)}
-                        />
-                        <ValueEditor
-                          initialValue=""
-                          onCommit={(value) => {
-                            if (!newRootKey.trim()) return;
-                            addChildAt(i, [], newRootKey.trim(), value);
-                            setAddingRootProp(null);
-                            setNewRootKey("");
-                          }}
-                          onCancel={() => {
-                            setAddingRootProp(null);
-                            setNewRootKey("");
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <button type="button" className={styles.addRootButton} onClick={() => setAddingRootProp(i)}>
-                        + {t("noSqlTable.addProperty")}
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
+              <Document
+                key={`${loadId}:${i}`}
+                doc={documents[i]}
+                displayNumber={page * pageSize + i + 1}
+                deletedPaths={marks}
+                pendingCount={pendingCount}
+                saved={savedFlash.has(i)}
+                deleting={deletingIndex === i}
+                onSetValue={(path, value) => setValueAt(i, path, value)}
+                onRenameProp={(path, newKey) => void renameAt(i, path, newKey)}
+                onAddChild={(parentPath, key, value) => addChildAt(i, parentPath, key, value)}
+                onToggleDelete={(path) => toggleDeleteMark(i, path)}
+                onSave={() => void saveDocument(i)}
+                onDiscard={() => cancelEdit(i)}
+                onDelete={() => void deleteDocumentAt(i)}
+              />
             );
           })}
         </div>

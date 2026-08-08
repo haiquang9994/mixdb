@@ -1,0 +1,177 @@
+.docCard {
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: var(--control-radius, 6px);
+  padding: 0.4rem 0.5rem;
+  background: var(--surface-bg, transparent);
+  position: relative;
+}
+
+.docCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.3rem;
+  margin-bottom: 0.2rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.collapseToggle {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 2px;
+  opacity: 0.6;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 0.8em;
+}
+
+.collapseToggle:hover {
+  opacity: 1;
+}
+
+.docIndex {
+  flex-shrink: 0;
+  font-size: 0.75em;
+  font-weight: 600;
+  opacity: 0.55;
+}
+
+.docIdPreview {
+  font-size: 0.75em;
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+  min-width: 0;
+}
+
+.docHeaderSpacer {
+  flex: 1;
+}
+
+.addRootRow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 4px;
+  margin-top: 2px;
+}
+
+.addRootButton {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: #4a90d9;
+  font-size: 0.85em;
+  padding: 4px;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.addRootButton:hover {
+  text-decoration: underline;
+}
+
+.unsaved {
+  font-size: 0.75em;
+  color: rgb(190, 140, 0);
+  white-space: nowrap;
+}
+
+.saveBtn,
+.discardBtn {
+  flex-shrink: 0;
+  border: none;
+  box-shadow: none;
+  font-size: 0.75em;
+  padding: 2px 8px;
+  border-radius: var(--control-radius, 6px);
+  cursor: pointer;
+}
+
+.saveBtn {
+  background: rgba(46, 158, 79, 0.15);
+  color: #2e9e4f;
+}
+
+.saveBtn:hover {
+  background: rgba(46, 158, 79, 0.28);
+}
+
+.discardBtn {
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+}
+
+.discardBtn:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.savedFlash {
+  flex-shrink: 0;
+  font-size: 0.75em;
+  color: #2e9e4f;
+  white-space: nowrap;
+}
+
+.confirmDelete {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75em;
+  color: #c94a4a;
+  white-space: nowrap;
+}
+
+.confirmDeleteYes,
+.confirmDeleteNo {
+  border: none;
+  box-shadow: none;
+  font-size: 1em;
+  padding: 1px 7px;
+  border-radius: var(--control-radius, 6px);
+  cursor: pointer;
+}
+
+.confirmDeleteYes {
+  background: rgba(201, 74, 74, 0.15);
+  color: #c94a4a;
+}
+
+.confirmDeleteYes:hover {
+  background: rgba(201, 74, 74, 0.28);
+}
+
+.confirmDeleteNo {
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+}
+
+.confirmDeleteNo:hover {
+  opacity: 1;
+}
+
+.deleteDocButton {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 4px;
+  opacity: 0.5;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.deleteDocButton:hover {
+  opacity: 1;
+  background: rgba(201, 74, 74, 0.15);
+  border-radius: 4px;
+}
