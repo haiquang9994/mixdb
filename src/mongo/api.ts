@@ -42,3 +42,12 @@ export function mongoUpdateDocument(
 ): Promise<void> {
   return invoke<void>("mongo_update_document", { id, db, collection, docId, ops });
 }
+
+export function mongoDeleteDocument(
+  id: string,
+  db: string,
+  collection: string,
+  docId: TypedValue,
+): Promise<void> {
+  return invoke<void>("mongo_delete_document", { id, db, collection, docId });
+}

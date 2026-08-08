@@ -263,6 +263,22 @@ pub async fn mongo_update_document(
 }
 
 #[tauri::command]
+pub async fn mongo_delete_document(
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+    collection: String,
+    doc_id: Value,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mongo(client)) => mongo::delete_document(client, &db, &collection, &doc_id).await,
+        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn redis_command(
     state: State<'_, AppState>,
     id: String,

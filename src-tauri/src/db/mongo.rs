@@ -352,3 +352,23 @@ pub async fn update_document(
     }
     Ok(())
 }
+
+/// Deletes exactly one document, identified by its `_id`.
+pub async fn delete_document(
+    client: &Client,
+    db: &str,
+    collection: &str,
+    doc_id: &Value,
+) -> Result<(), String> {
+    let coll = client.database(db).collection::<Document>(collection);
+    let filter = doc! { "_id": json_to_bson(doc_id)? };
+
+    let result = coll.delete_one(filter).await.map_err(|e| e.to_string())?;
+    if result.deleted_count != 1 {
+        return Err(format!(
+            "Expected to delete exactly 1 document, deleted {}",
+            result.deleted_count
+        ));
+    }
+    Ok(())
+}
