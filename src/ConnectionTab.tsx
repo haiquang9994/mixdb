@@ -11,6 +11,7 @@ import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection
 import MysqlWorkspace from "./mysql/MysqlWorkspace";
 import Select from "./components/Select";
 import ErrorBanner from "./components/ErrorBanner";
+import Button from "./components/Button";
 
 interface Props {
   onTitleChange: (title: string) => void;
@@ -527,9 +528,9 @@ function ConnectionTab({ onTitleChange }: Props) {
                     spellCheck={false}
                   />
                 </label>
-                <button type="button" onClick={browseForPrivateKey}>
+                <Button size="large" onClick={browseForPrivateKey}>
                   Browse...
-                </button>
+                </Button>
                 <label>
                   Key passphrase{" "}
                   <input
@@ -546,9 +547,9 @@ function ConnectionTab({ onTitleChange }: Props) {
               </div>
             )}
             <div className="row">
-              <button type="button" onClick={testTunnel}>
+              <Button size="large" onClick={testTunnel}>
                 Test tunnel
-              </button>
+              </Button>
               <span>{tunnelStatus}</span>
             </div>
           </>
@@ -557,8 +558,8 @@ function ConnectionTab({ onTitleChange }: Props) {
 
       <div className="row row-actions">
         <div className="row-actions-left">
-          <button
-            type="button"
+          <Button
+            size="large"
             onClick={saveConnection}
             disabled={
               !saveAsName.trim() ||
@@ -567,16 +568,18 @@ function ConnectionTab({ onTitleChange }: Props) {
             }
           >
             {editingId ? "Update connection" : "Save connection"}
-          </button>
+          </Button>
           {editingId && (
-            <button type="button" onClick={saveConnectionAsNew} disabled={!saveAsName.trim()}>
+            <Button size="large" onClick={saveConnectionAsNew} disabled={!saveAsName.trim()}>
               Save as new
-            </button>
+            </Button>
           )}
         </div>
         <div className="row-actions-right">
           <span>{status}</span>
-          <button onClick={() => connect()}>Connect</button>
+          <Button size="large" onClick={() => connect()}>
+            Connect
+          </Button>
         </div>
       </div>
     </>
@@ -667,7 +670,7 @@ function ConnectionTab({ onTitleChange }: Props) {
   return (
     <div className="workspace">
       <div className="row">
-        <button onClick={disconnect}>Disconnect</button>
+        <Button onClick={disconnect}>Disconnect</Button>
         <span>{status}</span>
       </div>
 
@@ -700,7 +703,7 @@ function ConnectionTab({ onTitleChange }: Props) {
             spellCheck={false}
           />
           <div className="row">
-            <button onClick={runMongoFind}>Find</button>
+            <Button onClick={runMongoFind}>Find</Button>
           </div>
         </fieldset>
       )}
@@ -718,7 +721,7 @@ function ConnectionTab({ onTitleChange }: Props) {
             spellCheck={false}
           />
           <div className="row">
-            <button onClick={runRedisCommand}>Execute</button>
+            <Button onClick={runRedisCommand}>Execute</Button>
           </div>
         </fieldset>
       )}

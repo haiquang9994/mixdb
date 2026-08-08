@@ -1,4 +1,5 @@
 import Select from "../Select";
+import Button from "../Button";
 import styles from "./Pagination.module.css";
 
 interface Props {
@@ -26,27 +27,27 @@ function Pagination({
 }: Props) {
   return (
     <div className={`${styles.pagination}${className ? ` ${className}` : ""}`}>
-      <button
-        type="button"
+      <Button
+        size="small"
         className={styles.btn}
         aria-label="Previous page"
         disabled={page <= 0 || loading}
         onClick={() => onPageChange(Math.max(0, page - 1))}
       >
         ‹
-      </button>
+      </Button>
       <span>
         Page {page + 1} of {pageCount} · {total} rows
       </span>
-      <button
-        type="button"
+      <Button
+        size="small"
         className={styles.btn}
         aria-label="Next page"
         disabled={page + 1 >= pageCount || loading}
         onClick={() => onPageChange(page + 1)}
       >
         ›
-      </button>
+      </Button>
       <Select
         value={pageSize}
         onChange={onPageSizeChange}
