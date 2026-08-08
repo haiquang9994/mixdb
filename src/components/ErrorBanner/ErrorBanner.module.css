@@ -1,0 +1,89 @@
+.banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #d32f2f;
+  margin: 0;
+  padding-bottom: 3px;
+  overflow: hidden;
+}
+
+.countdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background-color: rgba(211, 47, 47, 0.15);
+}
+
+.countdownBar {
+  display: block;
+  height: 100%;
+  background-color: #d32f2f;
+  animation-name: countdown-shrink;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes countdown-shrink {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+.dismiss {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  background-color: rgba(211, 47, 47, 0.15);
+  box-shadow: none;
+  color: #d32f2f;
+  font-size: 0.95em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dismiss:hover {
+  background-color: rgba(211, 47, 47, 0.3);
+  border-color: transparent;
+}
+
+.dismiss:active {
+  background-color: rgba(211, 47, 47, 0.4);
+  border-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  .countdown {
+    background-color: rgba(255, 99, 99, 0.2);
+  }
+
+  .countdownBar {
+    background-color: #ff6b6b;
+  }
+
+  .dismiss {
+    background-color: rgba(255, 99, 99, 0.2);
+    color: #ff6b6b;
+  }
+
+  .dismiss:hover {
+    background-color: rgba(255, 99, 99, 0.35);
+  }
+
+  .dismiss:active {
+    background-color: rgba(255, 99, 99, 0.45);
+  }
+}

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
-import Pagination from "../Pagination/Pagination";
+import Pagination from "../Pagination";
 import styles from "./SqlTable.module.css";
 
 interface EditingCell {

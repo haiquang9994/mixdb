@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mysqlListDatabases, mysqlListTables, mysqlServerInfo } from "./api";
-import Select from "../components/Select/Select";
+import Select from "../components/Select";
 import ErrorBanner from "../components/ErrorBanner";
-import SqlTable from "../components/SqlTable/SqlTable";
+import SqlTable from "../components/SqlTable";
 
 interface Props {
   connectionId: string;

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import styles from "./ErrorBanner.module.css";
 
 const AUTO_DISMISS_MS = 60_000;
 
@@ -20,16 +21,16 @@ function ErrorBanner({ message, onDismiss }: Props) {
   }, [message]);
 
   return (
-    <p className="error">
+    <p className={styles.banner}>
       {message}
-      <button type="button" className="error-dismiss" aria-label="Dismiss error" onClick={onDismiss}>
+      <button type="button" className={styles.dismiss} aria-label="Dismiss error" onClick={onDismiss}>
         ×
       </button>
-      <span className="error-countdown">
+      <span className={styles.countdown}>
         {/* key={message} remounts the bar (and its CSS animation) per new error */}
         <span
           key={message}
-          className="error-countdown-bar"
+          className={styles.countdownBar}
           style={{ animationDuration: `${AUTO_DISMISS_MS}ms` }}
         />
       </span>

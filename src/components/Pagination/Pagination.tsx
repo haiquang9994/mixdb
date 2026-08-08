@@ -1,4 +1,4 @@
-import Select from "../Select/Select";
+import Select from "../Select";
 import styles from "./Pagination.module.css";
 
 interface Props {
