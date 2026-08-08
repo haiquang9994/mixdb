@@ -4,6 +4,8 @@ import Select from "../components/Select";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import SqlTable from "../components/SqlTable";
+import ItemList from "../components/ItemList";
+import itemListStyles from "../components/ItemList/ItemList.module.css";
 
 interface Props {
   connectionId: string;
@@ -79,7 +81,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     }
     const longest = tables.reduce((a, b) => (b.length > a.length ? b : a), "");
     const probe = document.createElement("button");
-    probe.className = "mysql-table-item";
+    probe.className = itemListStyles.item;
     probe.style.position = "fixed";
     probe.style.top = "-9999px";
     probe.style.left = "-9999px";
@@ -169,6 +171,9 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     ? tables.filter((t) => t.toLowerCase().includes(tableFilter.trim().toLowerCase()))
     : tables;
 
+  const tablesEmptyMessage =
+    tables.length === 0 ? "No tables" : filteredTables.length === 0 ? "No matching tables" : undefined;
+
   return (
     <div className="mysql-workspace">
       <div className="mysql-header">
@@ -218,25 +223,12 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             value={tableFilter}
             onChange={(e) => setTableFilter(e.target.value)}
           />
-          <div className="mysql-sidebar-list">
-            <ul>
-              {filteredTables.map((t) => (
-                <li key={t}>
-                  <button
-                    type="button"
-                    className={`mysql-table-item${t === selectedTable ? " mysql-table-item-active" : ""}`}
-                    onClick={() => selectTable(t)}
-                  >
-                    {t}
-                  </button>
-                </li>
-              ))}
-              {tables.length === 0 && <li className="muted mysql-sidebar-empty">No tables</li>}
-              {tables.length > 0 && filteredTables.length === 0 && (
-                <li className="muted mysql-sidebar-empty">No matching tables</li>
-              )}
-            </ul>
-          </div>
+          <ItemList
+            items={filteredTables}
+            selectedItem={selectedTable}
+            onSelect={selectTable}
+            emptyMessage={tablesEmptyMessage}
+          />
           <div className="mysql-sidebar-actions">
             <button
               type="button"

@@ -434,14 +434,6 @@ textarea {
   padding-right: 0.15rem;
 }
 
-.mysql-sidebar-list {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
 .mysql-sidebar-resizer {
   flex: 0 0 5px;
   align-self: stretch;
@@ -519,43 +511,6 @@ textarea {
   to {
     transform: rotate(360deg);
   }
-}
-
-.mysql-sidebar ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.mysql-sidebar-empty {
-  padding: 0.5rem 0.6rem;
-}
-
-.mysql-table-item {
-  width: 100%;
-  text-align: left;
-  border: none;
-  box-shadow: none;
-  background: transparent;
-  padding: 0.4rem 0.6rem;
-  border-radius: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mysql-table-item:hover {
-  background: rgba(128, 128, 128, 0.15);
-  border-color: transparent;
-}
-
-.mysql-table-item-active {
-  background: rgba(57, 108, 216, 0.15);
-  color: #396cd8;
-  font-weight: 600;
 }
 
 .mysql-content {
