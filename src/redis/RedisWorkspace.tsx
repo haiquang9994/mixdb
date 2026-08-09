@@ -51,6 +51,11 @@ const SEPARATORS = [":", ".", "/", "-", "_", "|"];
 /** The separator a keyspace is read with until told otherwise. */
 const DEFAULT_SEPARATOR = ":";
 
+/** The database picker's last entry, which re-reads the list instead of selecting anything — the
+ * key counts it shows go stale as soon as anything else writes to the server. Negative, where a
+ * real Redis database index never is. */
+const RELOAD_DATABASES = -1;
+
 /**
  * The Redis side of the app: a keyspace on the left, the selected key's value on the right.
  *
@@ -62,6 +67,7 @@ const DEFAULT_SEPARATOR = ":";
 function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, onSidebarWidthChange }: Props) {
   const { t } = useTranslation();
   const [databases, setDatabases] = useState<RedisDbInfo[]>([]);
+  const [databasesLoading, setDatabasesLoading] = useState(false);
   const [selectedDb, setSelectedDb] = useState(() => {
     const parsed = Number(initialDatabase);
     return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
@@ -181,9 +187,11 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   /** Reads the database list. Also called after a delete: the key counts in it are what the
    * selector shows, and one of them has just changed. */
   const loadDatabases = useCallback(() => {
+    setDatabasesLoading(true);
     redisListDatabases(connectionId)
       .then(setDatabases)
-      .catch((e) => setLocalError(String(e)));
+      .catch((e) => setLocalError(String(e)))
+      .finally(() => setDatabasesLoading(false));
   }, [connectionId]);
 
   useEffect(() => loadDatabases(), [loadDatabases]);
@@ -239,6 +247,10 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
    * the server has acknowledged it — the key list read afterwards would otherwise be the old
    * database's, under the new database's heading. */
   async function changeDatabase(index: number) {
+    if (index === RELOAD_DATABASES) {
+      loadDatabases();
+      return;
+    }
     try {
       await redisSelectDb(connectionId, index);
       // A key name means nothing outside the database it was read from, so the pane is closed
@@ -286,10 +298,29 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             size="normal"
             searchable
             searchPlaceholder={t("redis.searchDatabasesPlaceholder")}
-            options={databases.map((db) => ({
-              value: db.index,
-              label: t("redis.dbOption", { index: db.index, keys: db.keys }),
-            }))}
+            options={[
+              ...databases.map((db) => ({
+                value: db.index,
+                label: t("redis.dbOption", { index: db.index, keys: db.keys }),
+              })),
+              {
+                value: RELOAD_DATABASES,
+                label: t("redis.reloadDatabases"),
+                // The menu stays open behind it: the reloaded key counts are the whole point of
+                // the click, and closing would hide them until the picker is opened again.
+                keepOpen: true,
+                disabled: databasesLoading,
+                optionLabel: (
+                  <span className="select-reload-option">
+                    <ReloadIcon
+                      size="1em"
+                      className={databasesLoading ? "select-reload-option-spinning" : undefined}
+                    />
+                    {t("redis.reloadDatabases")}
+                  </span>
+                ),
+              },
+            ]}
           />
         </label>
         <div className="method-tabs redis-content-tabs" role="tablist">

@@ -77,6 +77,7 @@ const en = {
     databasePlaceholder: "(none)",
     searchDatabasesPlaceholder: "Search databases...",
     createDatabase: "Create a database",
+    reloadDatabases: "Reload databases",
     dataTab: "Data",
     structureTab: "Structure",
     queryTab: "Query",
@@ -364,6 +365,7 @@ const en = {
     databasePlaceholder: "(none)",
     searchDatabasesPlaceholder: "Search databases...",
     createDatabase: "Create a database",
+    reloadDatabases: "Reload databases",
     createDatabaseHint:
       "MongoDB has no empty database: this one is kept here until you create its first collection, which is what stores it on the server.",
     databaseNameInvalid: "A database name cannot contain a space or any of / \\ . \" $ * < > : | ?",
@@ -475,6 +477,7 @@ const en = {
     databaseLabel: "Database",
     dbOption: "db{{index}} ({{keys}} keys)",
     searchDatabasesPlaceholder: "Search databases...",
+    reloadDatabases: "Reload databases",
     dataTab: "Keys",
     keyPatternPlaceholder: "Key pattern, e.g. user:*",
     keyPatternTooltip: "A Redis glob — * matches anything, ? one character, [ab] a set. Press Enter to scan.",

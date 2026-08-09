@@ -79,6 +79,7 @@ const vi: TranslationDict = {
     databasePlaceholder: "(không có)",
     searchDatabasesPlaceholder: "Tìm cơ sở dữ liệu...",
     createDatabase: "Tạo cơ sở dữ liệu mới",
+    reloadDatabases: "Tải lại danh sách cơ sở dữ liệu",
     dataTab: "Dữ liệu",
     structureTab: "Cấu trúc",
     queryTab: "Truy vấn",
@@ -363,6 +364,7 @@ const vi: TranslationDict = {
     databasePlaceholder: "(không có)",
     searchDatabasesPlaceholder: "Tìm cơ sở dữ liệu...",
     createDatabase: "Tạo cơ sở dữ liệu mới",
+    reloadDatabases: "Tải lại danh sách cơ sở dữ liệu",
     createDatabaseHint:
       "MongoDB không có cơ sở dữ liệu rỗng: tên này chỉ được giữ tạm ở đây cho tới khi bạn tạo collection đầu tiên — lúc đó server mới thật sự lưu nó.",
     databaseNameInvalid:
@@ -475,6 +477,7 @@ const vi: TranslationDict = {
     databaseLabel: "Cơ sở dữ liệu",
     dbOption: "db{{index}} ({{keys}} key)",
     searchDatabasesPlaceholder: "Tìm cơ sở dữ liệu...",
+    reloadDatabases: "Tải lại danh sách cơ sở dữ liệu",
     dataTab: "Key",
     keyPatternPlaceholder: "Mẫu key, ví dụ user:*",
     keyPatternTooltip: "Mẫu glob của Redis — * khớp mọi thứ, ? một ký tự, [ab] một tập ký tự. Nhấn Enter để quét.",

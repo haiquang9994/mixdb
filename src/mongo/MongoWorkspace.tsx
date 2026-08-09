@@ -42,6 +42,10 @@ type ContentMode = "data";
  * MongoDB allows no `/` in a database name, so this can never collide with a real one. */
 const NEW_DATABASE = "/new";
 
+/** The picker's last entry, which re-reads the list instead of selecting anything. A database
+ * created or dropped elsewhere is otherwise only picked up by reconnecting. */
+const RELOAD_DATABASES = "/reload";
+
 /** What MongoDB refuses in a database name, checked here because there is no server call to be
  * refused by: a database only reaches the server with its first collection. */
 const INVALID_DATABASE_NAME = /[/\\. "$*<>:|?]/;
@@ -53,6 +57,7 @@ const MAX_SIDEBAR_WIDTH = 480;
 function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, onSidebarWidthChange }: Props) {
   const { t } = useTranslation();
   const [databases, setDatabases] = useState<string[]>([]);
+  const [databasesLoading, setDatabasesLoading] = useState(false);
   const [selectedDb, setSelectedDb] = useState(initialDatabase ?? "");
   const [collections, setCollections] = useState<string[]>([]);
   const [collectionsLoading, setCollectionsLoading] = useState(false);
@@ -68,6 +73,11 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   const [droppingCollection, setDroppingCollection] = useState<string | null>(null);
   /** What the dump/restore tools are doing, if anything — shown over the whole workspace. */
   const [transferStatus, setTransferStatus] = useState("");
+
+  /** The selection as `loadDatabases` needs to read it: through a ref, so reloading the list stays
+   * one callback per connection instead of a new one on every change of database. */
+  const selectedDbRef = useRef(selectedDb);
+  selectedDbRef.current = selectedDb;
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -141,19 +151,25 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     onSidebarWidthChange?.(next);
   }, [collections, onSidebarWidthChange]);
 
-  useEffect(() => {
-    let cancelled = false;
-    mongoListDatabases(connectionId)
-      .then((dbs) => {
-        if (cancelled) return;
-        setDatabases(dbs);
-        setSelectedDb((prev) => (prev && dbs.includes(prev) ? prev : ""));
-      })
-      .catch((e) => setLocalError(String(e)));
-    return () => {
-      cancelled = true;
-    };
+  /** Reads the database list. The selected database is kept in it even when the server doesn't
+   * list it: MongoDB stores no empty database, so one created in the picker exists here alone
+   * until its first collection is made, and a reload would otherwise take it away. */
+  const loadDatabases = useCallback(async () => {
+    setDatabasesLoading(true);
+    try {
+      const dbs = await mongoListDatabases(connectionId);
+      const selected = selectedDbRef.current;
+      setDatabases(selected && !dbs.includes(selected) ? [...dbs, selected] : dbs);
+    } catch (e) {
+      setLocalError(String(e));
+    } finally {
+      setDatabasesLoading(false);
+    }
   }, [connectionId]);
+
+  useEffect(() => {
+    void loadDatabases();
+  }, [loadDatabases]);
 
   useEffect(() => {
     let cancelled = false;
@@ -301,6 +317,10 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                 setCreatingDatabase(true);
                 return;
               }
+              if (db === RELOAD_DATABASES) {
+                void loadDatabases();
+                return;
+              }
               setSelectedDb(db);
               setSelectedCollection(null);
             }}
@@ -315,6 +335,23 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                 optionLabel: <span className="select-new-option">+ {t("mongo.createDatabase")}</span>,
               },
               ...databases.map((db) => ({ value: db, label: db })),
+              {
+                value: RELOAD_DATABASES,
+                label: t("mongo.reloadDatabases"),
+                // The menu stays open behind it: the reloaded list is the whole point of the
+                // click, and closing would hide it until the picker is opened again.
+                keepOpen: true,
+                disabled: databasesLoading,
+                optionLabel: (
+                  <span className="select-reload-option">
+                    <ReloadIcon
+                      size="1em"
+                      className={databasesLoading ? "select-reload-option-spinning" : undefined}
+                    />
+                    {t("mongo.reloadDatabases")}
+                  </span>
+                ),
+              },
             ]}
           />
         </label>

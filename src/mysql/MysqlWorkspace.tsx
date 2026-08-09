@@ -55,6 +55,10 @@ const CONTENT_TABS: { mode: ContentMode; labelKey: "mysql.dataTab" | "mysql.stru
  * MySQL allows no `/` in a database name, so this can never collide with a real one. */
 const NEW_DATABASE = "/new";
 
+/** The picker's last entry, which re-reads the list instead of selecting anything. A database
+ * created or dropped elsewhere is otherwise only picked up by reconnecting. */
+const RELOAD_DATABASES = "/reload";
+
 const DEFAULT_SIDEBAR_WIDTH = 200;
 const MIN_SIDEBAR_WIDTH = 140;
 const MAX_SIDEBAR_WIDTH = 480;
@@ -62,6 +66,7 @@ const MAX_SIDEBAR_WIDTH = 480;
 function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, onSidebarWidthChange }: Props) {
   const { t } = useTranslation();
   const [databases, setDatabases] = useState<string[]>([]);
+  const [databasesLoading, setDatabasesLoading] = useState(false);
   const [selectedDb, setSelectedDb] = useState(initialDatabase ?? "");
   const [tables, setTables] = useState<string[]>([]);
   const [tablesLoading, setTablesLoading] = useState(false);
@@ -151,19 +156,24 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     onSidebarWidthChange?.(next);
   }, [tables, onSidebarWidthChange]);
 
-  useEffect(() => {
-    let cancelled = false;
-    mysqlListDatabases(connectionId)
-      .then((dbs) => {
-        if (cancelled) return;
-        setDatabases(dbs);
-        setSelectedDb((prev) => (prev && dbs.includes(prev) ? prev : ""));
-      })
-      .catch((e) => setLocalError(String(e)));
-    return () => {
-      cancelled = true;
-    };
+  /** Reads the database list, keeping the selection when the server still lists it — a database
+   * dropped from under us leaves nothing to stay on. Also what the picker's reload entry calls. */
+  const loadDatabases = useCallback(async () => {
+    setDatabasesLoading(true);
+    try {
+      const dbs = await mysqlListDatabases(connectionId);
+      setDatabases(dbs);
+      setSelectedDb((prev) => (prev && dbs.includes(prev) ? prev : ""));
+    } catch (e) {
+      setLocalError(String(e));
+    } finally {
+      setDatabasesLoading(false);
+    }
   }, [connectionId]);
+
+  useEffect(() => {
+    void loadDatabases();
+  }, [loadDatabases]);
 
   useEffect(() => {
     let cancelled = false;
@@ -239,11 +249,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     setSelectedDb("");
     setSelectedTable(null);
     setTables([]);
-    try {
-      setDatabases(await mysqlListDatabases(connectionId));
-    } catch (e) {
-      setLocalError(String(e));
-    }
+    await loadDatabases();
   }
 
   /** Creates the database and switches to it, empty. Errors reject back into the dialog, which is
@@ -254,11 +260,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     setSelectedDb(name);
     setSelectedTable(null);
     // Re-listed rather than appended, so the picker keeps the order the server lists them in.
-    try {
-      setDatabases(await mysqlListDatabases(connectionId));
-    } catch (e) {
-      setLocalError(String(e));
-    }
+    await loadDatabases();
   }
 
   /** Creates the table and leaves it selected, so the columns it still needs are one tab away.
@@ -325,6 +327,10 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                 setCreatingDatabase(true);
                 return;
               }
+              if (db === RELOAD_DATABASES) {
+                void loadDatabases();
+                return;
+              }
               setSelectedDb(db);
               setSelectedTable(null);
             }}
@@ -339,6 +345,23 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                 optionLabel: <span className="select-new-option">+ {t("mysql.createDatabase")}</span>,
               },
               ...databases.map((db) => ({ value: db, label: db })),
+              {
+                value: RELOAD_DATABASES,
+                label: t("mysql.reloadDatabases"),
+                // The menu stays open behind it: the reloaded list is the whole point of the
+                // click, and closing would hide it until the picker is opened again.
+                keepOpen: true,
+                disabled: databasesLoading,
+                optionLabel: (
+                  <span className="select-reload-option">
+                    <ReloadIcon
+                      size="1em"
+                      className={databasesLoading ? "select-reload-option-spinning" : undefined}
+                    />
+                    {t("mysql.reloadDatabases")}
+                  </span>
+                ),
+              },
             ]}
           />
         </label>

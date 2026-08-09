@@ -13,6 +13,10 @@ export interface SelectOption<T extends string | number> {
    * a node label falls back to the value, which is all the option really has to go on. */
   searchText?: string;
   disabled?: boolean;
+  /** Leaves the menu open after this option is chosen. For an option that acts on the list itself
+   * — reloading it — rather than picking something out of it: closing would hide the very result
+   * the user asked for. */
+  keepOpen?: boolean;
 }
 
 export type SelectSize = "small" | "normal" | "large";
@@ -212,7 +216,7 @@ function Select<T extends string | number>({
     const opt = visible[index];
     if (!opt || opt.disabled) return;
     onChange(opt.value);
-    close();
+    if (!opt.keepOpen) close();
   }
 
   function moveActive(delta: number) {

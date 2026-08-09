@@ -266,6 +266,25 @@ body {
   font-weight: 500;
 }
 
+/* The entry at the foot of a picker that reloads the list it sits in. Kept quieter than the create
+   entry above: it changes nothing on the server, so it shouldn't compete with the names. */
+.select-reload-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  opacity: 0.75;
+}
+
+.select-reload-option-spinning {
+  animation: select-reload-spin 0.8s linear infinite;
+}
+
+@keyframes select-reload-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .kind-new {
   background: rgba(57, 108, 216, 0.15);
   color: #396cd8;
