@@ -5,16 +5,9 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tauri + React + Typescript</title>
-    <script>
-      (function () {
-        try {
-          var stored = localStorage.getItem("mixdb-theme");
-          if (stored === "light" || stored === "dark") {
-            document.documentElement.setAttribute("data-theme", stored);
-          }
-        } catch (e) {}
-      })();
-    </script>
+    <!-- Applies the remembered theme before the first paint. Not inline: the app's CSP allows
+         scripts from `'self'` only. -->
+    <script src="/theme-preload.js"></script>
   </head>
 
   <body>

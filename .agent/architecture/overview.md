@@ -63,3 +63,8 @@ Two deliberate tradeoffs, both marked in the code:
 - `mysql.rs` runs user-authored SQL through `sqlx::AssertSqlSafe`, opting out of sqlx's injection
   guard. This is a database client — arbitrary SQL is the product, not a bug. Identifiers the app
   itself interpolates (database/table/column names) still go through `quote_ident`.
+
+The webview itself runs under a CSP (`app.security.csp`, with a looser `devCsp` for Vite's HMR):
+everything loads from `'self'`, and `script-src` allows no inline script — which is why the theme
+preload lives in [public/theme-preload.js](../../public/theme-preload.js) rather than in
+`index.html`. Adding a `<script>` to the HTML will silently not run.
