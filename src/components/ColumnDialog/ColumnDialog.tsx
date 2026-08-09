@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Button from "../Button";
+import CollationSelect from "../CollationSelect";
 import Input from "../Input";
 import Select from "../Select";
 import type { SelectOption } from "../Select";
@@ -109,15 +110,6 @@ function composeType(draft: Draft): string {
   if (draft.unsigned) parts.push("unsigned");
   if (draft.typeTail !== "") parts.push(draft.typeTail);
   return parts.join(" ");
-}
-
-/** The character sets a column is realistically declared in, most likely first. Everything else the
- * server offers follows them, alphabetically — the order is only about what is quick to reach. */
-const CHARSET_ORDER = ["utf8mb4", "utf8mb3", "utf8", "latin1", "ascii", "binary"];
-
-function charsetRank(charset: string): number {
-  const index = CHARSET_ORDER.indexOf(charset);
-  return index === -1 ? CHARSET_ORDER.length : index;
 }
 
 /** Where the column is to sit. The two fixed choices carry no colon, so they can never collide
@@ -262,50 +254,6 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
     });
   }
 
-  /** The collation list as it is offered: the column's own character set first, then the ones most
-   * columns use, and inside each the character set's default ahead of the rest. */
-  const collationOptions = useMemo(() => {
-    const current = draft.collation.trim();
-    // Changing a collation nearly always means changing it within the character set the column is
-    // already in, so that set's collations sit above every other.
-    const currentCharset = collations.find((c) => c.name === current)?.charset;
-    const sorted = [...collations].sort((a, b) => {
-      if (a.charset !== b.charset) {
-        if (a.charset === currentCharset) return -1;
-        if (b.charset === currentCharset) return 1;
-        return charsetRank(a.charset) - charsetRank(b.charset) || a.charset.localeCompare(b.charset);
-      }
-      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-
-    const options: SelectOption<string>[] = [
-      { value: "", label: t("columnDialog.collationPlaceholder") },
-      ...sorted.map((collation) => ({
-        value: collation.name,
-        label: collation.name,
-        optionLabel: (
-          <span className={styles.collationOption}>
-            <span>{collation.name}</span>
-            <span className={styles.collationCharset}>
-              {collation.isDefault
-                ? t("columnDialog.collationCharsetDefault", { charset: collation.charset })
-                : collation.charset}
-            </span>
-          </span>
-        ),
-        // The charset is searchable too: typing "latin1" is how its collations are found.
-        searchText: `${collation.name} ${collation.charset}`,
-      })),
-    ];
-    // A collation this server no longer lists — an old column, a character set since dropped —
-    // would otherwise leave the trigger blank and be lost the moment the column is saved.
-    if (current !== "" && !collations.some((c) => c.name === current)) {
-      options.splice(1, 0, { value: current, label: current });
-    }
-    return options;
-  }, [collations, draft.collation, t]);
-
   function toSpec(): MysqlColumnSpec {
     const position = draft.position;
     return {
@@ -423,26 +371,14 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
 
           <label className={styles.field}>
             {t("columnDialog.collation")}
-            {collations.length > 0 ? (
-              <Select
-                value={draft.collation.trim()}
-                size="normal"
-                options={collationOptions}
-                ariaLabel={t("columnDialog.collation")}
-                disabled={saving}
-                searchable
-                searchPlaceholder={t("columnDialog.collationSearch")}
-                onChange={(collation) => patch({ collation })}
-              />
-            ) : (
-              <Input
-                size="normal"
-                value={draft.collation}
-                placeholder={t("columnDialog.collationPlaceholder")}
-                disabled={saving}
-                onChange={(e) => patch({ collation: e.target.value })}
-              />
-            )}
+            <CollationSelect
+              value={draft.collation}
+              collations={collations}
+              placeholder={t("columnDialog.collationPlaceholder")}
+              ariaLabel={t("columnDialog.collation")}
+              disabled={saving}
+              onChange={(collation) => patch({ collation })}
+            />
           </label>
 
           <label className={`${styles.field} ${styles.fieldWide}`}>

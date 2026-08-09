@@ -81,6 +81,7 @@ const en = {
     queryTab: "Query",
     searchTablesPlaceholder: "Search tables...",
     reloadTables: "Reload tables",
+    addTable: "Create a table",
     resizeSidebar: "Resize sidebar",
     resizeSidebarTooltip: "Drag to resize, double-click to fit",
     selectTablePrompt: "Select a table to view its data.",
@@ -136,6 +137,22 @@ const en = {
     dropIndexTitle: "Drop index?",
     dropIndexMessage: "Drop the index {{index}}? The rows themselves are untouched.",
   },
+  // The collation picker, wherever one is declared — a column's or a whole table's.
+  collation: {
+    charsetDefault: "{{charset}} · default",
+    search: "Search collations...",
+  },
+  tableDialog: {
+    title: "Create a table in {{database}}",
+    name: "Name",
+    collation: "Collation",
+    collationPlaceholder: "(database default)",
+    columnHint:
+      "The table is created with one column, id int(11) unsigned AUTO_INCREMENT, as its primary key. Add the rest from the Structure tab.",
+    errorName: "The table needs a name.",
+    submit: "Create table",
+    saving: "Creating...",
+  },
   columnDialog: {
     addTitle: "Add a column to {{table}}",
     editTitle: "Edit {{column}}",
@@ -150,8 +167,6 @@ const en = {
     positionAfter: "After {{column}}",
     collation: "Collation",
     collationPlaceholder: "(table default)",
-    collationCharsetDefault: "{{charset}} · default",
-    collationSearch: "Search collations...",
     comment: "Comment",
     nullable: "Allow NULL",
     unsigned: "UNSIGNED",

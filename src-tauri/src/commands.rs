@@ -270,6 +270,25 @@ pub async fn mysql_collations(
     }
 }
 
+/// Creates an empty table — one `id` column and its primary key — for the sidebar's add button.
+#[tauri::command]
+pub async fn mysql_create_table(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    collation: Option<String>,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => {
+            mysql_structure::create_table(pool, &database, &table, collation.as_deref()).await
+        }
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn mysql_add_column(
     state: State<'_, AppState>,

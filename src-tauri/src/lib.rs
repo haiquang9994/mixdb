@@ -27,6 +27,7 @@ pub fn run() {
             commands::mysql_delete_rows,
             commands::mysql_table_structure,
             commands::mysql_collations,
+            commands::mysql_create_table,
             commands::mysql_add_column,
             commands::mysql_modify_column,
             commands::mysql_drop_column,

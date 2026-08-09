@@ -83,6 +83,7 @@ const vi: TranslationDict = {
     queryTab: "Truy vấn",
     searchTablesPlaceholder: "Tìm bảng...",
     reloadTables: "Tải lại danh sách bảng",
+    addTable: "Tạo bảng mới",
     resizeSidebar: "Thay đổi kích thước sidebar",
     resizeSidebarTooltip: "Kéo để thay đổi kích thước, bấm đúp để vừa khít",
     selectTablePrompt: "Chọn một bảng để xem dữ liệu.",
@@ -136,6 +137,22 @@ const vi: TranslationDict = {
     dropIndexTitle: "Xóa index?",
     dropIndexMessage: "Xóa index {{index}}? Dữ liệu trong bảng không bị ảnh hưởng.",
   },
+  // Ô chọn collation, dùng chung cho mọi nơi khai báo collation — của một cột hay của cả bảng.
+  collation: {
+    charsetDefault: "{{charset}} · mặc định",
+    search: "Tìm collation...",
+  },
+  tableDialog: {
+    title: "Tạo bảng trong {{database}}",
+    name: "Tên bảng",
+    collation: "Collation",
+    collationPlaceholder: "(theo mặc định của cơ sở dữ liệu)",
+    columnHint:
+      "Bảng được tạo với một cột id int(11) unsigned AUTO_INCREMENT làm khóa chính. Các cột còn lại thêm ở tab Cấu trúc.",
+    errorName: "Bảng cần có tên.",
+    submit: "Tạo bảng",
+    saving: "Đang tạo...",
+  },
   columnDialog: {
     addTitle: "Thêm cột vào {{table}}",
     editTitle: "Sửa cột {{column}}",
@@ -150,8 +167,6 @@ const vi: TranslationDict = {
     positionAfter: "Sau {{column}}",
     collation: "Collation",
     collationPlaceholder: "(theo mặc định của bảng)",
-    collationCharsetDefault: "{{charset}} · mặc định",
-    collationSearch: "Tìm collation...",
     comment: "Ghi chú",
     nullable: "Cho phép NULL",
     unsigned: "UNSIGNED",

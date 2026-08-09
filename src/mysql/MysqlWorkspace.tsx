@@ -1,16 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { mysqlListDatabases, mysqlListTables, mysqlServerInfo } from "./api";
+import {
+  mysqlCollations,
+  mysqlCreateTable,
+  mysqlListDatabases,
+  mysqlListTables,
+  mysqlServerInfo,
+} from "./api";
 import Select from "../components/Select";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import SqlTable from "../components/SqlTable";
 import QueryEditor from "../components/QueryEditor";
+import TableDialog from "../components/TableDialog";
 import TableStructure from "../components/TableStructure";
 import ActionBar from "../components/ActionBar";
 import ItemList from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
-import { ReloadIcon } from "../icons";
+import { PlusIcon, ReloadIcon } from "../icons";
 import { useTranslation } from "../i18n";
+import type { MysqlCollation } from "../types";
 
 interface Props {
   connectionId: string;
@@ -48,6 +56,8 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   const [contentMode, setContentMode] = useState<ContentMode>("data");
   const [localError, setLocalError] = useState("");
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
+  const [collations, setCollations] = useState<MysqlCollation[]>([]);
+  const [creatingTable, setCreatingTable] = useState(false);
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -150,6 +160,23 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     };
   }, [connectionId]);
 
+  // A property of the server rather than of any one database, so one read per connection covers
+  // every table created on it.
+  useEffect(() => {
+    let cancelled = false;
+    mysqlCollations(connectionId)
+      .then((result) => {
+        if (!cancelled) setCollations(result);
+      })
+      // Not worth an error banner over: without a list the dialog falls back to a text box.
+      .catch(() => {
+        if (!cancelled) setCollations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionId]);
+
   useEffect(() => {
     setTableFilter("");
     if (!selectedDb) {
@@ -181,6 +208,17 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       .catch((e) => setLocalError(String(e)))
       .finally(() => setTablesLoading(false));
   }, [connectionId, selectedDb]);
+
+  /** Creates the table and leaves it selected, so the columns it still needs are one tab away.
+   * Errors reject back into the dialog, which is what shows them and stays open. */
+  async function createTable(name: string, collation: string | null) {
+    await mysqlCreateTable(connectionId, selectedDb, name, collation);
+    setCreatingTable(false);
+    // Cleared so the new table is visible whatever was being searched for when it was made.
+    setTableFilter("");
+    setSelectedTable(name);
+    reloadTables();
+  }
 
   const filteredTables = tableFilter.trim()
     ? tables.filter((t) => t.toLowerCase().includes(tableFilter.trim().toLowerCase()))
@@ -260,6 +298,13 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                 busy: tablesLoading,
                 onClick: reloadTables,
               },
+              {
+                key: "add",
+                icon: PlusIcon,
+                label: t("mysql.addTable"),
+                disabled: !selectedDb || tablesLoading,
+                onClick: () => setCreatingTable(true),
+              },
             ]}
           />
         </aside>
@@ -306,6 +351,15 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           </div>
         </section>
       </div>
+
+      {creatingTable && selectedDb && (
+        <TableDialog
+          database={selectedDb}
+          collations={collations}
+          onCancel={() => setCreatingTable(false)}
+          onSubmit={createTable}
+        />
+      )}
     </div>
   );
 }

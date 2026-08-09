@@ -216,6 +216,23 @@ fn default_clause(value: &str, is_expression: bool, data_type: &str) -> String {
     quote_string(value)
 }
 
+/// A collation as it may be interpolated into DDL, or `None` when none was asked for.
+///
+/// A collation name is never a quotable value in MySQL's grammar — it goes in bare — so the only
+/// safe thing to do with one is to refuse anything that is not shaped like a name.
+fn validated_collation(collation: Option<&str>) -> Result<Option<&str>, String> {
+    let Some(collation) = collation.map(str::trim).filter(|c| !c.is_empty()) else {
+        return Ok(None);
+    };
+    if !collation
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(format!("Invalid collation `{collation}`"));
+    }
+    Ok(Some(collation))
+}
+
 /// Turns a spec into the `name type ...` part of an `ADD`/`CHANGE COLUMN` clause.
 ///
 /// The type is interpolated as the user wrote it: MySQL's type grammar is far too large to model,
@@ -232,18 +249,7 @@ fn column_definition(spec: &ColumnSpec) -> Result<String, String> {
     }
 
     let mut sql = format!("{} {}", quote_ident(spec.name.trim()), data_type);
-    if let Some(collation) = spec
-        .collation
-        .as_deref()
-        .map(str::trim)
-        .filter(|c| !c.is_empty())
-    {
-        if !collation
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-        {
-            return Err(format!("Invalid collation `{collation}`"));
-        }
+    if let Some(collation) = validated_collation(spec.collation.as_deref())? {
         sql.push_str(&format!(" COLLATE {collation}"));
     }
     sql.push_str(if spec.nullable { " NULL" } else { " NOT NULL" });
@@ -489,6 +495,34 @@ pub async fn collations(pool: &MySqlPool) -> Result<Vec<Collation>, String> {
         })
         .filter(|collation| !collation.name.is_empty())
         .collect())
+}
+
+/// Creates a table with nothing in it but the key every table ends up wanting: an unsigned
+/// `int(11)` `id` that MySQL fills in itself. A table has to be declared with at least one column,
+/// and the Structure tab is where the rest of them are added — so this asks for the two things
+/// that cannot be changed as cheaply afterwards, the name and the collation.
+///
+/// `collation` alone is enough: MySQL takes the character set from the collation's own, so naming
+/// both would only be a way of contradicting oneself. Left out, the table inherits the database's.
+pub async fn create_table(
+    pool: &MySqlPool,
+    database: &str,
+    table: &str,
+    collation: Option<&str>,
+) -> Result<(), String> {
+    let name = table.trim();
+    if name.is_empty() {
+        return Err("Table name is required".to_string());
+    }
+    let id = quote_ident("id");
+    let mut sql = format!(
+        "CREATE TABLE {} ({id} int(11) unsigned NOT NULL AUTO_INCREMENT, PRIMARY KEY ({id}))",
+        qualified(database, name)
+    );
+    if let Some(collation) = validated_collation(collation)? {
+        sql.push_str(&format!(" COLLATE = {collation}"));
+    }
+    execute(pool, sql).await
 }
 
 pub async fn add_column(
