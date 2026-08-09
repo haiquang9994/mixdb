@@ -21,8 +21,123 @@
   --control-color: #0f0f0f;
   --control-bg: #ffffff;
   --control-bg-active: #e8e8e8;
-  --control-border-focus: #396cd8;
+  --control-border-focus: var(--accent);
   --surface-bg: #ffffff;
+
+  /* The accent, in the three forms the app actually uses it in: solid for borders and icons, a
+     darker (light mode) or lighter (dark mode) cast for text that has to stay readable against the
+     page, and bare channels so a rule can mix its own wash with `rgb(var(--accent-rgb) / a)`
+     instead of every wash needing a token of its own. Nothing outside this block should name a
+     hue: an accent the user can change means these three are the only handles the rest of the app
+     may hold. */
+  --accent: var(--c-blue);
+  --accent-text: var(--c-blue-text);
+  --accent-rgb: var(--c-blue-rgb);
+
+  /* All ten palettes stay defined whichever one is in force, rather than only the chosen one, so
+     the swatches in Settings can each paint themselves from their own `--c-<name>` and show the
+     whole set at once. Their dark casts sit with the rest of the dark theme at the foot of the
+     file — a swatch tracks the theme for free that way, no second set of values to keep in step.
+
+     A hue lands here only if it reads at 4.5:1 against this page in its `-text` cast and stays
+     distinct from the red that means destructive, which is why there is no red among them. */
+  --c-blue: #396cd8;
+  --c-blue-text: #2f5cb8;
+  --c-blue-rgb: 57 108 216;
+
+  --c-indigo: #5457d6;
+  --c-indigo-text: #4245b5;
+  --c-indigo-rgb: 84 87 214;
+
+  --c-violet: #7c4dcc;
+  --c-violet-text: #6740ab;
+  --c-violet-rgb: 124 77 204;
+
+  --c-magenta: #c2418f;
+  --c-magenta-text: #a23577;
+  --c-magenta-rgb: 194 65 143;
+
+  --c-orange: #c2620f;
+  --c-orange-text: #a1520d;
+  --c-orange-rgb: 194 98 15;
+
+  /* Held well below a bright yellow: at full chroma this hue cannot reach 4.5:1 against the light
+     page, and the accent carries text. It comes back up in the dark half. */
+  --c-amber: #9c7000;
+  --c-amber-text: #805c00;
+  --c-amber-rgb: 156 112 0;
+
+  --c-green: #2f8f46;
+  --c-green-text: #27753a;
+  --c-green-rgb: 47 143 70;
+
+  --c-teal: #0f8a86;
+  --c-teal-text: #0d726f;
+  --c-teal-rgb: 15 138 134;
+
+  --c-cyan: #0b7ea8;
+  --c-cyan-text: #09688a;
+  --c-cyan-rgb: 11 126 168;
+
+  --c-slate: #5a6b7c;
+  --c-slate-text: #4a5866;
+  --c-slate-rgb: 90 107 124;
+}
+
+/* Which of the ten the accent points at. Blue is the default and is set on `:root` above, so it
+   needs no attribute — `applyAccent` in theme.ts leaves the attribute off for it. */
+:root[data-accent="indigo"] {
+  --accent: var(--c-indigo);
+  --accent-text: var(--c-indigo-text);
+  --accent-rgb: var(--c-indigo-rgb);
+}
+
+:root[data-accent="violet"] {
+  --accent: var(--c-violet);
+  --accent-text: var(--c-violet-text);
+  --accent-rgb: var(--c-violet-rgb);
+}
+
+:root[data-accent="magenta"] {
+  --accent: var(--c-magenta);
+  --accent-text: var(--c-magenta-text);
+  --accent-rgb: var(--c-magenta-rgb);
+}
+
+:root[data-accent="orange"] {
+  --accent: var(--c-orange);
+  --accent-text: var(--c-orange-text);
+  --accent-rgb: var(--c-orange-rgb);
+}
+
+:root[data-accent="amber"] {
+  --accent: var(--c-amber);
+  --accent-text: var(--c-amber-text);
+  --accent-rgb: var(--c-amber-rgb);
+}
+
+:root[data-accent="green"] {
+  --accent: var(--c-green);
+  --accent-text: var(--c-green-text);
+  --accent-rgb: var(--c-green-rgb);
+}
+
+:root[data-accent="teal"] {
+  --accent: var(--c-teal);
+  --accent-text: var(--c-teal-text);
+  --accent-rgb: var(--c-teal-rgb);
+}
+
+:root[data-accent="cyan"] {
+  --accent: var(--c-cyan);
+  --accent-text: var(--c-cyan-text);
+  --accent-rgb: var(--c-cyan-rgb);
+}
+
+:root[data-accent="slate"] {
+  --accent: var(--c-slate);
+  --accent-text: var(--c-slate-text);
+  --accent-rgb: var(--c-slate-rgb);
 }
 
 html,
@@ -262,7 +377,7 @@ body {
 /* The entry that creates something rather than selecting one, at the head of a picker's list. Set
    apart by colour alone: it reads as an action while sitting in the same rows as the names. */
 .select-new-option {
-  color: #396cd8;
+  color: var(--accent-text);
   font-weight: 500;
 }
 
@@ -286,14 +401,14 @@ body {
 }
 
 .kind-new {
-  background: rgba(57, 108, 216, 0.15);
-  color: #396cd8;
+  background: rgb(var(--accent-rgb) / 0.15);
+  color: var(--accent-text);
   font-size: 0.95rem;
 }
 
 .saved-item-active {
-  border-color: #396cd8;
-  box-shadow: 0 0 0 1px #396cd8 inset;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
 .saved-item-new {
@@ -421,8 +536,8 @@ fieldset .row input {
 
 .method-tab-active {
   opacity: 1;
-  border-bottom-color: #396cd8;
-  background: rgba(57, 108, 216, 0.08);
+  border-bottom-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.08);
 }
 
 .row-name {
@@ -568,7 +683,7 @@ textarea {
 .mysql-sidebar-resizer:active::after {
   left: 1px;
   width: 3px;
-  background: #396cd8;
+  background: var(--accent);
 }
 
 .mysql-sidebar-search {
@@ -701,7 +816,7 @@ textarea {
 .mongo-sidebar-resizer:active::after {
   left: 1px;
   width: 3px;
-  background: #396cd8;
+  background: var(--accent);
 }
 
 .mongo-sidebar-search {
@@ -828,7 +943,7 @@ textarea {
 .redis-sidebar-resizer:active::after {
   left: 1px;
   width: 3px;
-  background: #396cd8;
+  background: var(--accent);
 }
 
 .redis-sidebar-search {
@@ -898,12 +1013,12 @@ textarea {
 
 a {
   font-weight: 500;
-  color: #646cff;
+  color: var(--accent-text);
   text-decoration: inherit;
 }
 
 a:hover {
-  color: #535bf2;
+  color: var(--accent);
 }
 
 input,
@@ -951,10 +1066,49 @@ textarea {
   --control-bg: #0f0f0f98;
   --control-bg-active: #0f0f0f69;
   --surface-bg: #2f2f2f;
-}
 
-:root[data-theme="dark"] a:hover {
-  color: #24c8db;
+  /* The dark cast of all ten. Only the palettes are restated — which one `--accent` points at was
+     settled by `[data-accent]` above and holds through the theme, so a swatch and the accent both
+     follow the theme without a second selector per colour. */
+  --c-blue: #6f9bf0;
+  --c-blue-text: #8fb4f5;
+  --c-blue-rgb: 111 155 240;
+
+  --c-indigo: #8b8df0;
+  --c-indigo-text: #a5a7f5;
+  --c-indigo-rgb: 139 141 240;
+
+  --c-violet: #a887f5;
+  --c-violet-text: #bda3f7;
+  --c-violet-rgb: 168 135 245;
+
+  --c-magenta: #ec78bb;
+  --c-magenta-text: #f095cb;
+  --c-magenta-rgb: 236 120 187;
+
+  --c-orange: #f0913f;
+  --c-orange-text: #f5a866;
+  --c-orange-rgb: 240 145 63;
+
+  --c-amber: #e0ac2b;
+  --c-amber-text: #e8bd57;
+  --c-amber-rgb: 224 172 43;
+
+  --c-green: #5fc97a;
+  --c-green-text: #84d69a;
+  --c-green-rgb: 95 201 122;
+
+  --c-teal: #3fc7c0;
+  --c-teal-text: #6bd5d0;
+  --c-teal-rgb: 63 199 192;
+
+  --c-cyan: #40b8e0;
+  --c-cyan-text: #6cc9e8;
+  --c-cyan-rgb: 64 184 224;
+
+  --c-slate: #93a4b5;
+  --c-slate-text: #adbac7;
+  --c-slate-rgb: 147 164 181;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -966,9 +1120,45 @@ textarea {
     --control-bg: #0f0f0f98;
     --control-bg-active: #0f0f0f69;
     --surface-bg: #2f2f2f;
-  }
 
-  :root:not([data-theme]) a:hover {
-    color: #24c8db;
+    --c-blue: #6f9bf0;
+    --c-blue-text: #8fb4f5;
+    --c-blue-rgb: 111 155 240;
+
+    --c-indigo: #8b8df0;
+    --c-indigo-text: #a5a7f5;
+    --c-indigo-rgb: 139 141 240;
+
+    --c-violet: #a887f5;
+    --c-violet-text: #bda3f7;
+    --c-violet-rgb: 168 135 245;
+
+    --c-magenta: #ec78bb;
+    --c-magenta-text: #f095cb;
+    --c-magenta-rgb: 236 120 187;
+
+    --c-orange: #f0913f;
+    --c-orange-text: #f5a866;
+    --c-orange-rgb: 240 145 63;
+
+    --c-amber: #e0ac2b;
+    --c-amber-text: #e8bd57;
+    --c-amber-rgb: 224 172 43;
+
+    --c-green: #5fc97a;
+    --c-green-text: #84d69a;
+    --c-green-rgb: 95 201 122;
+
+    --c-teal: #3fc7c0;
+    --c-teal-text: #6bd5d0;
+    --c-teal-rgb: 63 199 192;
+
+    --c-cyan: #40b8e0;
+    --c-cyan-text: #6cc9e8;
+    --c-cyan-rgb: 64 184 224;
+
+    --c-slate: #93a4b5;
+    --c-slate-text: #adbac7;
+    --c-slate-rgb: 147 164 181;
   }
 }

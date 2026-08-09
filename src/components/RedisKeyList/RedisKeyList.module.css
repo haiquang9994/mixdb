@@ -46,8 +46,8 @@
 }
 
 .itemActive {
-  background: rgba(57, 108, 216, 0.15);
-  color: #396cd8;
+  background: rgb(var(--accent-rgb) / 0.15);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -120,8 +120,8 @@
 }
 
 .string {
-  background: rgba(57, 108, 216, 0.18);
-  color: #396cd8;
+  background: rgb(var(--accent-rgb) / 0.18);
+  color: var(--accent-text);
 }
 
 .list {

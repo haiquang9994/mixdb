@@ -132,16 +132,16 @@
 }
 
 .optionActive {
-  background: rgba(57, 108, 216, 0.12);
+  background: rgb(var(--accent-rgb) / 0.12);
 }
 
 .optionSelected {
-  color: #396cd8;
+  color: var(--accent-text);
   font-weight: 600;
 }
 
 .optionSelected.optionActive {
-  background: rgba(57, 108, 216, 0.18);
+  background: rgb(var(--accent-rgb) / 0.18);
 }
 
 .optionDisabled {
@@ -164,11 +164,11 @@
 }
 
 :root[data-theme="dark"] .optionActive {
-  background: rgba(57, 108, 216, 0.25);
+  background: rgb(var(--accent-rgb) / 0.25);
 }
 
 :root[data-theme="dark"] .optionSelected.optionActive {
-  background: rgba(57, 108, 216, 0.32);
+  background: rgb(var(--accent-rgb) / 0.32);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -182,10 +182,10 @@
   }
 
   :root:not([data-theme]) .optionActive {
-    background: rgba(57, 108, 216, 0.25);
+    background: rgb(var(--accent-rgb) / 0.25);
   }
 
   :root:not([data-theme]) .optionSelected.optionActive {
-    background: rgba(57, 108, 216, 0.32);
+    background: rgb(var(--accent-rgb) / 0.32);
   }
 }

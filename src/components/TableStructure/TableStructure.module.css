@@ -163,9 +163,9 @@
 
 /* The badge on a key that organises the table: the primary key, and the columns in it. */
 .badgeKey {
-  border-color: rgba(57, 108, 216, 0.5);
-  color: #2f5cb8;
-  background: rgba(57, 108, 216, 0.12);
+  border-color: rgb(var(--accent-rgb) / 0.5);
+  color: var(--accent-text);
+  background: rgb(var(--accent-rgb) / 0.12);
   opacity: 1;
 }
 

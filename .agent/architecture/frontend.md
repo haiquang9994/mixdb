@@ -1,7 +1,8 @@
 # Frontend
 
 React 19 + TypeScript, built by Vite. No router, no state library, no CSS framework — state is
-local `useState` plus two React contexts (i18n, and the theme hook's `localStorage`).
+local `useState` plus the i18n context, with the theme and accent hooks persisting to
+`localStorage`.
 
 ## Entry path
 
@@ -46,10 +47,33 @@ Roughly grouped:
 ## Styling
 
 - `src/App.css` is the only global stylesheet: resets, scrollbars, the tab chrome, and the CSS
-  custom properties (`--control-*`, `--surface-bg`) that component modules build on.
+  custom properties (`--control-*`, `--surface-bg`, `--accent*`) that component modules build on.
 - Dark mode is `[data-theme="dark"]` plus a `prefers-color-scheme` block, both redefining the same
   tokens. A new color belongs in the token set, not hardcoded in a module.
 - Font is Fira Code, bundled via `@fontsource` — no network fonts.
+
+### The accent
+
+The accent is user-chosen (Settings → Accent colour), so **no module may name a hue**. Three tokens
+are the whole interface:
+
+| Token | For |
+| --- | --- |
+| `--accent` | Solid: borders, icons, the resizer, `accent-color` on checkboxes |
+| `--accent-text` | Text on the page — the readable cast, darker in light mode, lighter in dark |
+| `--accent-rgb` | Bare channels, so a rule mixes its own wash: `rgb(var(--accent-rgb) / 0.15)` |
+
+Behind them, App.css defines all ten palettes as `--c-<name>` / `-text` / `-rgb`, and
+`:root[data-accent="<name>"]` points the three tokens at one of them. Every palette stays defined
+whichever one is in force — that is what lets the swatch row in `SettingsModal` show all ten at
+once, each button carrying only `--accent-swatch: var(--c-<name>)`. The dark theme restates the
+`--c-*` values and nothing else, so accent and swatches follow the theme with no
+`[data-theme][data-accent]` selectors.
+
+Adding an eleventh colour: values in both halves of App.css, the name in `ACCENT_COLORS`
+(`src/theme.ts`), and `settings.accent<Name>` in `en.ts`/`vi.ts`. The hue must clear 4.5:1 against
+the light page in its `-text` cast — the accent carries text — and must not read as the red that
+means destructive, since the accent also marks selected rows.
 
 ## Types
 

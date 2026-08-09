@@ -180,13 +180,13 @@
   letter-spacing: 0.02em;
   padding: 0.1rem 0.3rem;
   border-radius: 4px;
-  background: rgba(57, 108, 216, 0.16);
-  color: #396cd8;
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--accent-text);
 }
 
 .jsonCollapsed:hover .jsonChip,
 .jsonChipButton:hover .jsonChip {
-  background: rgba(57, 108, 216, 0.3);
+  background: rgb(var(--accent-rgb) / 0.3);
 }
 
 /* Switches the whole-key string view between its JSON form and the bytes actually stored. */

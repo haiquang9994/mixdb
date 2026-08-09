@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import ConnectionTab from "./ConnectionTab";
 import SettingsModal from "./components/SettingsModal";
 import { CloseIcon, PlusIcon } from "./icons";
-import { useTheme } from "./theme";
+import { useAccent, useTheme } from "./theme";
 import { useTranslation } from "./i18n";
 import "./App.css";
 
@@ -32,6 +32,7 @@ function App() {
   const [tabs, setTabs] = useState<TabInfo[]>([newTab()]);
   const [activeId, setActiveId] = useState(tabs[0].id);
   const [theme, setTheme] = useTheme();
+  const [accent, setAccent] = useAccent();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   function openTab() {
@@ -127,7 +128,13 @@ function App() {
       </div>
 
       {settingsOpen && (
-        <SettingsModal theme={theme} onThemeChange={setTheme} onClose={() => setSettingsOpen(false)} />
+        <SettingsModal
+          theme={theme}
+          onThemeChange={setTheme}
+          accent={accent}
+          onAccentChange={setAccent}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
     </main>
   );

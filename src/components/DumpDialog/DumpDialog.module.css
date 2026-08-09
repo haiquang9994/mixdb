@@ -54,7 +54,7 @@
   margin: 0.15rem 0 0;
   padding: 0;
   box-shadow: none;
-  accent-color: #396cd8;
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
