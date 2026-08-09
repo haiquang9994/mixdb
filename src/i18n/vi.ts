@@ -99,6 +99,10 @@ const vi: TranslationDict = {
     deleteRowsMessage: "Xóa {{n}} dòng đã chọn? Thao tác này không thể hoàn tác.",
     deleteAllRowsOption: "Xóa toàn bộ {{total}} dòng của bảng, không chỉ các dòng đang chọn",
     resetAutoIncrementOption: "Đặt lại {{column}} để dòng thêm mới bắt đầu từ 1",
+    foreignKey: "Khóa ngoại → {{table}}.{{column}}",
+    sortNone: "{{column}} — nhấn để sắp xếp giảm dần",
+    sortDesc: "{{column}} — đang giảm dần, nhấn để sắp xếp tăng dần",
+    sortAsc: "{{column}} — đang tăng dần, nhấn để bỏ sắp xếp",
   },
   insertRows: {
     title: "Thêm dòng vào {{table}}",

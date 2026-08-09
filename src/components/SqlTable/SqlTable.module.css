@@ -33,6 +33,43 @@
   background: #f6f6f6;
 }
 
+/* Every header cell is the control that sorts by its column, so it takes the pointer the whole
+   way across. `user-select` off because clicking one repeatedly — cycling its sort — would
+   otherwise start selecting the column names. */
+.headerCell {
+  cursor: pointer;
+  user-select: none;
+}
+
+.headerCell:hover {
+  background: rgba(128, 128, 128, 0.14);
+}
+
+/* Kept in the flow even while empty, so a column doesn't change width as its sort comes and
+   goes — see the note where it is rendered. */
+.sortIcon {
+  display: inline-block;
+  width: 1em;
+  margin-left: 0.25em;
+  vertical-align: -0.15em;
+}
+
+/* Marks a foreign key column. Set apart from the column name rather than styled into it: it is
+   a fact about the column, and the name has to stay readable as itself. */
+.fkBadge {
+  margin-left: 0.4em;
+  padding: 0 0.3em;
+  border: 1px solid rgba(57, 108, 216, 0.5);
+  border-radius: 3px;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #2f5cb8;
+  background: rgba(57, 108, 216, 0.12);
+  vertical-align: 0.05em;
+  cursor: help;
+}
+
 /* Painted on the row, not on its cells: a `td` with a background of its own — a NULL or a
    staged edit — then still shows through, which is the point of those markers. */
 .sqlTable tbody tr:hover {
@@ -161,8 +198,21 @@
   background: #2f2f2f;
 }
 
+/* The badge's blue is picked to read on white; on the dark header it has to come back up. */
+:root[data-theme="dark"] .fkBadge {
+  color: #9db9f0;
+  border-color: rgba(157, 185, 240, 0.45);
+  background: rgba(157, 185, 240, 0.14);
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .scroll thead th {
     background: #2f2f2f;
+  }
+
+  :root:not([data-theme]) .fkBadge {
+    color: #9db9f0;
+    border-color: rgba(157, 185, 240, 0.45);
+    background: rgba(157, 185, 240, 0.14);
   }
 }

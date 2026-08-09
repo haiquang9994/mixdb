@@ -85,11 +85,20 @@ export function ChevronLeftIcon(props: IconProps) {
   );
 }
 
-/** Expanded disclosure. */
+/** Expanded disclosure, and "sorted descending" in a grid header. */
 export function ChevronDownIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M5 9l7 7 7-7" />
+    </Icon>
+  );
+}
+
+/** "Sorted ascending" in a grid header — {@link ChevronDownIcon} the other way up. */
+export function ChevronUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 15l7-7 7 7" />
     </Icon>
   );
 }

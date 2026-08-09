@@ -18,14 +18,29 @@ export function mysqlServerInfo(id: string): Promise<MysqlServerInfo> {
   return invoke<MysqlServerInfo>("mysql_server_info", { id });
 }
 
+/**
+ * Reads one page of a table. `sortColumn` orders the whole table before the page is cut out of it,
+ * so paging through a sorted table stays in that order; passing null leaves the rows in whatever
+ * order MySQL returns them.
+ */
 export function mysqlTableData(
   id: string,
   database: string,
   table: string,
   page: number,
-  pageSize: number
+  pageSize: number,
+  sortColumn: string | null = null,
+  sortDesc = false
 ): Promise<MysqlTablePage> {
-  return invoke<MysqlTablePage>("mysql_table_data", { id, database, table, page, pageSize });
+  return invoke<MysqlTablePage>("mysql_table_data", {
+    id,
+    database,
+    table,
+    page,
+    pageSize,
+    sortColumn,
+    sortDesc,
+  });
 }
 
 export function mysqlQuery(

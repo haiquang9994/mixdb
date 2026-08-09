@@ -97,6 +97,10 @@ const en = {
     deleteRowsMessage: "Delete the {{n}} selected rows? This cannot be undone.",
     deleteAllRowsOption: "Delete all {{total}} rows in the table, not only the ones selected here",
     resetAutoIncrementOption: "Reset {{column}} so the next row inserted starts at 1",
+    foreignKey: "Foreign key → {{table}}.{{column}}",
+    sortNone: "{{column}} — click to sort descending",
+    sortDesc: "{{column}} — sorted descending, click to sort ascending",
+    sortAsc: "{{column}} — sorted ascending, click to remove the sort",
   },
   insertRows: {
     title: "Add rows to {{table}}",

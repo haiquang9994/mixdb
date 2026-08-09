@@ -38,6 +38,12 @@ export const DEFAULT_PORTS: Record<DbKind, number> = {
   redis: 6379,
 };
 
+/** The row a foreign key column points at: what it references, not what it is declared as. */
+export interface MysqlForeignKey {
+  table: string;
+  column: string;
+}
+
 /** What the server knows about one column beyond its name — what a new row has to respect. */
 export interface MysqlColumnMeta {
   /** The declared type as MySQL spells it, e.g. `varchar(255)` or `int unsigned`. */
@@ -49,6 +55,8 @@ export interface MysqlColumnMeta {
   defaultValue: string | null;
   /** `SHOW COLUMNS`' Extra: `auto_increment`, `DEFAULT_GENERATED`, `STORED GENERATED`, ... */
   extra: string;
+  /** What this column references, or null when it is not part of a foreign key. */
+  foreignKey: MysqlForeignKey | null;
 }
 
 export interface MysqlTablePage {

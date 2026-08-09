@@ -121,6 +121,14 @@ pub async fn list_tables(pool: &MySqlPool, database: &str) -> Result<Vec<String>
     Ok(rows.iter().map(|r| r.get::<String, _>(0)).collect())
 }
 
+/// The row a foreign key column points at: what it references, not what it is declared as.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignKey {
+    pub table: String,
+    pub column: String,
+}
+
 /// What `SHOW COLUMNS` knows about one column beyond its name — everything a new row has to
 /// respect: the type it is written as, whether it may be left NULL, and what it falls back to
 /// when an INSERT leaves it out.
@@ -136,6 +144,44 @@ pub struct ColumnMeta {
     pub default_value: Option<String>,
     /// `SHOW COLUMNS`' Extra: `auto_increment`, `DEFAULT_GENERATED`, `STORED GENERATED`, ...
     pub extra: String,
+    /// What this column references, when it is part of a foreign key. A column in a composite
+    /// foreign key reports its own half of it; a column under more than one constraint reports
+    /// the first one `information_schema` lists.
+    pub foreign_key: Option<ForeignKey>,
+}
+
+/// Which columns of `table` are foreign keys, and what each one points at.
+///
+/// Read from `information_schema`, which only ever shows the constraints the connected user has
+/// privileges on — so an empty result means "none visible to you", not necessarily "none". A
+/// failure here is swallowed by the caller for the same reason: the FK markers are decoration on
+/// top of the grid, and losing them must not cost the user the rows themselves.
+async fn foreign_keys(
+    conn: &mut sqlx::MySqlConnection,
+    database: &str,
+    table: &str,
+) -> Result<BTreeMap<String, ForeignKey>, String> {
+    let rows = sqlx::query(
+        "SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+         FROM information_schema.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL
+         ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION",
+    )
+    .bind(database)
+    .bind(table)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut keys = BTreeMap::new();
+    for row in &rows {
+        keys.entry(row.get::<String, _>("COLUMN_NAME"))
+            .or_insert_with(|| ForeignKey {
+                table: row.get::<String, _>("REFERENCED_TABLE_NAME"),
+                column: row.get::<String, _>("REFERENCED_COLUMN_NAME"),
+            });
+    }
+    Ok(keys)
 }
 
 #[derive(Debug, Serialize)]
@@ -152,12 +198,18 @@ pub struct TablePage {
     pub total: i64,
 }
 
+/// Reads one page of a table. `sort_column` orders the whole table before the page is cut out of
+/// it — sorting is the server's job, not the page's, or each page would only be sorted within
+/// itself. It is ignored unless it names a real column of this table, which is also what keeps it
+/// out of the SQL text unchecked.
 pub async fn table_data(
     pool: &MySqlPool,
     database: &str,
     table: &str,
     page: i64,
     page_size: i64,
+    sort_column: Option<&str>,
+    sort_desc: bool,
 ) -> Result<TablePage, String> {
     let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
     let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
@@ -173,16 +225,23 @@ pub async fn table_data(
         .iter()
         .map(|r| r.get::<String, _>("Field"))
         .collect();
+    let mut foreign_keys = foreign_keys(&mut conn, database, table)
+        .await
+        .unwrap_or_default();
+
     let column_meta: BTreeMap<String, ColumnMeta> = column_rows
         .iter()
         .map(|r| {
+            let field = r.get::<String, _>("Field");
+            let foreign_key = foreign_keys.remove(&field);
             (
-                r.get::<String, _>("Field"),
+                field,
                 ColumnMeta {
                     data_type: r.get::<String, _>("Type"),
                     nullable: r.get::<String, _>("Null") == "YES",
                     default_value: r.try_get::<Option<String>, _>("Default").unwrap_or(None),
                     extra: r.get::<String, _>("Extra"),
+                    foreign_key,
                 },
             )
         })
@@ -205,7 +264,20 @@ pub async fn table_data(
 
     let page_size = page_size.clamp(1, 1000);
     let offset = page.max(0) * page_size;
-    let data_sql = format!("SELECT * FROM {qualified} LIMIT {page_size} OFFSET {offset}");
+    // Only a column the table actually has can reach the SQL text, so a stale or made-up sort
+    // column is dropped rather than turned into an error the user can't act on.
+    let order_by = sort_column
+        .filter(|c| columns.iter().any(|existing| existing == c))
+        .map(|c| {
+            format!(
+                " ORDER BY {} {}",
+                quote_ident(c),
+                if sort_desc { "DESC" } else { "ASC" }
+            )
+        })
+        .unwrap_or_default();
+    let data_sql =
+        format!("SELECT * FROM {qualified}{order_by} LIMIT {page_size} OFFSET {offset}");
     let rows = sqlx::query(sqlx::AssertSqlSafe(data_sql))
         .fetch_all(&mut *conn)
         .await

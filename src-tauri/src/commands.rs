@@ -162,10 +162,23 @@ pub async fn mysql_table_data(
     table: String,
     page: i64,
     page_size: i64,
+    sort_column: Option<String>,
+    sort_desc: bool,
 ) -> Result<mysql::TablePage, String> {
     let connections = state.connections.lock().await;
     match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql::table_data(pool, &database, &table, page, page_size).await,
+        Some(DbHandle::Mysql(pool)) => {
+            mysql::table_data(
+                pool,
+                &database,
+                &table,
+                page,
+                page_size,
+                sort_column.as_deref(),
+                sort_desc,
+            )
+            .await
+        }
         Some(_) => Err("Connection is not a MySQL connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }

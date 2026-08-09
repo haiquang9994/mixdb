@@ -5,7 +5,7 @@ import ConfirmDialog from "../ConfirmDialog";
 import InsertRowsDialog from "../InsertRowsDialog";
 import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
-import { CopyIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
+import { ChevronDownIcon, ChevronUpIcon, CopyIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import type { MysqlColumnMeta } from "../../types";
 import styles from "./SqlTable.module.css";
@@ -13,6 +13,19 @@ import styles from "./SqlTable.module.css";
 interface EditingCell {
   rowIndex: number;
   col: string;
+}
+
+/** Which column the grid is ordered by, and which way. Only ever one at a time: clicking a header
+ * replaces this rather than adding to it. `null` is the table's own order, untouched. */
+interface Sort {
+  column: string;
+  desc: boolean;
+}
+
+/** The header click cycle: unsorted → descending → ascending → unsorted. */
+function nextSort(current: Sort | null, column: string): Sort | null {
+  if (current?.column !== column) return { column, desc: true };
+  return current.desc ? { column, desc: false } : null;
 }
 
 function normalizeCellValue(raw: unknown): string | null {
@@ -61,6 +74,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   const [primaryKey, setPrimaryKey] = useState<string[]>([]);
   const [autoIncrementColumn, setAutoIncrementColumn] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
+  const [sort, setSort] = useState<Sort | null>(null);
   const [loading, setLoading] = useState(false);
   // Bumped by the reload action to re-run the fetch below with the page/size unchanged.
   const [reloadToken, setReloadToken] = useState(0);
@@ -166,6 +180,8 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     setRows([]);
     setTotal(0);
     setPage(0);
+    // A sort names a column, and the next table need not have one by that name.
+    setSort(null);
     const cached = columnsCacheRef.current.get(tableCacheKey(selectedDb, selectedTable));
     if (cached) {
       setColumns(cached.columns);
@@ -181,18 +197,18 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   }, [selectedDb, selectedTable]);
 
   // The indices in `selectedRows` only mean anything for the rows currently on
-  // screen, so any refetch — a new page, a new size, a reload, a new table —
-  // drops the selection rather than carrying it onto different rows.
+  // screen, so any refetch — a new page, a new size, a new order, a reload, a
+  // new table — drops the selection rather than carrying it onto different rows.
   useEffect(() => {
     clearSelection();
-  }, [selectedDb, selectedTable, page, pageSize, reloadToken]);
+  }, [selectedDb, selectedTable, page, pageSize, sort, reloadToken]);
 
   useEffect(() => {
     const db = selectedDb;
     const table = selectedTable;
     let cancelled = false;
     setLoading(true);
-    mysqlTableData(connectionId, db, table, page, pageSize)
+    mysqlTableData(connectionId, db, table, page, pageSize, sort?.column ?? null, sort?.desc ?? false)
       .then((result) => {
         if (cancelled) return;
         columnsCacheRef.current.set(tableCacheKey(db, table), {
@@ -215,7 +231,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     return () => {
       cancelled = true;
     };
-  }, [connectionId, selectedDb, selectedTable, page, pageSize, reloadToken]);
+  }, [connectionId, selectedDb, selectedTable, page, pageSize, sort, reloadToken]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -283,6 +299,16 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   async function reload() {
     await commitAndExit();
     setReloadToken((n) => n + 1);
+  }
+
+  /** Moves the clicked column to its next sort state. Like a reload, a staged edit is written
+   * first — the rows come back in a new order, and the pending row index would no longer point
+   * at the row that was edited. Reordering also reshuffles which rows land on the current page,
+   * so the grid goes back to the first one. */
+  async function toggleSort(column: string) {
+    await commitAndExit();
+    setSort((current) => nextSort(current, column));
+    setPage(0);
   }
 
   /** The selected rows themselves, in the order they sit on screen — `selectedRows` holds their
@@ -522,17 +548,49 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
           <table>
             <thead>
               <tr>
-                {columns.map((c) => (
-                  <th
-                    key={c}
-                    ref={(el) => {
-                      if (el) thRefs.current.set(c, el);
-                      else thRefs.current.delete(c);
-                    }}
-                  >
-                    {c}
-                  </th>
-                ))}
+                {columns.map((c) => {
+                  const sorted = sort?.column === c ? sort : null;
+                  const foreignKey = columnMeta[c]?.foreignKey ?? null;
+                  return (
+                    <th
+                      key={c}
+                      ref={(el) => {
+                        if (el) thRefs.current.set(c, el);
+                        else thRefs.current.delete(c);
+                      }}
+                      className={styles.headerCell}
+                      // `aria-sort` is what tells a screen reader the grid is ordered by this
+                      // column; the chevron only says it to the eye.
+                      aria-sort={sorted ? (sorted.desc ? "descending" : "ascending") : "none"}
+                      title={t(
+                        sorted ? (sorted.desc ? "sqlTable.sortDesc" : "sqlTable.sortAsc") : "sqlTable.sortNone",
+                        { column: c },
+                      )}
+                      onClick={() => void toggleSort(c)}
+                    >
+                      {c}
+                      {foreignKey && (
+                        <span
+                          className={styles.fkBadge}
+                          // Its own tooltip, so what the column points at is readable without
+                          // having to remember the schema.
+                          title={t("sqlTable.foreignKey", {
+                            table: foreignKey.table,
+                            column: foreignKey.column,
+                          })}
+                        >
+                          FK
+                        </span>
+                      )}
+                      {/* Always rendered, empty when unsorted: the column is measured for the
+                          edit input's width, and an indicator that comes and goes would change
+                          that width under it. */}
+                      <span className={styles.sortIcon}>
+                        {sorted && (sorted.desc ? <ChevronDownIcon /> : <ChevronUpIcon />)}
+                      </span>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
