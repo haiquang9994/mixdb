@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   mysqlCollations,
+  mysqlCreateDatabase,
   mysqlCreateTable,
   mysqlDropTable,
   mysqlListDatabases,
@@ -10,6 +11,7 @@ import {
 } from "./api";
 import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
+import DatabaseDialog from "../components/DatabaseDialog";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import NameDialog from "../components/NameDialog";
@@ -46,6 +48,10 @@ const CONTENT_TABS: { mode: ContentMode; labelKey: "mysql.dataTab" | "mysql.stru
   { mode: "query", labelKey: "mysql.queryTab" },
 ];
 
+/** The database picker's first entry, which opens the create dialog instead of selecting anything.
+ * MySQL allows no `/` in a database name, so this can never collide with a real one. */
+const NEW_DATABASE = "/new";
+
 const DEFAULT_SIDEBAR_WIDTH = 200;
 const MIN_SIDEBAR_WIDTH = 140;
 const MAX_SIDEBAR_WIDTH = 480;
@@ -62,6 +68,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   const [localError, setLocalError] = useState("");
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
   const [collations, setCollations] = useState<MysqlCollation[]>([]);
+  const [creatingDatabase, setCreatingDatabase] = useState(false);
   const [creatingTable, setCreatingTable] = useState(false);
   /** The table the context menu's rename is open on, and the one its drop is asking about. */
   const [renamingTable, setRenamingTable] = useState<string | null>(null);
@@ -217,6 +224,21 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       .finally(() => setTablesLoading(false));
   }, [connectionId, selectedDb]);
 
+  /** Creates the database and switches to it, empty. Errors reject back into the dialog, which is
+   * what shows them and stays open. */
+  async function createDatabase(name: string, collation: string | null) {
+    await mysqlCreateDatabase(connectionId, name, collation);
+    setCreatingDatabase(false);
+    setSelectedDb(name);
+    setSelectedTable(null);
+    // Re-listed rather than appended, so the picker keeps the order the server lists them in.
+    try {
+      setDatabases(await mysqlListDatabases(connectionId));
+    } catch (e) {
+      setLocalError(String(e));
+    }
+  }
+
   /** Creates the table and leaves it selected, so the columns it still needs are one tab away.
    * Errors reject back into the dialog, which is what shows them and stays open. */
   async function createTable(name: string, collation: string | null) {
@@ -277,6 +299,10 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           <Select
             value={selectedDb}
             onChange={(db) => {
+              if (db === NEW_DATABASE) {
+                setCreatingDatabase(true);
+                return;
+              }
               setSelectedDb(db);
               setSelectedTable(null);
             }}
@@ -284,7 +310,14 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             size="normal"
             searchable
             searchPlaceholder={t("mysql.searchDatabasesPlaceholder")}
-            options={databases.map((db) => ({ value: db, label: db }))}
+            options={[
+              {
+                value: NEW_DATABASE,
+                label: t("mysql.createDatabase"),
+                optionLabel: <span className="select-new-option">+ {t("mysql.createDatabase")}</span>,
+              },
+              ...databases.map((db) => ({ value: db, label: db })),
+            ]}
           />
         </label>
         <div className="method-tabs mysql-content-tabs" role="tablist">
@@ -387,6 +420,14 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           </div>
         </section>
       </div>
+
+      {creatingDatabase && (
+        <DatabaseDialog
+          collations={collations}
+          onCancel={() => setCreatingDatabase(false)}
+          onSubmit={createDatabase}
+        />
+      )}
 
       {creatingTable && selectedDb && (
         <TableDialog

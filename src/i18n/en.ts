@@ -76,6 +76,7 @@ const en = {
     databaseLabel: "Database",
     databasePlaceholder: "(none)",
     searchDatabasesPlaceholder: "Search databases...",
+    createDatabase: "Create a database",
     dataTab: "Data",
     structureTab: "Structure",
     queryTab: "Query",
@@ -153,6 +154,17 @@ const en = {
   collation: {
     charsetDefault: "{{charset}} · default",
     search: "Search collations...",
+  },
+  // Creating a database, from either workspace's picker. Only MySQL's dialog has a collation in it;
+  // the wording around the name is the same on both.
+  databaseDialog: {
+    title: "Create a database",
+    name: "Name",
+    collation: "Collation",
+    collationPlaceholder: "(server default)",
+    errorName: "The database needs a name.",
+    submit: "Create database",
+    saving: "Creating...",
   },
   tableDialog: {
     title: "Create a table in {{database}}",
@@ -351,6 +363,11 @@ const en = {
     databaseLabel: "Database",
     databasePlaceholder: "(none)",
     searchDatabasesPlaceholder: "Search databases...",
+    createDatabase: "Create a database",
+    createDatabaseHint:
+      "MongoDB has no empty database: this one is kept here until you create its first collection, which is what stores it on the server.",
+    databaseNameInvalid: "A database name cannot contain a space or any of / \\ . \" $ * < > : | ?",
+    databaseExists: "There is already a database called {{database}}.",
     dataTab: "Data",
     searchCollectionsPlaceholder: "Search collections...",
     reloadCollections: "Reload collections",

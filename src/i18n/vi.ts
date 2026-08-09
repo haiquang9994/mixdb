@@ -78,6 +78,7 @@ const vi: TranslationDict = {
     databaseLabel: "Cơ sở dữ liệu",
     databasePlaceholder: "(không có)",
     searchDatabasesPlaceholder: "Tìm cơ sở dữ liệu...",
+    createDatabase: "Tạo cơ sở dữ liệu mới",
     dataTab: "Dữ liệu",
     structureTab: "Cấu trúc",
     queryTab: "Truy vấn",
@@ -153,6 +154,17 @@ const vi: TranslationDict = {
   collation: {
     charsetDefault: "{{charset}} · mặc định",
     search: "Tìm collation...",
+  },
+  // Tạo cơ sở dữ liệu, mở từ ô chọn database của cả hai workspace. Chỉ popup của MySQL có thêm
+  // collation; phần còn lại giống nhau.
+  databaseDialog: {
+    title: "Tạo cơ sở dữ liệu",
+    name: "Tên cơ sở dữ liệu",
+    collation: "Collation",
+    collationPlaceholder: "(theo mặc định của server)",
+    errorName: "Cơ sở dữ liệu cần có tên.",
+    submit: "Tạo cơ sở dữ liệu",
+    saving: "Đang tạo...",
   },
   tableDialog: {
     title: "Tạo bảng trong {{database}}",
@@ -350,6 +362,12 @@ const vi: TranslationDict = {
     databaseLabel: "Cơ sở dữ liệu",
     databasePlaceholder: "(không có)",
     searchDatabasesPlaceholder: "Tìm cơ sở dữ liệu...",
+    createDatabase: "Tạo cơ sở dữ liệu mới",
+    createDatabaseHint:
+      "MongoDB không có cơ sở dữ liệu rỗng: tên này chỉ được giữ tạm ở đây cho tới khi bạn tạo collection đầu tiên — lúc đó server mới thật sự lưu nó.",
+    databaseNameInvalid:
+      "Tên cơ sở dữ liệu không được chứa dấu cách hay các ký tự / \\ . \" $ * < > : | ?",
+    databaseExists: "Đã có cơ sở dữ liệu tên {{database}}.",
     dataTab: "Dữ liệu",
     searchCollectionsPlaceholder: "Tìm collection...",
     reloadCollections: "Tải lại danh sách collection",

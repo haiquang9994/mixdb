@@ -124,6 +124,16 @@ export function mysqlCollations(id: string): Promise<MysqlCollation[]> {
   return invoke<MysqlCollation[]>("mysql_collations", { id });
 }
 
+/** Creates a database. `collation` is its default collation, or null to inherit the server's — the
+ *  character set follows from the collation, so it is not asked for separately. */
+export function mysqlCreateDatabase(
+  id: string,
+  name: string,
+  collation: string | null
+): Promise<void> {
+  return invoke<void>("mysql_create_database", { id, name, collation });
+}
+
 /**
  * Creates an empty table, with an `id int(11) unsigned AUTO_INCREMENT` primary key for its one
  * column — every other column is added from the Structure tab afterwards.

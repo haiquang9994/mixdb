@@ -270,6 +270,24 @@ pub async fn mysql_collations(
     }
 }
 
+/// Creates a database, for the header's database picker.
+#[tauri::command]
+pub async fn mysql_create_database(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    collation: Option<String>,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => {
+            mysql_structure::create_database(pool, &name, collation.as_deref()).await
+        }
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
 /// Creates an empty table — one `id` column and its primary key — for the sidebar's add button.
 #[tauri::command]
 pub async fn mysql_create_table(

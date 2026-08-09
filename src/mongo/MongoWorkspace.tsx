@@ -35,6 +35,14 @@ interface Props {
  * below rather than a reshuffle of the layout — same as the MySQL side. */
 type ContentMode = "data";
 
+/** The database picker's first entry, which opens the create dialog instead of selecting anything.
+ * MongoDB allows no `/` in a database name, so this can never collide with a real one. */
+const NEW_DATABASE = "/new";
+
+/** What MongoDB refuses in a database name, checked here because there is no server call to be
+ * refused by: a database only reaches the server with its first collection. */
+const INVALID_DATABASE_NAME = /[/\\. "$*<>:|?]/;
+
 const DEFAULT_SIDEBAR_WIDTH = 200;
 const MIN_SIDEBAR_WIDTH = 140;
 const MAX_SIDEBAR_WIDTH = 480;
@@ -50,6 +58,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   const [contentMode, setContentMode] = useState<ContentMode>("data");
   const [localError, setLocalError] = useState("");
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
+  const [creatingDatabase, setCreatingDatabase] = useState(false);
   const [creatingCollection, setCreatingCollection] = useState(false);
   /** The collection the context menu's rename is open on, and the one its drop is asking about. */
   const [renamingCollection, setRenamingCollection] = useState<string | null>(null);
@@ -184,6 +193,24 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       .finally(() => setCollectionsLoading(false));
   }, [connectionId, selectedDb]);
 
+  /**
+   * Takes the new database's name and switches to it. Nothing is sent to the server: MongoDB has
+   * no empty database, and only stores one once it holds a collection — which the sidebar's own
+   * add button is what creates. Until then the name lives here alone, and a reconnect forgets it.
+   */
+  async function createDatabase(name: string) {
+    if (INVALID_DATABASE_NAME.test(name)) {
+      // Thrown as text rather than as an Error: what the dialog shows is whatever it catches, and
+      // everything else it can catch is a message from the backend.
+      throw t("mongo.databaseNameInvalid");
+    }
+    if (databases.includes(name)) throw t("mongo.databaseExists", { database: name });
+    setCreatingDatabase(false);
+    setDatabases((prev) => [...prev, name]);
+    setSelectedDb(name);
+    setSelectedCollection(null);
+  }
+
   /** Creates the collection and leaves it selected, empty and ready to be inserted into. Errors
    * reject back into the dialog, which is what shows them and stays open. */
   async function createCollection(name: string) {
@@ -248,6 +275,10 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           <Select
             value={selectedDb}
             onChange={(db) => {
+              if (db === NEW_DATABASE) {
+                setCreatingDatabase(true);
+                return;
+              }
               setSelectedDb(db);
               setSelectedCollection(null);
             }}
@@ -255,7 +286,14 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             size="normal"
             searchable
             searchPlaceholder={t("mongo.searchDatabasesPlaceholder")}
-            options={databases.map((db) => ({ value: db, label: db }))}
+            options={[
+              {
+                value: NEW_DATABASE,
+                label: t("mongo.createDatabase"),
+                optionLabel: <span className="select-new-option">+ {t("mongo.createDatabase")}</span>,
+              },
+              ...databases.map((db) => ({ value: db, label: db })),
+            ]}
           />
         </label>
         <div className="method-tabs mongo-content-tabs" role="tablist">
@@ -338,6 +376,20 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           )}
         </section>
       </div>
+
+      {creatingDatabase && (
+        <NameDialog
+          title={t("databaseDialog.title")}
+          ariaLabel={t("databaseDialog.title")}
+          label={t("databaseDialog.name")}
+          emptyError={t("databaseDialog.errorName")}
+          submitLabel={t("databaseDialog.submit")}
+          savingLabel={t("databaseDialog.saving")}
+          hint={t("mongo.createDatabaseHint")}
+          onCancel={() => setCreatingDatabase(false)}
+          onSubmit={createDatabase}
+        />
+      )}
 
       {creatingCollection && selectedDb && (
         <NameDialog

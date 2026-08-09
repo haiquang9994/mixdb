@@ -497,6 +497,27 @@ pub async fn collations(pool: &MySqlPool) -> Result<Vec<Collation>, String> {
         .collect())
 }
 
+/// Creates a database. Not a table's shape at all, but it is written the same way as everything
+/// else here — a statement built from a quoted name and a checked collation.
+///
+/// `collation` alone is enough: MySQL takes the character set from the collation's own. Left out,
+/// the database inherits the server's.
+pub async fn create_database(
+    pool: &MySqlPool,
+    name: &str,
+    collation: Option<&str>,
+) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Database name is required".to_string());
+    }
+    let mut sql = format!("CREATE DATABASE {}", quote_ident(name));
+    if let Some(collation) = validated_collation(collation)? {
+        sql.push_str(&format!(" COLLATE = {collation}"));
+    }
+    execute(pool, sql).await
+}
+
 /// Creates a table with nothing in it but the key every table ends up wanting: an unsigned
 /// `int(11)` `id` that MySQL fills in itself. A table has to be declared with at least one column,
 /// and the Structure tab is where the rest of them are added — so this asks for the two things
