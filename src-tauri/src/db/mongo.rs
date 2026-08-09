@@ -94,11 +94,14 @@ pub fn bson_to_json(bson: &Bson) -> Value {
         Bson::Int32(i) => wrap("Int32", json!(i)),
         Bson::Int64(i) => wrap("Int64", json!(i.to_string())),
         Bson::Decimal128(d) => wrap("Decimal128", json!(d.to_string())),
+        // Always three fractional digits, the way JS `toISOString()` writes them. RFC3339 lets a
+        // whole-second instant drop the fraction entirely, and that shorter spelling round-trips
+        // through the editor as a different string, making an untouched date look edited.
         Bson::DateTime(dt) => wrap(
             "Date",
-            json!(dt
-                .try_to_rfc3339_string()
-                .unwrap_or_else(|_| dt.timestamp_millis().to_string())),
+            json!(chrono::DateTime::from_timestamp_millis(dt.timestamp_millis())
+                .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+                .unwrap_or_else(|| dt.timestamp_millis().to_string())),
         ),
         Bson::Timestamp(ts) => wrap("Timestamp", json!({ "t": ts.time, "i": ts.increment })),
         Bson::Binary(bin) => wrap(

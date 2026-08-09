@@ -86,12 +86,15 @@ function badgeText(kind: BsonKind, value: TypedValue): string {
   return BADGE_TEXT[kind];
 }
 
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
-}
+/** Text a date is typed as, and the one the collapsed row shows: UTC, ISO-8601, milliseconds
+ * spelled out. A `datetime-local` input would order the fields by the browser's own locale
+ * (dd/mm/yyyy here) and read as local wall time, neither of which matches how the value is
+ * stored or displayed. */
+const DATE_INPUT_FORMAT = "YYYY-MM-DDTHH:mm:ss.SSSZ";
 
-function toDatetimeLocalValue(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+/** True once the text carries its own zone — a trailing `Z`, or a `+hh:mm`/`-hh:mm` offset. */
+function hasTimezone(text: string): boolean {
+  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(text.trim());
 }
 
 interface Draft {
@@ -128,7 +131,7 @@ function draftFromValue(value: TypedValue): Draft {
       return { ...base, text: String((value as TypedWrapper).$value) };
     case "Date": {
       const d = new Date(String((value as TypedWrapper).$value));
-      return { ...base, text: Number.isNaN(d.getTime()) ? "" : toDatetimeLocalValue(d) };
+      return { ...base, text: Number.isNaN(d.getTime()) ? "" : d.toISOString() };
     }
     case "Binary": {
       const v = (value as TypedWrapper).$value as { base64: string; subType: number };
@@ -178,8 +181,11 @@ function draftToValue(draft: Draft): { ok: true; value: TypedValue } | { ok: fal
       return { ok: true, value: { $type: "Decimal128", $value: draft.text.trim() } };
     }
     case "Date": {
-      const d = new Date(draft.text);
-      if (Number.isNaN(d.getTime())) return { ok: false, error: "Invalid Date" };
+      const text = draft.text.trim();
+      // Left to itself, `new Date` reads a zone-less date-time as local wall time and shifts it.
+      // The field is labelled and filled as UTC, so an omitted `Z` means UTC, not "shift me".
+      const d = new Date(hasTimezone(text) ? text : `${text}Z`);
+      if (Number.isNaN(d.getTime())) return { ok: false, error: `Invalid Date (${DATE_INPUT_FORMAT})` };
       return { ok: true, value: { $type: "Date", $value: d.toISOString() } };
     }
     case "ObjectId": {
@@ -239,6 +245,9 @@ export function ValueEditor({ initialValue, onCommit, onCancel, propertyName }: 
   // register as "clicked outside" and prematurely auto-commit the draft.
   const pointerInsideRef = useRef(false);
 
+  // Bumped on every type change, to drive the focus-recovery effect below.
+  const [typePicks, setTypePicks] = useState(0);
+
   const initialKind = kindOf(initialValue);
   const typeOptions: EditableType[] = CREATABLE_TYPES.includes(initialKind as CreatableType)
     ? CREATABLE_TYPES
@@ -256,6 +265,18 @@ export function ValueEditor({ initialValue, onCommit, onCancel, propertyName }: 
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, []);
+
+  // Clicking an option leaves focus on the portal's list, which then unmounts — focus falls back
+  // to <body>, outside this editor. Nothing here is focused any more, so clicking away fires no
+  // blur at all and the draft is silently lost. Pull focus back to the field for the type just
+  // picked (the editor itself when that type has no field, e.g. Null).
+  useEffect(() => {
+    if (typePicks === 0) return;
+    const root = rootRef.current;
+    if (!root || root.contains(document.activeElement)) return;
+    const field = root.querySelector<HTMLElement>("input:not([data-property-name]), textarea");
+    (field ?? root).focus();
+  }, [typePicks]);
 
   function commit() {
     const result = draftToValue(draft);
@@ -289,11 +310,12 @@ export function ValueEditor({ initialValue, onCommit, onCancel, propertyName }: 
   }
 
   return (
-    <div ref={rootRef} className={styles.editor} onKeyDown={handleKeyDown} onBlur={handleBlur}>
+    <div ref={rootRef} tabIndex={-1} className={styles.editor} onKeyDown={handleKeyDown} onBlur={handleBlur}>
       {propertyName && (
         <Input
           size="small"
           autoFocus
+          data-property-name=""
           placeholder={t("noSqlTable.propertyNamePlaceholder")}
           value={propertyName.value}
           onChange={(e) => propertyName.onChange(e.target.value)}
@@ -303,7 +325,15 @@ export function ValueEditor({ initialValue, onCommit, onCancel, propertyName }: 
       <Select
         size="small"
         value={draft.type}
-        onChange={(next) => setDraft({ ...emptyDraft(next), text: next === draft.type ? draft.text : "" })}
+        onChange={(next) => {
+          setDraft({
+            ...emptyDraft(next),
+            // Switching to Date lands on a plain text box, with no picker to fall back on: start
+            // it at now, so the common case is an edit rather than typing out a timestamp.
+            text: next === draft.type ? draft.text : next === "Date" ? new Date().toISOString() : "",
+          });
+          setTypePicks((n) => n + 1);
+        }}
         options={typeOptions.map((opt) => ({ value: opt, label: t(TYPE_LABEL_KEY[opt as BsonKind]) }))}
       />
       {(draft.type === "String" ||
@@ -330,11 +360,11 @@ export function ValueEditor({ initialValue, onCommit, onCancel, propertyName }: 
       {draft.type === "Date" && (
         <Input
           size="small"
-          type="datetime-local"
-          step={1}
+          placeholder={DATE_INPUT_FORMAT}
           autoFocus={autoFocusValue}
           value={draft.text}
           onChange={(e) => setDraft({ ...draft, text: e.target.value })}
+          className={styles.editorDate}
         />
       )}
       {draft.type === "Binary" && (

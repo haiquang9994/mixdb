@@ -143,8 +143,21 @@
   min-width: 0;
 }
 
+/* Only ever focused programmatically, to keep blur-to-commit working for types with no field
+   of their own; it is a container, so it shouldn't draw a ring when it holds focus. */
+.editor:focus {
+  outline: none;
+}
+
 .editorInput {
   min-width: 140px;
+}
+
+/* Wide enough for a full ISO timestamp without the text scrolling as it is typed. */
+.editorDate {
+  composes: editorInput;
+  min-width: 210px;
+  font-family: "Fira Code", monospace;
 }
 
 .editorNarrow {
