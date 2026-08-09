@@ -209,7 +209,9 @@ pub async fn run(
 
     let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
     if let Some(db) = database.filter(|d| !d.is_empty()) {
-        sqlx::query(sqlx::AssertSqlSafe(format!("USE {}", quote_ident(db))))
+        // Sent as text, not prepared: MySQL refuses `USE` in the prepared statement protocol
+        // (error 1295), and the whole script would fail before its first statement ran.
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!("USE {}", quote_ident(db))))
             .execute(&mut *conn)
             .await
             .map_err(|e| e.to_string())?;

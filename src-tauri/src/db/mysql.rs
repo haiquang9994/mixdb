@@ -52,7 +52,8 @@ pub async fn query(
     let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
     if let Some(db) = database.filter(|d| !d.is_empty()) {
         let use_sql = format!("USE {}", quote_ident(db));
-        sqlx::query(sqlx::AssertSqlSafe(use_sql))
+        // Text protocol: `USE` is one of the statements MySQL will not accept as a prepared one.
+        sqlx::raw_sql(sqlx::AssertSqlSafe(use_sql))
             .execute(&mut *conn)
             .await
             .map_err(|e| e.to_string())?;
