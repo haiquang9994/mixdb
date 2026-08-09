@@ -530,7 +530,20 @@ function Document({
   );
 
   return (
-    <div className={styles.docCard}>
+    // Escape backs out of the confirmation, but only for the card the keystroke came from:
+    // several cards can be waiting on their own confirmation at once, and a listener any wider
+    // than this would cancel all of them at every press. Enter needs no handler — the Delete
+    // button takes focus as it appears, so it is already what Enter activates.
+    <div
+      className={styles.docCard}
+      onKeyDown={
+        confirmingDelete
+          ? (e) => {
+              if (e.key === "Escape") setConfirmingDelete(false);
+            }
+          : undefined
+      }
+    >
       <div className={styles.docCardHeader}>
         <button
           type="button"
@@ -595,7 +608,15 @@ function Document({
             ? (
               <span className={styles.confirmDelete}>
                 {t("noSqlTable.confirmDeleteDocument")}
-                <button type="button" className={styles.confirmDeleteYes} onClick={() => void performDelete()}>
+                {/* Focused on appearance, so the Enter that follows the click on the trash icon
+                    reads as "yes, delete it" rather than falling through to whatever the page
+                    had focused before. */}
+                <button
+                  type="button"
+                  className={styles.confirmDeleteYes}
+                  autoFocus
+                  onClick={() => void performDelete()}
+                >
                   {t("common.delete")}
                 </button>
                 <button type="button" className={styles.confirmDeleteNo} onClick={() => setConfirmingDelete(false)}>
