@@ -443,6 +443,22 @@ pub async fn mongo_list_collections(
     }
 }
 
+/// Creates an empty collection, for the sidebar's add button.
+#[tauri::command]
+pub async fn mongo_create_collection(
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+    collection: String,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mongo(client)) => mongo::create_collection(client, &db, &collection).await,
+        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn mongo_find(
     state: State<'_, AppState>,

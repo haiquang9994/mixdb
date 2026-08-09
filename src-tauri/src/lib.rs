@@ -38,6 +38,7 @@ pub fn run() {
             commands::mongo_list_databases,
             commands::mongo_server_info,
             commands::mongo_list_collections,
+            commands::mongo_create_collection,
             commands::mongo_find,
             commands::mongo_collection_page,
             commands::mongo_next_ids,

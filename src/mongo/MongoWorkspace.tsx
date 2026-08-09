@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { mongoListCollections, mongoListDatabases, mongoServerInfo } from "./api";
+import {
+  mongoCreateCollection,
+  mongoListCollections,
+  mongoListDatabases,
+  mongoServerInfo,
+} from "./api";
 import Select from "../components/Select";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
+import NameDialog from "../components/NameDialog";
 import NoSqlTable from "../components/NoSqlTable";
 import ActionBar from "../components/ActionBar";
 import ItemList from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
-import { ReloadIcon } from "../icons";
+import { PlusIcon, ReloadIcon } from "../icons";
 import { useTranslation } from "../i18n";
 
 interface Props {
@@ -40,6 +46,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   const [contentMode, setContentMode] = useState<ContentMode>("data");
   const [localError, setLocalError] = useState("");
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
+  const [creatingCollection, setCreatingCollection] = useState(false);
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -170,6 +177,17 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       .finally(() => setCollectionsLoading(false));
   }, [connectionId, selectedDb]);
 
+  /** Creates the collection and leaves it selected, empty and ready to be inserted into. Errors
+   * reject back into the dialog, which is what shows them and stays open. */
+  async function createCollection(name: string) {
+    await mongoCreateCollection(connectionId, selectedDb, name);
+    setCreatingCollection(false);
+    // Cleared so the new collection is visible whatever was being searched for when it was made.
+    setCollectionFilter("");
+    setSelectedCollection(name);
+    reloadCollections();
+  }
+
   const filteredCollections = collectionFilter.trim()
     ? collections.filter((c) => c.toLowerCase().includes(collectionFilter.trim().toLowerCase()))
     : collections;
@@ -249,6 +267,13 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                 busy: collectionsLoading,
                 onClick: reloadCollections,
               },
+              {
+                key: "add",
+                icon: PlusIcon,
+                label: t("mongo.addCollection"),
+                disabled: !selectedDb || collectionsLoading,
+                onClick: () => setCreatingCollection(true),
+              },
             ]}
           />
         </aside>
@@ -278,6 +303,19 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           )}
         </section>
       </div>
+
+      {creatingCollection && selectedDb && (
+        <NameDialog
+          title={t("collectionDialog.title", { database: selectedDb })}
+          ariaLabel={selectedDb}
+          label={t("collectionDialog.name")}
+          emptyError={t("collectionDialog.errorName")}
+          submitLabel={t("collectionDialog.submit")}
+          savingLabel={t("collectionDialog.saving")}
+          onCancel={() => setCreatingCollection(false)}
+          onSubmit={createCollection}
+        />
+      )}
     </div>
   );
 }

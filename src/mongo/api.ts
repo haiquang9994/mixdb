@@ -15,6 +15,12 @@ export function mongoListCollections(id: string, db: string): Promise<string[]> 
   return invoke<string[]>("mongo_list_collections", { id, db });
 }
 
+/** Creates an empty collection. MongoDB would make one on the first write regardless; asking for it
+ *  outright is how a name that is taken or not allowed is reported now rather than then. */
+export function mongoCreateCollection(id: string, db: string, collection: string): Promise<void> {
+  return invoke<void>("mongo_create_collection", { id, db, collection });
+}
+
 export interface MongoDocumentPage {
   documents: TypedDocument[];
   total: number;

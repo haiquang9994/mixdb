@@ -128,6 +128,23 @@ pub async fn list_collections(client: &Client, db: &str) -> Result<Vec<String>, 
     Ok(names)
 }
 
+/// Creates an empty collection.
+///
+/// MongoDB makes one on the first write anyway, so this is about saying a collection exists before
+/// there is anything to put in it — and about being told straight away when the name is taken or
+/// not allowed, rather than at the first insert.
+pub async fn create_collection(client: &Client, db: &str, name: &str) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Collection name is required".to_string());
+    }
+    client
+        .database(db)
+        .create_collection(name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 pub async fn find(
     client: &Client,
     db: &str,

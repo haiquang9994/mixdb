@@ -342,9 +342,17 @@ const en = {
     dataTab: "Data",
     searchCollectionsPlaceholder: "Search collections...",
     reloadCollections: "Reload collections",
+    addCollection: "Create a collection",
     resizeSidebar: "Resize sidebar",
     resizeSidebarTooltip: "Drag to resize, double-click to fit",
     selectCollectionPrompt: "Select a collection to view its documents.",
+  },
+  collectionDialog: {
+    title: "Create a collection in {{database}}",
+    name: "Name",
+    errorName: "The collection needs a name.",
+    submit: "Create collection",
+    saving: "Creating...",
   },
   noSqlTable: {
     loading: "Loading...",

@@ -341,9 +341,17 @@ const vi: TranslationDict = {
     dataTab: "Dữ liệu",
     searchCollectionsPlaceholder: "Tìm collection...",
     reloadCollections: "Tải lại danh sách collection",
+    addCollection: "Tạo collection mới",
     resizeSidebar: "Thay đổi kích thước sidebar",
     resizeSidebarTooltip: "Kéo để thay đổi kích thước, bấm đúp để vừa khít",
     selectCollectionPrompt: "Chọn một collection để xem document.",
+  },
+  collectionDialog: {
+    title: "Tạo collection trong {{database}}",
+    name: "Tên collection",
+    errorName: "Collection cần có tên.",
+    submit: "Tạo collection",
+    saving: "Đang tạo...",
   },
   noSqlTable: {
     loading: "Đang tải...",
