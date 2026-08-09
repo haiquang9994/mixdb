@@ -78,19 +78,48 @@
   transform: rotate(180deg);
 }
 
-.listbox {
+/* The floating box. It owns the frame and the height budget; the list inside it is what
+   scrolls, so a search box stays pinned above the options instead of scrolling away. */
+.menu {
   z-index: 1000;
+  display: flex;
+  flex-direction: column;
   width: max-content;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  margin: 0;
   padding: 0.3rem;
-  list-style: none;
   background: #ffffff;
   border: 1px solid rgba(128, 128, 128, 0.25);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   box-sizing: border-box;
+}
+
+.search {
+  flex-shrink: 0;
+  width: 100%;
+  min-width: 10em;
+  margin-bottom: 0.3rem;
+  padding: 0.4em 0.6em;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.85em;
+  color: inherit;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--control-border-focus);
+}
+
+.listbox {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .option {
@@ -125,9 +154,13 @@
   opacity: 0.6;
 }
 
-:root[data-theme="dark"] .listbox {
+:root[data-theme="dark"] .menu {
   background: #2f2f2f;
   border-color: rgba(255, 255, 255, 0.15);
+}
+
+:root[data-theme="dark"] .search {
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 :root[data-theme="dark"] .optionActive {
@@ -139,9 +172,13 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .listbox {
+  :root:not([data-theme]) .menu {
     background: #2f2f2f;
     border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  :root:not([data-theme]) .search {
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   :root:not([data-theme]) .optionActive {

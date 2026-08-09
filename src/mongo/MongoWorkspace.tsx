@@ -201,6 +201,8 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             }}
             placeholder={t("mongo.databasePlaceholder")}
             size="normal"
+            searchable
+            searchPlaceholder={t("mongo.searchDatabasesPlaceholder")}
             options={databases.map((db) => ({ value: db, label: db }))}
           />
         </label>

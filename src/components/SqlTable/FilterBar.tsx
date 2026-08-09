@@ -127,6 +127,8 @@ function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
                   value={row.column}
                   options={columnOptions}
                   ariaLabel={t("sqlTable.filterColumn")}
+                  searchable
+                  searchPlaceholder={t("sqlTable.filterColumnSearch")}
                   onChange={(column) => updateRow(row.id, { column })}
                 />
                 <Select
@@ -135,6 +137,8 @@ function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
                   value={row.operator}
                   options={operatorOptions}
                   ariaLabel={t("sqlTable.filterOperator")}
+                  searchable
+                  searchPlaceholder={t("sqlTable.filterOperatorSearch")}
                   onChange={(operator) => changeOperator(row, operator)}
                 />
                 <Input

@@ -198,6 +198,8 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             }}
             placeholder={t("mysql.databasePlaceholder")}
             size="normal"
+            searchable
+            searchPlaceholder={t("mysql.searchDatabasesPlaceholder")}
             options={databases.map((db) => ({ value: db, label: db }))}
           />
         </label>
