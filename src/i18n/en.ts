@@ -82,6 +82,11 @@ const en = {
     searchTablesPlaceholder: "Search tables...",
     reloadTables: "Reload tables",
     addTable: "Create a table",
+    renameTable: "Rename",
+    dropTable: "Drop table",
+    renameTableTitle: "Rename {{table}}",
+    dropTableTitle: "Drop table?",
+    dropTableMessage: "Drop {{table}} and every row in it? This cannot be undone.",
     resizeSidebar: "Resize sidebar",
     resizeSidebarTooltip: "Drag to resize, double-click to fit",
     selectTablePrompt: "Select a table to view its data.",
@@ -136,6 +141,13 @@ const en = {
       "This index is on an expression, which is not read here — it can only be dropped",
     dropIndexTitle: "Drop index?",
     dropIndexMessage: "Drop the index {{index}}? The rows themselves are untouched.",
+  },
+  // The rename dialog, wherever it is opened from: only the title says what is being renamed.
+  renameDialog: {
+    name: "New name",
+    errorName: "The new name cannot be empty.",
+    submit: "Rename",
+    saving: "Renaming...",
   },
   // The collation picker, wherever one is declared — a column's or a whole table's.
   collation: {
@@ -343,6 +355,12 @@ const en = {
     searchCollectionsPlaceholder: "Search collections...",
     reloadCollections: "Reload collections",
     addCollection: "Create a collection",
+    renameCollection: "Rename",
+    dropCollection: "Drop collection",
+    renameCollectionTitle: "Rename {{collection}}",
+    dropCollectionTitle: "Drop collection?",
+    dropCollectionMessage:
+      "Drop {{collection}} and every document in it? This cannot be undone.",
     resizeSidebar: "Resize sidebar",
     resizeSidebarTooltip: "Drag to resize, double-click to fit",
     selectCollectionPrompt: "Select a collection to view its documents.",

@@ -525,6 +525,42 @@ pub async fn create_table(
     execute(pool, sql).await
 }
 
+/// Renames a table within its database. `RENAME TABLE` rather than `ALTER TABLE ... RENAME`, since
+/// it is the one form MySQL guarantees to be atomic — nothing ever sees both names, or neither.
+pub async fn rename_table(
+    pool: &MySqlPool,
+    database: &str,
+    table: &str,
+    new_name: &str,
+) -> Result<(), String> {
+    let new_name = new_name.trim();
+    if table.trim().is_empty() || new_name.is_empty() {
+        return Err("Table name is required".to_string());
+    }
+    execute(
+        pool,
+        format!(
+            "RENAME TABLE {} TO {}",
+            qualified(database, table.trim()),
+            qualified(database, new_name)
+        ),
+    )
+    .await
+}
+
+/// Drops a table and everything in it. Plain `DROP TABLE`, not `IF EXISTS`: asking to drop
+/// something that is not there is worth being told about rather than passing quietly.
+pub async fn drop_table(pool: &MySqlPool, database: &str, table: &str) -> Result<(), String> {
+    if table.trim().is_empty() {
+        return Err("The table being dropped must be named".to_string());
+    }
+    execute(
+        pool,
+        format!("DROP TABLE {}", qualified(database, table.trim())),
+    )
+    .await
+}
+
 pub async fn add_column(
     pool: &MySqlPool,
     database: &str,

@@ -11,6 +11,9 @@ interface Props {
   ariaLabel: string;
   /** The label over the name box — "Name", or whatever the thing being named calls it. */
   label: string;
+  /** What the box starts at. Given, it starts selected too: renaming usually means replacing the
+   *  name rather than editing it. */
+  initialName?: string;
   /** Shown when the box is left empty; the only thing checked here, since everything else about a
    *  name is the server's to judge. */
   emptyError: string;
@@ -36,6 +39,7 @@ function NameDialog({
   title,
   ariaLabel,
   label,
+  initialName = "",
   emptyError,
   submitLabel,
   savingLabel,
@@ -45,13 +49,14 @@ function NameDialog({
   onSubmit,
 }: Props) {
   const { t } = useTranslation();
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     nameRef.current?.focus();
+    nameRef.current?.select();
   }, []);
 
   useEffect(() => {

@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   mongoCreateCollection,
+  mongoDropCollection,
   mongoListCollections,
   mongoListDatabases,
+  mongoRenameCollection,
   mongoServerInfo,
 } from "./api";
 import Select from "../components/Select";
+import ConfirmDialog from "../components/ConfirmDialog";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import NameDialog from "../components/NameDialog";
 import NoSqlTable from "../components/NoSqlTable";
 import ActionBar from "../components/ActionBar";
 import ItemList from "../components/ItemList";
+import type { ItemAction } from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
 import { PlusIcon, ReloadIcon } from "../icons";
 import { useTranslation } from "../i18n";
@@ -47,6 +51,9 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   const [localError, setLocalError] = useState("");
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
   const [creatingCollection, setCreatingCollection] = useState(false);
+  /** The collection the context menu's rename is open on, and the one its drop is asking about. */
+  const [renamingCollection, setRenamingCollection] = useState<string | null>(null);
+  const [droppingCollection, setDroppingCollection] = useState<string | null>(null);
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -188,6 +195,33 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     reloadCollections();
   }
 
+  /** Renames the collection and follows it: whatever was open on it stays open, under the new
+   * name. Errors reject back into the dialog, which is what shows them and stays open. */
+  async function renameCollection(collection: string, newName: string) {
+    await mongoRenameCollection(connectionId, selectedDb, collection, newName);
+    setRenamingCollection(null);
+    setCollectionFilter("");
+    if (selectedCollection === collection) setSelectedCollection(newName);
+    reloadCollections();
+  }
+
+  /** Drops the collection the confirmation was asking about. */
+  async function dropCollection(collection: string) {
+    setDroppingCollection(null);
+    try {
+      await mongoDropCollection(connectionId, selectedDb, collection);
+      if (selectedCollection === collection) setSelectedCollection(null);
+      reloadCollections();
+    } catch (e) {
+      setLocalError(String(e));
+    }
+  }
+
+  const collectionActions: ItemAction[] = [
+    { key: "rename", label: t("mongo.renameCollection"), onSelect: setRenamingCollection },
+    { key: "drop", label: t("mongo.dropCollection"), danger: true, onSelect: setDroppingCollection },
+  ];
+
   const filteredCollections = collectionFilter.trim()
     ? collections.filter((c) => c.toLowerCase().includes(collectionFilter.trim().toLowerCase()))
     : collections;
@@ -255,6 +289,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             selectedItem={selectedCollection}
             onSelect={setSelectedCollection}
             emptyMessage={collectionsEmptyMessage}
+            actions={collectionActions}
           />
           <ActionBar
             className="mongo-sidebar-actions"
@@ -314,6 +349,31 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           savingLabel={t("collectionDialog.saving")}
           onCancel={() => setCreatingCollection(false)}
           onSubmit={createCollection}
+        />
+      )}
+
+      {renamingCollection !== null && (
+        <NameDialog
+          title={t("mongo.renameCollectionTitle", { collection: renamingCollection })}
+          ariaLabel={renamingCollection}
+          label={t("renameDialog.name")}
+          initialName={renamingCollection}
+          emptyError={t("renameDialog.errorName")}
+          submitLabel={t("renameDialog.submit")}
+          savingLabel={t("renameDialog.saving")}
+          onCancel={() => setRenamingCollection(null)}
+          onSubmit={(newName) => renameCollection(renamingCollection, newName)}
+        />
+      )}
+
+      {droppingCollection !== null && (
+        <ConfirmDialog
+          title={t("mongo.dropCollectionTitle")}
+          message={t("mongo.dropCollectionMessage", { collection: droppingCollection })}
+          confirmLabel={t("common.delete")}
+          danger
+          onConfirm={() => void dropCollection(droppingCollection)}
+          onCancel={() => setDroppingCollection(null)}
         />
       )}
     </div>

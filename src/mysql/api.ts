@@ -140,6 +140,21 @@ export function mysqlCreateTable(
   return invoke<void>("mysql_create_table", { id, database, table, collation });
 }
 
+/** Renames a table within its database. Atomic: nothing ever sees both names, or neither. */
+export function mysqlRenameTable(
+  id: string,
+  database: string,
+  table: string,
+  newName: string
+): Promise<void> {
+  return invoke<void>("mysql_rename_table", { id, database, table, newName });
+}
+
+/** Drops a table and every row in it. */
+export function mysqlDropTable(id: string, database: string, table: string): Promise<void> {
+  return invoke<void>("mysql_drop_table", { id, database, table });
+}
+
 export function mysqlAddColumn(
   id: string,
   database: string,

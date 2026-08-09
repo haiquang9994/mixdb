@@ -145,6 +145,47 @@ pub async fn create_collection(client: &Client, db: &str, name: &str) -> Result<
         .map_err(|e| e.to_string())
 }
 
+/// Renames a collection within its database.
+///
+/// There is no per-database form of this: `renameCollection` is an admin command naming both
+/// collections in full, so it takes privileges on the cluster rather than on the database — a
+/// server that refuses says so, and that reason is what reaches the caller.
+pub async fn rename_collection(
+    client: &Client,
+    db: &str,
+    name: &str,
+    new_name: &str,
+) -> Result<(), String> {
+    let name = name.trim();
+    let new_name = new_name.trim();
+    if name.is_empty() || new_name.is_empty() {
+        return Err("Collection name is required".to_string());
+    }
+    client
+        .database("admin")
+        .run_command(doc! {
+            "renameCollection": format!("{db}.{name}"),
+            "to": format!("{db}.{new_name}"),
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Drops a collection and every document in it, along with its indexes.
+pub async fn drop_collection(client: &Client, db: &str, name: &str) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("The collection being dropped must be named".to_string());
+    }
+    client
+        .database(db)
+        .collection::<Document>(name)
+        .drop()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 pub async fn find(
     client: &Client,
     db: &str,

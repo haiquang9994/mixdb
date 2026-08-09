@@ -84,6 +84,11 @@ const vi: TranslationDict = {
     searchTablesPlaceholder: "Tìm bảng...",
     reloadTables: "Tải lại danh sách bảng",
     addTable: "Tạo bảng mới",
+    renameTable: "Đổi tên",
+    dropTable: "Xóa bảng",
+    renameTableTitle: "Đổi tên bảng {{table}}",
+    dropTableTitle: "Xóa bảng?",
+    dropTableMessage: "Xóa {{table}} cùng toàn bộ dữ liệu trong đó? Thao tác này không thể hoàn tác.",
     resizeSidebar: "Thay đổi kích thước sidebar",
     resizeSidebarTooltip: "Kéo để thay đổi kích thước, bấm đúp để vừa khít",
     selectTablePrompt: "Chọn một bảng để xem dữ liệu.",
@@ -136,6 +141,13 @@ const vi: TranslationDict = {
     functionalIndexTooltip: "Index này dựa trên biểu thức, không được đọc ở đây — chỉ có thể xóa",
     dropIndexTitle: "Xóa index?",
     dropIndexMessage: "Xóa index {{index}}? Dữ liệu trong bảng không bị ảnh hưởng.",
+  },
+  // Popup đổi tên, dùng chung cho mọi nơi mở nó: chỉ tiêu đề nói rõ đang đổi tên cái gì.
+  renameDialog: {
+    name: "Tên mới",
+    errorName: "Tên mới không được để trống.",
+    submit: "Đổi tên",
+    saving: "Đang đổi tên...",
   },
   // Ô chọn collation, dùng chung cho mọi nơi khai báo collation — của một cột hay của cả bảng.
   collation: {
@@ -342,6 +354,12 @@ const vi: TranslationDict = {
     searchCollectionsPlaceholder: "Tìm collection...",
     reloadCollections: "Tải lại danh sách collection",
     addCollection: "Tạo collection mới",
+    renameCollection: "Đổi tên",
+    dropCollection: "Xóa collection",
+    renameCollectionTitle: "Đổi tên collection {{collection}}",
+    dropCollectionTitle: "Xóa collection?",
+    dropCollectionMessage:
+      "Xóa {{collection}} cùng toàn bộ document trong đó? Thao tác này không thể hoàn tác.",
     resizeSidebar: "Thay đổi kích thước sidebar",
     resizeSidebarTooltip: "Kéo để thay đổi kích thước, bấm đúp để vừa khít",
     selectCollectionPrompt: "Chọn một collection để xem document.",

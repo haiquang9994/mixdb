@@ -289,6 +289,41 @@ pub async fn mysql_create_table(
     }
 }
 
+/// Renames a table, for the sidebar's context menu.
+#[tauri::command]
+pub async fn mysql_rename_table(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    new_name: String,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => {
+            mysql_structure::rename_table(pool, &database, &table, &new_name).await
+        }
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+/// Drops a table and everything in it, for the sidebar's context menu.
+#[tauri::command]
+pub async fn mysql_drop_table(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql_structure::drop_table(pool, &database, &table).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn mysql_add_column(
     state: State<'_, AppState>,
@@ -454,6 +489,41 @@ pub async fn mongo_create_collection(
     let connections = state.connections.lock().await;
     match connections.get(&id).map(|c| &c.handle) {
         Some(DbHandle::Mongo(client)) => mongo::create_collection(client, &db, &collection).await,
+        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+/// Renames a collection, for the sidebar's context menu.
+#[tauri::command]
+pub async fn mongo_rename_collection(
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+    collection: String,
+    new_name: String,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mongo(client)) => {
+            mongo::rename_collection(client, &db, &collection, &new_name).await
+        }
+        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+/// Drops a collection and every document in it, for the sidebar's context menu.
+#[tauri::command]
+pub async fn mongo_drop_collection(
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+    collection: String,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mongo(client)) => mongo::drop_collection(client, &db, &collection).await,
         Some(_) => Err("Connection is not a MongoDB connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }

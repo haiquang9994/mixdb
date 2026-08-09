@@ -21,6 +21,22 @@ export function mongoCreateCollection(id: string, db: string, collection: string
   return invoke<void>("mongo_create_collection", { id, db, collection });
 }
 
+/** Renames a collection within its database. `renameCollection` is an admin command, so a server
+ *  that will not grant it says so — that reason is what this rejects with. */
+export function mongoRenameCollection(
+  id: string,
+  db: string,
+  collection: string,
+  newName: string
+): Promise<void> {
+  return invoke<void>("mongo_rename_collection", { id, db, collection, newName });
+}
+
+/** Drops a collection and every document in it. */
+export function mongoDropCollection(id: string, db: string, collection: string): Promise<void> {
+  return invoke<void>("mongo_drop_collection", { id, db, collection });
+}
+
 export interface MongoDocumentPage {
   documents: TypedDocument[];
   total: number;

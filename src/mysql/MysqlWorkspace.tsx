@@ -2,19 +2,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   mysqlCollations,
   mysqlCreateTable,
+  mysqlDropTable,
   mysqlListDatabases,
   mysqlListTables,
+  mysqlRenameTable,
   mysqlServerInfo,
 } from "./api";
 import Select from "../components/Select";
+import ConfirmDialog from "../components/ConfirmDialog";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
+import NameDialog from "../components/NameDialog";
 import SqlTable from "../components/SqlTable";
 import QueryEditor from "../components/QueryEditor";
 import TableDialog from "../components/TableDialog";
 import TableStructure from "../components/TableStructure";
 import ActionBar from "../components/ActionBar";
 import ItemList from "../components/ItemList";
+import type { ItemAction } from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
 import { PlusIcon, ReloadIcon } from "../icons";
 import { useTranslation } from "../i18n";
@@ -58,6 +63,9 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
   const [collations, setCollations] = useState<MysqlCollation[]>([]);
   const [creatingTable, setCreatingTable] = useState(false);
+  /** The table the context menu's rename is open on, and the one its drop is asking about. */
+  const [renamingTable, setRenamingTable] = useState<string | null>(null);
+  const [droppingTable, setDroppingTable] = useState<string | null>(null);
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -220,6 +228,33 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     reloadTables();
   }
 
+  /** Renames the table and follows it: whatever was open on it stays open, under the new name.
+   * Errors reject back into the dialog, which is what shows them and stays open. */
+  async function renameTable(table: string, newName: string) {
+    await mysqlRenameTable(connectionId, selectedDb, table, newName);
+    setRenamingTable(null);
+    setTableFilter("");
+    if (selectedTable === table) setSelectedTable(newName);
+    reloadTables();
+  }
+
+  /** Drops the table the confirmation was asking about. Nothing is left open on it afterwards. */
+  async function dropTable(table: string) {
+    setDroppingTable(null);
+    try {
+      await mysqlDropTable(connectionId, selectedDb, table);
+      if (selectedTable === table) setSelectedTable(null);
+      reloadTables();
+    } catch (e) {
+      setLocalError(String(e));
+    }
+  }
+
+  const tableActions: ItemAction[] = [
+    { key: "rename", label: t("mysql.renameTable"), onSelect: setRenamingTable },
+    { key: "drop", label: t("mysql.dropTable"), danger: true, onSelect: setDroppingTable },
+  ];
+
   const filteredTables = tableFilter.trim()
     ? tables.filter((t) => t.toLowerCase().includes(tableFilter.trim().toLowerCase()))
     : tables;
@@ -286,6 +321,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             selectedItem={selectedTable}
             onSelect={selectTable}
             emptyMessage={tablesEmptyMessage}
+            actions={tableActions}
           />
           <ActionBar
             className="mysql-sidebar-actions"
@@ -358,6 +394,31 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           collations={collations}
           onCancel={() => setCreatingTable(false)}
           onSubmit={createTable}
+        />
+      )}
+
+      {renamingTable !== null && (
+        <NameDialog
+          title={t("mysql.renameTableTitle", { table: renamingTable })}
+          ariaLabel={renamingTable}
+          label={t("renameDialog.name")}
+          initialName={renamingTable}
+          emptyError={t("renameDialog.errorName")}
+          submitLabel={t("renameDialog.submit")}
+          savingLabel={t("renameDialog.saving")}
+          onCancel={() => setRenamingTable(null)}
+          onSubmit={(newName) => renameTable(renamingTable, newName)}
+        />
+      )}
+
+      {droppingTable !== null && (
+        <ConfirmDialog
+          title={t("mysql.dropTableTitle")}
+          message={t("mysql.dropTableMessage", { table: droppingTable })}
+          confirmLabel={t("common.delete")}
+          danger
+          onConfirm={() => void dropTable(droppingTable)}
+          onCancel={() => setDroppingTable(null)}
         />
       )}
     </div>
