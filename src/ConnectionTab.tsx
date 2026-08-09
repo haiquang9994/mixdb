@@ -107,7 +107,10 @@ function ConnectionTab({ onTitleChange }: Props) {
   // so an empty one starts open (there is nothing to protect yet) and a saved one starts hidden.
   const [uriRevealed, setUriRevealed] = useState(true);
   const [confirmingReveal, setConfirmingReveal] = useState(false);
-  const [useSsl, setUseSsl] = useState(true);
+  // Off to start with: a new connection is most often to a local or tunnelled server, where SSL
+  // buys nothing and an old server's TLS config is one more thing to fail on. A saved connection
+  // brings its own answer.
+  const [useSsl, setUseSsl] = useState(false);
 
   const [tunnelType, setTunnelType] = useState<"direct" | "ssh">("direct");
   const [sshHost, setSshHost] = useState("");
@@ -250,7 +253,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     setUri("");
     setUriRevealed(true);
     setConfirmingReveal(false);
-    setUseSsl(true);
+    setUseSsl(false);
     setTunnelType("direct");
     setSshHost("");
     setSshPort(22);
