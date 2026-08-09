@@ -145,6 +145,17 @@ export function EyeOffIcon(props: IconProps) {
   );
 }
 
+/** A grouping rather than a thing — a row in the Redis key tree that stands for a shared prefix
+ * and not for a key. Drawn as the tabbed folder the file managers use, so it reads at a glance
+ * as "there is more inside" next to the type badges the real keys carry. */
+export function FolderIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 6.5a2 2 0 0 1 2-2h4a2 2 0 0 1 1.5.7l1.3 1.5H19a2 2 0 0 1 2 2v9.3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+    </Icon>
+  );
+}
+
 /** A status marker rather than an action — currently the "unsaved changes" bullet. Filled, so
  * it reads as a dot at the small sizes it is used at instead of as a thin ring. */
 export function DotIcon(props: IconProps) {

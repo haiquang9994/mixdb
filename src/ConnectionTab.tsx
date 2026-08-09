@@ -10,6 +10,7 @@ import {
 import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
 import MysqlWorkspace from "./mysql/MysqlWorkspace";
 import MongoWorkspace from "./mongo/MongoWorkspace";
+import RedisWorkspace from "./redis/RedisWorkspace";
 import Select from "./components/Select";
 import ErrorBanner from "./components/ErrorBanner";
 import ConfirmDialog from "./components/ConfirmDialog";
@@ -126,10 +127,6 @@ function ConnectionTab({ onTitleChange }: Props) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [tunnelStatus, setTunnelStatus] = useState("");
-
-  const [redisArgs, setRedisArgs] = useState("PING");
-
-  const [rawResult, setRawResult] = useState("");
 
   useEffect(() => {
     loadSavedConnections().then(setSavedConnections);
@@ -377,20 +374,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     await invoke("disconnect_db", { id: connectionId });
     setConnectionId(null);
     setStatus("");
-    setRawResult("");
     onTitleChange(t("app.newConnectionTitle"));
-  }
-
-  async function runRedisCommand() {
-    if (!connectionId) return;
-    setError("");
-    try {
-      const args = redisArgs.trim().split(/\s+/);
-      const result = await invoke("redis_command", { id: connectionId, args });
-      setRawResult(JSON.stringify(result, null, 2));
-    } catch (e) {
-      setError(String(e));
-    }
   }
 
   const connectionForm = (
@@ -742,35 +726,17 @@ function ConnectionTab({ onTitleChange }: Props) {
     );
   }
 
+  const activeSavedConnection = savedConnections.find((c) => c.id === editingId);
   return (
-    <div className="workspace">
-      <div className="row">
-        <Button onClick={disconnect}>{t("common.disconnect")}</Button>
-        <span>{status}</span>
-      </div>
-
-      {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
-
-      {kind === "redis" && (
-        <fieldset>
-          <legend>{t("connection.commandLegend")}</legend>
-          <input
-            value={redisArgs}
-            onChange={(e) => setRedisArgs(e.target.value)}
-            placeholder="GET mykey"
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-          />
-          <div className="row">
-            <Button onClick={runRedisCommand}>{t("connection.execute")}</Button>
-          </div>
-        </fieldset>
-      )}
-
-      {rawResult && <pre className="result">{rawResult}</pre>}
-    </div>
+    <RedisWorkspace
+      connectionId={connectionId}
+      initialDatabase={database}
+      status={status}
+      error={error}
+      onDisconnect={disconnect}
+      sidebarWidth={activeSavedConnection?.sidebarWidth}
+      onSidebarWidthChange={updateSidebarWidth}
+    />
   );
 }
 

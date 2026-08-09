@@ -10,6 +10,7 @@ export {
   DotIcon,
   EyeIcon,
   EyeOffIcon,
+  FolderIcon,
   LockIcon,
   MinusIcon,
   PlusIcon,

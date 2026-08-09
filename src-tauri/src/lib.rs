@@ -35,6 +35,12 @@ pub fn run() {
             commands::mongo_update_document,
             commands::mongo_delete_document,
             commands::redis_command,
+            commands::redis_server_info,
+            commands::redis_list_databases,
+            commands::redis_select_db,
+            commands::redis_scan_keys,
+            commands::redis_key_value,
+            commands::redis_delete_keys,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

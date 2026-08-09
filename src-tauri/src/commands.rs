@@ -394,3 +394,89 @@ pub async fn redis_command(
         None => Err("Unknown connection id".to_string()),
     }
 }
+
+#[tauri::command]
+pub async fn redis_server_info(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<redis_db::ServerInfo, String> {
+    let mut connections = state.connections.lock().await;
+    match connections.get_mut(&id).map(|c| &mut c.handle) {
+        Some(DbHandle::Redis(conn)) => redis_db::server_info(conn).await,
+        Some(_) => Err("Connection is not a Redis connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn redis_list_databases(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<redis_db::DbInfo>, String> {
+    let mut connections = state.connections.lock().await;
+    match connections.get_mut(&id).map(|c| &mut c.handle) {
+        Some(DbHandle::Redis(conn)) => redis_db::list_databases(conn).await,
+        Some(_) => Err("Connection is not a Redis connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn redis_select_db(
+    state: State<'_, AppState>,
+    id: String,
+    index: i64,
+) -> Result<(), String> {
+    let mut connections = state.connections.lock().await;
+    match connections.get_mut(&id).map(|c| &mut c.handle) {
+        Some(DbHandle::Redis(conn)) => redis_db::select_db(conn, index).await,
+        Some(_) => Err("Connection is not a Redis connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn redis_scan_keys(
+    state: State<'_, AppState>,
+    id: String,
+    pattern: String,
+    cursor: String,
+    count: i64,
+) -> Result<redis_db::KeyPage, String> {
+    let mut connections = state.connections.lock().await;
+    match connections.get_mut(&id).map(|c| &mut c.handle) {
+        Some(DbHandle::Redis(conn)) => redis_db::scan_keys(conn, &pattern, &cursor, count).await,
+        Some(_) => Err("Connection is not a Redis connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn redis_key_value(
+    state: State<'_, AppState>,
+    id: String,
+    key: String,
+    cursor: Option<String>,
+    count: i64,
+) -> Result<redis_db::KeyValuePage, String> {
+    let mut connections = state.connections.lock().await;
+    match connections.get_mut(&id).map(|c| &mut c.handle) {
+        Some(DbHandle::Redis(conn)) => redis_db::key_value(conn, &key, cursor.as_deref(), count).await,
+        Some(_) => Err("Connection is not a Redis connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn redis_delete_keys(
+    state: State<'_, AppState>,
+    id: String,
+    keys: Vec<String>,
+) -> Result<i64, String> {
+    let mut connections = state.connections.lock().await;
+    match connections.get_mut(&id).map(|c| &mut c.handle) {
+        Some(DbHandle::Redis(conn)) => redis_db::delete_keys(conn, &keys).await,
+        Some(_) => Err("Connection is not a Redis connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}

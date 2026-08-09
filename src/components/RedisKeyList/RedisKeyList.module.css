@@ -1,0 +1,220 @@
+.keyList {
+  /* The badge column, shared by the type badge and the folder mark that stands in its place —
+     the names line up in one column only as long as the two are the same width. This is what
+     holds the type labels to three characters: the room it takes is room the key names don't
+     get, and at this width a fourth character no longer fits. */
+  --badge-width: 1.7rem;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.keyList ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.empty {
+  padding: 0.5rem 0.6rem;
+}
+
+.item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  text-align: left;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  overflow: hidden;
+  /* Keeps a row the arrow keys scrolled into view off the very edge of the list. */
+  scroll-margin: 0.25rem;
+}
+
+.item:hover {
+  background: rgba(128, 128, 128, 0.15);
+  border-color: transparent;
+}
+
+.itemActive {
+  background: rgba(57, 108, 216, 0.15);
+  color: #396cd8;
+  font-weight: 600;
+}
+
+/* The app clears the browser's focus ring on every button, so without this a row the arrow keys
+   moved to would change nothing on screen — the keyboard would look broken while working fine.
+   `:focus-visible` rather than `:focus` keeps the ring to keyboard use: a click already says
+   where it landed, by selecting. Drawn inside the row, since the list scrolls and a ring outside
+   it would be clipped at the top and bottom edges. */
+.item:focus-visible {
+  outline: 2px solid var(--control-border-focus);
+  outline-offset: -2px;
+}
+
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Always laid out, empty on a leaf: the badges and names below each other line up only if the
+   chevron takes the same room whether or not the row has one. */
+.chevron {
+  flex: 0 0 auto;
+  width: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+}
+
+/* The badge's slot on a row that stands for a prefix rather than a key of its own: same width,
+   so the names stay in one column, with the folder mark centred in it. */
+.folderBadge {
+  flex: 0 0 auto;
+  width: var(--badge-width);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+}
+
+/* How many keys sit under this prefix — the folder's own weight, at a glance. */
+.count {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.5;
+  padding-left: 0.2rem;
+}
+
+/* Fixed width, so the names below each other line up whatever their type is. The classes under
+   it are named after the Redis type itself — the component looks them up by that name. */
+.badge {
+  flex: 0 0 auto;
+  width: var(--badge-width);
+  text-align: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.1rem 0.1rem;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.2);
+  opacity: 0.85;
+  /* A type this app has no abbreviation for falls back to the first letters of its own name;
+     clipping it is better than letting it push the key names out of their column. */
+  overflow: hidden;
+}
+
+.string {
+  background: rgba(57, 108, 216, 0.18);
+  color: #396cd8;
+}
+
+.list {
+  background: rgba(60, 150, 170, 0.2);
+  color: #2f8ca3;
+}
+
+.set {
+  background: rgba(190, 118, 30, 0.2);
+  color: #b4761e;
+}
+
+.zset {
+  background: rgba(150, 90, 200, 0.2);
+  color: #8c5ac8;
+}
+
+.hash {
+  background: rgba(40, 160, 120, 0.2);
+  color: #28a078;
+}
+
+.stream {
+  background: rgba(200, 70, 110, 0.2);
+  color: #c8466e;
+}
+
+.loadMore {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px dashed rgba(128, 128, 128, 0.4);
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+.loadMore:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.12);
+  opacity: 1;
+}
+
+/* The badge colours are picked to read on white; on a dark sidebar they have to come back up. */
+:root[data-theme="dark"] .string,
+:root[data-theme="dark"] .itemActive {
+  color: #9db9f0;
+}
+
+:root[data-theme="dark"] .list {
+  color: #7fc9dc;
+}
+
+:root[data-theme="dark"] .set {
+  color: #e0a75c;
+}
+
+:root[data-theme="dark"] .zset {
+  color: #bd9ae4;
+}
+
+:root[data-theme="dark"] .hash {
+  color: #5ecfa5;
+}
+
+:root[data-theme="dark"] .stream {
+  color: #e8859f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .string,
+  :root:not([data-theme]) .itemActive {
+    color: #9db9f0;
+  }
+
+  :root:not([data-theme]) .list {
+    color: #7fc9dc;
+  }
+
+  :root:not([data-theme]) .set {
+    color: #e0a75c;
+  }
+
+  :root:not([data-theme]) .zset {
+    color: #bd9ae4;
+  }
+
+  :root:not([data-theme]) .hash {
+    color: #5ecfa5;
+  }
+
+  :root:not([data-theme]) .stream {
+    color: #e8859f;
+  }
+}
