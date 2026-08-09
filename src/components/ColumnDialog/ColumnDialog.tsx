@@ -8,30 +8,108 @@ import { useTranslation } from "../../i18n";
 import type { MysqlCollation, MysqlColumnSpec, MysqlStructureColumn } from "../../types";
 import styles from "./ColumnDialog.module.css";
 
-/** Types offered as a starting point, in the order a column is usually reached for. The box stays
- * free text — the list is a shortcut, not the set of what MySQL accepts. */
-const COMMON_TYPES = [
-  "int",
-  "int unsigned",
-  "bigint",
-  "bigint unsigned",
-  "tinyint(1)",
-  "decimal(10,2)",
-  "double",
-  "varchar(255)",
-  "char(36)",
-  "text",
-  "mediumtext",
-  "longtext",
-  "json",
-  "date",
-  "datetime",
-  "timestamp",
-  "time",
-  "enum('a','b')",
-  "blob",
-  "binary(16)",
+/** One type the picker offers, and what the box beside it holds — the argument MySQL takes inside
+ * the type's parentheses. */
+interface TypeSpec {
+  name: string;
+  /** What to suggest for the argument: `null` for a type that takes none (the box is then closed),
+   *  and `""` for one that accepts an argument no column really needs to give. */
+  arg: string | null;
+  /** Not valid without an argument: `varchar` has no length of its own to fall back on. */
+  required?: boolean;
+  /** The argument is a list of values rather than a number, so it is not checked as one. */
+  list?: boolean;
+  /** UNSIGNED means something here. */
+  numeric?: boolean;
+}
+
+/** The types a column can be declared as, each family in the order it is usually reached for.
+ * Every MySQL version in the app's reach has all of these; what differs between versions is the
+ * collation list, which is read from the server instead. */
+const TYPES: TypeSpec[] = [
+  { name: "int", arg: "", numeric: true },
+  { name: "bigint", arg: "", numeric: true },
+  { name: "tinyint", arg: "1", numeric: true },
+  { name: "smallint", arg: "", numeric: true },
+  { name: "mediumint", arg: "", numeric: true },
+  { name: "decimal", arg: "10,2", numeric: true },
+  { name: "float", arg: "", numeric: true },
+  { name: "double", arg: "", numeric: true },
+  { name: "bit", arg: "1" },
+  { name: "varchar", arg: "255", required: true },
+  { name: "char", arg: "36" },
+  { name: "text", arg: null },
+  { name: "mediumtext", arg: null },
+  { name: "longtext", arg: null },
+  { name: "tinytext", arg: null },
+  { name: "enum", arg: "'a','b'", required: true, list: true },
+  { name: "set", arg: "'a','b'", required: true, list: true },
+  { name: "date", arg: null },
+  { name: "datetime", arg: "" },
+  { name: "timestamp", arg: "" },
+  { name: "time", arg: "" },
+  { name: "year", arg: null },
+  { name: "json", arg: null },
+  { name: "binary", arg: "16" },
+  { name: "varbinary", arg: "255", required: true },
+  { name: "blob", arg: null },
+  { name: "mediumblob", arg: null },
+  { name: "longblob", arg: null },
+  { name: "tinyblob", arg: null },
+  { name: "geometry", arg: null },
+  { name: "point", arg: null },
+  { name: "linestring", arg: null },
+  { name: "polygon", arg: null },
+  { name: "multipoint", arg: null },
+  { name: "multilinestring", arg: null },
+  { name: "multipolygon", arg: null },
+  { name: "geometrycollection", arg: null },
 ];
+
+/** What is known about a type name, or undefined for one this list doesn't carry — a column
+ * declared as something older or newer than the app knows still has to be editable. */
+function typeSpec(name: string): TypeSpec | undefined {
+  return TYPES.find((type) => type.name === name.toLowerCase());
+}
+
+/** Only a number, or a number and a scale: what every type but `enum`/`set` takes. */
+const NUMERIC_ARGUMENT = /^\d+(\s*,\s*\d+)?$/;
+
+/** Splits a declared type into the parts the form edits. `varchar(255)` is a name and an argument,
+ * `int unsigned` a name and a flag, and anything else trailing (`zerofill`, a character set) is
+ * kept verbatim so that editing a column cannot quietly drop it. */
+function parseType(dataType: string): Pick<Draft, "typeName" | "typeArg" | "unsigned" | "typeTail"> {
+  const text = dataType.trim();
+  const open = text.indexOf("(");
+  // The last `)`, not the first: an enum's values may have parentheses of their own inside quotes.
+  const close = text.lastIndexOf(")");
+  const parenthesised = open !== -1 && close > open;
+  const head = (parenthesised ? text.slice(0, open) : text).trim();
+  const [name = "", ...rest] = head.split(/\s+/);
+  const words = [...rest, ...(parenthesised ? text.slice(close + 1) : "").split(/\s+/)].filter(
+    (word) => word !== "",
+  );
+  return {
+    typeName: name.toLowerCase(),
+    typeArg: parenthesised ? text.slice(open + 1, close).trim() : "",
+    unsigned: words.some((word) => word.toLowerCase() === "unsigned"),
+    typeTail: words.filter((word) => word.toLowerCase() !== "unsigned").join(" "),
+  };
+}
+
+/** The declared type the parts add back up to — what actually reaches the `ALTER TABLE`. */
+function composeType(draft: Draft): string {
+  const name = draft.typeName.trim();
+  if (name === "") return "";
+  const arg = draft.typeArg.trim();
+  const spec = typeSpec(name);
+  // An argument on a type that takes none is dropped rather than written out: the box is closed
+  // for those, so anything left in it is from a type chosen before.
+  const parts = [arg !== "" && spec?.arg !== null ? `${name}(${arg})` : name];
+  if (draft.unsigned) parts.push("unsigned");
+  if (draft.typeTail !== "") parts.push(draft.typeTail);
+  return parts.join(" ");
+}
 
 /** The character sets a column is realistically declared in, most likely first. Everything else the
  * server offers follows them, alphabetically — the order is only about what is quick to reach. */
@@ -50,7 +128,13 @@ const AFTER = "AFTER:";
 
 interface Draft {
   name: string;
-  dataType: string;
+  /** The type without its argument or attributes: `varchar`, `int`. */
+  typeName: string;
+  /** What goes inside the type's parentheses — a length, a precision, or a list of values. */
+  typeArg: string;
+  unsigned: boolean;
+  /** Attributes the form has no control of its own for (`zerofill`), carried through unchanged. */
+  typeTail: string;
   nullable: boolean;
   /** Whether a DEFAULT clause is written at all — distinct from a default that is empty text. */
   hasDefault: boolean;
@@ -67,7 +151,10 @@ function draftFromColumn(column: MysqlStructureColumn | undefined): Draft {
   if (!column) {
     return {
       name: "",
-      dataType: "",
+      typeName: "",
+      typeArg: "",
+      unsigned: false,
+      typeTail: "",
       nullable: true,
       hasDefault: false,
       defaultValue: "",
@@ -81,7 +168,7 @@ function draftFromColumn(column: MysqlStructureColumn | undefined): Draft {
   }
   return {
     name: column.name,
-    dataType: column.dataType,
+    ...parseType(column.dataType),
     nullable: column.nullable,
     hasDefault: column.defaultValue !== null,
     defaultValue: column.defaultValue ?? "",
@@ -154,6 +241,27 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
       })),
   ];
 
+  const selectedType = typeSpec(draft.typeName);
+  const typeOptions: SelectOption<string>[] = [
+    // A type the list has no entry for goes on the front of it: without an option of its own the
+    // picker would show nothing, and saving would redeclare the column as something else.
+    ...(draft.typeName !== "" && selectedType === undefined
+      ? [{ value: draft.typeName, label: draft.typeName }]
+      : []),
+    ...TYPES.map((type) => ({ value: type.name, label: type.name })),
+  ];
+
+  /** Switching type takes the previous type's argument with it when the new one has no
+   * parentheses to put it in, and drops UNSIGNED where it means nothing. */
+  function chooseType(typeName: string) {
+    const spec = typeSpec(typeName);
+    patch({
+      typeName,
+      ...(spec?.arg === null ? { typeArg: "" } : null),
+      ...(spec !== undefined && !spec.numeric ? { unsigned: false } : null),
+    });
+  }
+
   /** The collation list as it is offered: the column's own character set first, then the ones most
    * columns use, and inside each the character set's default ahead of the rest. */
   const collationOptions = useMemo(() => {
@@ -202,7 +310,7 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
     const position = draft.position;
     return {
       name: draft.name.trim(),
-      dataType: draft.dataType.trim(),
+      dataType: composeType(draft),
       nullable: draft.nullable,
       defaultValue: draft.hasDefault ? draft.defaultValue : null,
       defaultIsExpression: draft.hasDefault && draft.defaultIsExpression,
@@ -221,7 +329,21 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
   async function submit() {
     const messages: string[] = [];
     if (draft.name.trim() === "") messages.push(t("columnDialog.errorName"));
-    if (draft.dataType.trim() === "") messages.push(t("columnDialog.errorType"));
+    const arg = draft.typeArg.trim();
+    if (draft.typeName === "") {
+      messages.push(t("columnDialog.errorType"));
+    } else if (selectedType?.required && arg === "") {
+      messages.push(t("columnDialog.errorTypeArg", { type: draft.typeName }));
+      // Only the numeric arguments are checked. An enum's values are the user's own literals, and
+      // a type this list doesn't carry is left alone entirely — MySQL is what judges those.
+    } else if (
+      arg !== "" &&
+      selectedType !== undefined &&
+      selectedType.list !== true &&
+      !NUMERIC_ARGUMENT.test(arg)
+    ) {
+      messages.push(t("columnDialog.errorTypeArgNumber"));
+    }
     setErrors(messages);
     if (messages.length > 0) return;
     setSaving(true);
@@ -259,26 +381,29 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
           <label className={styles.field}>
             {t("columnDialog.type")}
             <div className={styles.typeRow}>
-              <Input
-                size="normal"
-                className={styles.typeInput}
-                value={draft.dataType}
-                placeholder={t("columnDialog.typePlaceholder")}
-                disabled={saving}
-                onChange={(e) => patch({ dataType: e.target.value })}
-              />
-              {/* A menu rather than a value: it fills the box beside it and goes back to showing
-                  its own placeholder, since the box is what the type really is. */}
               <Select
-                value=""
+                value={draft.typeName}
                 size="normal"
-                className={styles.typeMenu}
-                placeholder={t("columnDialog.commonTypes")}
-                ariaLabel={t("columnDialog.commonTypes")}
+                className={styles.typeSelect}
+                placeholder={t("columnDialog.typePlaceholder")}
+                ariaLabel={t("columnDialog.type")}
                 disabled={saving}
                 searchable
-                options={COMMON_TYPES.map((type) => ({ value: type, label: type }))}
-                onChange={(type) => patch({ dataType: type })}
+                options={typeOptions}
+                onChange={chooseType}
+              />
+              {/* What goes in the type's parentheses, kept beside it rather than typed into the
+                  name — the two are edited together, but only one of them is a choice. */}
+              <Input
+                size="normal"
+                className={styles.typeArg}
+                value={draft.typeArg}
+                placeholder={selectedType?.arg ?? ""}
+                aria-label={t("columnDialog.typeArg")}
+                // Closed for a type with no parentheses to put anything in, rather than hidden:
+                // the row keeps its shape as the type changes.
+                disabled={saving || selectedType?.arg === null}
+                onChange={(e) => patch({ typeArg: e.target.value })}
               />
             </div>
           </label>
@@ -341,6 +466,19 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
             />
             {t("columnDialog.nullable")}
           </label>
+          {/* Shown for the types it means something to, and for a type the list doesn't carry that
+              already says it — dropping it there would change the column behind the user's back. */}
+          {(selectedType?.numeric || draft.unsigned) && (
+            <label className={styles.toggle}>
+              <input
+                type="checkbox"
+                checked={draft.unsigned}
+                disabled={saving}
+                onChange={(e) => patch({ unsigned: e.target.checked })}
+              />
+              {t("columnDialog.unsigned")}
+            </label>
+          )}
           <label className={styles.toggle}>
             <input
               type="checkbox"

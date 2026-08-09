@@ -61,15 +61,16 @@
   min-width: 0;
 }
 
-.typeInput {
+.typeSelect {
   flex: 1;
   min-width: 0;
-  font-family: "Fira Code", monospace;
 }
 
-.typeMenu {
-  flex: 0 0 auto;
-  max-width: 11rem;
+/* Wide enough for a precision (`10,2`) or a short enum list; the type beside it gets the rest. */
+.typeArg {
+  flex: 0 0 7.5rem;
+  min-width: 0;
+  font-family: "Fira Code", monospace;
 }
 
 /* A collation and the character set it belongs to, pushed to opposite ends of the row so the names
