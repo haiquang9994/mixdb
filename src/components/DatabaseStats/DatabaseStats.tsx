@@ -40,12 +40,22 @@ function formatCount(value: number): string {
   return value.toLocaleString();
 }
 
+/** The figures on screen and the database they were read from, held together: a database changed
+ * while the tab was hidden must not leave the previous one's figures under its name. */
+interface Cache {
+  database: string;
+  rows: TableStats[];
+}
+
 interface Props {
   kind: "mysql" | "mongo";
   connectionId: string;
   /** The database being measured. Never empty: the workspace shows a prompt instead of mounting
    *  this until one is selected. */
   database: string;
+  /** Whether the tab is the one on show. This stays mounted behind the others, so it is what says
+   *  when the figures are worth reading — and when a reload the user cannot see would be wasted. */
+  active: boolean;
   onError: (message: string) => void;
 }
 
@@ -56,20 +66,30 @@ interface Props {
  * Ordered by data size to begin with rather than by name — the question this answers is which
  * table is the heavy one, and the sidebar next to it already lists them alphabetically.
  *
+ * Read once and kept: the workspace leaves this mounted while another tab is up, so moving between
+ * the tabs shows the figures already read rather than asking for them again. They are only re-read
+ * when the database changes under them or the reload button asks, and a database changed while the
+ * tab was hidden waits until it is looked at again before costing anything.
+ *
  * Both databases report the same four numbers, so one grid serves them; only what the columns are
  * called changes, since MySQL counts rows in tables and MongoDB documents in collections. Neither
  * count is read by counting: MySQL's comes from `information_schema` (an estimate, on InnoDB) and
  * MongoDB's from the collection's own metadata, so this costs the server nothing to answer.
  */
-function DatabaseStats({ kind, connectionId, database, onError }: Props) {
+function DatabaseStats({ kind, connectionId, database, active, onError }: Props) {
   const { t } = useTranslation();
-  const [stats, setStats] = useState<TableStats[]>([]);
+  const [cache, setCache] = useState<Cache | null>(null);
   const [loading, setLoading] = useState(false);
   const [sort, setSort] = useState<Sort>({ column: "dataSize", desc: true });
-  // Bumped by the reload action to re-run the fetch below.
-  const [reloadToken, setReloadToken] = useState(0);
+
+  /** What has been read for the database now selected, or null when that is nothing yet — which
+   *  is also what a cache left over from another database counts as. */
+  const stats = cache?.database === database ? cache.rows : null;
 
   useEffect(() => {
+    // Nothing to do until the tab is looked at, and nothing to do once it has been read: this is
+    // what makes moving between the tabs free.
+    if (!active || stats !== null) return;
     let cancelled = false;
     setLoading(true);
     const read =
@@ -78,12 +98,12 @@ function DatabaseStats({ kind, connectionId, database, onError }: Props) {
         : mongoCollectionStats(connectionId, database);
     read
       .then((result) => {
-        if (!cancelled) setStats(result);
+        if (!cancelled) setCache({ database, rows: result });
       })
       .catch((e) => {
         if (cancelled) return;
-        // The previous database's figures would otherwise stay on screen under this database's name.
-        setStats([]);
+        // Nothing is cached for a read that failed, so coming back to the tab tries again rather
+        // than settling on an empty grid.
         onError(String(e));
       })
       .finally(() => {
@@ -92,10 +112,10 @@ function DatabaseStats({ kind, connectionId, database, onError }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [kind, connectionId, database, reloadToken]);
+  }, [kind, connectionId, database, active, stats, onError]);
 
   const sorted = useMemo(() => {
-    const rows = [...stats];
+    const rows = [...(stats ?? [])];
     rows.sort((a, b) => {
       const left = a[sort.column];
       const right = b[sort.column];
@@ -111,7 +131,7 @@ function DatabaseStats({ kind, connectionId, database, onError }: Props) {
   /** What the footer adds up. The average is the database's own — total bytes over total records,
    *  not the mean of the per-table averages, which would weigh a tiny table like a huge one. */
   const totals = useMemo(() => {
-    const sum = stats.reduce(
+    const sum = sorted.reduce(
       (acc, row) => ({
         rows: acc.rows + row.rows,
         dataSize: acc.dataSize + row.dataSize,
@@ -120,7 +140,7 @@ function DatabaseStats({ kind, connectionId, database, onError }: Props) {
       { rows: 0, dataSize: 0, indexSize: 0 },
     );
     return { ...sum, avgRecordSize: sum.rows > 0 ? sum.dataSize / sum.rows : 0 };
-  }, [stats]);
+  }, [sorted]);
 
   /** Moves the clicked column to its next sort state: a new column opens on the order that reads
    *  it best — biggest first for a number, A to Z for a name — and clicking it again reverses. */
@@ -172,7 +192,9 @@ function DatabaseStats({ kind, connectionId, database, onError }: Props) {
               label: t("dbStats.reload"),
               disabled: loading,
               busy: loading,
-              onClick: () => setReloadToken((n) => n + 1),
+              // Dropping the cache is the reload: the effect reads again the moment there is
+              // nothing held for the database on show.
+              onClick: () => setCache(null),
             },
           ]}
         />
@@ -212,7 +234,7 @@ function DatabaseStats({ kind, connectionId, database, onError }: Props) {
               </tr>
             ))}
           </tbody>
-          {stats.length > 0 && (
+          {sorted.length > 0 && (
             <tfoot>
               <tr>
                 <td className={styles.rowNumber} />
@@ -225,7 +247,9 @@ function DatabaseStats({ kind, connectionId, database, onError }: Props) {
             </tfoot>
           )}
         </table>
-        {!loading && stats.length === 0 && (
+        {/* Only once something has actually been read: `stats` is null while the first read is
+            still out, and after one that failed — neither is an empty database. */}
+        {!loading && stats?.length === 0 && (
           <p className="muted">
             {t(kind === "mysql" ? "dbStats.noTables" : "dbStats.noCollections")}
           </p>
@@ -234,7 +258,7 @@ function DatabaseStats({ kind, connectionId, database, onError }: Props) {
 
       {/* MySQL's row counts are sampled rather than counted, and saying so once under the grid is
           better than a tooltip on every cell that carries one. */}
-      {kind === "mysql" && stats.length > 0 && (
+      {kind === "mysql" && sorted.length > 0 && (
         <p className={styles.note}>{t("dbStats.estimateNote")}</p>
       )}
 

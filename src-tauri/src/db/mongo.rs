@@ -1,6 +1,6 @@
 use super::filters::{split_list_parts, unquote, ListItem};
 use base64::Engine;
-use futures_util::TryStreamExt;
+use futures_util::stream::{self, StreamExt, TryStreamExt};
 use mongodb::bson::spec::BinarySubtype;
 use mongodb::bson::{
     doc, oid::ObjectId, Binary, Bson, DateTime as BsonDateTime, Decimal128, Document, Regex,
@@ -8,7 +8,7 @@ use mongodb::bson::{
 };
 use mongodb::options::{ClientOptions, ServerAddress};
 use mongodb::results::CollectionType;
-use mongodb::Client;
+use mongodb::{Client, Database};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::str::FromStr;
@@ -141,9 +141,17 @@ pub struct CollectionStats {
     pub data_size: u64,
     /// Every index on the collection together, `storageStats.totalIndexSize`.
     pub index_size: u64,
-    /// `storageStats.avgObjSize`, which an empty collection has none of.
+    /// The bytes of an average document — the data size over the count, which is zero for a
+    /// collection holding nothing.
     pub avg_record_size: u64,
 }
+
+/// How many collections are measured at once. MongoDB has no one place that knows what a whole
+/// database weighs, so this is a round trip per collection whatever else is done — running them
+/// together is what keeps a database of a hundred collections from costing a hundred latencies in
+/// a row, which is what it does over an SSH tunnel. Not raised past the driver's default pool of
+/// ten connections: more in flight than that would only queue behind one another anyway.
+const STATS_CONCURRENCY: usize = 8;
 
 /// What every collection in the database weighs, listed by name.
 ///
@@ -161,34 +169,59 @@ pub async fn collection_stats(client: &Client, db: &str) -> Result<Vec<Collectio
             names.push(spec.name);
         }
     }
-    names.sort_by(|a, b| {
-        a.to_lowercase()
-            .cmp(&b.to_lowercase())
-            .then_with(|| a.cmp(b))
-    });
 
-    let mut stats = Vec::with_capacity(names.len());
-    for name in names {
-        // One aggregation per collection: `$collStats` reads the collection it is run against, so
-        // there is no one query that covers the database.
-        let mut cursor = database
-            .collection::<Document>(&name)
-            .aggregate(vec![doc! { "$collStats": { "storageStats": {} } }])
-            .await
-            .map_err(|e| e.to_string())?;
-        let reply = cursor.try_next().await.map_err(|e| e.to_string())?;
-        let storage = reply
-            .as_ref()
-            .and_then(|doc| doc.get_document("storageStats").ok());
-        stats.push(CollectionStats {
-            name,
-            rows: storage.map_or(0, |s| counter(s, "count")),
-            data_size: storage.map_or(0, |s| counter(s, "size")),
-            index_size: storage.map_or(0, |s| counter(s, "totalIndexSize")),
-            avg_record_size: storage.map_or(0, |s| counter(s, "avgObjSize")),
-        });
-    }
+    let mut stats: Vec<CollectionStats> = stream::iter(names)
+        .map(|name| {
+            let database = database.clone();
+            async move { collection_size(&database, name).await }
+        })
+        .buffer_unordered(STATS_CONCURRENCY)
+        .try_collect()
+        .await?;
+
+    // Sorted here rather than before the measuring: the answers come back in whatever order they
+    // finish in, which is not the order they were asked for.
+    stats.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then_with(|| a.name.cmp(&b.name))
+    });
     Ok(stats)
+}
+
+/// Measures one collection. `$collStats` reads what the collection itself keeps rather than any of
+/// its documents, so this is cheap wherever the collection is large — it is the round trip that
+/// costs, not the work at the far end.
+async fn collection_size(database: &Database, name: String) -> Result<CollectionStats, String> {
+    let mut cursor = database
+        .collection::<Document>(&name)
+        .aggregate(vec![doc! { "$collStats": { "storageStats": {} } }])
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut rows = 0u64;
+    let mut data_size = 0u64;
+    let mut index_size = 0u64;
+    // A sharded collection answers once per shard, each for the part of it that shard holds, so
+    // the replies are added up rather than the first one taken.
+    while let Some(reply) = cursor.try_next().await.map_err(|e| e.to_string())? {
+        if let Ok(storage) = reply.get_document("storageStats") {
+            rows += counter(storage, "count");
+            data_size += counter(storage, "size");
+            index_size += counter(storage, "totalIndexSize");
+        }
+    }
+
+    Ok(CollectionStats {
+        name,
+        rows,
+        data_size,
+        index_size,
+        // Worked out here rather than read from `avgObjSize`, which is per shard: the mean of the
+        // shards' means is not the collection's, but total over total is.
+        avg_record_size: if rows > 0 { data_size / rows } else { 0 },
+    })
 }
 
 /// One of `$collStats`' numbers. Which BSON number it arrives as is the server's choice and varies

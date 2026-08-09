@@ -478,13 +478,18 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           {contentMode === "stats" && !selectedDb && (
             <p className="muted">{t("mysql.selectDatabaseStatsPrompt")}</p>
           )}
-          {contentMode === "stats" && selectedDb && (
-            <DatabaseStats
-              kind="mysql"
-              connectionId={connectionId}
-              database={selectedDb}
-              onError={setLocalError}
-            />
+          {/* Kept mounted while the other tabs are up, for the same reason the editor below is:
+              the figures it has read stay read, so coming back to the tab costs nothing. */}
+          {selectedDb && (
+            <div className={contentMode === "stats" ? "mysql-panel" : "mysql-panel-hidden"}>
+              <DatabaseStats
+                kind="mysql"
+                connectionId={connectionId}
+                database={selectedDb}
+                active={contentMode === "stats"}
+                onError={setLocalError}
+              />
+            </div>
           )}
           {/* Kept mounted while the other tabs are up, and hidden rather than unmounted: a script
               being written and the results it has produced so far must survive a look at the data

@@ -602,9 +602,10 @@ textarea {
   flex-direction: column;
 }
 
-/* A tab panel that stays mounted while another tab is up — the Query editor, whose script and
-   results have to outlive a look at the data. Taking it out of the flow rather than unmounting it
-   is what keeps that state; it costs the layout nothing while hidden. */
+/* A tab panel that stays mounted while another tab is up: the Query editor, whose script and
+   results have to outlive a look at the data, and the Statistics grid, whose figures do. Taking
+   one out of the flow rather than unmounting it is what keeps that state; it costs the layout
+   nothing while hidden. */
 .mysql-panel {
   flex: 1;
   min-width: 0;
@@ -730,6 +731,20 @@ textarea {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* A tab panel that stays mounted while another tab is up — the Statistics grid, whose figures
+   have to outlive a look at the documents. The MySQL side's own pair, for the same job. */
+.mongo-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mongo-panel-hidden {
+  display: none;
 }
 
 .redis-workspace {

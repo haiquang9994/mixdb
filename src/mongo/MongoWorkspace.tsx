@@ -457,13 +457,18 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           {contentMode === "stats" && !selectedDb && (
             <p className="muted">{t("mongo.selectDatabaseStatsPrompt")}</p>
           )}
-          {contentMode === "stats" && selectedDb && (
-            <DatabaseStats
-              kind="mongo"
-              connectionId={connectionId}
-              database={selectedDb}
-              onError={setLocalError}
-            />
+          {/* Kept mounted while the document list is up, and hidden rather than unmounted: the
+              figures it has read stay read, so coming back to the tab costs nothing. */}
+          {selectedDb && (
+            <div className={contentMode === "stats" ? "mongo-panel" : "mongo-panel-hidden"}>
+              <DatabaseStats
+                kind="mongo"
+                connectionId={connectionId}
+                database={selectedDb}
+                active={contentMode === "stats"}
+                onError={setLocalError}
+              />
+            </div>
           )}
         </section>
       </div>
