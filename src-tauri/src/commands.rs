@@ -255,6 +255,21 @@ pub async fn mysql_table_structure(
     }
 }
 
+/// The collations this server has, for the column editor's picker. A property of the server rather
+/// than of any one table, so the frontend reads it once per connection.
+#[tauri::command]
+pub async fn mysql_collations(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<mysql_structure::Collation>, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql_structure::collations(pool).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn mysql_add_column(
     state: State<'_, AppState>,

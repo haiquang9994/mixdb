@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  MysqlCollation,
   MysqlColumnSpec,
   MysqlIndexSpec,
   MysqlStatementResult,
@@ -115,6 +116,12 @@ export function mysqlTableStructure(
   table: string
 ): Promise<MysqlTableStructure> {
   return invoke<MysqlTableStructure>("mysql_table_structure", { id, database, table });
+}
+
+/** Every collation this server supports, ordered by character set. A property of the server and not
+ *  of a table, so one read per connection covers every column editor opened on it. */
+export function mysqlCollations(id: string): Promise<MysqlCollation[]> {
+  return invoke<MysqlCollation[]>("mysql_collations", { id });
 }
 
 export function mysqlAddColumn(

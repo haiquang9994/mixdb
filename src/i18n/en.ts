@@ -150,6 +150,8 @@ const en = {
     positionAfter: "After {{column}}",
     collation: "Collation",
     collationPlaceholder: "(table default)",
+    collationCharsetDefault: "{{charset}} · default",
+    collationSearch: "Search collations...",
     comment: "Comment",
     nullable: "Allow NULL",
     autoIncrement: "AUTO_INCREMENT",

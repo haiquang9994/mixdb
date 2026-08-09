@@ -57,6 +57,21 @@ pub struct StructureColumn {
     pub extra: String,
 }
 
+/// One collation the connected server actually has, with the character set it belongs to.
+///
+/// Read from the server rather than listed here, because which collations exist is a property of
+/// the version and of how the server was built: `utf8mb4_0900_ai_ci` only exists from MySQL 8.0,
+/// `utf8mb3_*` is spelled `utf8_*` before it, and MariaDB has a set of its own.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Collation {
+    pub name: String,
+    pub charset: String,
+    /// Whether this is the character set's default — the collation a column of that charset gets
+    /// when no `COLLATE` is written.
+    pub is_default: bool,
+}
+
 /// One column of an index, in the order the index puts them in.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -450,6 +465,30 @@ pub async fn table_structure(
     indexes.sort_by_key(|index| !index.primary);
 
     Ok(TableStructure { columns, indexes })
+}
+
+/// Every collation the server supports, in character set order. Read once and offered as a list to
+/// choose from, so a column's `COLLATE` can only ever name something this server knows.
+pub async fn collations(pool: &MySqlPool) -> Result<Vec<Collation>, String> {
+    let rows = sqlx::query(
+        "SELECT COLLATION_NAME, CHARACTER_SET_NAME, IS_DEFAULT
+         FROM information_schema.COLLATIONS
+         ORDER BY CHARACTER_SET_NAME, COLLATION_NAME",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(rows
+        .iter()
+        .map(|row| Collation {
+            name: text_or_empty(row, "COLLATION_NAME"),
+            charset: text_or_empty(row, "CHARACTER_SET_NAME"),
+            // `Yes` on the character set's default, empty on the rest.
+            is_default: text_or_empty(row, "IS_DEFAULT").eq_ignore_ascii_case("Yes"),
+        })
+        .filter(|collation| !collation.name.is_empty())
+        .collect())
 }
 
 pub async fn add_column(

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   mysqlAddColumn,
   mysqlAddIndex,
+  mysqlCollations,
   mysqlDropColumn,
   mysqlDropIndex,
   mysqlModifyColumn,
@@ -16,6 +17,7 @@ import LoadingOverlay from "../LoadingOverlay";
 import { PencilIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import type {
+  MysqlCollation,
   MysqlColumnSpec,
   MysqlIndexSpec,
   MysqlStructureColumn,
@@ -76,6 +78,25 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
   const [columnDialog, setColumnDialog] = useState<ColumnDialogState | null>(null);
   const [indexDialog, setIndexDialog] = useState<IndexDialogState | null>(null);
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null);
+  const [collations, setCollations] = useState<MysqlCollation[]>([]);
+
+  // Read once per connection rather than per table: the list belongs to the server, and every
+  // column dialog opened on it picks from the same one.
+  useEffect(() => {
+    let cancelled = false;
+    mysqlCollations(connectionId)
+      .then((result) => {
+        if (!cancelled) setCollations(result);
+      })
+      // Not worth an error banner over: without a list the dialog falls back to a text box, which
+      // is what it was before there was one.
+      .catch(() => {
+        if (!cancelled) setCollations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -374,6 +395,7 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
         <ColumnDialog
           table={selectedTable}
           columns={columns}
+          collations={collations}
           column={columnDialog.column}
           onCancel={() => setColumnDialog(null)}
           onSubmit={submitColumn}

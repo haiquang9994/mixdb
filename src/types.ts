@@ -94,6 +94,15 @@ export interface MysqlStructureColumn {
   extra: string;
 }
 
+/** One collation the connected server has. Read from the server, so the list matches that MySQL
+ *  version exactly rather than whatever this client was built knowing about. */
+export interface MysqlCollation {
+  name: string;
+  charset: string;
+  /** Whether this is its character set's default — what a column gets without a `COLLATE`. */
+  isDefault: boolean;
+}
+
 /** What a column is to be declared as: the write-side counterpart of {@link MysqlStructureColumn},
  *  carrying only the parts that go into an `ADD`/`CHANGE COLUMN` clause. */
 export interface MysqlColumnSpec {

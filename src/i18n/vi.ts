@@ -150,6 +150,8 @@ const vi: TranslationDict = {
     positionAfter: "Sau {{column}}",
     collation: "Collation",
     collationPlaceholder: "(theo mặc định của bảng)",
+    collationCharsetDefault: "{{charset}} · mặc định",
+    collationSearch: "Tìm collation...",
     comment: "Ghi chú",
     nullable: "Cho phép NULL",
     autoIncrement: "AUTO_INCREMENT",
