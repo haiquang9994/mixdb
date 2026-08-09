@@ -11,6 +11,7 @@ import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DatabaseActions from "../components/DatabaseActions";
 import type { DatabaseChange } from "../components/DatabaseActions";
+import DatabaseStats from "../components/DatabaseStats";
 import LoadingOverlay from "../components/LoadingOverlay";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
@@ -33,10 +34,15 @@ interface Props {
   onSidebarWidthChange?: (width: number) => void;
 }
 
-/** The panes the content area can show. Only the document list exists so far, but the header is
- * already a tab strip so a second one (indexes, aggregations, …) is a case here and a branch
- * below rather than a reshuffle of the layout — same as the MySQL side. */
-type ContentMode = "data";
+/** The panes the content area can show: the selected collection's documents, or what every
+ * collection in the database weighs. */
+type ContentMode = "data" | "stats";
+
+/** The tabs in the order they are shown, each with the key that names it. */
+const CONTENT_TABS: { mode: ContentMode; labelKey: "mongo.dataTab" | "mongo.statsTab" }[] = [
+  { mode: "data", labelKey: "mongo.dataTab" },
+  { mode: "stats", labelKey: "mongo.statsTab" },
+];
 
 /** The database picker's first entry, which opens the create dialog instead of selecting anything.
  * MongoDB allows no `/` in a database name, so this can never collide with a real one. */
@@ -356,15 +362,18 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           />
         </label>
         <div className="method-tabs mongo-content-tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={contentMode === "data"}
-            className={`method-tab${contentMode === "data" ? " method-tab-active" : ""}`}
-            onClick={() => setContentMode("data")}
-          >
-            {t("mongo.dataTab")}
-          </button>
+          {CONTENT_TABS.map(({ mode, labelKey }) => (
+            <button
+              key={mode}
+              type="button"
+              role="tab"
+              aria-selected={contentMode === mode}
+              className={`method-tab${contentMode === mode ? " method-tab-active" : ""}`}
+              onClick={() => setContentMode(mode)}
+            >
+              {t(labelKey)}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -443,6 +452,17 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
               selectedCollection={selectedCollection}
               onError={setLocalError}
               layoutWidth={width}
+            />
+          )}
+          {contentMode === "stats" && !selectedDb && (
+            <p className="muted">{t("mongo.selectDatabaseStatsPrompt")}</p>
+          )}
+          {contentMode === "stats" && selectedDb && (
+            <DatabaseStats
+              kind="mongo"
+              connectionId={connectionId}
+              database={selectedDb}
+              onError={setLocalError}
             />
           )}
         </section>

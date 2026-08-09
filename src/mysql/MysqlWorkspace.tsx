@@ -14,6 +14,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import DatabaseActions from "../components/DatabaseActions";
 import type { DatabaseChange } from "../components/DatabaseActions";
 import DatabaseDialog from "../components/DatabaseDialog";
+import DatabaseStats from "../components/DatabaseStats";
 import LoadingOverlay from "../components/LoadingOverlay";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
@@ -41,13 +42,18 @@ interface Props {
 }
 
 /** Which of the header's tabs the content area is showing: the selected table's rows, the same
- * table's columns and indexes, or a SQL editor over the connection as a whole. */
-type ContentMode = "data" | "structure" | "query";
+ * table's columns and indexes, what every table in the database weighs, or a SQL editor over the
+ * connection as a whole. */
+type ContentMode = "data" | "structure" | "stats" | "query";
 
 /** The tabs in the order they are shown, each with the key that names it. */
-const CONTENT_TABS: { mode: ContentMode; labelKey: "mysql.dataTab" | "mysql.structureTab" | "mysql.queryTab" }[] = [
+const CONTENT_TABS: {
+  mode: ContentMode;
+  labelKey: "mysql.dataTab" | "mysql.structureTab" | "mysql.statsTab" | "mysql.queryTab";
+}[] = [
   { mode: "data", labelKey: "mysql.dataTab" },
   { mode: "structure", labelKey: "mysql.structureTab" },
+  { mode: "stats", labelKey: "mysql.statsTab" },
   { mode: "query", labelKey: "mysql.queryTab" },
 ];
 
@@ -466,6 +472,17 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
               connectionId={connectionId}
               selectedDb={selectedDb}
               selectedTable={selectedTable}
+              onError={setLocalError}
+            />
+          )}
+          {contentMode === "stats" && !selectedDb && (
+            <p className="muted">{t("mysql.selectDatabaseStatsPrompt")}</p>
+          )}
+          {contentMode === "stats" && selectedDb && (
+            <DatabaseStats
+              kind="mysql"
+              connectionId={connectionId}
+              database={selectedDb}
               onError={setLocalError}
             />
           )}

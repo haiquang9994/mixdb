@@ -191,3 +191,19 @@ export interface MongoCollectionPage {
   documents: Record<string, unknown>[];
   total: number;
 }
+
+/** What one table or collection weighs — a row of the Statistics tab. The same shape for both
+ *  databases, so the one grid reads either without knowing which it is looking at. */
+export interface TableStats {
+  /** The table's or the collection's name. */
+  name: string;
+  /** Rows or documents. MySQL's InnoDB tables report an estimate rather than a `COUNT(*)`, so this
+   *  can be well off on a large table — and so can {@link avgRecordSize}, derived from it. */
+  rows: number;
+  /** The bytes the rows or documents themselves take, indexes excluded. */
+  dataSize: number;
+  /** The bytes every index on it takes together. */
+  indexSize: number;
+  /** The average bytes of one row or document, as the server reports it — 0 when it holds none. */
+  avgRecordSize: number;
+}

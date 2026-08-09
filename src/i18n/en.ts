@@ -80,6 +80,7 @@ const en = {
     reloadDatabases: "Reload databases",
     dataTab: "Data",
     structureTab: "Structure",
+    statsTab: "Statistics",
     queryTab: "Query",
     searchTablesPlaceholder: "Search tables...",
     reloadTables: "Reload tables",
@@ -93,6 +94,7 @@ const en = {
     resizeSidebarTooltip: "Drag to resize, double-click to fit",
     selectTablePrompt: "Select a table to view its data.",
     selectTableStructurePrompt: "Select a table to view its structure.",
+    selectDatabaseStatsPrompt: "Select a database to see what its tables weigh.",
   },
   // The Structure tab: a table's columns above, its indexes below. Every change is one ALTER TABLE
   // of its own, so the wording talks about single columns and indexes rather than pending edits.
@@ -143,6 +145,32 @@ const en = {
       "This index is on an expression, which is not read here — it can only be dropped",
     dropIndexTitle: "Drop index?",
     dropIndexMessage: "Drop the index {{index}}? The rows themselves are untouched.",
+  },
+  // The Statistics tab, shared by both workspaces: what every table or collection of the selected
+  // database weighs. MySQL counts rows in tables, MongoDB documents in collections, so the three
+  // headings that name one or the other come in pairs.
+  dbStats: {
+    tablesTitle: "Tables in {{database}}",
+    collectionsTitle: "Collections in {{database}}",
+    reload: "Reload statistics",
+    loading: "Loading...",
+    colTable: "Table",
+    colCollection: "Collection",
+    colRows: "Rows",
+    colDocuments: "Documents",
+    colDataSize: "Data size",
+    colIndexSize: "Index size",
+    colAvgRow: "Avg. row size",
+    colAvgDocument: "Avg. document size",
+    total: "Total",
+    bytes: "{{bytes}} bytes",
+    noTables: "This database has no tables.",
+    noCollections: "This database has no collections.",
+    estimateNote:
+      "Row counts and average row sizes are the estimates the server keeps, not exact counts — on an InnoDB table they can be well off.",
+    sortNone: "Sort by {{column}}",
+    sortAsc: "Sorted by {{column}}, smallest first",
+    sortDesc: "Sorted by {{column}}, largest first",
   },
   // The rename dialog, wherever it is opened from: only the title says what is being renamed.
   renameDialog: {
@@ -371,6 +399,7 @@ const en = {
     databaseNameInvalid: "A database name cannot contain a space or any of / \\ . \" $ * < > : | ?",
     databaseExists: "There is already a database called {{database}}.",
     dataTab: "Data",
+    statsTab: "Statistics",
     searchCollectionsPlaceholder: "Search collections...",
     reloadCollections: "Reload collections",
     addCollection: "Create a collection",
@@ -383,6 +412,7 @@ const en = {
     resizeSidebar: "Resize sidebar",
     resizeSidebarTooltip: "Drag to resize, double-click to fit",
     selectCollectionPrompt: "Select a collection to view its documents.",
+    selectDatabaseStatsPrompt: "Select a database to see what its collections weigh.",
   },
   collectionDialog: {
     title: "Create a collection in {{database}}",

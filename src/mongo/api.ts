@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { MongoCollectionPage } from "../types";
+import type { MongoCollectionPage, TableStats } from "../types";
 import type { TypedDocument, TypedValue } from "./bsonTypes";
 import type { MongoFilter } from "./filters";
 
@@ -13,6 +13,16 @@ export function mongoServerInfo(id: string): Promise<{ version: string; os: stri
 
 export function mongoListCollections(id: string, db: string): Promise<string[]> {
   return invoke<string[]>("mongo_list_collections", { id, db });
+}
+
+/**
+ * What every collection in the database weighs, ordered by name. One `$collStats` per collection,
+ * each answered from the server's own bookkeeping rather than by reading any documents.
+ *
+ * Views are left out: one stores nothing of its own, and `$collStats` refuses to run on it.
+ */
+export function mongoCollectionStats(id: string, db: string): Promise<TableStats[]> {
+  return invoke<TableStats[]>("mongo_collection_stats", { id, db });
 }
 
 /** Writes the database to `path` as a mongodump archive: collections, indexes and all, in one

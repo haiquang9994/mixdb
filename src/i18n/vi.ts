@@ -82,6 +82,7 @@ const vi: TranslationDict = {
     reloadDatabases: "Tải lại danh sách cơ sở dữ liệu",
     dataTab: "Dữ liệu",
     structureTab: "Cấu trúc",
+    statsTab: "Thống kê",
     queryTab: "Truy vấn",
     searchTablesPlaceholder: "Tìm bảng...",
     reloadTables: "Tải lại danh sách bảng",
@@ -95,6 +96,7 @@ const vi: TranslationDict = {
     resizeSidebarTooltip: "Kéo để thay đổi kích thước, bấm đúp để vừa khít",
     selectTablePrompt: "Chọn một bảng để xem dữ liệu.",
     selectTableStructurePrompt: "Chọn một bảng để xem cấu trúc.",
+    selectDatabaseStatsPrompt: "Chọn một database để xem dung lượng các bảng của nó.",
   },
   // Tab Cấu trúc: cột ở trên, index ở dưới. Mỗi thay đổi là một ALTER TABLE riêng, nên cách diễn
   // đạt nói về từng cột/từng index chứ không nói về các thay đổi đang chờ lưu.
@@ -143,6 +145,32 @@ const vi: TranslationDict = {
     functionalIndexTooltip: "Index này dựa trên biểu thức, không được đọc ở đây — chỉ có thể xóa",
     dropIndexTitle: "Xóa index?",
     dropIndexMessage: "Xóa index {{index}}? Dữ liệu trong bảng không bị ảnh hưởng.",
+  },
+  // Tab Thống kê, dùng chung cho cả hai workspace: mỗi bảng/collection của database đang chọn
+  // chiếm bao nhiêu dung lượng. MySQL đếm dòng trong bảng, MongoDB đếm document trong collection,
+  // nên ba tiêu đề cột liên quan có hai bản.
+  dbStats: {
+    tablesTitle: "Các bảng trong {{database}}",
+    collectionsTitle: "Các collection trong {{database}}",
+    reload: "Tải lại thống kê",
+    loading: "Đang tải...",
+    colTable: "Bảng",
+    colCollection: "Collection",
+    colRows: "Số dòng",
+    colDocuments: "Số document",
+    colDataSize: "Dung lượng dữ liệu",
+    colIndexSize: "Dung lượng index",
+    colAvgRow: "Kích thước dòng TB",
+    colAvgDocument: "Kích thước document TB",
+    total: "Tổng cộng",
+    bytes: "{{bytes}} byte",
+    noTables: "Database này chưa có bảng nào.",
+    noCollections: "Database này chưa có collection nào.",
+    estimateNote:
+      "Số dòng và kích thước dòng trung bình là ước lượng server tự lưu, không phải số đếm chính xác — với bảng InnoDB sai số có thể khá lớn.",
+    sortNone: "Sắp xếp theo {{column}}",
+    sortAsc: "Đang sắp theo {{column}}, nhỏ nhất trước",
+    sortDesc: "Đang sắp theo {{column}}, lớn nhất trước",
   },
   // Popup đổi tên, dùng chung cho mọi nơi mở nó: chỉ tiêu đề nói rõ đang đổi tên cái gì.
   renameDialog: {
@@ -371,6 +399,7 @@ const vi: TranslationDict = {
       "Tên cơ sở dữ liệu không được chứa dấu cách hay các ký tự / \\ . \" $ * < > : | ?",
     databaseExists: "Đã có cơ sở dữ liệu tên {{database}}.",
     dataTab: "Dữ liệu",
+    statsTab: "Thống kê",
     searchCollectionsPlaceholder: "Tìm collection...",
     reloadCollections: "Tải lại danh sách collection",
     addCollection: "Tạo collection mới",
@@ -383,6 +412,7 @@ const vi: TranslationDict = {
     resizeSidebar: "Thay đổi kích thước sidebar",
     resizeSidebarTooltip: "Kéo để thay đổi kích thước, bấm đúp để vừa khít",
     selectCollectionPrompt: "Chọn một collection để xem document.",
+    selectDatabaseStatsPrompt: "Chọn một database để xem dung lượng các collection của nó.",
   },
   collectionDialog: {
     title: "Tạo collection trong {{database}}",

@@ -7,6 +7,7 @@ use mongodb::bson::{
     Timestamp,
 };
 use mongodb::options::{ClientOptions, ServerAddress};
+use mongodb::results::CollectionType;
 use mongodb::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -126,6 +127,79 @@ pub async fn list_collections(client: &Client, db: &str) -> Result<Vec<String>, 
             .then_with(|| a.cmp(b))
     });
     Ok(names)
+}
+
+/// What one collection costs the server: the documents it holds and the bytes they and their
+/// indexes take. The same four numbers the MySQL side reports for a table.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectionStats {
+    pub name: String,
+    pub rows: u64,
+    /// The uncompressed size of the documents, `storageStats.size` — not `storageSize`, which is
+    /// what they take on disk once WiredTiger has compressed them.
+    pub data_size: u64,
+    /// Every index on the collection together, `storageStats.totalIndexSize`.
+    pub index_size: u64,
+    /// `storageStats.avgObjSize`, which an empty collection has none of.
+    pub avg_record_size: u64,
+}
+
+/// What every collection in the database weighs, listed by name.
+///
+/// Views are left out: one stores nothing of its own, and `$collStats` refuses to run on it at all.
+pub async fn collection_stats(client: &Client, db: &str) -> Result<Vec<CollectionStats>, String> {
+    let database = client.database(db);
+    let mut specs = database
+        .list_collections()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut names = Vec::new();
+    while let Some(spec) = specs.try_next().await.map_err(|e| e.to_string())? {
+        if !matches!(spec.collection_type, CollectionType::View) {
+            names.push(spec.name);
+        }
+    }
+    names.sort_by(|a, b| {
+        a.to_lowercase()
+            .cmp(&b.to_lowercase())
+            .then_with(|| a.cmp(b))
+    });
+
+    let mut stats = Vec::with_capacity(names.len());
+    for name in names {
+        // One aggregation per collection: `$collStats` reads the collection it is run against, so
+        // there is no one query that covers the database.
+        let mut cursor = database
+            .collection::<Document>(&name)
+            .aggregate(vec![doc! { "$collStats": { "storageStats": {} } }])
+            .await
+            .map_err(|e| e.to_string())?;
+        let reply = cursor.try_next().await.map_err(|e| e.to_string())?;
+        let storage = reply
+            .as_ref()
+            .and_then(|doc| doc.get_document("storageStats").ok());
+        stats.push(CollectionStats {
+            name,
+            rows: storage.map_or(0, |s| counter(s, "count")),
+            data_size: storage.map_or(0, |s| counter(s, "size")),
+            index_size: storage.map_or(0, |s| counter(s, "totalIndexSize")),
+            avg_record_size: storage.map_or(0, |s| counter(s, "avgObjSize")),
+        });
+    }
+    Ok(stats)
+}
+
+/// One of `$collStats`' numbers. Which BSON number it arrives as is the server's choice and varies
+/// by field and by version, and a field an empty collection has no figure for is simply absent.
+fn counter(stats: &Document, key: &str) -> u64 {
+    match stats.get(key) {
+        Some(Bson::Int32(value)) => (*value).max(0) as u64,
+        Some(Bson::Int64(value)) => (*value).max(0) as u64,
+        Some(Bson::Double(value)) => value.max(0.0) as u64,
+        _ => 0,
+    }
 }
 
 /// Creates an empty collection.

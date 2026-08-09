@@ -497,6 +497,66 @@ pub async fn collations(pool: &MySqlPool) -> Result<Vec<Collation>, String> {
         .collect())
 }
 
+/// What one table costs the server: the rows it holds and the bytes they and their indexes take.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableStats {
+    pub name: String,
+    /// InnoDB's is an estimate sampled from the index, not a `COUNT(*)` — it can be well off on a
+    /// large table, and so can the average size derived alongside it.
+    pub rows: u64,
+    /// The bytes the rows themselves take, `DATA_LENGTH`.
+    pub data_size: u64,
+    /// The bytes every index on the table takes together, `INDEX_LENGTH`.
+    pub index_size: u64,
+    /// The average bytes per row as the engine reports it, `AVG_ROW_LENGTH`.
+    pub avg_record_size: u64,
+}
+
+/// What every table in the database weighs, listed by name.
+///
+/// Only base tables are counted. A view stores nothing of its own and `information_schema` reports
+/// NULL for all four numbers on one, which would show up here as a table with no rows in it rather
+/// than as what it is.
+pub async fn table_stats(pool: &MySqlPool, database: &str) -> Result<Vec<TableStats>, String> {
+    let rows = sqlx::query(
+        "SELECT TABLE_NAME, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH, AVG_ROW_LENGTH
+         FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'
+         ORDER BY TABLE_NAME",
+    )
+    .bind(database)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(rows
+        .iter()
+        .map(|row| TableStats {
+            name: text_or_empty(row, "TABLE_NAME"),
+            rows: counter(row, "TABLE_ROWS"),
+            data_size: counter(row, "DATA_LENGTH"),
+            index_size: counter(row, "INDEX_LENGTH"),
+            avg_record_size: counter(row, "AVG_ROW_LENGTH"),
+        })
+        .collect())
+}
+
+/// One of `information_schema`'s counters. They are NULL for a table the engine keeps no figure
+/// for, which reads the same here as a table with nothing in it: zero. Declared unsigned, but read
+/// as signed too — the column types of `information_schema` are not the same on every server, and
+/// a mismatch would otherwise turn every table's size into a silent zero.
+fn counter(row: &MySqlRow, name: &str) -> u64 {
+    if let Ok(value) = row.try_get::<Option<u64>, _>(name) {
+        return value.unwrap_or(0);
+    }
+    row.try_get::<Option<i64>, _>(name)
+        .ok()
+        .flatten()
+        .unwrap_or(0)
+        .max(0) as u64
+}
+
 /// Creates a database. Not a table's shape at all, but it is written the same way as everything
 /// else here — a statement built from a quoted name and a checked collation.
 ///

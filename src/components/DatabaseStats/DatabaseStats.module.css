@@ -1,0 +1,141 @@
+/* One grid filling the tab, scrolling inside its own frame. `position: relative` so the loading
+   veil covers the tab rather than the whole workspace — the same arrangement as the Structure
+   tab, which this sits beside. */
+.stats {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  gap: 0.35rem;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 0.95em;
+  opacity: 0.8;
+}
+
+.gridWrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 6px;
+}
+
+.grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 0.9em;
+}
+
+.grid th,
+.grid td {
+  border-right: 1px solid rgba(128, 128, 128, 0.25);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid tr > *:last-child {
+  border-right: none;
+}
+
+.grid tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+.grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f6f6f6;
+  cursor: pointer;
+  user-select: none;
+}
+
+.grid tbody tr:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.headerCell:hover {
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.name {
+  font-weight: 600;
+}
+
+/* Every number in the grid: right-aligned and tabular, so the digits of one row line up with the
+   digits of the next and two sizes can be compared by their length alone.
+
+   Qualified by the cell, not by the class alone: the `text-align: left` above is set through
+   `.grid th, .grid td`, which outweighs a bare class and would keep the numbers on the left. */
+.grid th.numeric,
+.grid td.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid th.rowNumber,
+.grid td.rowNumber {
+  width: 1%;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.5;
+}
+
+.sortIcon {
+  display: inline-block;
+  width: 1em;
+  margin-left: 0.25em;
+  vertical-align: -0.15em;
+}
+
+/* The totals, pinned to the bottom of the frame so they stay in view however far the list of
+   tables is scrolled. Opaque for the same reason the header is: the rows pass underneath it. */
+.grid tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: #f6f6f6;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+  border-bottom: none;
+  font-weight: 600;
+}
+
+.note {
+  flex-shrink: 0;
+  margin: 0;
+  font-size: 0.85em;
+  opacity: 0.55;
+}
+
+:root[data-theme="dark"] .grid thead th,
+:root[data-theme="dark"] .grid tfoot td {
+  background: #2f2f2f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .grid thead th,
+  :root:not([data-theme]) .grid tfoot td {
+    background: #2f2f2f;
+  }
+}

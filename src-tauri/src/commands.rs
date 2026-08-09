@@ -160,6 +160,21 @@ pub async fn mysql_list_tables(
     }
 }
 
+/// What every table in the database weighs, for the workspace's Statistics tab.
+#[tauri::command]
+pub async fn mysql_table_stats(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+) -> Result<Vec<mysql_structure::TableStats>, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql_structure::table_stats(pool, &database).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn mysql_table_data(
     state: State<'_, AppState>,
@@ -746,6 +761,21 @@ pub async fn mongo_list_collections(
     let connections = state.connections.lock().await;
     match connections.get(&id).map(|c| &c.handle) {
         Some(DbHandle::Mongo(client)) => mongo::list_collections(client, &db).await,
+        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+/// What every collection in the database weighs, for the workspace's Statistics tab.
+#[tauri::command]
+pub async fn mongo_collection_stats(
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+) -> Result<Vec<mongo::CollectionStats>, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mongo(client)) => mongo::collection_stats(client, &db).await,
         Some(_) => Err("Connection is not a MongoDB connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }

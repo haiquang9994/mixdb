@@ -6,6 +6,7 @@ import type {
   MysqlStatementResult,
   MysqlTablePage,
   MysqlTableStructure,
+  TableStats,
 } from "../types";
 import type { MysqlFilter } from "./filters";
 
@@ -15,6 +16,17 @@ export function mysqlListDatabases(id: string): Promise<string[]> {
 
 export function mysqlListTables(id: string, database: string): Promise<string[]> {
   return invoke<string[]>("mysql_list_tables", { id, database });
+}
+
+/**
+ * What every table in the database weighs, ordered by name. Read from `information_schema`, so it
+ * costs nothing whatever the tables hold — but the row counts of InnoDB tables are the estimates
+ * that live there rather than exact counts, and the average row sizes follow them.
+ *
+ * Views are left out: one stores nothing of its own, and would read here as an empty table.
+ */
+export function mysqlTableStats(id: string, database: string): Promise<TableStats[]> {
+  return invoke<TableStats[]>("mysql_table_stats", { id, database });
 }
 
 export interface MysqlServerInfo {
