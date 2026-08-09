@@ -42,6 +42,9 @@ export interface MysqlTablePage {
   columns: string[];
   columnTypes: Record<string, string>;
   primaryKey: string[];
+  /** The AUTO_INCREMENT column, or null when the table has none — only such a table has a
+   *  counter that resetting after a delete would mean anything for. */
+  autoIncrementColumn: string | null;
   rows: Record<string, unknown>[];
   total: number;
 }

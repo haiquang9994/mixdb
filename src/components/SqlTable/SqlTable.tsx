@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
+import { mysqlDeleteRows, mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
 import ActionBar from "../ActionBar";
+import ConfirmDialog from "../ConfirmDialog";
 import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
-import { ReloadIcon } from "../../icons";
+import { ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import styles from "./SqlTable.module.css";
 
@@ -35,6 +36,7 @@ interface TableColumnsInfo {
   columns: string[];
   columnTypes: Record<string, string>;
   primaryKey: string[];
+  autoIncrementColumn: string | null;
 }
 
 interface Props {
@@ -55,6 +57,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   const [columns, setColumns] = useState<string[]>([]);
   const [columnTypes, setColumnTypes] = useState<Record<string, string>>({});
   const [primaryKey, setPrimaryKey] = useState<string[]>([]);
+  const [autoIncrementColumn, setAutoIncrementColumn] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   // Bumped by the reload action to re-run the fetch below with the page/size unchanged.
@@ -74,6 +77,23 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   const columnsCacheRef = useRef<Map<string, TableColumnsInfo>>(new Map());
   const thRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+
+  // Selected rows are held as indices into the current page: selection is a
+  // property of what is on screen, and every path that replaces the rows
+  // (paging, reloading, switching table) clears it.
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  // Where a shift-click range starts. A ref rather than state because it is
+  // only ever read from inside an event handler.
+  const anchorRowRef = useRef<number | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteWholeTable, setDeleteWholeTable] = useState(false);
+  const [resetAutoIncrement, setResetAutoIncrement] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  function clearSelection() {
+    setSelectedRows(new Set());
+    anchorRowRef.current = null;
+  }
 
   function setEditingCell(next: EditingCell | null) {
     editingCellRef.current = next;
@@ -139,12 +159,21 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
       setColumns(cached.columns);
       setColumnTypes(cached.columnTypes);
       setPrimaryKey(cached.primaryKey);
+      setAutoIncrementColumn(cached.autoIncrementColumn);
     } else {
       setColumns([]);
       setColumnTypes({});
       setPrimaryKey([]);
+      setAutoIncrementColumn(null);
     }
   }, [selectedDb, selectedTable]);
+
+  // The indices in `selectedRows` only mean anything for the rows currently on
+  // screen, so any refetch — a new page, a new size, a reload, a new table —
+  // drops the selection rather than carrying it onto different rows.
+  useEffect(() => {
+    clearSelection();
+  }, [selectedDb, selectedTable, page, pageSize, reloadToken]);
 
   useEffect(() => {
     const db = selectedDb;
@@ -158,11 +187,13 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
           columns: result.columns,
           columnTypes: result.columnTypes,
           primaryKey: result.primaryKey,
+          autoIncrementColumn: result.autoIncrementColumn,
         });
         setRows(result.rows);
         setColumns(result.columns);
         setColumnTypes(result.columnTypes);
         setPrimaryKey(result.primaryKey);
+        setAutoIncrementColumn(result.autoIncrementColumn);
         setTotal(result.total);
       })
       .catch((e) => onError(String(e)))
@@ -242,6 +273,50 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     setReloadToken((n) => n + 1);
   }
 
+  /** Identifies one row to the server: its primary key columns, or — when the table has none —
+   * every column, the same fallback an update uses. */
+  function rowKey(row: Record<string, unknown>): Record<string, string | null> {
+    const keyCols = primaryKey.length > 0 ? primaryKey : columns;
+    const key: Record<string, string | null> = {};
+    for (const c of keyCols) key[c] = normalizeCellValue(row[c]);
+    return key;
+  }
+
+  async function openDeleteConfirm() {
+    // Write out a staged edit first: it may touch a key column, which would leave the key we
+    // are about to send pointing at a row that no longer looks like that.
+    await commitAndExit();
+    setDeleteWholeTable(false);
+    setResetAutoIncrement(false);
+    setConfirmingDelete(true);
+  }
+
+  async function confirmDelete() {
+    const keys = [...selectedRows]
+      .map((i) => rows[i])
+      .filter((row) => row !== undefined)
+      .map(rowKey);
+    const wholeTable = deleteWholeTable;
+    setConfirmingDelete(false);
+    setDeleting(true);
+    try {
+      await mysqlDeleteRows(
+        connectionId,
+        selectedDb,
+        selectedTable,
+        keys,
+        wholeTable,
+        canResetAutoIncrement && resetAutoIncrement,
+      );
+      if (wholeTable) setPage(0);
+      setReloadToken((n) => n + 1);
+    } catch (e) {
+      onError(String(e));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function moveEditTo(rowIndex: number, col: string) {
     const leavingRow = editingCellRef.current?.rowIndex;
     commitEditingCell();
@@ -252,7 +327,35 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     setEditValue(displayValue(rows[rowIndex]?.[col]));
   }
 
+  /** Extends, toggles or replaces the selection the way a list does: plain click selects the one
+   * row, ctrl/cmd toggles it, shift takes everything between the anchor and it. */
+  function selectRow(rowIndex: number, e: React.MouseEvent) {
+    const toggle = e.ctrlKey || e.metaKey;
+    const anchor = anchorRowRef.current;
+    if (e.shiftKey && anchor !== null) {
+      const from = Math.min(anchor, rowIndex);
+      const to = Math.max(anchor, rowIndex);
+      setSelectedRows((prev) => {
+        const next = toggle ? new Set(prev) : new Set<number>();
+        for (let i = from; i <= to; i++) next.add(i);
+        return next;
+      });
+      return;
+    }
+    anchorRowRef.current = rowIndex;
+    if (toggle) {
+      setSelectedRows((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(rowIndex)) next.add(rowIndex);
+        return next;
+      });
+      return;
+    }
+    setSelectedRows(new Set([rowIndex]));
+  }
+
   function handleCellMouseDown(e: React.MouseEvent<HTMLTableCellElement>, rowIndex: number, col: string) {
+    if (e.button !== 0) return;
     const current = editingCellRef.current;
     if (current && current.rowIndex === rowIndex && current.col === col) {
       return;
@@ -265,6 +368,31 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     if (current) {
       e.preventDefault();
       void commitAndExit();
+    }
+    // Shift/ctrl-click means "extend the row selection" here, so the browser must not read it as
+    // "extend the text selection" as well. A plain click keeps its normal text-dragging.
+    if (e.shiftKey || e.ctrlKey || e.metaKey) e.preventDefault();
+    selectRow(rowIndex, e);
+    // The grid owns the ctrl+A shortcut, and a shortcut only reaches it while it holds focus.
+    // Clicking a row is what tells us the user is working in the grid — but only on a single
+    // click: the second click of a double-click goes to edit mode, whose input takes focus itself.
+    scrollRef.current?.focus({ preventScroll: true });
+  }
+
+  function handleGridKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    // While a cell is open for editing its input owns the keyboard: select-all takes the text,
+    // and Escape backs the edit out.
+    if (editingCellRef.current) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      if (rows.length === 0) return;
+      setSelectedRows(new Set(rows.map((_, i) => i)));
+      anchorRowRef.current = 0;
+      return;
+    }
+    if (e.key === "Escape" && selectedRows.size > 0) {
+      e.preventDefault();
+      clearSelection();
     }
   }
 
@@ -328,11 +456,24 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   }
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const allPageRowsSelected = rows.length > 0 && selectedRows.size === rows.length;
+  // Only worth offering while the page is a window onto a bigger table: with a single page,
+  // deleting every selected row already is deleting the whole table.
+  const canDeleteWholeTable = allPageRowsSelected && pageCount > 1;
+  // Resetting the counter only means anything when the delete leaves the table empty — with
+  // rows still in it, the next insert has to keep clearing the ids that are already there.
+  const canResetAutoIncrement =
+    autoIncrementColumn !== null && (deleteWholeTable || (allPageRowsSelected && pageCount === 1));
 
   return (
     <div className={styles.sqlTable}>
       <div className={styles.scrollWrap}>
-        <div className={styles.scroll} ref={scrollRef}>
+        <div
+          className={styles.scroll}
+          ref={scrollRef}
+          tabIndex={-1}
+          onKeyDown={handleGridKeyDown}
+        >
           <table>
             <thead>
               <tr>
@@ -351,7 +492,11 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <tr key={i}>
+                <tr
+                  key={i}
+                  className={selectedRows.has(i) ? styles.rowSelected : undefined}
+                  aria-selected={selectedRows.has(i)}
+                >
                   {columns.map((c) => {
                     const isEditing = editingCell?.rowIndex === i && editingCell.col === c;
                     if (isEditing) {
@@ -425,7 +570,9 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
           </table>
           {!loading && rows.length === 0 && <p className="muted">{t("sqlTable.noRows")}</p>}
         </div>
-        {loading && <LoadingOverlay label={t("sqlTable.loading")} />}
+        {(loading || deleting) && (
+          <LoadingOverlay label={deleting ? t("sqlTable.deletingRows") : t("sqlTable.loading")} />
+        )}
       </div>
       <div className={styles.footer}>
         <ActionBar
@@ -434,9 +581,17 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
               key: "reload",
               icon: ReloadIcon,
               label: t("sqlTable.reloadRows"),
-              disabled: loading,
+              disabled: loading || deleting,
               busy: loading,
               onClick: () => void reload(),
+            },
+            {
+              key: "delete",
+              icon: TrashIcon,
+              label: t("sqlTable.deleteRows"),
+              danger: true,
+              disabled: loading || deleting || selectedRows.size === 0,
+              onClick: () => void openDeleteConfirm(),
             },
           ]}
         />
@@ -454,6 +609,46 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
           }}
         />
       </div>
+      {confirmingDelete && (
+        <ConfirmDialog
+          title={t("sqlTable.deleteRowsTitle")}
+          message={t("sqlTable.deleteRowsMessage", { n: selectedRows.size })}
+          confirmLabel={t("common.delete")}
+          danger
+          onConfirm={() => void confirmDelete()}
+          onCancel={() => setConfirmingDelete(false)}
+        >
+          {(canDeleteWholeTable || canResetAutoIncrement) && (
+            <div className={styles.deleteOptions}>
+              {canDeleteWholeTable && (
+                <label className={styles.deleteOption}>
+                  <input
+                    type="checkbox"
+                    checked={deleteWholeTable}
+                    onChange={(e) => {
+                      setDeleteWholeTable(e.target.checked);
+                      // The reset only exists because of this option on a multi-page table;
+                      // taking it back takes its follow-up with it.
+                      if (!e.target.checked) setResetAutoIncrement(false);
+                    }}
+                  />
+                  {t("sqlTable.deleteAllRowsOption", { total })}
+                </label>
+              )}
+              {canResetAutoIncrement && (
+                <label className={styles.deleteOption}>
+                  <input
+                    type="checkbox"
+                    checked={resetAutoIncrement}
+                    onChange={(e) => setResetAutoIncrement(e.target.checked)}
+                  />
+                  {t("sqlTable.resetAutoIncrementOption", { column: autoIncrementColumn ?? "" })}
+                </label>
+              )}
+            </div>
+          )}
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

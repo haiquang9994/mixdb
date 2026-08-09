@@ -189,6 +189,26 @@ pub async fn mysql_update_row(
 }
 
 #[tauri::command]
+pub async fn mysql_delete_rows(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    keys: Vec<Map<String, Value>>,
+    all: bool,
+    reset_auto_increment: bool,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => {
+            mysql::delete_rows(pool, &database, &table, &keys, all, reset_auto_increment).await
+        }
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn mongo_list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, String> {
     let connections = state.connections.lock().await;
     match connections.get(&id).map(|c| &c.handle) {

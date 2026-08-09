@@ -11,6 +11,17 @@ interface TabInfo {
   title: string;
 }
 
+/** Whether a keyboard event landed somewhere the user is typing, where the browser's own
+ *  editing shortcuts have to keep working. */
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target.isContentEditable
+  );
+}
+
 function App() {
   const { t } = useTranslation();
 
@@ -57,6 +68,11 @@ function App() {
       } else if (shortcutKey && e.key.toLowerCase() === "w") {
         e.preventDefault();
         closeTab(activeId);
+      } else if (shortcutKey && e.key.toLowerCase() === "a" && !isTextEntry(e.target)) {
+        // Outside a text field, select-all means "select the whole chrome of the app" — never
+        // something the user wants. Views that have their own notion of "everything" (the SQL
+        // grid selecting all of its rows) handle the key before it bubbles up to here.
+        e.preventDefault();
       }
     }
     window.addEventListener("keydown", handleKeyDown);

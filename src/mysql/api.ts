@@ -45,3 +45,25 @@ export function mysqlUpdateRow(
 ): Promise<void> {
   return invoke<void>("mysql_update_row", { id, database, table, updates, key });
 }
+
+/**
+ * Deletes the rows matched by `keys` — or, with `all`, every row in the table regardless of what
+ * `keys` holds. `resetAutoIncrement` puts the table's AUTO_INCREMENT counter back to 1 afterwards.
+ */
+export function mysqlDeleteRows(
+  id: string,
+  database: string,
+  table: string,
+  keys: Record<string, string | null>[],
+  all: boolean,
+  resetAutoIncrement: boolean
+): Promise<void> {
+  return invoke<void>("mysql_delete_rows", {
+    id,
+    database,
+    table,
+    keys,
+    all,
+    resetAutoIncrement,
+  });
+}

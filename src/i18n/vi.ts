@@ -91,6 +91,12 @@ const vi: TranslationDict = {
     loading: "Đang tải...",
     noRows: "Không có dòng nào.",
     reloadRows: "Tải lại dữ liệu",
+    deleteRows: "Xóa các dòng đã chọn",
+    deletingRows: "Đang xóa...",
+    deleteRowsTitle: "Xóa các dòng?",
+    deleteRowsMessage: "Xóa {{n}} dòng đã chọn? Thao tác này không thể hoàn tác.",
+    deleteAllRowsOption: "Xóa toàn bộ {{total}} dòng của bảng, không chỉ các dòng đang chọn",
+    resetAutoIncrementOption: "Đặt lại {{column}} để dòng thêm mới bắt đầu từ 1",
   },
   mongo: {
     noCollections: "Không có collection nào",

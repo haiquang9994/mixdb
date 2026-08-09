@@ -126,6 +126,9 @@ pub struct TablePage {
     pub columns: Vec<String>,
     pub column_types: Map<String, Value>,
     pub primary_key: Vec<String>,
+    /// The AUTO_INCREMENT column, if the table has one. Only such a table has a
+    /// counter worth offering to reset after a delete.
+    pub auto_increment_column: Option<String>,
     pub rows: Vec<Map<String, Value>>,
     pub total: i64,
 }
@@ -165,6 +168,10 @@ pub async fn table_data(
         .filter(|r| r.get::<String, _>("Key") == "PRI")
         .map(|r| r.get::<String, _>("Field"))
         .collect();
+    let auto_increment_column: Option<String> = column_rows
+        .iter()
+        .find(|r| r.get::<String, _>("Extra").contains("auto_increment"))
+        .map(|r| r.get::<String, _>("Field"));
 
     let count_sql = format!("SELECT COUNT(*) FROM {qualified}");
     let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql))
@@ -184,6 +191,7 @@ pub async fn table_data(
         columns,
         column_types,
         primary_key,
+        auto_increment_column,
         rows: rows.iter().map(row_to_json).collect(),
         total,
     })
@@ -267,6 +275,72 @@ pub async fn update_row(
         .map_err(|e| e.to_string())?;
 
     tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Deletes rows identified by `keys` (each map is one row's primary key columns,
+/// or — when a table has none — every column as a fallback), or every row in the
+/// table when `all` is set. `reset_auto_increment` afterwards puts the table's
+/// AUTO_INCREMENT counter back to 1, so the next insert starts from 1 again.
+///
+/// The deletes run in one transaction: if any of them fails, none of them land.
+/// Each per-row DELETE carries `LIMIT 1` so that the no-primary-key fallback can
+/// only ever remove the one row the user selected, never its duplicates.
+pub async fn delete_rows(
+    pool: &MySqlPool,
+    database: &str,
+    table: &str,
+    keys: &[Map<String, Value>],
+    all: bool,
+    reset_auto_increment: bool,
+) -> Result<(), String> {
+    if !all && keys.is_empty() {
+        return Ok(());
+    }
+
+    let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    if all {
+        let sql = format!("DELETE FROM {qualified}");
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    } else {
+        for key in keys {
+            if key.is_empty() {
+                tx.rollback().await.map_err(|e| e.to_string())?;
+                return Err("Cannot delete a row without any identifying columns".to_string());
+            }
+            // `<=>` is MySQL's NULL-safe equality operator, so a key column that
+            // is itself NULL still matches (plain `=` never matches NULL).
+            let where_clause = key
+                .keys()
+                .map(|c| format!("{} <=> ?", quote_ident(c)))
+                .collect::<Vec<_>>()
+                .join(" AND ");
+            let sql = format!("DELETE FROM {qualified} WHERE {where_clause} LIMIT 1");
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+            for v in key.values() {
+                query = bind_value(query, v);
+            }
+            query.execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Outside the transaction on purpose: ALTER TABLE forces an implicit commit
+    // in MySQL, so running it inside would end the transaction behind our back.
+    if reset_auto_increment {
+        let sql = format!("ALTER TABLE {qualified} AUTO_INCREMENT = 1");
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 

@@ -33,6 +33,27 @@
   background: #f6f6f6;
 }
 
+/* Painted on the row, not on its cells: a `td` with a background of its own — a NULL or a
+   staged edit — then still shows through, which is the point of those markers. */
+.sqlTable tbody tr:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.sqlTable tbody tr.rowSelected {
+  background: rgba(57, 108, 216, 0.18);
+}
+
+.sqlTable tbody tr.rowSelected:hover {
+  background: rgba(57, 108, 216, 0.26);
+}
+
+/* The grid takes focus on a click so that ctrl+A reaches it; the selected rows are what shows
+   that, so the ring the browser would draw around the whole scroll area adds nothing. */
+.scroll:focus,
+.scroll:focus-visible {
+  outline: none;
+}
+
 .cellNull {
   opacity: 0.5;
   font-style: italic;
@@ -106,6 +127,34 @@
   justify-content: space-between;
   gap: 0.6rem;
   flex-shrink: 0;
+}
+
+/* Options inside the delete dialog, which owns everything around them. */
+.deleteOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.deleteOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.9em;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+/* The app-wide `input` rule dresses every input as a text field; a checkbox wants none of it. */
+.deleteOption input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin: 0.15em 0 0;
+  padding: 0;
+  box-shadow: none;
+  accent-color: #396cd8;
+  cursor: pointer;
 }
 
 :root[data-theme="dark"] .scroll thead th {

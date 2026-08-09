@@ -89,6 +89,12 @@ const en = {
     loading: "Loading...",
     noRows: "No rows.",
     reloadRows: "Reload rows",
+    deleteRows: "Delete selected rows",
+    deletingRows: "Deleting...",
+    deleteRowsTitle: "Delete rows?",
+    deleteRowsMessage: "Delete the {{n}} selected rows? This cannot be undone.",
+    deleteAllRowsOption: "Delete all {{total}} rows in the table, not only the ones selected here",
+    resetAutoIncrementOption: "Reset {{column}} so the next row inserted starts at 1",
   },
   mongo: {
     noCollections: "No collections",

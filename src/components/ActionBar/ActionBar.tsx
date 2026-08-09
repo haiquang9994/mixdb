@@ -13,6 +13,8 @@ export interface ActionBarAction {
   disabled?: boolean;
   /** Spins the icon while the action is running. */
   busy?: boolean;
+  /** Paints the button as destructive. For actions that lose data, not merely risky ones. */
+  danger?: boolean;
 }
 
 interface Props {
@@ -25,11 +27,11 @@ interface Props {
 function ActionBar({ actions, className }: Props) {
   return (
     <div className={`${styles.bar}${className ? ` ${className}` : ""}`}>
-      {actions.map(({ key, icon: ActionIcon, label, onClick, disabled, busy }) => (
+      {actions.map(({ key, icon: ActionIcon, label, onClick, disabled, busy, danger }) => (
         <button
           key={key}
           type="button"
-          className={styles.action}
+          className={danger ? `${styles.action} ${styles.danger}` : styles.action}
           aria-label={label}
           title={label}
           disabled={disabled}
