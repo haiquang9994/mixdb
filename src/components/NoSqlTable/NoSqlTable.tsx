@@ -46,6 +46,16 @@ interface Target {
 
 const DOC_PAGE_SIZES = [20, 50, 100, 200];
 
+/** One collection's filter bar as it was left behind: the rows still being edited, the conditions
+ * that were actually running against the list, and the fields the bar had learned to offer —
+ * those are read off the documents that have been seen, which a restored filter may well have
+ * narrowed to none. */
+interface RememberedFilters {
+  rows: FilterRow<MongoFilterOperator>[];
+  applied: MongoFilter[];
+  fields: string[];
+}
+
 /** The only field every document is guaranteed to carry, and so the one the bar can offer before
  * a page has been loaded to read any others off. */
 const ID_FIELD = ["_id"];
@@ -85,6 +95,11 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
   // page after it, never narrowed — see `mergeDocumentFields`.
   const [fields, setFields] = useState<string[]>(ID_FIELD);
 
+  /** What each collection's bar was carrying when it was last left, so stepping away to another
+   * collection and back brings the conditions back rather than an empty row. Kept for as long as
+   * the tab is open. */
+  const filterCacheRef = useRef<Map<string, RememberedFilters>>(new Map());
+
   const flushersRef = useRef<Set<() => Promise<void>>>(new Set());
 
   /** Called by each card on mount; returns its own unregister function. */
@@ -99,16 +114,32 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
     await Promise.all(Array.from(flushersRef.current, (flush) => flush()));
   }, []);
 
-  useEffect(() => {
+  // Everything above is about one collection, and the page and the applied filters are what the
+  // fetch below reads. They are swapped over here, during the render that first sees a new
+  // collection, rather than from an effect: an effect would run after the same commit as the
+  // fetch's own, so the request would already have gone out naming the new collection with the
+  // previous one's page and conditions — a filter on a field these documents don't carry, which
+  // comes back matching nothing.
+  const collectionKey = `${selectedDb} :: ${selectedCollection}`;
+  const [viewCollectionKey, setViewCollectionKey] = useState(collectionKey);
+  if (viewCollectionKey !== collectionKey) {
+    // Put the outgoing collection's bar away before its state is replaced. This is where it has
+    // to happen: by the time any effect runs, `filterRows` already belongs to the new collection.
+    filterCacheRef.current.set(viewCollectionKey, {
+      rows: filterRows,
+      applied: appliedFilters,
+      fields,
+    });
+    // A collection that has been here before gets its own bar back. Only a first visit starts
+    // over on an empty `_id =` row and the one field every document is known to carry — a filter
+    // names a field, and these documents need not carry one by that name.
+    const remembered = filterCacheRef.current.get(collectionKey);
+    setViewCollectionKey(collectionKey);
     setPage(0);
-    // A filter names a field, and the next collection's documents need not carry one by that
-    // name — the bar starts over on an empty `_id =` row, the way it opened.
-    setAppliedFilters([]);
-    setFilterRows(initialFilterRows(ID_FIELD, "eq"));
-    // The fields build up per collection: the next one's documents are the only thing that says
-    // anything about what it can be filtered on.
-    setFields(ID_FIELD);
-  }, [selectedDb, selectedCollection]);
+    setAppliedFilters(remembered?.applied ?? []);
+    setFilterRows(remembered?.rows ?? initialFilterRows(ID_FIELD, "eq"));
+    setFields(remembered?.fields ?? ID_FIELD);
+  }
 
   const loadPage = useCallback(() => {
     let cancelled = false;

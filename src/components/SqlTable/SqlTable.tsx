@@ -56,6 +56,13 @@ function tableCacheKey(db: string, table: string): string {
   return `${db} :: ${table}`;
 }
 
+/** One table's filter bar as it was left behind: the rows still being edited, and the conditions
+ * that were actually running against the grid. */
+interface RememberedFilters {
+  rows: FilterRow<FilterOperator>[];
+  applied: MysqlFilter[];
+}
+
 interface TableColumnsInfo {
   columns: string[];
   columnMeta: Record<string, MysqlColumnMeta>;
@@ -92,6 +99,31 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   // The table whose columns the bar was last seeded from. The seed needs the column list, which
   // is only known once the first fetch lands (or from the cache, when there is one).
   const filtersSeededForRef = useRef<string | null>(null);
+  /** What each table's bar was carrying when it was last left, so stepping away to another table
+   * and back brings the conditions back rather than an empty row — a filter is often typed out to
+   * look something up, and looking it up is exactly what sends the user off to another table.
+   * Keyed like the column cache, and kept for as long as the tab is open. */
+  const filterCacheRef = useRef<Map<string, RememberedFilters>>(new Map());
+
+  // What the fetch below reads — the page, the order and the conditions — is about one table, so
+  // it is swapped over here, during the render that first sees a new table, rather than from an
+  // effect. An effect would be too late: it and the fetch's own effect run after the same commit,
+  // so the request would already have gone out naming the new table with the previous one's page,
+  // sort column and filters — and a condition on a column the new table hasn't got comes back an
+  // error rather than an empty result.
+  const tableKey = tableCacheKey(selectedDb, selectedTable);
+  const [viewTableKey, setViewTableKey] = useState(tableKey);
+  if (viewTableKey !== tableKey) {
+    // Put the outgoing table's bar away before its state is replaced. This is where it has to
+    // happen: by the time any effect runs, `filterRows` already belongs to the new table.
+    filterCacheRef.current.set(viewTableKey, { rows: filterRows, applied: appliedFilters });
+    setViewTableKey(tableKey);
+    setPage(0);
+    setSort(null);
+    // The rows of the bar are put back alongside the columns they name, in the effect below.
+    setAppliedFilters(filterCacheRef.current.get(tableKey)?.applied ?? []);
+  }
+
   const [loading, setLoading] = useState(false);
   // Bumped by the reload action to re-run the fetch below with the page/size unchanged.
   const [reloadToken, setReloadToken] = useState(0);
@@ -196,27 +228,28 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     pendingRowRef.current = null;
     setRows([]);
     setTotal(0);
-    setPage(0);
-    // A sort names a column, and the next table need not have one by that name.
-    setSort(null);
-    // Neither does a filter — the bar starts over on the new table's own columns.
-    setAppliedFilters([]);
+    // The page, the sort and the applied filters have already been reset above, during the
+    // render that saw the table change — see the note there.
     const key = tableCacheKey(selectedDb, selectedTable);
     const cached = columnsCacheRef.current.get(key);
+    // A table that has been here before gets its own bar back; only a first visit is seeded with
+    // the opening `id =` row.
+    const remembered = filterCacheRef.current.get(key);
     if (cached) {
       setColumns(cached.columns);
       setColumnMeta(cached.columnMeta);
       setPrimaryKey(cached.primaryKey);
       setAutoIncrementColumn(cached.autoIncrementColumn);
-      setFilterRows(initialFilterRows(cached.columns, "eq"));
+      setFilterRows(remembered?.rows ?? initialFilterRows(cached.columns, "eq"));
       filtersSeededForRef.current = key;
     } else {
       setColumns([]);
       setColumnMeta({});
       setPrimaryKey([]);
       setAutoIncrementColumn(null);
-      setFilterRows([]);
-      filtersSeededForRef.current = null;
+      setFilterRows(remembered?.rows ?? []);
+      // Nothing is owed a seed once the bar has been restored, or the fetch would overwrite it.
+      filtersSeededForRef.current = remembered ? key : null;
     }
   }, [selectedDb, selectedTable]);
 
