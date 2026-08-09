@@ -101,6 +101,12 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     anchorRowRef.current = null;
   }
 
+  /** Hands the keyboard back to the grid. A dialog opened from here takes focus and leaves it on
+   * the body when it closes, which would silence the grid's own shortcuts until the next click. */
+  function focusGrid() {
+    scrollRef.current?.focus({ preventScroll: true });
+  }
+
   function setEditingCell(next: EditingCell | null) {
     editingCellRef.current = next;
     setEditingCellState(next);
@@ -311,6 +317,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   async function submitInsert(newRows: Record<string, string | null>[]) {
     await mysqlInsertRows(connectionId, selectedDb, selectedTable, newRows);
     setInsertMode(null);
+    focusGrid();
     setReloadToken((n) => n + 1);
   }
 
@@ -327,6 +334,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     const keys = selectedRowsInOrder().map(rowKey);
     const wholeTable = deleteWholeTable;
     setConfirmingDelete(false);
+    focusGrid();
     setDeleting(true);
     try {
       await mysqlDeleteRows(
@@ -422,6 +430,14 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     if (e.key === "Escape" && selectedRows.size > 0) {
       e.preventDefault();
       clearSelection();
+      return;
+    }
+    // Delete/Backspace on a selection is the toolbar's delete button, down to the confirmation
+    // step — so it is gated on exactly what disables that button.
+    if (e.key === "Delete" || e.key === "Backspace") {
+      if (loading || deleting || selectedRows.size === 0) return;
+      e.preventDefault();
+      void openDeleteConfirm();
     }
   }
 
@@ -658,7 +674,10 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
           columns={columns}
           columnMeta={columnMeta}
           seedRows={insertMode === "clone" ? selectedRowsInOrder() : undefined}
-          onCancel={() => setInsertMode(null)}
+          onCancel={() => {
+            setInsertMode(null);
+            focusGrid();
+          }}
           onSubmit={submitInsert}
         />
       )}
@@ -669,7 +688,10 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
           confirmLabel={t("common.delete")}
           danger
           onConfirm={() => void confirmDelete()}
-          onCancel={() => setConfirmingDelete(false)}
+          onCancel={() => {
+            setConfirmingDelete(false);
+            focusGrid();
+          }}
         >
           {(canDeleteWholeTable || canResetAutoIncrement) && (
             <div className={styles.deleteOptions}>
