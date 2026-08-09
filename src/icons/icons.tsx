@@ -17,6 +17,28 @@ export function TrashIcon(props: IconProps) {
   );
 }
 
+/** Write something out of the app and onto disk — dumping a database to a file. */
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3v11" />
+      <path d="M7.5 9.5L12 14l4.5-4.5" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </Icon>
+  );
+}
+
+/** Read something off disk and into the app — restoring a database from a file. */
+export function UploadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 14V3" />
+      <path d="M7.5 7.5L12 3l4.5 4.5" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </Icon>
+  );
+}
+
 /** A field that cannot be edited — the primary key of a document. */
 export function LockIcon(props: IconProps) {
   return (

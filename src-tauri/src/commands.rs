@@ -1,9 +1,10 @@
 use serde_json::{Map, Value};
+use std::path::PathBuf;
 use std::time::Duration;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
-use crate::db::{mongo, mysql, mysql_script, mysql_structure, redis as redis_db};
+use crate::db::{dump, mongo, mysql, mysql_script, mysql_structure, redis as redis_db, tools};
 use crate::models::{ConnectionConfig, DbKind, SshConfig};
 use crate::ssh_tunnel;
 use crate::state::{ActiveConnection, AppState, DbHandle};
@@ -40,7 +41,7 @@ async fn resolve_endpoint(config: &ConnectionConfig) -> Result<(String, u16, Opt
 
 #[tauri::command]
 pub async fn connect_db(state: State<'_, AppState>, config: ConnectionConfig) -> Result<String, String> {
-    let (handle, tunnel) = match config.kind {
+    let (handle, endpoint, tunnel) = match config.kind {
         DbKind::Mysql => {
             let (host, port, tunnel) = resolve_endpoint(&config).await?;
             let username = config.username.clone().unwrap_or_default();
@@ -57,7 +58,7 @@ pub async fn connect_db(state: State<'_, AppState>, config: ConnectionConfig) ->
                 "MySQL connection",
             )
             .await?;
-            (DbHandle::Mysql(pool), tunnel)
+            (DbHandle::Mysql(pool), Some((host, port)), tunnel)
         }
         // MongoDB is configured as a whole connection string rather than host/port/user/password,
         // so the endpoint lives inside the URI. Tunneling therefore has to read the host back out
@@ -75,8 +76,9 @@ pub async fn connect_db(state: State<'_, AppState>, config: ConnectionConfig) ->
                 }
                 None => (None, None),
             };
-            let client = with_timeout(mongo::connect(uri, endpoint), "MongoDB connection").await?;
-            (DbHandle::Mongo(client), tunnel)
+            let client =
+                with_timeout(mongo::connect(uri, endpoint.clone()), "MongoDB connection").await?;
+            (DbHandle::Mongo(client), endpoint, tunnel)
         }
         DbKind::Redis => {
             let (host, port, tunnel) = resolve_endpoint(&config).await?;
@@ -86,16 +88,20 @@ pub async fn connect_db(state: State<'_, AppState>, config: ConnectionConfig) ->
                 "Redis connection",
             )
             .await?;
-            (DbHandle::Redis(conn), tunnel)
+            (DbHandle::Redis(conn), Some((host, port)), tunnel)
         }
     };
 
     let id = Uuid::new_v4().to_string();
-    state
-        .connections
-        .lock()
-        .await
-        .insert(id.clone(), ActiveConnection { handle, tunnel });
+    state.connections.lock().await.insert(
+        id.clone(),
+        ActiveConnection {
+            handle,
+            config,
+            endpoint,
+            tunnel,
+        },
+    );
     Ok(id)
 }
 
@@ -266,6 +272,255 @@ pub async fn mysql_collations(
     match connections.get(&id).map(|c| &c.handle) {
         Some(DbHandle::Mysql(pool)) => mysql_structure::collations(pool).await,
         Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+/// What a dump or restore needs to dial the server itself: the address actually in use (the
+/// tunnel's local end, when there is one) and the credentials that opened the connection.
+///
+/// Read out of the connection and returned by value on purpose — the tools run for as long as the
+/// database is big, and holding the connection lock across that would stop every other command in
+/// the app until the dump finished.
+struct MysqlEndpoint {
+    host: String,
+    port: u16,
+    user: String,
+    password: String,
+}
+
+async fn mysql_endpoint(state: &State<'_, AppState>, id: &str) -> Result<MysqlEndpoint, String> {
+    let connections = state.connections.lock().await;
+    let connection = connections.get(id).ok_or("Unknown connection id")?;
+    if !matches!(connection.handle, DbHandle::Mysql(_)) {
+        return Err("Connection is not a MySQL connection".to_string());
+    }
+    let (host, port) = connection
+        .endpoint
+        .clone()
+        .ok_or("This connection has no address to dump from")?;
+    Ok(MysqlEndpoint {
+        host,
+        port,
+        user: connection.config.username.clone().unwrap_or_default(),
+        password: connection.config.password.clone().unwrap_or_default(),
+    })
+}
+
+/// The MongoDB connection string to hand the tools, and the tunnel endpoint to point it at.
+async fn mongo_endpoint(
+    state: &State<'_, AppState>,
+    id: &str,
+) -> Result<(String, Option<(String, u16)>), String> {
+    let connections = state.connections.lock().await;
+    let connection = connections.get(id).ok_or("Unknown connection id")?;
+    if !matches!(connection.handle, DbHandle::Mongo(_)) {
+        return Err("Connection is not a MongoDB connection".to_string());
+    }
+    let uri = connection
+        .config
+        .uri
+        .clone()
+        .filter(|uri| !uri.trim().is_empty())
+        .ok_or("This connection has no connection string to dump with")?;
+    Ok((uri, connection.endpoint.clone()))
+}
+
+/// Runs one of the command-line tools off the async runtime: they block for as long as the dump
+/// takes, which is not something an async worker should be spending itself on.
+async fn in_background<T, F>(work: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("The task did not finish: {e}"))?
+}
+
+/// Where MixDB keeps the tools it downloaded for itself.
+fn tools_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join("tools"))
+        .map_err(|e| format!("There is nowhere to keep the tools: {e}"))
+}
+
+/// Every dump tool and where it stands: a path the user chose, a copy MixDB downloaded, something
+/// already on the machine, or nothing at all.
+#[tauri::command]
+pub async fn tools_status(app: AppHandle) -> Result<Vec<tools::ToolStatus>, String> {
+    Ok(tools::status(&tools_dir(&app)?))
+}
+
+/// Whether a suite is usable at all — what the dump and restore buttons check before running.
+#[tauri::command]
+pub async fn tools_ready(app: AppHandle, suite: String) -> Result<bool, String> {
+    let suite = tools::Suite::parse(&suite)?;
+    Ok(tools::installed(suite, &tools_dir(&app)?))
+}
+
+/// Points a tool at a copy the user picked themselves, or forgets that choice when given no path.
+#[tauri::command]
+pub async fn tools_set_path(
+    app: AppHandle,
+    tool: String,
+    path: Option<String>,
+) -> Result<(), String> {
+    let tool = tools::Tool::parse(&tool)?;
+    tools::set_path(tool, path.as_deref(), &tools_dir(&app)?)
+}
+
+/// Deletes the copy MixDB downloaded. What was already on the machine is left where it is.
+#[tauri::command]
+pub async fn tools_uninstall(app: AppHandle, suite: String) -> Result<(), String> {
+    let suite = tools::Suite::parse(&suite)?;
+    tools::uninstall(suite, &tools_dir(&app)?)
+}
+
+/// Downloads one suite of tools. Long-running and quiet: the frontend shows that it is happening.
+#[tauri::command]
+pub async fn tools_install(app: AppHandle, suite: String) -> Result<(), String> {
+    let suite = tools::Suite::parse(&suite)?;
+    let dir = tools_dir(&app)?;
+    in_background(move || tools::install(suite, &dir)).await
+}
+
+/// Writes a database out as SQL. `mode` is `structure`, `data` or `all`.
+#[tauri::command]
+pub async fn mysql_dump(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    mode: String,
+    path: String,
+) -> Result<(), String> {
+    let mode = dump::DumpMode::parse(&mode)?;
+    let tool = tools::require(tools::Tool::MysqlDump, &tools_dir(&app)?)?;
+    // Read through the pool, before the endpoint: the character set the dump is transferred in and
+    // the server's own version are properties of the server, not of how the tool is invoked.
+    let (charset, version) = {
+        let connections = state.connections.lock().await;
+        match connections.get(&id).map(|c| &c.handle) {
+            Some(DbHandle::Mysql(pool)) => (
+                mysql_structure::dump_charset(pool, &database).await?,
+                mysql::server_info(pool).await.map(|info| info.version),
+            ),
+            Some(_) => return Err("Connection is not a MySQL connection".to_string()),
+            None => return Err("Unknown connection id".to_string()),
+        }
+    };
+    // Only 8.0 and up has the histogram table an 8.0 mysqldump reads by default. A version that
+    // could not be read is treated as old, which costs a dump nothing but the histograms.
+    let column_statistics = version
+        .as_deref()
+        .is_ok_and(|version| !version.starts_with('5'));
+    let endpoint = mysql_endpoint(&state, &id).await?;
+    in_background(move || {
+        dump::mysql_dump(
+            &tool,
+            &endpoint.host,
+            endpoint.port,
+            &endpoint.user,
+            &endpoint.password,
+            &database,
+            &charset,
+            mode,
+            column_statistics,
+            &path,
+        )
+    })
+    .await
+}
+
+/// Replays a SQL file. `database` is the default one for statements that do not name their own.
+#[tauri::command]
+pub async fn mysql_restore(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    path: String,
+) -> Result<(), String> {
+    let tool = tools::require(tools::Tool::MysqlClient, &tools_dir(&app)?)?;
+    let endpoint = mysql_endpoint(&state, &id).await?;
+    in_background(move || {
+        dump::mysql_restore(
+            &tool,
+            &endpoint.host,
+            endpoint.port,
+            &endpoint.user,
+            &endpoint.password,
+            &database,
+            &path,
+        )
+    })
+    .await
+}
+
+/// Writes a database out as a mongodump archive.
+#[tauri::command]
+pub async fn mongo_dump(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+    path: String,
+) -> Result<(), String> {
+    let tool = tools::require(tools::Tool::MongoDump, &tools_dir(&app)?)?;
+    let (uri, endpoint) = mongo_endpoint(&state, &id).await?;
+    in_background(move || {
+        let endpoint = endpoint.as_ref().map(|(host, port)| (host.as_str(), *port));
+        dump::mongo_dump(&tool, &uri, endpoint, &db, &path)
+    })
+    .await
+}
+
+/// Restores a mongodump archive into `db`, renaming its namespaces on the way in.
+#[tauri::command]
+pub async fn mongo_restore(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+    path: String,
+) -> Result<(), String> {
+    let tool = tools::require(tools::Tool::MongoRestore, &tools_dir(&app)?)?;
+    let (uri, endpoint) = mongo_endpoint(&state, &id).await?;
+    in_background(move || {
+        let endpoint = endpoint.as_ref().map(|(host, port)| (host.as_str(), *port));
+        dump::mongo_restore(&tool, &uri, endpoint, &db, &path)
+    })
+    .await
+}
+
+/// Drops a database and every table in it.
+#[tauri::command]
+pub async fn mysql_drop_database(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql_structure::drop_database(pool, &database).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+/// Drops a database and every collection in it.
+#[tauri::command]
+pub async fn mongo_drop_database(
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mongo(client)) => mongo::drop_database(client, &db).await,
+        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }
 }

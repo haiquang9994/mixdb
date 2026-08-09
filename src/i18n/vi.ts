@@ -549,6 +549,63 @@ const vi: TranslationDict = {
     languageEnglish: "English",
     languageVietnamese: "Tiếng Việt",
   },
+  // Các công cụ dòng lệnh lo việc dump/restore. MixDB không đóng gói kèm: nó dùng công cụ có sẵn
+  // trên máy, bản tự tải về, hoặc đường dẫn bạn chọn ở đây.
+  tools: {
+    title: "Công cụ dump",
+    intro:
+      "Việc dump và restore do chính công cụ của MySQL/MongoDB đảm nhiệm. MixDB dùng bản nào tìm được, và có thể tự tải một bản riêng.",
+    mysqlSuite: "MySQL — mysqldump và mysql",
+    mongoSuite: "MongoDB — mongodump và mongorestore",
+    download: "Tải về",
+    redownload: "Tải lại",
+    remove: "Xóa bản đã tải",
+    choose: "Chọn file...",
+    forget: "Dùng mặc định",
+    working: "Đang xử lý...",
+    missing: "chưa có",
+    missingHint: "Không tìm thấy trên máy này.",
+    sourceCustom: "tự chọn",
+    sourceDownloaded: "đã tải",
+    sourceSystem: "có sẵn",
+  },
+  // Dump, restore và xóa cả một cơ sở dữ liệu — nhóm nút bên phải của thanh action trong sidebar.
+  dump: {
+    dump: "Dump cơ sở dữ liệu này",
+    restore: "Restore vào cơ sở dữ liệu này",
+    drop: "Xóa cơ sở dữ liệu này",
+    dumpTitle: "Dump {{database}}",
+    modeAll: "Cả cấu trúc và dữ liệu",
+    modeAllHint: "Toàn bộ: bảng, dữ liệu bên trong, và các routine đi kèm.",
+    modeStructure: "Chỉ cấu trúc",
+    modeStructureHint: "Bảng, view, trigger và routine, không kèm dòng dữ liệu nào.",
+    modeData: "Chỉ dữ liệu",
+    modeDataHint: "Chỉ các dòng dữ liệu, để nạp vào một cơ sở dữ liệu đã có sẵn bảng.",
+    chooseFile: "Chọn nơi lưu...",
+    sqlFilter: "File SQL",
+    archiveFilter: "Archive MongoDB",
+    dumping: "Đang dump {{database}}...",
+    restoring: "Đang restore vào {{database}}...",
+    dropping: "Đang xóa {{database}}...",
+    installing: "Đang tải công cụ...",
+    installTitle: "Tải công cụ về?",
+    installMysql:
+      "Dump cần mysqldump, máy này chưa có. MixDB có thể tải bộ MySQL client tools từ dev.mysql.com — bản tải khoảng 240MB, nhưng chỉ giữ lại vài file cần thiết. Chỉ tải một lần.",
+    installMongo:
+      "Dump cần mongodump, máy này chưa có. MixDB có thể tải bộ MongoDB Database Tools từ mongodb.com — khoảng 60MB, chỉ một lần.",
+    installConfirm: "Tải về",
+    restoreTitle: "Restore vào {{database}}?",
+    restoreMysql:
+      "Nạp {{file}} vào {{database}}? Các bảng trong file sẽ ghi đè bảng trùng tên đang có. Riêng file nào tự chứa lệnh USE thì nó vào database ghi trong đó. MixDB không hoàn tác được.",
+    restoreMongo:
+      "Restore {{file}} vào {{database}}? Các collection sẽ vào đây bất kể archive được dump từ cơ sở dữ liệu nào, và document trùng _id sẽ được giữ nguyên. MixDB không hoàn tác được.",
+    restoreConfirm: "Restore",
+    dropTitle: "Xóa cơ sở dữ liệu?",
+    dropMysqlMessage:
+      "Xóa {{database}} cùng toàn bộ bảng và dữ liệu trong đó? Thao tác này không thể hoàn tác — nên dump lại trước nếu còn cần.",
+    dropMongoMessage:
+      "Xóa {{database}} cùng toàn bộ collection và document trong đó? Thao tác này không thể hoàn tác — nên dump lại trước nếu còn cần.",
+  },
 };
 
 export default vi;

@@ -549,6 +549,63 @@ const en = {
     languageEnglish: "English",
     languageVietnamese: "Ti\u1ebfng Vi\u1ec7t",
   },
+  // The command-line tools that do the dumping and restoring. MixDB does not ship them: it uses
+  // whatever is on the machine, a copy it downloaded, or a path chosen here.
+  tools: {
+    title: "Dump tools",
+    intro:
+      "Dumping and restoring is done by the database vendors' own tools. MixDB uses whichever copy it can find, and can fetch one of its own.",
+    mysqlSuite: "MySQL \u2014 mysqldump and mysql",
+    mongoSuite: "MongoDB \u2014 mongodump and mongorestore",
+    download: "Download",
+    redownload: "Download again",
+    remove: "Delete copy",
+    choose: "Choose...",
+    forget: "Use the default",
+    working: "Working...",
+    missing: "missing",
+    missingHint: "Not found on this machine.",
+    sourceCustom: "chosen",
+    sourceDownloaded: "downloaded",
+    sourceSystem: "installed",
+  },
+  // Dumping, restoring and dropping a whole database \u2014 the right-hand end of the sidebar's bar.
+  dump: {
+    dump: "Dump this database",
+    restore: "Restore into this database",
+    drop: "Drop this database",
+    dumpTitle: "Dump {{database}}",
+    modeAll: "Structure and data",
+    modeAllHint: "Everything: the tables, what is in them, and the routines beside them.",
+    modeStructure: "Structure only",
+    modeStructureHint: "The tables, views, triggers and routines, with no rows.",
+    modeData: "Data only",
+    modeDataHint: "The rows alone, to be loaded into a database that already has the tables.",
+    chooseFile: "Choose a file...",
+    sqlFilter: "SQL dump",
+    archiveFilter: "MongoDB archive",
+    dumping: "Dumping {{database}}...",
+    restoring: "Restoring into {{database}}...",
+    dropping: "Dropping {{database}}...",
+    installing: "Downloading the tools...",
+    installTitle: "Download the tools?",
+    installMysql:
+      "Dumping needs mysqldump, which is not on this machine. MixDB can download the MySQL client tools from dev.mysql.com \u2014 the download is about 240MB, of which only a few files are kept. It happens once.",
+    installMongo:
+      "Dumping needs mongodump, which is not on this machine. MixDB can download the MongoDB Database Tools from mongodb.com \u2014 about 60MB, once.",
+    installConfirm: "Download",
+    restoreTitle: "Restore into {{database}}?",
+    restoreMysql:
+      "Run {{file}} into {{database}}? Its tables replace the ones of the same name that are there now. A file carrying its own USE statement goes wherever that says instead. Nothing in MixDB can undo it.",
+    restoreMongo:
+      "Restore {{file}} into {{database}}? Its collections go there whatever database the archive was dumped from, and existing documents with the same _id are left as they are. Nothing in MixDB can undo it.",
+    restoreConfirm: "Restore",
+    dropTitle: "Drop database?",
+    dropMysqlMessage:
+      "Drop {{database}} with every table and row in it? This cannot be undone \u2014 dump it first if you may want it back.",
+    dropMongoMessage:
+      "Drop {{database}} with every collection and document in it? This cannot be undone \u2014 dump it first if you may want it back.",
+  },
 };
 
 export default en;

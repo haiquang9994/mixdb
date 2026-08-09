@@ -9,6 +9,9 @@ import {
 } from "./api";
 import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
+import DatabaseActions from "../components/DatabaseActions";
+import type { DatabaseChange } from "../components/DatabaseActions";
+import LoadingOverlay from "../components/LoadingOverlay";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import NameDialog from "../components/NameDialog";
@@ -63,6 +66,8 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   /** The collection the context menu's rename is open on, and the one its drop is asking about. */
   const [renamingCollection, setRenamingCollection] = useState<string | null>(null);
   const [droppingCollection, setDroppingCollection] = useState<string | null>(null);
+  /** What the dump/restore tools are doing, if anything — shown over the whole workspace. */
+  const [transferStatus, setTransferStatus] = useState("");
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -192,6 +197,23 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       .catch((e) => setLocalError(String(e)))
       .finally(() => setCollectionsLoading(false));
   }, [connectionId, selectedDb]);
+
+  /** What a restore or a drop of the whole database leaves to be caught up with: a restore has
+   * replaced the collections under the list, and a drop has taken the database itself away. */
+  async function databaseChanged(change: DatabaseChange) {
+    if (change === "restored") {
+      reloadCollections();
+      return;
+    }
+    setSelectedDb("");
+    setSelectedCollection(null);
+    setCollections([]);
+    try {
+      setDatabases(await mongoListDatabases(connectionId));
+    } catch (e) {
+      setLocalError(String(e));
+    }
+  }
 
   /**
    * Takes the new database's name and switches to it. Nothing is sent to the server: MongoDB has
@@ -329,26 +351,38 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             emptyMessage={collectionsEmptyMessage}
             actions={collectionActions}
           />
-          <ActionBar
-            className="mongo-sidebar-actions"
-            actions={[
-              {
-                key: "reload",
-                icon: ReloadIcon,
-                label: t("mongo.reloadCollections"),
-                disabled: !selectedDb || collectionsLoading,
-                busy: collectionsLoading,
-                onClick: reloadCollections,
-              },
-              {
-                key: "add",
-                icon: PlusIcon,
-                label: t("mongo.addCollection"),
-                disabled: !selectedDb || collectionsLoading,
-                onClick: () => setCreatingCollection(true),
-              },
-            ]}
-          />
+          <div className="mongo-sidebar-actions">
+            <ActionBar
+              actions={[
+                {
+                  key: "reload",
+                  icon: ReloadIcon,
+                  label: t("mongo.reloadCollections"),
+                  disabled: !selectedDb || collectionsLoading,
+                  busy: collectionsLoading,
+                  onClick: reloadCollections,
+                },
+                {
+                  key: "add",
+                  icon: PlusIcon,
+                  label: t("mongo.addCollection"),
+                  disabled: !selectedDb || collectionsLoading,
+                  onClick: () => setCreatingCollection(true),
+                },
+              ]}
+            />
+            {/* The database as a whole, kept at the far end: these act on everything the list
+                above is showing rather than on anything in it. */}
+            <DatabaseActions
+              kind="mongo"
+              connectionId={connectionId}
+              database={selectedDb}
+              disabled={collectionsLoading}
+              onError={setLocalError}
+              onChanged={databaseChanged}
+              onBusyChange={setTransferStatus}
+            />
+          </div>
         </aside>
 
         <div
@@ -376,6 +410,8 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           )}
         </section>
       </div>
+
+      {transferStatus !== "" && <LoadingOverlay label={transferStatus} />}
 
       {creatingDatabase && (
         <NameDialog

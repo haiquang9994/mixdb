@@ -11,7 +11,10 @@ import {
 } from "./api";
 import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
+import DatabaseActions from "../components/DatabaseActions";
+import type { DatabaseChange } from "../components/DatabaseActions";
 import DatabaseDialog from "../components/DatabaseDialog";
+import LoadingOverlay from "../components/LoadingOverlay";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import NameDialog from "../components/NameDialog";
@@ -73,6 +76,8 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   /** The table the context menu's rename is open on, and the one its drop is asking about. */
   const [renamingTable, setRenamingTable] = useState<string | null>(null);
   const [droppingTable, setDroppingTable] = useState<string | null>(null);
+  /** What the dump/restore tools are doing, if anything — shown over the whole workspace. */
+  const [transferStatus, setTransferStatus] = useState("");
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -224,6 +229,23 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       .finally(() => setTablesLoading(false));
   }, [connectionId, selectedDb]);
 
+  /** What a restore or a drop of the whole database leaves to be caught up with: a restore has
+   * replaced the tables under the list, and a drop has taken the database itself away. */
+  async function databaseChanged(change: DatabaseChange) {
+    if (change === "restored") {
+      reloadTables();
+      return;
+    }
+    setSelectedDb("");
+    setSelectedTable(null);
+    setTables([]);
+    try {
+      setDatabases(await mysqlListDatabases(connectionId));
+    } catch (e) {
+      setLocalError(String(e));
+    }
+  }
+
   /** Creates the database and switches to it, empty. Errors reject back into the dialog, which is
    * what shows them and stays open. */
   async function createDatabase(name: string, collation: string | null) {
@@ -356,26 +378,38 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             emptyMessage={tablesEmptyMessage}
             actions={tableActions}
           />
-          <ActionBar
-            className="mysql-sidebar-actions"
-            actions={[
-              {
-                key: "reload",
-                icon: ReloadIcon,
-                label: t("mysql.reloadTables"),
-                disabled: !selectedDb || tablesLoading,
-                busy: tablesLoading,
-                onClick: reloadTables,
-              },
-              {
-                key: "add",
-                icon: PlusIcon,
-                label: t("mysql.addTable"),
-                disabled: !selectedDb || tablesLoading,
-                onClick: () => setCreatingTable(true),
-              },
-            ]}
-          />
+          <div className="mysql-sidebar-actions">
+            <ActionBar
+              actions={[
+                {
+                  key: "reload",
+                  icon: ReloadIcon,
+                  label: t("mysql.reloadTables"),
+                  disabled: !selectedDb || tablesLoading,
+                  busy: tablesLoading,
+                  onClick: reloadTables,
+                },
+                {
+                  key: "add",
+                  icon: PlusIcon,
+                  label: t("mysql.addTable"),
+                  disabled: !selectedDb || tablesLoading,
+                  onClick: () => setCreatingTable(true),
+                },
+              ]}
+            />
+            {/* The database as a whole, kept at the far end: these act on everything the list
+                above is showing rather than on anything in it. */}
+            <DatabaseActions
+              kind="mysql"
+              connectionId={connectionId}
+              database={selectedDb}
+              disabled={tablesLoading}
+              onError={setLocalError}
+              onChanged={databaseChanged}
+              onBusyChange={setTransferStatus}
+            />
+          </div>
         </aside>
 
         <div
@@ -420,6 +454,8 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           </div>
         </section>
       </div>
+
+      {transferStatus !== "" && <LoadingOverlay label={transferStatus} />}
 
       {creatingDatabase && (
         <DatabaseDialog

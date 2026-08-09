@@ -124,6 +124,36 @@ export function mysqlCollations(id: string): Promise<MysqlCollation[]> {
   return invoke<MysqlCollation[]>("mysql_collations", { id });
 }
 
+/** What of a database a dump carries. */
+export type MysqlDumpMode = "structure" | "data" | "all";
+
+/**
+ * Writes the database to `path` as SQL, by running mysqldump against the same server this
+ * connection is on (through the same SSH tunnel, when there is one).
+ *
+ * The file carries no `CREATE DATABASE` or `USE`, only the tables — so it restores into whichever
+ * database it is pointed at rather than insisting on the one it came from.
+ */
+export function mysqlDump(
+  id: string,
+  database: string,
+  mode: MysqlDumpMode,
+  path: string
+): Promise<void> {
+  return invoke<void>("mysql_dump", { id, database, mode, path });
+}
+
+/** Replays a SQL file through the mysql client, into `database` — which is where a dump written
+ *  here lands, since such a dump names no database of its own. */
+export function mysqlRestore(id: string, database: string, path: string): Promise<void> {
+  return invoke<void>("mysql_restore", { id, database, path });
+}
+
+/** Drops a database and every table in it. */
+export function mysqlDropDatabase(id: string, database: string): Promise<void> {
+  return invoke<void>("mysql_drop_database", { id, database });
+}
+
 /** Creates a database. `collation` is its default collation, or null to inherit the server's — the
  *  character set follows from the collation, so it is not asked for separately. */
 export function mysqlCreateDatabase(

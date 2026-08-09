@@ -15,6 +15,23 @@ export function mongoListCollections(id: string, db: string): Promise<string[]> 
   return invoke<string[]>("mongo_list_collections", { id, db });
 }
 
+/** Writes the database to `path` as a mongodump archive: collections, indexes and all, in one
+ *  file that mongorestore reads anywhere. */
+export function mongoDump(id: string, db: string, path: string): Promise<void> {
+  return invoke<void>("mongo_dump", { id, db, path });
+}
+
+/** Restores a mongodump archive into `db`, whichever database the archive was dumped from — its
+ *  namespaces are renamed on the way in. */
+export function mongoRestore(id: string, db: string, path: string): Promise<void> {
+  return invoke<void>("mongo_restore", { id, db, path });
+}
+
+/** Drops a database and every collection in it. */
+export function mongoDropDatabase(id: string, db: string): Promise<void> {
+  return invoke<void>("mongo_drop_database", { id, db });
+}
+
 /** Creates an empty collection. MongoDB would make one on the first write regardless; asking for it
  *  outright is how a name that is taken or not allowed is reported now rather than then. */
 export function mongoCreateCollection(id: string, db: string, collection: string): Promise<void> {

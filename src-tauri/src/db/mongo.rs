@@ -145,6 +145,19 @@ pub async fn create_collection(client: &Client, db: &str, name: &str) -> Result<
         .map_err(|e| e.to_string())
 }
 
+/// Drops a database and every collection in it.
+pub async fn drop_database(client: &Client, db: &str) -> Result<(), String> {
+    let db = db.trim();
+    if db.is_empty() {
+        return Err("The database being dropped must be named".to_string());
+    }
+    client
+        .database(db)
+        .drop()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Renames a collection within its database.
 ///
 /// There is no per-database form of this: `renameCollection` is an admin command naming both

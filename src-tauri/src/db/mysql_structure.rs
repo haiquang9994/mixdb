@@ -518,6 +518,60 @@ pub async fn create_database(
     execute(pool, sql).await
 }
 
+/// Drops a database and every table in it.
+pub async fn drop_database(pool: &MySqlPool, name: &str) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("The database being dropped must be named".to_string());
+    }
+    execute(pool, format!("DROP DATABASE {}", quote_ident(name))).await
+}
+
+/// The character set a dump of this database should be transferred in.
+///
+/// mysqldump converts every string on its way out to the character set it is told to use, so the
+/// one that changes nothing is the one the data is already in: where the whole database agrees on
+/// a single character set, that one is used and the bytes come out exactly as stored. Where it
+/// does not — a `latin1` column beside a `utf8mb4` one — there is no such character set, and
+/// `utf8mb4` is picked as the one that can hold everything the others can (every character set
+/// MySQL supports maps into Unicode), with mysqldump's own `SET NAMES` telling the restore how to
+/// read it back.
+pub async fn dump_charset(pool: &MySqlPool, database: &str) -> Result<String, String> {
+    const FALLBACK: &str = "utf8mb4";
+
+    let mut charsets: Vec<String> = sqlx::query(
+        "SELECT DEFAULT_CHARACTER_SET_NAME AS charset
+         FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?
+         UNION
+         SELECT DISTINCT CHARACTER_SET_NAME AS charset
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND CHARACTER_SET_NAME IS NOT NULL",
+    )
+    .bind(database)
+    .bind(database)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .iter()
+    .filter_map(|row| text(row, "charset"))
+    // The name is about to reach a command line, so anything not shaped like a character set name
+    // is dropped rather than passed on — which leaves the fallback to be used instead.
+    .filter(|charset| {
+        !charset.is_empty()
+            && charset
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    })
+    .collect();
+    charsets.sort();
+    charsets.dedup();
+
+    Ok(match charsets.as_slice() {
+        [only] => only.clone(),
+        _ => FALLBACK.to_string(),
+    })
+}
+
 /// Creates a table with nothing in it but the key every table ends up wanting: an unsigned
 /// `int(11)` `id` that MySQL fills in itself. A table has to be declared with at least one column,
 /// and the Structure tab is where the rest of them are added — so this asks for the two things

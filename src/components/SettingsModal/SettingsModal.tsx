@@ -3,6 +3,7 @@ import type { ThemeMode } from "../../theme";
 import type { Language } from "../../i18n";
 import { CloseIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import ToolsSection from "./ToolsSection";
 import styles from "./SettingsModal.module.css";
 
 interface SettingsModalProps {
@@ -75,6 +76,8 @@ function SettingsModal({ theme, onThemeChange, onClose }: SettingsModalProps) {
             ))}
           </div>
         </div>
+
+        <ToolsSection />
       </div>
     </>
   );

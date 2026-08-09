@@ -8,6 +8,7 @@ export {
   CloseIcon,
   CopyIcon,
   DotIcon,
+  DownloadIcon,
   EyeIcon,
   EyeOffIcon,
   FolderIcon,
@@ -17,4 +18,5 @@ export {
   PlusIcon,
   ReloadIcon,
   TrashIcon,
+  UploadIcon,
 } from "./icons";

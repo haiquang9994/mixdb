@@ -469,6 +469,8 @@ textarea {
 }
 
 .mysql-workspace {
+  /* What the dump and restore overlay is positioned against — it covers the whole workspace. */
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -559,7 +561,13 @@ textarea {
 }
 
 /* Only where the bar sits: the buttons themselves are the shared ActionBar's. */
+/* Two bars: what the list holds on the left, what the database as a whole answers to on the
+   right, pushed apart so the destructive one is nowhere near the everyday ones. */
 .mysql-sidebar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   flex: 0 0 auto;
   padding-top: 0.35rem;
   margin-top: 0.35rem;
@@ -591,6 +599,8 @@ textarea {
 }
 
 .mongo-workspace {
+  /* What the dump and restore overlay is positioned against — it covers the whole workspace. */
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -682,7 +692,12 @@ textarea {
   margin-bottom: 0.4rem;
 }
 
+/* Two bars, as on the MySQL side: the list's own actions, and the database's. */
 .mongo-sidebar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   flex: 0 0 auto;
   padding-top: 0.35rem;
   margin-top: 0.35rem;
