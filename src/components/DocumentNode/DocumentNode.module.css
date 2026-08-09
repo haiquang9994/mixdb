@@ -71,6 +71,24 @@
   text-decoration: line-through;
 }
 
+/* Same amber a dirty cell gets on the MySQL side, so "edited, not written yet" reads the same
+   in both. Only the half of the row that actually changed wears it: the key for a rename, the
+   value for an edit. */
+.markChanged {
+  background: rgba(255, 179, 0, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(255, 179, 0, 0.55);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+/* Added, rather than altered — nothing here existed before, so key and value are both marked. */
+.markAdded {
+  background: rgba(63, 185, 80, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.55);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
 .iconButton {
   flex-shrink: 0;
   border: none;

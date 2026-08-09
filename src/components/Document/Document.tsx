@@ -167,6 +167,10 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
   const [doc, setDoc] = useState<TypedDocument>(fetchedDoc);
   const [pendingSet, setPendingSet] = useState<Record<string, TypedValue>>({});
   const [deletedPaths, setDeletedPaths] = useState<Set<string>>(EMPTY_SET);
+  // Renames go to the server the moment they are made, so unlike the rest of this state they
+  // are not "pending" — this is a record of what was renamed while the card has been on screen,
+  // and it lives exactly that long: a refetch remounts the card and starts it empty again.
+  const [renamedPaths, setRenamedPaths] = useState<Set<string>>(EMPTY_SET);
 
   // View state.
   const [collapsed, setCollapsed] = useState(false);
@@ -194,8 +198,24 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
   pendingSetRef.current = pendingSet;
   const deletedPathsRef = useRef(deletedPaths);
   deletedPathsRef.current = deletedPaths;
+  const renamedPathsRef = useRef(renamedPaths);
+  renamedPathsRef.current = renamedPaths;
 
   const pendingCount = Object.keys(pendingSet).length + deletedPaths.size;
+
+  /** Splits the staged paths into the ones that add something and the ones that alter what the
+   * server already holds — the two are coloured differently in the tree. Read from the same
+   * baseline `setValue` diffs against, so a successful save empties both at once. */
+  const { changedPaths, addedPaths } = useMemo(() => {
+    const changed = new Set<string>();
+    const added = new Set<string>();
+    for (const key of Object.keys(pendingSet)) {
+      if (getAtPath(originalRef.current, key.split(".")) === undefined) added.add(key);
+      else changed.add(key);
+    }
+    return { changedPaths: changed, addedPaths: added };
+  }, [pendingSet]);
+
   const idValue = (doc._id ?? null) as TypedValue;
   const otherKeys = Object.keys(doc).filter((k) => k !== "_id");
   // "Edit mode" (field click affordances, always-visible delete icons) reflects whether an
@@ -371,6 +391,7 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
         doc: docRef.current,
         pendingSet: pendingSetRef.current,
         deletedPaths: deletedPathsRef.current,
+        renamedPaths: renamedPathsRef.current,
       };
 
       // Everything staged is keyed by dotted path, so a rename has to carry the staged ops
@@ -379,6 +400,8 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
       setDoc(renameKeyAtPath(before.doc, path, newKey) as TypedDocument);
       setPendingSet(remapStagedSet(before.pendingSet, oldPath, newPath));
       setDeletedPaths(remapStagedPaths(before.deletedPaths, oldPath, newPath));
+      // Marks already recorded move with the paths they name, same as the staged ops.
+      setRenamedPaths(new Set(remapStagedPaths(before.renamedPaths, oldPath, newPath)).add(newPath));
 
       const ops: DocUpdateOps = { set: {}, unset: [], rename: { [oldPath]: newPath } };
       if (await onWrite(idRef.current, ops)) {
@@ -388,6 +411,7 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
         setDoc(before.doc);
         setPendingSet(before.pendingSet);
         setDeletedPaths(before.deletedPaths);
+        setRenamedPaths(before.renamedPaths);
       }
     },
     [onWrite],
@@ -432,6 +456,9 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
       activeEditPath: activeEdit?.path ?? null,
       activeEditMode: activeEdit?.mode ?? null,
       deletedPaths,
+      changedPaths,
+      addedPaths,
+      renamedPaths,
       onRequestEdit: NOOP,
       onActivateEdit: activateEdit,
       onFinishEdit: finishEdit,
@@ -440,7 +467,20 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
       onRenameProp: renameProp,
       onAddChild: addChild,
     }),
-    [isEditing, activeEdit, deletedPaths, activateEdit, finishEdit, toggleDelete, setValue, renameProp, addChild],
+    [
+      isEditing,
+      activeEdit,
+      deletedPaths,
+      changedPaths,
+      addedPaths,
+      renamedPaths,
+      activateEdit,
+      finishEdit,
+      toggleDelete,
+      setValue,
+      renameProp,
+      addChild,
+    ],
   );
 
   return (

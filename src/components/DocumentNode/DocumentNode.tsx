@@ -455,6 +455,10 @@ function blurActiveEditor() {
 
 export type DocumentEditMode = "value" | "rename";
 
+/** How a node differs from the document the server last confirmed: `added` for something that
+ * only exists here, `changed` for an existing field carrying a staged edit. */
+export type ChangeMark = "added" | "changed";
+
 export interface DocumentNodeProps {
   path: string[];
   propKey: string;
@@ -469,6 +473,16 @@ export interface DocumentNodeProps {
   activeEditMode: DocumentEditMode | null;
   /** Dotted paths within this document marked for deletion, pending Save. */
   deletedPaths: Set<string>;
+  /** Dotted paths carrying a staged edit to a field the server already has. */
+  changedPaths: Set<string>;
+  /** Dotted paths that exist only here — added since the last save. */
+  addedPaths: Set<string>;
+  /** Dotted paths (under their current name) whose key was renamed. */
+  renamedPaths: Set<string>;
+  /** Set when an ancestor is itself added or replaced wholesale: staging a value writes the
+   * whole subtree, so nothing below such a node is staged under its own path — it inherits
+   * the mark instead of going unmarked. */
+  inheritedChange?: ChangeMark;
   /** Fired on double-clicking a non-renameable, non-editable key (e.g. an array index over a
    * nested container) — no field can be activated, so callers may leave this a no-op. */
   onRequestEdit: () => void;
@@ -495,6 +509,10 @@ function DocumentNode({
   activeEditPath,
   activeEditMode,
   deletedPaths,
+  changedPaths,
+  addedPaths,
+  renamedPaths,
+  inheritedChange,
   onRequestEdit,
   onActivateEdit,
   onFinishEdit,
@@ -529,6 +547,15 @@ function DocumentNode({
   const marked = deletedPaths.has(pathStr);
   const editingValue = documentEditing && !marked && activeEditPath === pathStr && activeEditMode === "value";
   const renaming = documentEditing && !marked && activeEditPath === pathStr && activeEditMode === "rename";
+
+  const changeMark: ChangeMark | null =
+    inheritedChange ?? (addedPaths.has(pathStr) ? "added" : changedPaths.has(pathStr) ? "changed" : null);
+  // The key is only marked by what happened to the key — a renamed one, or a node that is new
+  // on both sides. An edited value leaves the name it was stored under untouched.
+  const keyMark: ChangeMark | null =
+    changeMark === "added" ? "added" : renamedPaths.has(pathStr) ? "changed" : null;
+  const markClass = (mark: ChangeMark | null) =>
+    mark === "added" ? styles.markAdded : mark === "changed" ? styles.markChanged : "";
 
   function commitRename() {
     if (renameCommittedRef.current) return;
@@ -579,6 +606,10 @@ function DocumentNode({
             activeEditPath={activeEditPath}
             activeEditMode={activeEditMode}
             deletedPaths={deletedPaths}
+            changedPaths={changedPaths}
+            addedPaths={addedPaths}
+            renamedPaths={renamedPaths}
+            inheritedChange={changeMark ?? undefined}
             onRequestEdit={onRequestEdit}
             onActivateEdit={onActivateEdit}
             onFinishEdit={onFinishEdit}
@@ -647,7 +678,7 @@ function DocumentNode({
           />
         ) : (
           <span
-            className={styles.key}
+            className={`${styles.key}${keyMark ? ` ${markClass(keyMark)}` : ""}`}
             tabIndex={-1}
             onMouseDown={(e) => {
               // Uses mousedown (not click) so the switch is decided while the pointer is
@@ -691,7 +722,9 @@ function DocumentNode({
         ) : (
           !container && (
             <span
-              className={marked ? `${styles.value} ${styles.markedForDeletion}` : styles.value}
+              className={[styles.value, marked && styles.markedForDeletion, markClass(changeMark)]
+                .filter(Boolean)
+                .join(" ")}
               tabIndex={-1}
               onMouseDown={(e) => {
                 // Uses mousedown (not click) so the switch — including from this same
