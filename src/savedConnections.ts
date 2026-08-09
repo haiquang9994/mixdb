@@ -1,5 +1,18 @@
 import { Store } from "@tauri-apps/plugin-store";
-import type { SavedConnection } from "./types";
+import { invoke } from "@tauri-apps/api/core";
+import type { ConnectionConfig, SavedConnection } from "./types";
+
+/**
+ * The saved connection list, split across two places.
+ *
+ * `connections.json` holds what a connection *is* — host, port, user, which database — and is
+ * plain text on purpose: it is useful to be able to read, copy and edit that list. Everything that
+ * would let someone connect goes to the OS credential store instead (Windows Credential Manager,
+ * the macOS Keychain, the Secret Service on Linux), reached through the `secrets_*` commands.
+ *
+ * The split is invisible to callers: what goes in and comes out of this module is a whole
+ * `SavedConnection`.
+ */
 
 let storePromise: Promise<Store> | null = null;
 
@@ -10,7 +23,78 @@ function getStore(): Promise<Store> {
   return storePromise;
 }
 
-export async function loadSavedConnections(): Promise<SavedConnection[]> {
+/** The fields that must never sit in `connections.json`. */
+type SecretField = "password" | "uri" | "sshPassword" | "sshPassphrase";
+type Secrets = Partial<Record<SecretField, string>>;
+
+/**
+ * Everything about `config` that is a credential.
+ *
+ * The whole Mongo connection string counts as one: it carries the password inside it, and taking
+ * that out would mean rewriting a URI whose shape (a replica-set seed list, `+srv`, options) this
+ * app deliberately doesn't parse for anything but cosmetics.
+ */
+function readSecrets(config: ConnectionConfig): Secrets {
+  const secrets: Secrets = {};
+  if (config.password) secrets.password = config.password;
+  if (config.uri) secrets.uri = config.uri;
+  if (config.ssh?.auth.type === "password" && config.ssh.auth.password) {
+    secrets.sshPassword = config.ssh.auth.password;
+  }
+  if (config.ssh?.auth.type === "privatekey" && config.ssh.auth.passphrase) {
+    secrets.sshPassphrase = config.ssh.auth.passphrase;
+  }
+  return secrets;
+}
+
+/** The same config with every credential taken out — what is written to disk. */
+function withoutSecrets(config: ConnectionConfig): ConnectionConfig {
+  const stripped: ConnectionConfig = { ...config, password: undefined, uri: undefined };
+  if (config.ssh) {
+    stripped.ssh = {
+      ...config.ssh,
+      auth:
+        config.ssh.auth.type === "password"
+          ? { type: "password", password: "" }
+          : { type: "privatekey", key_path: config.ssh.auth.key_path, passphrase: undefined },
+    };
+  }
+  return stripped;
+}
+
+/** The config as the form needs it: what was on disk, with the credentials put back. */
+function withSecrets(config: ConnectionConfig, secrets: Secrets): ConnectionConfig {
+  const filled: ConnectionConfig = {
+    ...config,
+    password: secrets.password ?? config.password,
+    uri: secrets.uri ?? config.uri,
+  };
+  if (config.ssh) {
+    filled.ssh = {
+      ...config.ssh,
+      auth:
+        config.ssh.auth.type === "password"
+          ? { type: "password", password: secrets.sshPassword ?? config.ssh.auth.password }
+          : {
+              type: "privatekey",
+              key_path: config.ssh.auth.key_path,
+              passphrase: secrets.sshPassphrase ?? config.ssh.auth.passphrase,
+            },
+    };
+  }
+  return filled;
+}
+
+function saveSecrets(id: string, secrets: Secrets): Promise<void> {
+  return invoke<void>("secrets_save", { id, secrets });
+}
+
+function loadSecrets(id: string): Promise<Secrets> {
+  return invoke<Secrets>("secrets_load", { id });
+}
+
+/** What is actually on disk, credentials already removed. */
+async function loadStored(): Promise<SavedConnection[]> {
   const store = await getStore();
   return (await store.get<SavedConnection[]>("saved")) ?? [];
 }
@@ -21,23 +105,67 @@ async function persist(list: SavedConnection[]): Promise<void> {
   await store.save();
 }
 
+/**
+ * Every saved connection, credentials included.
+ *
+ * A connection saved by a version of MixDB that kept passwords in the file is moved across on the
+ * way through: its credentials go to the credential store and the file is rewritten without them.
+ * That happens once, silently — the user has nothing to decide here.
+ */
+export async function loadSavedConnections(): Promise<SavedConnection[]> {
+  const stored = await loadStored();
+  let needsRewrite = false;
+
+  const list = await Promise.all(
+    stored.map(async (entry) => {
+      const kept = await loadSecrets(entry.id);
+      const inFile = readSecrets(entry.config);
+      // Anything still in the file was written before the credential store was used. It wins over
+      // what is stored, being the newer of the two, and the file is rewritten without it below.
+      if (Object.keys(inFile).length > 0) {
+        needsRewrite = true;
+        await saveSecrets(entry.id, { ...kept, ...inFile });
+      }
+      return { ...entry, config: withSecrets(entry.config, { ...kept, ...inFile }) };
+    }),
+  );
+
+  if (needsRewrite) await persist(list.map(stripEntry));
+  return list;
+}
+
+/** One entry as it goes to disk. */
+function stripEntry(entry: SavedConnection): SavedConnection {
+  return { ...entry, config: withoutSecrets(entry.config) };
+}
+
+/** Writes `entry`'s credentials to the OS store and the whole list — credentials removed — to
+ *  disk. The other entries are stripped too: they were handed out with theirs filled in. */
+async function persistEntry(list: SavedConnection[], entry: SavedConnection): Promise<void> {
+  await saveSecrets(entry.id, readSecrets(entry.config));
+  await persist(list.map(stripEntry));
+}
+
 export async function addSavedConnection(entry: SavedConnection): Promise<SavedConnection[]> {
   const list = await loadSavedConnections();
   const next = [...list, entry];
-  await persist(next);
+  await persistEntry(next, entry);
   return next;
 }
 
 export async function updateSavedConnection(entry: SavedConnection): Promise<SavedConnection[]> {
   const list = await loadSavedConnections();
   const next = list.map((c) => (c.id === entry.id ? entry : c));
-  await persist(next);
+  await persistEntry(next, entry);
   return next;
 }
 
 export async function removeSavedConnection(id: string): Promise<SavedConnection[]> {
   const list = await loadSavedConnections();
   const next = list.filter((c) => c.id !== id);
-  await persist(next);
+  // The credentials go with the connection they belonged to; leaving them behind would mean an
+  // entry in the OS store that nothing will ever name again.
+  await invoke<void>("secrets_delete", { id });
+  await persist(next.map((c) => ({ ...c, config: withoutSecrets(c.config) })));
   return next;
 }

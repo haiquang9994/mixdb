@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod models;
+mod secrets;
 mod ssh_tunnel;
 mod state;
 
@@ -48,6 +49,9 @@ pub fn run() {
             commands::mysql_drop_index,
             commands::mysql_run_script,
             commands::mysql_cancel_query,
+            commands::secrets_save,
+            commands::secrets_load,
+            commands::secrets_delete,
             commands::mongo_list_databases,
             commands::mongo_server_info,
             commands::mongo_list_collections,

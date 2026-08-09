@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::db::{dump, mongo, mysql, mysql_script, mysql_structure, redis as redis_db, tools};
 use crate::models::{ConnectionConfig, DbKind, SshConfig};
+use crate::secrets;
 use crate::ssh_tunnel;
 use crate::state::{ActiveConnection, AppState, DbHandle};
 
@@ -355,6 +356,27 @@ where
     tokio::task::spawn_blocking(work)
         .await
         .map_err(|e| format!("The task did not finish: {e}"))?
+}
+
+/// Writes a saved connection's secrets to the OS credential store, replacing what was there.
+///
+/// Off the async runtime: the credential stores are blocking, and on macOS opening one may put a
+/// prompt on screen — which is not something to hold a runtime worker for.
+#[tauri::command]
+pub async fn secrets_save(id: String, secrets: secrets::Secrets) -> Result<(), String> {
+    in_background(move || secrets::save(&id, &secrets)).await
+}
+
+/// A saved connection's secrets, or nothing when it has none stored.
+#[tauri::command]
+pub async fn secrets_load(id: String) -> Result<secrets::Secrets, String> {
+    in_background(move || secrets::load(&id)).await
+}
+
+/// Forgets a saved connection's secrets, for when the connection itself is deleted.
+#[tauri::command]
+pub async fn secrets_delete(id: String) -> Result<(), String> {
+    in_background(move || secrets::delete(&id)).await
 }
 
 /// Where MixDB keeps what it remembers between runs: the tools it downloaded, and the SSH host

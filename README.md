@@ -20,6 +20,9 @@ Trước khi chạy, cần cài:
 - [Node.js](https://nodejs.org/) (khuyến nghị LTS mới nhất) và npm
 - [Rust](https://www.rust-lang.org/tools/install) (bản ổn định, cài qua `rustup`)
 - Các dependency hệ thống cho Tauri theo hướng dẫn chính thức: [Tauri Prerequisites](https://v2.tauri.app/start/prerequisites/)
+- Trên Linux: `libsecret` (ví dụ `libsecret-1-dev` trên Debian/Ubuntu) — mật khẩu của các kết nối
+  đã lưu được cất trong kho credential của hệ điều hành. Windows và macOS dùng Credential Manager
+  và Keychain sẵn có, không cần cài thêm.
 
 ## Hướng dẫn chạy khi mới clone về
 

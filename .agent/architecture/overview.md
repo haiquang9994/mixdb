@@ -60,9 +60,18 @@ Mongo is configured as a single connection string, not host/port/user/password �
 
 ## Persistence
 
-- **Saved connections** — `tauri-plugin-store`, file `connections.json`, key `saved`. Wrapped by
-  [src/savedConnections.ts](../../src/savedConnections.ts). Passwords are stored as typed, in
-  plaintext; the UI masks the Mongo string behind a reveal confirmation but that is display only.
+- **Saved connections** — split in two by [src/savedConnections.ts](../../src/savedConnections.ts),
+  which is the only module that knows about the split:
+  - What a connection *is* (host, port, user, database, sidebar width) — `tauri-plugin-store`,
+    file `connections.json`, key `saved`. Plain text on purpose.
+  - What lets you connect (`password`, the whole Mongo `uri`, the SSH password and key
+    passphrase) — the OS credential store, through the `secrets_*` commands
+    ([src-tauri/src/secrets.rs](../../src-tauri/src/secrets.rs)): Windows Credential Manager, the
+    macOS Keychain, the Secret Service on Linux. One JSON entry per connection id, under the
+    service name `MixDB`.
+
+  A connection saved by an older build, with its password still in the file, is moved across the
+  first time it is read and the file rewritten without it.
 - **Theme** (`mixdb-theme`) and **language** (`mixdb-lang`) — `localStorage`, not the store.
 
 ## Security posture
