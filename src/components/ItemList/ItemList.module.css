@@ -26,14 +26,14 @@
   box-shadow: none;
   background: transparent;
   padding: 0.4rem 0.6rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .item:hover {
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--hover-bg);
   border-color: transparent;
 }
 

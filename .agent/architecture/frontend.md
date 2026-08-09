@@ -47,10 +47,45 @@ Roughly grouped:
 ## Styling
 
 - `src/App.css` is the only global stylesheet: resets, scrollbars, the tab chrome, and the CSS
-  custom properties (`--control-*`, `--surface-bg`, `--accent*`) that component modules build on.
+  custom properties that component modules build on.
 - Dark mode is `[data-theme="dark"]` plus a `prefers-color-scheme` block, both redefining the same
   tokens. A new color belongs in the token set, not hardcoded in a module.
 - Font is Fira Code, bundled via `@fontsource` — no network fonts.
+
+### Tokens
+
+Reach for one of these before writing a literal. A raw grey, radius or shadow in a module is drift.
+
+| Group | Tokens | Notes |
+| --- | --- | --- |
+| Radius | `--radius-sm` 6 / `--radius-md` 8 / `--radius-lg` 12 | badge · control, row · dialog, menu |
+| Grey | `--border-soft` / `--border` / `--border-strong` / `--hover-bg` | soft = table grid; strong = hover |
+| Height | `--shadow-sm` / `--shadow-md` / `--shadow-lg` | `sm` is `none` in dark — a control on a dark page casts nothing |
+| Surface | `--page-bg`, `--surface-bg` | `page-bg` is what sticky headers paint to hide rows under them |
+| Control | `--control-radius`, `--control-shadow`, `--control-bg`, `--control-border`, `--control-color` | mirrored by Button/Input/Select's own modules |
+
+### Interaction states
+
+Three states, three distinct signals — do not mix them:
+
+- **Hover** takes weight, never colour: `border-color: var(--border-strong)`.
+- **Focus** takes the accent: `border-color: var(--accent)` plus `box-shadow: var(--focus-ring)`,
+  and only on `:focus-visible`, so a ring means the keyboard is there. Text inputs also show the
+  accent border on plain `:focus`, since it marks where typing lands.
+- **Selection** takes an accent wash: `rgb(var(--accent-rgb) / 0.15)` and `--accent-text`.
+
+`--focus-ring` is **inset**. It has to be: workspaces are `overflow: hidden` with scroll panes
+nested inside them, and controls sit flush against those edges — an outward ring loses whichever
+side is against a boundary, and no padding on the control's own container can bring it back.
+Anything drawing its own ring (`outline`) uses a negative `outline-offset` for the same reason.
+
+### Buttons
+
+`<Button variant="primary">` fills with `--accent-solid` and sets `--accent-on-solid` type — **one
+per screen or dialog**, on the action that screen is asking for. Light mode fills with the darker
+accent cast so white type clears 4.5:1; dark mode fills with `--accent` and uses near-black type.
+A destructive confirm stays `default` and keeps its red: filling it would dress the dangerous
+choice as the recommended one.
 
 ### The accent
 

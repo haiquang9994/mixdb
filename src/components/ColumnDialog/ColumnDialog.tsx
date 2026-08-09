@@ -482,7 +482,7 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
           <Button size="large" onClick={onCancel} disabled={saving}>
             {t("common.cancel")}
           </Button>
-          <Button size="large" onClick={() => void submit()} disabled={saving}>
+          <Button size="large" variant="primary" onClick={() => void submit()} disabled={saving}>
             {saving
               ? t("columnDialog.saving")
               : t(editing ? "columnDialog.submitEdit" : "columnDialog.submitAdd")}

@@ -13,16 +13,54 @@
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
 
+  /* Three steps, used everywhere. Anything smaller than a control (badge, chip, swatch ring) takes
+     `sm`, a control or a row takes `md`, and anything that floats above the page (dialog, menu,
+     panel) takes `lg`. A radius outside this set is a mistake, not a choice. */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Grey at three weights, so the twenty-odd `rgba(128, 128, 128, …)` these replaced can't drift
+     apart. Grey rather than a tinted neutral: it sits under every accent without arguing. */
+  --border-soft: rgb(128 128 128 / 0.15);
+  --border: rgb(128 128 128 / 0.25);
+  --border-strong: rgb(128 128 128 / 0.45);
+  --hover-bg: rgb(128 128 128 / 0.12);
+
+  /* Height above the page. A control is *on* the page and casts almost nothing; only what floats
+     gets a real shadow. The old control shadow was `0 2px 2px rgb(0 0 0 / 0.2)` — a hard dark bar
+     under every input, which is most of what made the app look heavy. */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.12);
+  --shadow-lg: 0 8px 32px rgb(0 0 0 / 0.18);
+
   /* Shared visual language for form controls (input/button/textarea/select
      trigger) — referenced from here and from Button/Input/Select's own CSS
      modules so the two layers can't drift out of sync. */
-  --control-radius: 8px;
-  --control-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+  --control-radius: var(--radius-md);
+  --control-shadow: var(--shadow-sm);
   --control-color: #0f0f0f;
   --control-bg: #ffffff;
   --control-bg-active: #e8e8e8;
+  --control-border: var(--border);
   --control-border-focus: var(--accent);
   --surface-bg: #ffffff;
+  --page-bg: #f6f6f6;
+
+  /* One ring, one meaning: keyboard focus.
+
+     Drawn *inside* the border box. A ring painted outside is at the mercy of every ancestor that
+     clips — this app nests scroll panes inside `overflow: hidden` workspaces several deep, and the
+     filter bar sits flush against the top edge of one, so an outset ring lost its top edge with no
+     padding that could be added locally to bring it back. Inset costs nothing: the controls carry
+     enough padding that 2px never reaches the text. */
+  --focus-ring: inset 0 0 0 2px rgb(var(--accent-rgb) / 0.5);
+
+  /* The accent as a filled surface — the primary button. Light mode fills with the darker text
+     cast so white type on it clears 4.5:1 (the plain `--accent` is too light for that on the
+     greener hues); dark mode fills with `--accent` and puts near-black type on top. */
+  --accent-solid: var(--accent-text);
+  --accent-on-solid: #ffffff;
 
   /* The accent, in the three forms the app actually uses it in: solid for borders and icons, a
      darker (light mode) or lighter (dark mode) cast for text that has to stay readable against the
@@ -196,8 +234,8 @@ body {
   align-items: center;
   gap: 2px;
   padding: 0.4rem 0.5rem 0;
-  background: rgba(128, 128, 128, 0.08);
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  background: rgb(128 128 128 / 0.08);
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   overflow-x: auto;
   overscroll-behavior: contain;
@@ -221,7 +259,7 @@ body {
 
 .brand:hover {
   opacity: 1;
-  background: rgba(128, 128, 128, 0.12);
+  background: var(--hover-bg);
   border-color: transparent;
 }
 
@@ -230,11 +268,17 @@ body {
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.5rem 0.45rem 0.9rem;
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: transparent;
+  box-shadow: none;
   cursor: pointer;
   white-space: nowrap;
   max-width: 200px;
+}
+
+.tab:hover:not(.tab-active) {
+  background: var(--hover-bg);
+  border-color: transparent;
 }
 
 .tab-title {
@@ -243,8 +287,16 @@ body {
   white-space: nowrap;
 }
 
+/* The one piece of chrome that says which connection you are looking at, so it is where the accent
+   belongs most. It lifts to the surface colour and takes a bar of accent along its top edge —
+   `inset` so the bar sits inside the tab's own rounded corners.
+
+   (This rule used to read `var(--panel-bg, …)`; nothing ever defined `--panel-bg`, so every tab
+   fell back to flat grey and the active one was barely distinguishable.) */
 .tab-active {
-  background: var(--panel-bg, rgba(128, 128, 128, 0.18));
+  background: var(--surface-bg);
+  box-shadow: inset 0 2px 0 var(--accent);
+  font-weight: 600;
 }
 
 .tab-close {
@@ -299,7 +351,7 @@ body {
   flex: 0 0 auto;
   width: auto;
   min-width: 220px;
-  border-right: 1px solid rgba(128, 128, 128, 0.25);
+  border-right: 1px solid var(--border);
   padding-right: 1rem;
   overflow-y: auto;
   min-height: 0;
@@ -329,6 +381,7 @@ body {
   gap: 0.25rem;
 }
 
+/* A card in a list, so it carries a real edge rather than floating on the sidebar. */
 .saved-item {
   flex: 1;
   display: flex;
@@ -337,6 +390,7 @@ body {
   gap: 0.6rem;
   text-align: left;
   padding: 0.5rem 0.6rem;
+  border-color: var(--border);
 }
 
 .saved-item strong {
@@ -433,7 +487,7 @@ body {
   flex-direction: column;
   min-width: 140px;
   background: var(--surface-bg);
-  border: 1px solid rgba(128, 128, 128, 0.25);
+  border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   padding: 0.25rem;
@@ -450,7 +504,7 @@ body {
 }
 
 .context-menu button:hover {
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--hover-bg);
   border-color: transparent;
 }
 
@@ -515,7 +569,7 @@ fieldset .row input {
 .method-tabs {
   display: flex;
   gap: 0.25rem;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  border-bottom: 1px solid var(--border);
   margin-bottom: 1rem;
 }
 
@@ -676,7 +730,7 @@ textarea {
   bottom: 0;
   left: 2px;
   width: 1px;
-  background: rgba(128, 128, 128, 0.25);
+  background: var(--border);
 }
 
 .mysql-sidebar-resizer:hover::after,
@@ -705,7 +759,7 @@ textarea {
   flex: 0 0 auto;
   padding-top: 0.35rem;
   margin-top: 0.35rem;
-  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  border-top: 1px solid var(--border);
 }
 
 .mysql-content {
@@ -809,7 +863,7 @@ textarea {
   bottom: 0;
   left: 2px;
   width: 1px;
-  background: rgba(128, 128, 128, 0.25);
+  background: var(--border);
 }
 
 .mongo-sidebar-resizer:hover::after,
@@ -836,7 +890,7 @@ textarea {
   flex: 0 0 auto;
   padding-top: 0.35rem;
   margin-top: 0.35rem;
-  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  border-top: 1px solid var(--border);
 }
 
 .mongo-content {
@@ -936,7 +990,7 @@ textarea {
   bottom: 0;
   left: 2px;
   width: 1px;
-  background: rgba(128, 128, 128, 0.25);
+  background: var(--border);
 }
 
 .redis-sidebar-resizer:hover::after,
@@ -973,7 +1027,7 @@ textarea {
   flex: 0 0 auto;
   padding-top: 0.35rem;
   margin-top: 0.35rem;
-  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  border-top: 1px solid var(--border);
 }
 
 .redis-content {
@@ -1021,6 +1075,9 @@ a:hover {
   color: var(--accent);
 }
 
+/* The border stays transparent here because most `<button>`s in this app are chrome — tabs, icon
+   buttons, list rows — and each turns its own border off. The ones that read as controls (Button's
+   own class, inputs, the Select trigger) opt into a visible border just below. */
 input,
 button,
 textarea {
@@ -1032,30 +1089,64 @@ textarea {
   font-family: inherit;
   color: var(--control-color);
   background-color: var(--control-bg);
-  transition: border-color 0.25s;
+  /* Fast enough to feel like a response rather than an animation. The old 0.25s on hover read as
+     the interface lagging behind the pointer. */
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
   box-shadow: var(--control-shadow);
+}
+
+input,
+textarea {
+  border-color: var(--control-border);
 }
 
 button {
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
-  border-color: var(--control-border-focus);
+/* Hover is not selection: it gets weight, not colour. Reserving the accent for focus is what makes
+   the focus ring mean something — before, hover and focus were the same accent border and neither
+   told you where the keyboard was. */
+button:hover:not(:disabled),
+input:hover:not(:disabled),
+textarea:hover:not(:disabled) {
+  border-color: var(--border-strong);
 }
+
 button:active:not(:disabled) {
-  border-color: var(--control-border-focus);
   background-color: var(--control-bg-active);
 }
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
+/* `:focus-visible`, not `:focus`: a ring after a mouse click is noise, a ring after a Tab press is
+   the only way to know where you are. The app previously set `outline: none` with nothing in its
+   place, so keyboard focus was invisible everywhere. */
 input,
 button,
-textarea {
+textarea,
+select,
+[tabindex] {
   outline: none;
+}
+
+input:focus-visible,
+button:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+/* A text box is the one control whose focus should show even when reached by mouse — it marks
+   where typing will land. */
+input:focus,
+textarea:focus {
+  border-color: var(--accent);
 }
 
 :root[data-theme="dark"] {
@@ -1066,6 +1157,17 @@ textarea {
   --control-bg: #0f0f0f98;
   --control-bg-active: #0f0f0f69;
   --surface-bg: #2f2f2f;
+  --page-bg: #2f2f2f;
+
+  /* A control casts nothing here — a dark shadow on a dark page only muddies it — while what
+     floats needs a heavier one to separate at all. */
+  --shadow-sm: none;
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 8px 32px rgb(0 0 0 / 0.55);
+
+  /* The reverse of the light rule above: fill with the lighter cast, set near-black on it. */
+  --accent-solid: var(--accent);
+  --accent-on-solid: #16181c;
 
   /* The dark cast of all ten. Only the palettes are restated — which one `--accent` points at was
      settled by `[data-accent]` above and holds through the theme, so a swatch and the accent both
@@ -1120,6 +1222,14 @@ textarea {
     --control-bg: #0f0f0f98;
     --control-bg-active: #0f0f0f69;
     --surface-bg: #2f2f2f;
+    --page-bg: #2f2f2f;
+
+    --shadow-sm: none;
+    --shadow-md: 0 4px 16px rgb(0 0 0 / 0.45);
+    --shadow-lg: 0 8px 32px rgb(0 0 0 / 0.55);
+
+    --accent-solid: var(--accent);
+    --accent-on-solid: #16181c;
 
     --c-blue: #6f9bf0;
     --c-blue-text: #8fb4f5;

@@ -223,7 +223,7 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
           <Button size="large" onClick={onCancel} disabled={saving}>
             {t("common.cancel")}
           </Button>
-          <Button size="large" onClick={() => void submit()} disabled={busy || drafts.length === 0}>
+          <Button size="large" variant="primary" onClick={() => void submit()} disabled={busy || drafts.length === 0}>
             {saving ? t("insertDocuments.inserting") : t("insertDocuments.insert", { n: drafts.length })}
           </Button>
         </div>

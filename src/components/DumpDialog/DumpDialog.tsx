@@ -61,7 +61,7 @@ function DumpDialog({ database, onCancel, onSubmit }: Props) {
           <Button size="large" onClick={onCancel}>
             {t("common.cancel")}
           </Button>
-          <Button size="large" onClick={() => onSubmit(mode)}>
+          <Button size="large" variant="primary" onClick={() => onSubmit(mode)}>
             {t("dump.chooseFile")}
           </Button>
         </div>

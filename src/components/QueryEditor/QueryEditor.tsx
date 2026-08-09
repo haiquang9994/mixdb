@@ -125,7 +125,7 @@ function QueryEditor({ connectionId, database }: Props) {
   return (
     <div className={styles.queryEditor}>
       <div className={styles.toolbar}>
-        <Button size="small" onClick={() => void run()} disabled={running || sql.trim() === ""}>
+        <Button size="small" variant="primary" onClick={() => void run()} disabled={running || sql.trim() === ""}>
           {running ? t("query.running") : t("query.run")}
         </Button>
         {running && (

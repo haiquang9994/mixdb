@@ -292,7 +292,7 @@ function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
           <Button size="large" onClick={onCancel} disabled={saving}>
             {t("common.cancel")}
           </Button>
-          <Button size="large" onClick={() => void submit()} disabled={saving}>
+          <Button size="large" variant="primary" onClick={() => void submit()} disabled={saving}>
             {saving
               ? t("indexDialog.saving")
               : t(editing ? "indexDialog.submitEdit" : "indexDialog.submitAdd")}

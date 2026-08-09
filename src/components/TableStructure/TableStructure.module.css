@@ -39,8 +39,8 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  border: 1px solid rgba(128, 128, 128, 0.25);
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
 
 .grid {
@@ -52,8 +52,8 @@
 
 .grid th,
 .grid td {
-  border-right: 1px solid rgba(128, 128, 128, 0.25);
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 4px 8px;
   text-align: left;
   vertical-align: middle;
@@ -75,11 +75,11 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f6f6f6;
+  background: var(--page-bg);
 }
 
 .grid tbody tr:hover {
-  background: rgba(128, 128, 128, 0.12);
+  background: var(--hover-bg);
 }
 
 .name {
@@ -114,10 +114,10 @@
   overflow: visible;
   /* The same colour the sticky header takes, which is what the rows themselves show: nothing
      between the grid and the page paints a background of its own. */
-  background: #f6f6f6;
+  background: var(--page-bg);
   /* Its own left edge, since the border of the cell in front of it passes underneath as soon as
      the grid is scrolled — the column would otherwise sit on the rows with no edge at all. */
-  border-left: 1px solid rgba(128, 128, 128, 0.25);
+  border-left: 1px solid var(--border);
 }
 
 /* The cell in front of the pinned column gives up its right border to it: two 1px lines a pixel
@@ -186,7 +186,7 @@
   border: none;
   box-shadow: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: inherit;
   opacity: 0.6;
 }
@@ -206,27 +206,5 @@
   color: #d32f2f;
 }
 
-:root[data-theme="dark"] .grid thead th,
-:root[data-theme="dark"] .rowActions {
-  background: #2f2f2f;
-}
-
-/* The key badge's blue is picked to read on white; on a dark row it has to come back up. */
-:root[data-theme="dark"] .badgeKey {
-  color: #9db9f0;
-  border-color: rgba(157, 185, 240, 0.45);
-  background: rgba(157, 185, 240, 0.14);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .grid thead th,
-  :root:not([data-theme]) .rowActions {
-    background: #2f2f2f;
-  }
-
-  :root:not([data-theme]) .badgeKey {
-    color: #9db9f0;
-    border-color: rgba(157, 185, 240, 0.45);
-    background: rgba(157, 185, 240, 0.14);
-  }
-}
+/* No dark overrides here any more: the sticky header and pinned column take `--page-bg` and the key
+   badge is written in `--accent-*`, and both of those already carry the theme's own values. */

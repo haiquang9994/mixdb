@@ -56,6 +56,9 @@ function ConfirmDialog({
           </Button>
           <Button
             size="large"
+            /* A destructive confirm keeps its own red and stays outlined: filling it with the
+               accent would dress the dangerous choice as the recommended one. */
+            variant={danger ? "default" : "primary"}
             className={danger ? styles.danger : undefined}
             onClick={onConfirm}
             autoFocus

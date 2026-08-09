@@ -630,7 +630,7 @@ function ConnectionTab({ onTitleChange }: Props) {
         </div>
         <div className="row-actions-right">
           <span>{status}</span>
-          <Button size="large" onClick={() => connect()}>
+          <Button size="large" variant="primary" onClick={() => connect()}>
             {t("common.connect")}
           </Button>
         </div>

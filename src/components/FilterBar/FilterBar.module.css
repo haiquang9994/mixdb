@@ -12,7 +12,8 @@
    rows off screen.
    The padding is what the scroll costs: an overflow container clips at its padding box, and the
    controls inside carry a drop shadow that would be shaved off at every edge without it. The
-   matching negative margin puts the rows back in line with the actions row below. */
+   matching negative margin puts the rows back in line with the actions row below. (The focus ring
+   needs nothing here — it is drawn inside the control.) */
 .rows {
   display: flex;
   flex-direction: column;
@@ -83,12 +84,12 @@
   border: none;
   box-shadow: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: inherit;
 }
 
 .iconButton:hover:not(:disabled) {
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--hover-bg);
   border-color: transparent;
 }
 

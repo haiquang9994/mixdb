@@ -30,8 +30,8 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  border: 1px solid rgba(128, 128, 128, 0.25);
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
 
 .grid {
@@ -43,8 +43,8 @@
 
 .grid th,
 .grid td {
-  border-right: 1px solid rgba(128, 128, 128, 0.25);
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 4px 8px;
   text-align: left;
   vertical-align: middle;
@@ -66,13 +66,13 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f6f6f6;
+  background: var(--page-bg);
   cursor: pointer;
   user-select: none;
 }
 
 .grid tbody tr:hover {
-  background: rgba(128, 128, 128, 0.12);
+  background: var(--hover-bg);
 }
 
 .headerCell:hover {
@@ -115,8 +115,8 @@
   position: sticky;
   bottom: 0;
   z-index: 1;
-  background: #f6f6f6;
-  border-top: 1px solid rgba(128, 128, 128, 0.25);
+  background: var(--page-bg);
+  border-top: 1px solid var(--border);
   border-bottom: none;
   font-weight: 600;
 }
@@ -128,14 +128,5 @@
   opacity: 0.55;
 }
 
-:root[data-theme="dark"] .grid thead th,
-:root[data-theme="dark"] .grid tfoot td {
-  background: #2f2f2f;
-}
-
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .grid thead th,
-  :root:not([data-theme]) .grid tfoot td {
-    background: #2f2f2f;
-  }
 }

@@ -1,21 +1,27 @@
 .input {
   border-radius: var(--control-radius);
-  border: 1px solid transparent;
+  border: 1px solid var(--control-border);
   font-weight: 500;
   font-family: inherit;
   color: var(--control-color);
   background-color: var(--control-bg);
   box-shadow: var(--control-shadow);
-  transition: border-color 0.25s;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
   outline: none;
 }
 
 .input:hover:not(:disabled) {
-  border-color: var(--control-border-focus);
+  border-color: var(--border-strong);
 }
 
+/* A text box shows focus however it was reached — it marks where typing lands — but only the
+   keyboard gets the ring. */
 .input:focus:not(:disabled) {
-  border-color: var(--control-border-focus);
+  border-color: var(--accent);
+}
+
+.input:focus-visible:not(:disabled) {
+  box-shadow: var(--focus-ring);
 }
 
 .input:disabled {

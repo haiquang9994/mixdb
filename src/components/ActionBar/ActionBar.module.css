@@ -14,12 +14,12 @@
   border: none;
   box-shadow: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: inherit;
 }
 
 .action:hover:not(:disabled) {
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--hover-bg);
   border-color: transparent;
 }
 

@@ -179,7 +179,7 @@ function FilterBar<Op extends string>({
         >
           <PlusIcon size={14} />
         </button>
-        <Button size="small" disabled={applyDisabled} onClick={onApply}>
+        <Button size="small" variant="primary" disabled={applyDisabled} onClick={onApply}>
           {t("filterBar.apply")}
         </Button>
       </div>

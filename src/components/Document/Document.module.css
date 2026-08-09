@@ -1,5 +1,5 @@
 .docCard {
-  border: 1px solid rgba(128, 128, 128, 0.3);
+  border: 1px solid var(--border);
   border-radius: var(--control-radius, 6px);
   padding: 0.4rem 0.5rem;
   background: var(--surface-bg, transparent);
@@ -18,7 +18,7 @@
   flex-wrap: wrap;
   padding-bottom: 0.3rem;
   margin-bottom: 0.2rem;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  border-bottom: 1px solid var(--border);
 }
 
 .collapseToggle {
@@ -79,7 +79,7 @@
   border: none;
   background: transparent;
   box-shadow: none;
-  color: #4a90d9;
+  color: var(--accent-text);
   font-size: 0.85em;
   padding: 4px;
   margin-top: 2px;
@@ -197,12 +197,12 @@
   opacity: 1;
   color: #c94a4a;
   background: rgba(201, 74, 74, 0.15);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .cloneDocButton:hover {
   opacity: 1;
-  color: #4a90d9;
-  background: rgba(74, 144, 217, 0.15);
-  border-radius: 4px;
+  color: var(--accent-text);
+  background: rgb(var(--accent-rgb) / 0.15);
+  border-radius: var(--radius-sm);
 }

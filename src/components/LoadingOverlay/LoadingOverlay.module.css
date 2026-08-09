@@ -18,5 +18,5 @@
   padding: 0.2rem 0.6rem;
   border-radius: var(--control-radius, 6px);
   background: var(--surface-bg, #fff);
-  border: 1px solid rgba(128, 128, 128, 0.3);
+  border: 1px solid var(--border);
 }

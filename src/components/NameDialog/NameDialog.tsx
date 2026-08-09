@@ -124,7 +124,7 @@ function NameDialog({
           <Button size="large" onClick={onCancel} disabled={saving}>
             {t("common.cancel")}
           </Button>
-          <Button size="large" onClick={() => void submit()} disabled={saving}>
+          <Button size="large" variant="primary" onClick={() => void submit()} disabled={saving}>
             {saving ? savingLabel : submitLabel}
           </Button>
         </div>

@@ -25,8 +25,10 @@
 
 .key:focus-visible,
 .value:focus-visible {
-  outline: 2px solid rgba(74, 144, 217, 0.6);
-  outline-offset: 1px;
+  outline: 2px solid rgb(var(--accent-rgb) / 0.6);
+  /* Inward, like every other focus ring here: the document tree scrolls inside a clipped panel,
+     and an outward ring loses its edges there. */
+  outline-offset: -1px;
   border-radius: 2px;
 }
 
@@ -41,18 +43,18 @@
 .badge {
   display: inline-block;
   padding: 0 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-family: "Fira Code", monospace;
   font-size: 0.75em;
   font-weight: 600;
-  background: rgba(74, 144, 217, 0.15);
-  color: #2f6fb8;
+  background: rgb(var(--accent-rgb) / 0.15);
+  color: var(--accent-text);
   flex-shrink: 0;
 }
 
 .badgeReadOnly {
   composes: badge;
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--hover-bg);
   color: inherit;
   opacity: 0.6;
   font-style: italic;
@@ -107,8 +109,8 @@
 
 .iconButton:hover {
   opacity: 1;
-  background: rgba(128, 128, 128, 0.15);
-  border-radius: 4px;
+  background: var(--hover-bg);
+  border-radius: var(--radius-sm);
 }
 
 .hoverOnly {
@@ -131,7 +133,7 @@
 .deleteMarked:hover {
   opacity: 1;
   background: rgba(201, 74, 74, 0.15);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .showMore,
@@ -140,7 +142,7 @@
   border: none;
   background: transparent;
   box-shadow: none;
-  color: #4a90d9;
+  color: var(--accent-text);
   font-size: 0.85em;
   padding: 2px 4px;
   cursor: pointer;
@@ -207,14 +209,14 @@
   font-size: 0.8em;
 }
 
+/* The badge needs a heavier wash to read on a dark panel; its colour needs no override, because
+   `--accent-text` is already the theme's own cast of the accent. */
 :root[data-theme="dark"] .badge {
-  background: rgba(74, 144, 217, 0.25);
-  color: #7fb3ec;
+  background: rgb(var(--accent-rgb) / 0.25);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .badge {
-    background: rgba(74, 144, 217, 0.25);
-    color: #7fb3ec;
+    background: rgb(var(--accent-rgb) / 0.25);
   }
 }

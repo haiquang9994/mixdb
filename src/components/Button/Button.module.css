@@ -3,29 +3,64 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--control-radius);
-  border: 1px solid transparent;
+  border: 1px solid var(--control-border);
   font-weight: 500;
   font-family: inherit;
   color: var(--control-color);
   background-color: var(--control-bg);
   box-shadow: var(--control-shadow);
-  transition: border-color 0.25s;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease,
+    filter 0.12s ease;
   cursor: pointer;
   outline: none;
 }
 
+/* Weight, not colour — the accent is kept for focus, so a ring means "the keyboard is here". */
 .button:hover:not(:disabled) {
-  border-color: var(--control-border-focus);
+  border-color: var(--border-strong);
 }
 
 .button:active:not(:disabled) {
-  border-color: var(--control-border-focus);
   background-color: var(--control-bg-active);
+}
+
+.button:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
 }
 
 .button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+/* The one action a screen is really asking for. Filled rather than outlined, so it is found
+   without reading: one filled button per screen or dialog, never two. */
+.primary {
+  background-color: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: var(--accent-on-solid);
+}
+
+/* Hover moves it away from the page it sits on — darker against a light page, and lighter against
+   a dark one (the dark override is at the foot of this file). Brightness rather than a second
+   colour token: it works for all ten accents without ten more values. */
+.primary:hover:not(:disabled) {
+  border-color: var(--accent-solid);
+  filter: brightness(0.92);
+}
+
+.primary:active:not(:disabled) {
+  background-color: var(--accent-solid);
+  filter: brightness(0.85);
+}
+
+/* The shared ring is a wash of the accent, which is invisible on a button already filled with it.
+   This one is drawn in the button's own type colour instead — white on a light theme, near-black
+   on a dark one — so it reads on every accent. */
+.primary:focus-visible {
+  border-color: var(--accent-solid);
+  box-shadow: inset 0 0 0 2px var(--accent-on-solid);
 }
 
 /* Height matches Select's trigger (padding + font-size + line-height). */
@@ -45,4 +80,22 @@
   padding: 0.6em 1.2em;
   font-size: 1em;
   line-height: 1.5;
+}
+
+:root[data-theme="dark"] .primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+:root[data-theme="dark"] .primary:active:not(:disabled) {
+  filter: brightness(1.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .primary:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  :root:not([data-theme]) .primary:active:not(:disabled) {
+    filter: brightness(1.18);
+  }
 }

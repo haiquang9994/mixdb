@@ -34,14 +34,14 @@
   box-shadow: none;
   background: transparent;
   padding: 0.3rem 0.5rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   /* Keeps a row the arrow keys scrolled into view off the very edge of the list. */
   scroll-margin: 0.25rem;
 }
 
 .item:hover {
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--hover-bg);
   border-color: transparent;
 }
 
@@ -111,7 +111,7 @@
   font-weight: 700;
   letter-spacing: 0.02em;
   padding: 0.1rem 0.1rem;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: rgba(128, 128, 128, 0.2);
   opacity: 0.85;
   /* A type this app has no abbreviation for falls back to the first letters of its own name;
@@ -154,7 +154,7 @@
   margin-top: 0.35rem;
   padding: 0.35rem 0.5rem;
   border: 1px dashed rgba(128, 128, 128, 0.4);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   box-shadow: none;
   font-size: 0.85em;
@@ -162,16 +162,13 @@
 }
 
 .loadMore:hover:not(:disabled) {
-  background: rgba(128, 128, 128, 0.12);
+  background: var(--hover-bg);
   opacity: 1;
 }
 
-/* The badge colours are picked to read on white; on a dark sidebar they have to come back up. */
-:root[data-theme="dark"] .string,
-:root[data-theme="dark"] .itemActive {
-  color: #9db9f0;
-}
-
+/* The type badges below are fixed colours picked to read on white, so on a dark sidebar they have
+   to come back up. `.string` and `.itemActive` are not among them: they take `--accent-text`,
+   which is already the theme's own cast of whichever accent the user picked. */
 :root[data-theme="dark"] .list {
   color: #7fc9dc;
 }
@@ -193,11 +190,6 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .string,
-  :root:not([data-theme]) .itemActive {
-    color: #9db9f0;
-  }
-
   :root:not([data-theme]) .list {
     color: #7fc9dc;
   }

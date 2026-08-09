@@ -30,7 +30,7 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f6f6f6;
+  background: var(--page-bg);
 }
 
 /* Every header cell is the control that sorts by its column, so it takes the pointer the whole
@@ -73,7 +73,7 @@
 /* Painted on the row, not on its cells: a `td` with a background of its own — a NULL or a
    staged edit — then still shows through, which is the point of those markers. */
 .sqlTable tbody tr:hover {
-  background: rgba(128, 128, 128, 0.12);
+  background: var(--hover-bg);
 }
 
 .sqlTable tbody tr.rowSelected {
@@ -121,7 +121,7 @@
   border: none;
   border-radius: 0;
   outline: none;
-  box-shadow: inset 0 0 0 1px #4a90d9;
+  box-shadow: inset 0 0 0 1px var(--accent);
   font: inherit;
 }
 
@@ -194,25 +194,5 @@
   cursor: pointer;
 }
 
-:root[data-theme="dark"] .scroll thead th {
-  background: #2f2f2f;
-}
-
-/* The badge's blue is picked to read on white; on the dark header it has to come back up. */
-:root[data-theme="dark"] .fkBadge {
-  color: #9db9f0;
-  border-color: rgba(157, 185, 240, 0.45);
-  background: rgba(157, 185, 240, 0.14);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .scroll thead th {
-    background: #2f2f2f;
-  }
-
-  :root:not([data-theme]) .fkBadge {
-    color: #9db9f0;
-    border-color: rgba(157, 185, 240, 0.45);
-    background: rgba(157, 185, 240, 0.14);
-  }
-}
+/* No dark overrides here any more: the sticky header takes `--page-bg` and the FK badge is written
+   in `--accent-*`, and both of those already carry the theme's own values. */
