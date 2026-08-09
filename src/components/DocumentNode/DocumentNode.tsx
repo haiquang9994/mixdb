@@ -15,7 +15,7 @@ import {
 } from "../../mongo/bsonTypes";
 import styles from "./DocumentNode.module.css";
 
-const CHILDREN_PREVIEW_COUNT = 5;
+const CHILDREN_PREVIEW_COUNT = 3;
 const MAX_DEPTH = 12;
 const INDENT_PX = 16;
 
