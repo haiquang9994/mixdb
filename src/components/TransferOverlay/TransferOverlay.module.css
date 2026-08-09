@@ -1,0 +1,67 @@
+.overlay {
+  position: absolute;
+  inset: 0;
+  /* Over everything the workspace itself can raise — a sticky table header, a context menu —
+     but under the modals, which are the app's own layer and outlive no transfer. */
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(2px);
+  /* The window is locked for the duration; swallow anything aimed at what is underneath. */
+  cursor: progress;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: min(440px, 100%);
+  box-sizing: border-box;
+  padding: 2rem 1.75rem;
+  text-align: center;
+  background: var(--surface-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.spinner {
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 3px solid rgb(var(--accent-rgb) / 0.25);
+  border-top-color: var(--accent-text);
+  border-radius: 50%;
+  animation: transfer-spin 0.9s linear infinite;
+}
+
+.label {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+  /* The database name is quoted verbatim and may have nothing to break at. */
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  opacity: 0.7;
+}
+
+@keyframes transfer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}

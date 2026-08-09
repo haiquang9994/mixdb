@@ -15,7 +15,7 @@ import DatabaseActions from "../components/DatabaseActions";
 import type { DatabaseChange } from "../components/DatabaseActions";
 import DatabaseDialog from "../components/DatabaseDialog";
 import DatabaseStats from "../components/DatabaseStats";
-import LoadingOverlay from "../components/LoadingOverlay";
+import TransferOverlay from "../components/TransferOverlay";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import NameDialog from "../components/NameDialog";
@@ -501,7 +501,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
         </section>
       </div>
 
-      {transferStatus !== "" && <LoadingOverlay label={transferStatus} />}
+      {transferStatus !== "" && <TransferOverlay label={transferStatus} />}
 
       {creatingDatabase && (
         <DatabaseDialog

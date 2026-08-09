@@ -12,7 +12,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import DatabaseActions from "../components/DatabaseActions";
 import type { DatabaseChange } from "../components/DatabaseActions";
 import DatabaseStats from "../components/DatabaseStats";
-import LoadingOverlay from "../components/LoadingOverlay";
+import TransferOverlay from "../components/TransferOverlay";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import NameDialog from "../components/NameDialog";
@@ -474,7 +474,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
         </section>
       </div>
 
-      {transferStatus !== "" && <LoadingOverlay label={transferStatus} />}
+      {transferStatus !== "" && <TransferOverlay label={transferStatus} />}
 
       {creatingDatabase && (
         <NameDialog
