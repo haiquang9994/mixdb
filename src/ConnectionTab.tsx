@@ -193,6 +193,17 @@ function ConnectionTab({ onTitleChange }: Props) {
     };
   }
 
+  /**
+   * Wipes everything the form is saying back to the user. Each message is about the connection that
+   * was in the form when it appeared — a failed connect, a tunnel test — so loading a different one
+   * leaves it describing something that is no longer on screen.
+   */
+  function clearFeedback() {
+    setError("");
+    setStatus("");
+    setTunnelStatus("");
+  }
+
   function applySavedConnection(entry: SavedConnection) {
     const c = entry.config;
     setKind(c.kind);
@@ -228,7 +239,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     setEditingId(entry.id);
     setSaveAsName(entry.name);
     setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
-    setError("");
+    clearFeedback();
     onTitleChange(entry.name);
   }
 
@@ -254,8 +265,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     setSshPassword("");
     setSshKeyPath("");
     setSshPassphrase("");
-    setError("");
-    setStatus("");
+    clearFeedback();
     onTitleChange(t("app.newConnectionTitle"));
   }
 
