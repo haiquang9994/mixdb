@@ -726,3 +726,114 @@ pub(super) fn column_value(row: &MySqlRow, i: usize) -> Value {
     }
     Value::Null
 }
+
+/// The parts of this module that decide what SQL is written, rather than what a server answers:
+/// how a filter row becomes a condition, and how an identifier is quoted before it is pasted into
+/// statement text. Both are what stands between user input and the SQL that reaches MySQL.
+#[cfg(test)]
+mod tests {
+    use super::{build_where, quote_ident, Filter};
+
+    fn filter(column: &str, operator: &str, value: Option<&str>) -> Filter {
+        Filter {
+            column: column.to_string(),
+            operator: operator.to_string(),
+            value: value.map(str::to_string),
+        }
+    }
+
+    fn columns() -> Vec<String> {
+        ["id", "name"].iter().map(|c| c.to_string()).collect()
+    }
+
+    fn build(filters: &[Filter]) -> (String, Vec<String>) {
+        build_where(filters, &columns()).unwrap()
+    }
+
+    /// Every value reaches the server as a bound parameter; only the column name is interpolated,
+    /// and only after being matched against the table's own columns.
+    #[test]
+    fn values_are_bound_and_never_written_into_the_sql() {
+        let (clause, binds) = build(&[filter("id", "eq", Some("1' OR '1'='1"))]);
+        assert_eq!(clause, " WHERE `id` = ?");
+        assert_eq!(binds, ["1' OR '1'='1"]);
+    }
+
+    #[test]
+    fn conditions_are_anded_together() {
+        let (clause, binds) = build(&[
+            filter("id", "gte", Some("10")),
+            filter("name", "ne", Some("bob")),
+        ]);
+        assert_eq!(clause, " WHERE `id` >= ? AND `name` <> ?");
+        assert_eq!(binds, ["10", "bob"]);
+    }
+
+    /// The wildcards in a value the user meant literally are escaped, so searching for `50%` finds
+    /// the text and not "anything starting with 50".
+    #[test]
+    fn pattern_operators_escape_the_value_they_wrap() {
+        let (clause, binds) = build(&[filter("name", "contains", Some("50%_x"))]);
+        assert_eq!(clause, " WHERE `name` LIKE ?");
+        assert_eq!(binds, [r"%50\%\_x%"]);
+
+        let (_, binds) = build(&[filter("name", "startsWith", Some("a_b"))]);
+        assert_eq!(binds, [r"a\_b%"]);
+    }
+
+    /// `like` is the operator for handing MySQL a pattern of one's own, so its value is the one
+    /// that is *not* escaped.
+    #[test]
+    fn like_passes_the_users_own_pattern_through() {
+        let (_, binds) = build(&[filter("name", "like", Some("a%b"))]);
+        assert_eq!(binds, ["a%b"]);
+    }
+
+    #[test]
+    fn lists_become_one_placeholder_per_item() {
+        let (clause, binds) = build(&[filter("id", "in", Some("1, 2 ,3"))]);
+        assert_eq!(clause, " WHERE `id` IN (?, ?, ?)");
+        assert_eq!(binds, ["1", "2", "3"]);
+    }
+
+    #[test]
+    fn between_takes_the_first_two_bounds() {
+        let (clause, binds) = build(&[filter("id", "between", Some("1,9,99"))]);
+        assert_eq!(clause, " WHERE `id` BETWEEN ? AND ?");
+        assert_eq!(binds, ["1", "9"]);
+    }
+
+    /// A row whose operator wants a value it wasn't given is dropped rather than matched
+    /// literally: the bar's opening `id =` row must not become `WHERE id IN ()`.
+    #[test]
+    fn a_row_without_enough_of_a_value_is_dropped() {
+        assert_eq!(build(&[filter("id", "in", Some(""))]).0, "");
+        assert_eq!(build(&[filter("id", "between", Some("1"))]).0, "");
+        assert_eq!(build(&[]).0, "");
+    }
+
+    #[test]
+    fn operators_that_stand_on_their_own_bind_nothing() {
+        let (clause, binds) = build(&[
+            filter("id", "isNull", None),
+            filter("name", "isNotEmpty", None),
+        ]);
+        assert_eq!(clause, " WHERE `id` IS NULL AND `name` <> ''");
+        assert!(binds.is_empty());
+    }
+
+    /// The column is the one part that has to be interpolated, so a name the table does not have
+    /// is refused outright rather than quoted and sent.
+    #[test]
+    fn an_unknown_column_or_operator_is_refused() {
+        assert!(build_where(&[filter("id`; DROP TABLE x; --", "eq", Some("1"))], &columns()).is_err());
+        assert!(build_where(&[filter("id", "sqli", Some("1"))], &columns()).is_err());
+    }
+
+    /// MySQL's own escaping rule for an identifier: a backtick inside one is doubled.
+    #[test]
+    fn identifiers_are_backtick_quoted() {
+        assert_eq!(quote_ident("users"), "`users`");
+        assert_eq!(quote_ident("we`ird"), "`we``ird`");
+    }
+}

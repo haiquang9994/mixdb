@@ -314,3 +314,83 @@ pub async fn run(
 
     Ok(results)
 }
+
+/// What the splitter has to get right is where one statement ends: a semicolon inside a string, a
+/// quoted identifier or a comment is text, not a separator, and sending the halves of a statement
+/// separately is a syntax error at best and half an operation at worst.
+#[cfg(test)]
+mod tests {
+    use super::split_statements;
+
+    fn texts(sql: &str) -> Vec<String> {
+        split_statements(sql)
+            .into_iter()
+            .map(|s| s.text)
+            .collect()
+    }
+
+    fn verbs(sql: &str) -> Vec<String> {
+        split_statements(sql)
+            .into_iter()
+            .map(|s| s.verb)
+            .collect()
+    }
+
+    #[test]
+    fn splits_on_semicolons_and_trims_each_statement() {
+        assert_eq!(
+            texts("SELECT 1;\n  SELECT 2 ;"),
+            ["SELECT 1", "SELECT 2"]
+        );
+        // A script needs no trailing semicolon, and an empty one adds no statement.
+        assert_eq!(texts("SELECT 1"), ["SELECT 1"]);
+        assert_eq!(texts(";;\n;"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_verb_is_the_opening_keyword_upper_cased() {
+        assert_eq!(verbs("select 1; delete from t"), ["SELECT", "DELETE"]);
+        // Leading whitespace and a comment before the keyword don't become part of it.
+        assert_eq!(verbs("  -- a note\n  insert into t values ()"), ["INSERT"]);
+    }
+
+    #[test]
+    fn a_semicolon_inside_a_string_is_not_a_separator() {
+        assert_eq!(
+            texts("INSERT INTO t VALUES ('a;b'); SELECT 1"),
+            ["INSERT INTO t VALUES ('a;b')", "SELECT 1"]
+        );
+        assert_eq!(texts(r#"SELECT "a;b""#), [r#"SELECT "a;b""#]);
+        assert_eq!(texts("SELECT `we;ird`"), ["SELECT `we;ird`"]);
+    }
+
+    /// Both of MySQL's escapes inside a string literal: a backslash, and the quote doubled.
+    #[test]
+    fn an_escaped_quote_does_not_end_the_string() {
+        assert_eq!(texts(r"SELECT 'a\'; b'"), [r"SELECT 'a\'; b'"]);
+        assert_eq!(texts("SELECT 'a''; b'"), ["SELECT 'a''; b'"]);
+    }
+
+    /// Comments are kept in the text — a `/*! ... */` version comment or a `/*+ hint */` is part
+    /// of what MySQL is being asked to run — but a semicolon inside one still separates nothing.
+    #[test]
+    fn comments_are_carried_along_and_hide_their_semicolons() {
+        assert_eq!(
+            texts("SELECT 1 -- one; two\n; SELECT 2"),
+            ["SELECT 1 -- one; two", "SELECT 2"]
+        );
+        assert_eq!(texts("SELECT 1 # one; two"), ["SELECT 1 # one; two"]);
+        assert_eq!(
+            texts("/*!40101 SET x=1; */ SELECT 1"),
+            ["/*!40101 SET x=1; */ SELECT 1"]
+        );
+        // Nothing but a comment is not a statement at all.
+        assert_eq!(texts("-- just a note\n"), Vec::<String>::new());
+    }
+
+    /// `--` opens a comment only when whitespace follows it; `5--3` is arithmetic.
+    #[test]
+    fn two_dashes_without_whitespace_are_an_operator() {
+        assert_eq!(texts("SELECT 5--3; SELECT 2"), ["SELECT 5--3", "SELECT 2"]);
+    }
+}

@@ -946,3 +946,93 @@ pub async fn delete_document(
     }
     Ok(())
 }
+
+/// The conversion the document editor is built on. Every value the user sees has been through
+/// `bson_to_json`, and everything they save goes back through `json_to_bson` — so a type that
+/// doesn't survive the round trip is a document quietly rewritten by having been looked at.
+#[cfg(test)]
+mod tests {
+    use super::{bson_to_json, json_to_bson};
+    use mongodb::bson::{
+        doc, oid::ObjectId, spec::BinarySubtype, Binary, Bson, DateTime as BsonDateTime,
+        Decimal128, Regex, Timestamp,
+    };
+    use serde_json::json;
+    use std::str::FromStr;
+
+    #[track_caller]
+    fn round_trips(value: Bson) {
+        let back = json_to_bson(&bson_to_json(&value)).unwrap();
+        assert_eq!(back, value);
+    }
+
+    #[test]
+    fn the_types_json_spells_the_same_way_survive_the_round_trip() {
+        round_trips(Bson::String("text".into()));
+        round_trips(Bson::Boolean(true));
+        round_trips(Bson::Null);
+        round_trips(Bson::Array(vec![Bson::Int32(1), Bson::String("a".into())]));
+        round_trips(Bson::Document(doc! { "a": 1_i32, "b": { "c": true } }));
+    }
+
+    /// The numbers are the reason this converter exists at all: Int32, Int64 and Double are one
+    /// and the same thing in JSON, and a document read as one and written back as another is a
+    /// document whose schema has silently changed.
+    #[test]
+    fn the_three_number_types_stay_apart() {
+        round_trips(Bson::Int32(7));
+        round_trips(Bson::Int64(i64::MAX));
+        round_trips(Bson::Double(1.5));
+        round_trips(Bson::Decimal128(Decimal128::from_str("1.250").unwrap()));
+
+        // An Int64 too large for a double is carried as text, so it comes back exact rather than
+        // rounded to the nearest representable value.
+        let big = Bson::Int64(9_007_199_254_740_993);
+        assert_eq!(json_to_bson(&bson_to_json(&big)).unwrap(), big);
+    }
+
+    #[test]
+    fn the_types_json_has_no_spelling_for_survive_too() {
+        round_trips(Bson::ObjectId(ObjectId::parse_str("65a1b2c3d4e5f60718293a4b").unwrap()));
+        round_trips(Bson::DateTime(BsonDateTime::from_millis(1_700_000_000_123)));
+        round_trips(Bson::Timestamp(Timestamp { time: 42, increment: 7 }));
+        round_trips(Bson::Binary(Binary {
+            subtype: BinarySubtype::Generic,
+            bytes: vec![0, 1, 2, 255],
+        }));
+        round_trips(Bson::RegularExpression(Regex {
+            pattern: "^a.*z$".into(),
+            options: "i".into(),
+        }));
+        round_trips(Bson::JavaScriptCode("return 1".into()));
+        round_trips(Bson::Symbol("sym".into()));
+        round_trips(Bson::Undefined);
+        round_trips(Bson::MinKey);
+        round_trips(Bson::MaxKey);
+    }
+
+    /// A date is written with three fractional digits whatever the instant, so an untouched date
+    /// reads back as the same string it was shown as rather than looking edited.
+    #[test]
+    fn a_whole_second_date_keeps_its_milliseconds() {
+        let json = bson_to_json(&Bson::DateTime(BsonDateTime::from_millis(1_700_000_000_000)));
+        assert_eq!(json["$value"], json!("2023-11-14T22:13:20.000Z"));
+    }
+
+    /// A plain JSON object is a subdocument; only the `$type`/`$value` pair means a typed scalar.
+    #[test]
+    fn an_object_without_a_type_tag_is_a_subdocument() {
+        let parsed = json_to_bson(&json!({ "name": "a", "nested": { "n": 1 } })).unwrap();
+        assert_eq!(parsed, Bson::Document(doc! { "name": "a", "nested": { "n": 1_i32 } }));
+    }
+
+    /// Two types can be displayed but not reconstructed, and saying so is better than writing
+    /// something else in their place.
+    #[test]
+    fn the_read_only_types_are_refused_on_the_way_back() {
+        assert!(json_to_bson(&json!({ "$type": "DbPointer", "$value": "x" })).is_err());
+        assert!(json_to_bson(&json!({ "$type": "JavaScriptWithScope", "$value": "x" })).is_err());
+        assert!(json_to_bson(&json!({ "$type": "Nonsense", "$value": "x" })).is_err());
+        assert!(json_to_bson(&json!({ "$type": "ObjectId", "$value": "not-hex" })).is_err());
+    }
+}
