@@ -220,7 +220,7 @@ async fn collection_size(database: &Database, name: String) -> Result<Collection
         index_size,
         // Worked out here rather than read from `avgObjSize`, which is per shard: the mean of the
         // shards' means is not the collection's, but total over total is.
-        avg_record_size: if rows > 0 { data_size / rows } else { 0 },
+        avg_record_size: data_size.checked_div(rows).unwrap_or(0),
     })
 }
 

@@ -231,16 +231,13 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     const table = selectedTable;
     let cancelled = false;
     setLoading(true);
-    mysqlTableData(
-      connectionId,
-      db,
-      table,
+    mysqlTableData(connectionId, db, table, {
       page,
       pageSize,
-      sort?.column ?? null,
-      sort?.desc ?? false,
-      appliedFilters,
-    )
+      sortColumn: sort?.column ?? null,
+      sortDesc: sort?.desc ?? false,
+      filters: appliedFilters,
+    })
       .then((result) => {
         if (cancelled) return;
         const key = tableCacheKey(db, table);

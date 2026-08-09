@@ -44,26 +44,22 @@ export function mysqlServerInfo(id: string): Promise<MysqlServerInfo> {
  * order MySQL returns them. `filters` narrows the table down before either happens, ANDed
  * together — the page's `total` counts what is left after them.
  */
+export interface MysqlPageQuery {
+  page: number;
+  pageSize: number;
+  /** Ignored unless it names a real column of the table. */
+  sortColumn?: string | null;
+  sortDesc?: boolean;
+  filters?: MysqlFilter[];
+}
+
 export function mysqlTableData(
   id: string,
   database: string,
   table: string,
-  page: number,
-  pageSize: number,
-  sortColumn: string | null = null,
-  sortDesc = false,
-  filters: MysqlFilter[] = []
+  query: MysqlPageQuery
 ): Promise<MysqlTablePage> {
-  return invoke<MysqlTablePage>("mysql_table_data", {
-    id,
-    database,
-    table,
-    page,
-    pageSize,
-    sortColumn,
-    sortDesc,
-    filters,
-  });
+  return invoke<MysqlTablePage>("mysql_table_data", { id, database, table, query });
 }
 
 export function mysqlQuery(

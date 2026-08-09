@@ -309,6 +309,27 @@ fn build_where(filters: &[Filter], columns: &[String]) -> Result<(String, Vec<St
     Ok((format!(" WHERE {}", clauses.join(" AND ")), binds))
 }
 
+/// Which page of a table is wanted, and what it is cut out of: the page itself, the order the
+/// whole table is put in first, and the filters that narrow it down before either.
+///
+/// One value rather than five loose arguments — `page` and `page_size` are both `i64` and
+/// `sort_desc` is a bare `bool`, so a positional call is one transposition away from silently
+/// reading the wrong page in the wrong order.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageQuery {
+    pub page: i64,
+    pub page_size: i64,
+    /// Ignored unless it names a real column of this table.
+    #[serde(default)]
+    pub sort_column: Option<String>,
+    #[serde(default)]
+    pub sort_desc: bool,
+    /// ANDed together; `total` counts what is left after them.
+    #[serde(default)]
+    pub filters: Vec<Filter>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TablePage {
@@ -323,22 +344,18 @@ pub struct TablePage {
     pub total: i64,
 }
 
-/// Reads one page of a table. `sort_column` orders the whole table before the page is cut out of
-/// it — sorting is the server's job, not the page's, or each page would only be sorted within
-/// itself. It is ignored unless it names a real column of this table, which is also what keeps it
-/// out of the SQL text unchecked.
+/// Reads one page of a table. `query.sort_column` orders the whole table before the page is cut
+/// out of it — sorting is the server's job, not the page's, or each page would only be sorted
+/// within itself. It is ignored unless it names a real column of this table, which is also what
+/// keeps it out of the SQL text unchecked.
 ///
-/// `filters` narrows the table down first, ANDed together; `total` counts what is left after
+/// `query.filters` narrows the table down first, ANDed together; `total` counts what is left after
 /// them, so the pager measures the filtered table rather than the whole one.
 pub async fn table_data(
     pool: &MySqlPool,
     database: &str,
     table: &str,
-    page: i64,
-    page_size: i64,
-    sort_column: Option<&str>,
-    sort_desc: bool,
-    filters: &[Filter],
+    query: &PageQuery,
 ) -> Result<TablePage, String> {
     let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
     let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
@@ -385,7 +402,7 @@ pub async fn table_data(
         .find(|r| r.get::<String, _>("Extra").contains("auto_increment"))
         .map(|r| r.get::<String, _>("Field"));
 
-    let (where_clause, binds) = build_where(filters, &columns)?;
+    let (where_clause, binds) = build_where(&query.filters, &columns)?;
 
     let count_sql = format!("SELECT COUNT(*) FROM {qualified}{where_clause}");
     let mut count_query = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql));
@@ -397,17 +414,19 @@ pub async fn table_data(
         .await
         .map_err(|e| e.to_string())?;
 
-    let page_size = page_size.clamp(1, 1000);
-    let offset = page.max(0) * page_size;
+    let page_size = query.page_size.clamp(1, 1000);
+    let offset = query.page.max(0).saturating_mul(page_size);
     // Only a column the table actually has can reach the SQL text, so a stale or made-up sort
     // column is dropped rather than turned into an error the user can't act on.
-    let order_by = sort_column
+    let order_by = query
+        .sort_column
+        .as_deref()
         .filter(|c| columns.iter().any(|existing| existing == c))
         .map(|c| {
             format!(
                 " ORDER BY {} {}",
                 quote_ident(c),
-                if sort_desc { "DESC" } else { "ASC" }
+                if query.sort_desc { "DESC" } else { "ASC" }
             )
         })
         .unwrap_or_default();
