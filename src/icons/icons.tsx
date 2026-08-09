@@ -77,6 +77,17 @@ export function CopyIcon(props: IconProps) {
   );
 }
 
+/** Open something for editing — a column, an index. Drawn as a pencil laid across the grid, its
+ * tip at the bottom left, with the ferrule as the short stroke that tells the two ends apart. */
+export function PencilIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.5 19.5l.9-3.9L16 5a2 2 0 0 1 2.9 2.9L8.4 18.6l-3.9.9Z" />
+      <path d="M14.6 6.4l3 3" />
+    </Icon>
+  );
+}
+
 /** Collapsed disclosure, and "next" in a pager. */
 export function ChevronRightIcon(props: IconProps) {
   return (

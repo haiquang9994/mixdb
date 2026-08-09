@@ -1,0 +1,234 @@
+.queryEditor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  gap: 0.5rem;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.hint {
+  font-size: 0.85em;
+  opacity: 0.55;
+}
+
+/* Pushed to the far end: which database the script runs against is the one thing here that
+   changes what the SQL means, so it is read where the eye lands last before pressing Run. */
+.target {
+  margin-left: auto;
+  font-size: 0.85em;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+/* Resizable by hand rather than split with a draggable divider: a script and its results want
+   very different amounts of room depending on which of the two is being worked on. */
+.editor {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 7rem;
+  height: 11rem;
+  max-height: 60vh;
+  box-sizing: border-box;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  resize: vertical;
+  font-family: "Fira Code", monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+
+/* `position: relative` so the running veil covers the results rather than the whole workspace. */
+.resultsWrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.results {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.resultHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.resultLabel {
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.resultDuration {
+  font-size: 0.8em;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* One line of the statement, however many it was written over: it is here to identify the result,
+   and the statement itself is still in the editor above. */
+.resultStatement {
+  flex: 1;
+  min-width: 0;
+  font-family: "Fira Code", monospace;
+  font-size: 0.8em;
+  opacity: 0.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.resultSummary {
+  margin: 0;
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.resultError {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  background: rgba(211, 47, 47, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(211, 47, 47, 0.35);
+  color: #c0392b;
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.resultError p {
+  margin: 0;
+  /* Server errors quote the SQL that failed, which may have nothing to break at. */
+  overflow-wrap: anywhere;
+}
+
+.resultErrorNote {
+  opacity: 0.75;
+  font-size: 0.9em;
+}
+
+.error {
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  background: rgba(211, 47, 47, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(211, 47, 47, 0.35);
+  color: #c0392b;
+  font-size: 0.9em;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* Each result set scrolls sideways inside its own box, so a wide one doesn't drag the results
+   column along with it. */
+.gridWrap {
+  max-height: 60vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 6px;
+}
+
+.grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: auto;
+  font-size: 0.9em;
+}
+
+.grid th,
+.grid td {
+  border-right: 1px solid rgba(128, 128, 128, 0.25);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  padding: 3px 8px;
+  text-align: left;
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid tr > *:last-child {
+  border-right: none;
+}
+
+.grid tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+.grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f6f6f6;
+}
+
+.grid tbody tr:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.rowNumber {
+  width: 1%;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.5;
+}
+
+.cellNull {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+:root[data-theme="dark"] .grid thead th {
+  background: #2f2f2f;
+}
+
+:root[data-theme="dark"] .error,
+:root[data-theme="dark"] .resultError {
+  color: #ff8a80;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .grid thead th {
+    background: #2f2f2f;
+  }
+
+  :root:not([data-theme]) .error,
+  :root:not([data-theme]) .resultError {
+    color: #ff8a80;
+  }
+}

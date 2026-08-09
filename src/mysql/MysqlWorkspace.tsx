@@ -4,6 +4,8 @@ import Select from "../components/Select";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import SqlTable from "../components/SqlTable";
+import QueryEditor from "../components/QueryEditor";
+import TableStructure from "../components/TableStructure";
 import ActionBar from "../components/ActionBar";
 import ItemList from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
@@ -20,7 +22,16 @@ interface Props {
   onSidebarWidthChange?: (width: number) => void;
 }
 
-type ContentMode = "data";
+/** Which of the header's tabs the content area is showing: the selected table's rows, the same
+ * table's columns and indexes, or a SQL editor over the connection as a whole. */
+type ContentMode = "data" | "structure" | "query";
+
+/** The tabs in the order they are shown, each with the key that names it. */
+const CONTENT_TABS: { mode: ContentMode; labelKey: "mysql.dataTab" | "mysql.structureTab" | "mysql.queryTab" }[] = [
+  { mode: "data", labelKey: "mysql.dataTab" },
+  { mode: "structure", labelKey: "mysql.structureTab" },
+  { mode: "query", labelKey: "mysql.queryTab" },
+];
 
 const DEFAULT_SIDEBAR_WIDTH = 200;
 const MIN_SIDEBAR_WIDTH = 140;
@@ -204,15 +215,18 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           />
         </label>
         <div className="method-tabs mysql-content-tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={contentMode === "data"}
-            className={`method-tab${contentMode === "data" ? " method-tab-active" : ""}`}
-            onClick={() => setContentMode("data")}
-          >
-            {t("mysql.dataTab")}
-          </button>
+          {CONTENT_TABS.map(({ mode, labelKey }) => (
+            <button
+              key={mode}
+              type="button"
+              role="tab"
+              aria-selected={contentMode === mode}
+              className={`method-tab${contentMode === mode ? " method-tab-active" : ""}`}
+              onClick={() => setContentMode(mode)}
+            >
+              {t(labelKey)}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -273,6 +287,23 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
               layoutWidth={width}
             />
           )}
+          {contentMode === "structure" && !selectedTable && (
+            <p className="muted">{t("mysql.selectTableStructurePrompt")}</p>
+          )}
+          {contentMode === "structure" && selectedDb && selectedTable && (
+            <TableStructure
+              connectionId={connectionId}
+              selectedDb={selectedDb}
+              selectedTable={selectedTable}
+              onError={setLocalError}
+            />
+          )}
+          {/* Kept mounted while the other tabs are up, and hidden rather than unmounted: a script
+              being written and the results it has produced so far must survive a look at the data
+              or the structure it is being written against. */}
+          <div className={contentMode === "query" ? "mysql-panel" : "mysql-panel-hidden"}>
+            <QueryEditor connectionId={connectionId} database={selectedDb} />
+          </div>
         </section>
       </div>
     </div>

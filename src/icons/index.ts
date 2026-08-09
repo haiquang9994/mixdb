@@ -13,6 +13,7 @@ export {
   FolderIcon,
   LockIcon,
   MinusIcon,
+  PencilIcon,
   PlusIcon,
   ReloadIcon,
   TrashIcon,

@@ -69,7 +69,7 @@ pub async fn query(
 
 /// Backtick-quotes an identifier (database/table name) for interpolation into
 /// SQL text, doubling embedded backticks — MySQL's own escaping rule.
-fn quote_ident(ident: &str) -> String {
+pub(super) fn quote_ident(ident: &str) -> String {
     format!("`{}`", ident.replace('`', "``"))
 }
 
@@ -642,7 +642,7 @@ fn row_to_json(row: &MySqlRow) -> Map<String, Value> {
 // *any* MySQL integer column type (TINYINT, INT, BIGINT, ...), not just
 // TINYINT(1), because the wire protocol doesn't distinguish them. Checking
 // bool first would decode every non-zero id/FK integer column as `true`.
-fn column_value(row: &MySqlRow, i: usize) -> Value {
+pub(super) fn column_value(row: &MySqlRow, i: usize) -> Value {
     if let Ok(v) = row.try_get::<Option<i64>, _>(i) {
         return v.map(Value::from).unwrap_or(Value::Null);
     }

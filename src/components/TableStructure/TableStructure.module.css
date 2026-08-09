@@ -1,0 +1,197 @@
+/* Two panels sharing the height, each scrolling on its own: the columns are read far more often
+   than the indexes, but neither should be able to push the other off screen entirely.
+   `position: relative` so the loading veil covers the tab rather than the whole workspace. */
+.structure {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  gap: 0.75rem;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 50%;
+  min-width: 0;
+  min-height: 0;
+  gap: 0.35rem;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 0.95em;
+  opacity: 0.8;
+}
+
+.gridWrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 6px;
+}
+
+.grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 0.9em;
+}
+
+.grid th,
+.grid td {
+  border-right: 1px solid rgba(128, 128, 128, 0.25);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid tr > *:last-child {
+  border-right: none;
+}
+
+.grid tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+.grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f6f6f6;
+}
+
+.grid tbody tr:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.name {
+  font-weight: 600;
+}
+
+.mono {
+  font-family: "Fira Code", monospace;
+  font-size: 0.92em;
+}
+
+.muted {
+  opacity: 0.55;
+}
+
+.rowNumber {
+  width: 1%;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.5;
+}
+
+.rowActions {
+  width: 1%;
+  /* The buttons are pinned to their own size; ellipsising them would clip a button in half. */
+  overflow: visible;
+}
+
+.rowButtons {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+/* A fact about the column or index rather than part of its name, so it is set apart from it —
+   the same reasoning as the grid's FK marker. */
+.badge {
+  margin-left: 0.4em;
+  padding: 0 0.3em;
+  border: 1px solid rgba(128, 128, 128, 0.45);
+  border-radius: 3px;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+  vertical-align: 0.05em;
+  cursor: help;
+}
+
+/* The badge on a key that organises the table: the primary key, and the columns in it. */
+.badgeKey {
+  border-color: rgba(57, 108, 216, 0.5);
+  color: #2f5cb8;
+  background: rgba(57, 108, 216, 0.12);
+  opacity: 1;
+}
+
+/* The Kind cell's badge names a kind rather than abbreviating one, and is not a tooltip target. */
+.grid td .badge {
+  margin-left: 0;
+  cursor: default;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  border-radius: 6px;
+  color: inherit;
+  opacity: 0.6;
+}
+
+.iconButton:hover:not(:disabled) {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.iconButton:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.danger:hover:not(:disabled) {
+  background: rgba(211, 47, 47, 0.15);
+  color: #d32f2f;
+}
+
+:root[data-theme="dark"] .grid thead th {
+  background: #2f2f2f;
+}
+
+/* The key badge's blue is picked to read on white; on a dark row it has to come back up. */
+:root[data-theme="dark"] .badgeKey {
+  color: #9db9f0;
+  border-color: rgba(157, 185, 240, 0.45);
+  background: rgba(157, 185, 240, 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .grid thead th {
+    background: #2f2f2f;
+  }
+
+  :root:not([data-theme]) .badgeKey {
+    color: #9db9f0;
+    border-color: rgba(157, 185, 240, 0.45);
+    background: rgba(157, 185, 240, 0.14);
+  }
+}

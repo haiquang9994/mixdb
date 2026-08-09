@@ -3,7 +3,7 @@ use std::time::Duration;
 use tauri::State;
 use uuid::Uuid;
 
-use crate::db::{mongo, mysql, redis as redis_db};
+use crate::db::{mongo, mysql, mysql_script, mysql_structure, redis as redis_db};
 use crate::models::{ConnectionConfig, DbKind, SshConfig};
 use crate::ssh_tunnel;
 use crate::state::{ActiveConnection, AppState, DbHandle};
@@ -235,6 +235,141 @@ pub async fn mysql_delete_rows(
         Some(DbHandle::Mysql(pool)) => {
             mysql::delete_rows(pool, &database, &table, &keys, all, reset_auto_increment).await
         }
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mysql_table_structure(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+) -> Result<mysql_structure::TableStructure, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql_structure::table_structure(pool, &database, &table).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mysql_add_column(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    spec: mysql_structure::ColumnSpec,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql_structure::add_column(pool, &database, &table, &spec).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mysql_modify_column(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+    spec: mysql_structure::ColumnSpec,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => {
+            mysql_structure::modify_column(pool, &database, &table, &name, &spec).await
+        }
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mysql_drop_column(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql_structure::drop_column(pool, &database, &table, &name).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mysql_add_index(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    spec: mysql_structure::IndexSpec,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql_structure::add_index(pool, &database, &table, &spec).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mysql_modify_index(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+    spec: mysql_structure::IndexSpec,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => {
+            mysql_structure::modify_index(pool, &database, &table, &name, &spec).await
+        }
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mysql_drop_index(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql_structure::drop_index(pool, &database, &table, &name).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+/// Runs the Query tab's editor contents. `database` is the one selected in the header, applied as a
+/// `USE` before the script so that unqualified table names resolve the way the rest of the
+/// workspace resolves them.
+#[tauri::command]
+pub async fn mysql_run_script(
+    state: State<'_, AppState>,
+    id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<Vec<mysql_script::StatementResult>, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql_script::run(pool, &sql, database.as_deref()).await,
         Some(_) => Err("Connection is not a MySQL connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }
