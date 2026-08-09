@@ -6,6 +6,10 @@ export function mongoListDatabases(id: string): Promise<string[]> {
   return invoke<string[]>("mongo_list_databases", { id });
 }
 
+export function mongoServerInfo(id: string): Promise<{ version: string; os: string }> {
+  return invoke<{ version: string; os: string }>("mongo_server_info", { id });
+}
+
 export function mongoListCollections(id: string, db: string): Promise<string[]> {
   return invoke<string[]>("mongo_list_collections", { id, db });
 }

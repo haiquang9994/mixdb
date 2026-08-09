@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { mongoListCollections, mongoListDatabases } from "./api";
+import { mongoListCollections, mongoListDatabases, mongoServerInfo } from "./api";
 import Select from "../components/Select";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
@@ -18,6 +18,11 @@ interface Props {
   onSidebarWidthChange?: (width: number) => void;
 }
 
+/** The panes the content area can show. Only the document list exists so far, but the header is
+ * already a tab strip so a second one (indexes, aggregations, …) is a case here and a branch
+ * below rather than a reshuffle of the layout — same as the MySQL side. */
+type ContentMode = "data";
+
 const DEFAULT_SIDEBAR_WIDTH = 200;
 const MIN_SIDEBAR_WIDTH = 140;
 const MAX_SIDEBAR_WIDTH = 480;
@@ -30,7 +35,9 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   const [collectionsLoading, setCollectionsLoading] = useState(false);
   const [collectionFilter, setCollectionFilter] = useState("");
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
+  const [contentMode, setContentMode] = useState<ContentMode>("data");
   const [localError, setLocalError] = useState("");
+  const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -119,6 +126,21 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   }, [connectionId]);
 
   useEffect(() => {
+    let cancelled = false;
+    setServerInfo(null);
+    mongoServerInfo(connectionId)
+      .then((info) => {
+        if (!cancelled) setServerInfo(info);
+      })
+      .catch(() => {
+        // Non-critical display info — silently omit it on failure.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionId]);
+
+  useEffect(() => {
     setCollectionFilter("");
     if (!selectedDb) {
       setCollections([]);
@@ -161,7 +183,11 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     <div className="mongo-workspace">
       <div className="mongo-header">
         <div className="mongo-header-left">
-          <span className="mongo-kind-label">{t("mongo.kindLabel")}</span>
+          {serverInfo && (
+            <span className="mongo-server-info">
+              {t("mongo.serverInfo", { os: serverInfo.os, version: serverInfo.version })}
+            </span>
+          )}
         </div>
         <label className="mongo-db-select">
           {t("mongo.databaseLabel")}{" "}
@@ -176,6 +202,17 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             options={databases.map((db) => ({ value: db, label: db }))}
           />
         </label>
+        <div className="method-tabs mongo-content-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={contentMode === "data"}
+            className={`method-tab${contentMode === "data" ? " method-tab-active" : ""}`}
+            onClick={() => setContentMode("data")}
+          >
+            {t("mongo.dataTab")}
+          </button>
+        </div>
       </div>
 
       {(error || localError) && (
@@ -237,8 +274,10 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
         />
 
         <section className="mongo-content">
-          {!selectedCollection && <p className="muted">{t("mongo.selectCollectionPrompt")}</p>}
-          {selectedDb && selectedCollection && (
+          {contentMode === "data" && !selectedCollection && (
+            <p className="muted">{t("mongo.selectCollectionPrompt")}</p>
+          )}
+          {contentMode === "data" && selectedDb && selectedCollection && (
             <NoSqlTable
               connectionId={connectionId}
               selectedDb={selectedDb}

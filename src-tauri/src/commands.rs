@@ -194,6 +194,16 @@ pub async fn mongo_list_databases(state: State<'_, AppState>, id: String) -> Res
 }
 
 #[tauri::command]
+pub async fn mongo_server_info(state: State<'_, AppState>, id: String) -> Result<mongo::ServerInfo, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mongo(client)) => mongo::server_info(client).await,
+        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn mongo_list_collections(
     state: State<'_, AppState>,
     id: String,

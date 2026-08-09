@@ -24,6 +24,35 @@ pub async fn connect(uri: &str) -> Result<Client, String> {
     Ok(client)
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerInfo {
+    pub version: String,
+    pub os: String,
+}
+
+/// Reads what the header shows about the server. `buildInfo` is used rather than
+/// `hostInfo` because the latter needs a privilege that managed deployments often
+/// withhold, and its `buildEnvironment.target_os` is the same thing MySQL reports
+/// as `version_compile_os` — the OS the server was built for.
+pub async fn server_info(client: &Client) -> Result<ServerInfo, String> {
+    let info = client
+        .database("admin")
+        .run_command(doc! { "buildInfo": 1 })
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let version = info.get_str("version").unwrap_or_default().to_string();
+    let os = info
+        .get_document("buildEnvironment")
+        .ok()
+        .and_then(|env| env.get_str("target_os").ok())
+        .unwrap_or_default()
+        .to_string();
+
+    Ok(ServerInfo { version, os })
+}
+
 pub async fn list_databases(client: &Client) -> Result<Vec<String>, String> {
     client.list_database_names().await.map_err(|e| e.to_string())
 }

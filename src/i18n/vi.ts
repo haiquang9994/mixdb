@@ -85,9 +85,10 @@ const vi: TranslationDict = {
   mongo: {
     noCollections: "Không có collection nào",
     noMatchingCollections: "Không tìm thấy collection phù hợp",
-    kindLabel: "MongoDB",
+    serverInfo: "{{os}} · MongoDB {{version}}",
     databaseLabel: "Cơ sở dữ liệu",
     databasePlaceholder: "(không có)",
+    dataTab: "Dữ liệu",
     searchCollectionsPlaceholder: "Tìm collection...",
     reloadCollections: "Tải lại danh sách collection",
     resizeSidebar: "Thay đổi kích thước sidebar",

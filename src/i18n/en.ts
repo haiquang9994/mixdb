@@ -83,9 +83,10 @@ const en = {
   mongo: {
     noCollections: "No collections",
     noMatchingCollections: "No matching collections",
-    kindLabel: "MongoDB",
+    serverInfo: "{{os}} · MongoDB {{version}}",
     databaseLabel: "Database",
     databasePlaceholder: "(none)",
+    dataTab: "Data",
     searchCollectionsPlaceholder: "Search collections...",
     reloadCollections: "Reload collections",
     resizeSidebar: "Resize sidebar",

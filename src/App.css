@@ -567,7 +567,7 @@ textarea {
   gap: 0.75rem;
 }
 
-.mongo-kind-label {
+.mongo-server-info {
   opacity: 0.6;
   font-size: 0.9em;
   white-space: nowrap;
@@ -577,6 +577,13 @@ textarea {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+/* Sits inside the header rather than above the content, so it drops the strip's own separator
+   and bottom gap and lets the header's border do that work. */
+.mongo-content-tabs {
+  margin-bottom: 0;
+  border-bottom: none;
 }
 
 .mongo-body {
