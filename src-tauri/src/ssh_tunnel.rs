@@ -1,7 +1,9 @@
 use crate::models::{SshAuth, SshConfig};
 use russh::client::{self};
 use russh::ChannelMsg;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -10,6 +12,32 @@ use tokio::time::timeout;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const CHANNEL_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Where the fingerprint of every SSH server MixDB has connected to is remembered, keyed by
+/// `host:port`. Its own file rather than OpenSSH's `~/.ssh/known_hosts`: that file is the user's,
+/// written in a format with its own hashing and wildcard rules, and an app that only ever appends
+/// to it has no business rewriting it.
+fn known_hosts_file(app_data: &Path) -> PathBuf {
+    app_data.join("known_hosts.json")
+}
+
+fn load_known_hosts(path: &Path) -> HashMap<String, String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+fn remember_host(path: &Path, endpoint: &str, fingerprint: &str) -> Result<(), String> {
+    let mut known = load_known_hosts(path);
+    known.insert(endpoint.to_string(), fingerprint.to_string());
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create {}: {e}", parent.display()))?;
+    }
+    let text = serde_json::to_string_pretty(&known).map_err(|e| e.to_string())?;
+    std::fs::write(path, text).map_err(|e| format!("Cannot remember the server's key: {e}"))
+}
 
 /// A running port forward, torn down as soon as this is dropped.
 ///
@@ -27,23 +55,63 @@ impl Drop for Tunnel {
     }
 }
 
-struct TunnelHandler;
+/// Checks the server's key against what MixDB saw the last time it connected to this address.
+///
+/// Trust on first use: a server never seen before is accepted and its fingerprint written down,
+/// and from then on a *different* key is refused. That is the half of host-key checking worth
+/// having here — the first connection is taken on faith either way, but the tunnel can no longer
+/// be quietly stood in front of afterwards, which is the whole reason a database is reached
+/// through SSH rather than over the open network.
+struct TunnelHandler {
+    /// `host:port`, which is what a fingerprint is remembered under.
+    endpoint: String,
+    known_hosts: PathBuf,
+    /// Why the key was refused, kept for the caller: `check_server_key` may only say yes or no,
+    /// and "no" reaches the user as russh's own unspecific error otherwise.
+    refused: Arc<Mutex<Option<String>>>,
+}
 
 impl client::Handler for TunnelHandler {
     type Error = russh::Error;
 
-    // Accepts any host key. This is an MVP tradeoff: production use should
-    // verify against a known_hosts store instead of trusting on first use.
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKey,
+        server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        let fingerprint = server_public_key
+            .fingerprint(russh::keys::HashAlg::Sha256)
+            .to_string();
+
+        match load_known_hosts(&self.known_hosts).get(&self.endpoint) {
+            Some(known) if known == &fingerprint => Ok(true),
+            Some(known) => {
+                *self.refused.lock().unwrap() = Some(format!(
+                    "The SSH server at {} is offering a different key than the one MixDB saw \
+                     before ({fingerprint} now, {known} previously). Either the server was \
+                     rebuilt, or something is standing between you and it. If the change was \
+                     expected, remove the entry from {} and connect again.",
+                    self.endpoint,
+                    self.known_hosts.display()
+                ));
+                Ok(false)
+            }
+            // First sight of this server: take it on faith, and hold it to that key from now on.
+            None => {
+                if let Err(e) = remember_host(&self.known_hosts, &self.endpoint, &fingerprint) {
+                    *self.refused.lock().unwrap() = Some(e);
+                    return Ok(false);
+                }
+                Ok(true)
+            }
+        }
     }
 }
 
-async fn authenticate(ssh: &SshConfig) -> Result<client::Handle<TunnelHandler>, String> {
-    match timeout(CONNECT_TIMEOUT, authenticate_inner(ssh)).await {
+async fn authenticate(
+    ssh: &SshConfig,
+    app_data: &Path,
+) -> Result<client::Handle<TunnelHandler>, String> {
+    match timeout(CONNECT_TIMEOUT, authenticate_inner(ssh, app_data)).await {
         Ok(result) => result,
         Err(_) => Err(format!(
             "SSH connection to {}:{} timed out after {}s — check host/port/firewall",
@@ -54,11 +122,26 @@ async fn authenticate(ssh: &SshConfig) -> Result<client::Handle<TunnelHandler>, 
     }
 }
 
-async fn authenticate_inner(ssh: &SshConfig) -> Result<client::Handle<TunnelHandler>, String> {
+async fn authenticate_inner(
+    ssh: &SshConfig,
+    app_data: &Path,
+) -> Result<client::Handle<TunnelHandler>, String> {
     let config = Arc::new(client::Config::default());
-    let mut session = client::connect(config, (ssh.host.as_str(), ssh.port), TunnelHandler)
-        .await
-        .map_err(|e| format!("SSH connect failed: {e}"))?;
+    let refused: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let handler = TunnelHandler {
+        endpoint: format!("{}:{}", ssh.host, ssh.port),
+        known_hosts: known_hosts_file(app_data),
+        refused: Arc::clone(&refused),
+    };
+    let mut session = match client::connect(config, (ssh.host.as_str(), ssh.port), handler).await {
+        Ok(session) => session,
+        // A refused key fails the handshake, and what russh reports for that says nothing about
+        // the key — the reason the handler wrote down is the one worth showing.
+        Err(e) => {
+            let refused = refused.lock().unwrap().take();
+            return Err(refused.unwrap_or_else(|| format!("SSH connect failed: {e}")));
+        }
+    };
 
     let authenticated = match &ssh.auth {
         SshAuth::Password { password } => session
@@ -110,8 +193,8 @@ async fn authenticate_inner(ssh: &SshConfig) -> Result<client::Handle<TunnelHand
 /// Authenticates against the SSH server without opening any port forward.
 /// Used by the UI's "Test tunnel" action to validate credentials/connectivity
 /// independently of the database connection itself.
-pub async fn test_connection(ssh: &SshConfig) -> Result<(), String> {
-    let session = authenticate(ssh).await?;
+pub async fn test_connection(ssh: &SshConfig, app_data: &Path) -> Result<(), String> {
+    let session = authenticate(ssh, app_data).await?;
     let _ = session.disconnect(russh::Disconnect::ByApplication, "", "English").await;
     Ok(())
 }
@@ -124,8 +207,9 @@ pub async fn open_tunnel(
     ssh: &SshConfig,
     remote_host: &str,
     remote_port: u16,
+    app_data: &Path,
 ) -> Result<(u16, Tunnel), String> {
-    let session = authenticate(ssh).await?;
+    let session = authenticate(ssh, app_data).await?;
 
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .await
@@ -201,5 +285,49 @@ async fn bridge_connection(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{known_hosts_file, load_known_hosts, remember_host};
+
+    /// What the handler reads and writes between connections. The handshake around it needs a real
+    /// SSH server to exercise; this is the part that decides whether a key is the one seen before.
+    #[test]
+    fn a_remembered_host_is_read_back_and_can_be_replaced() {
+        let dir = std::env::temp_dir().join(format!("mixdb-test-{}", uuid::Uuid::new_v4()));
+        let file = known_hosts_file(&dir);
+
+        // Nothing remembered yet — a first connection has nothing to check against.
+        assert!(load_known_hosts(&file).is_empty());
+
+        remember_host(&file, "db.example:22", "SHA256:aaa").unwrap();
+        remember_host(&file, "other.example:2222", "SHA256:bbb").unwrap();
+        let known = load_known_hosts(&file);
+        assert_eq!(known.get("db.example:22").map(String::as_str), Some("SHA256:aaa"));
+        assert_eq!(known.len(), 2);
+
+        // Each host stands on its own: accepting a rebuilt server's new key leaves the others be.
+        remember_host(&file, "db.example:22", "SHA256:ccc").unwrap();
+        let known = load_known_hosts(&file);
+        assert_eq!(known.get("db.example:22").map(String::as_str), Some("SHA256:ccc"));
+        assert_eq!(known.get("other.example:2222").map(String::as_str), Some("SHA256:bbb"));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A file that has been corrupted (or written by a future version) reads as "nothing known"
+    /// rather than failing every SSH connection the app makes.
+    #[test]
+    fn an_unreadable_store_is_treated_as_empty() {
+        let dir = std::env::temp_dir().join(format!("mixdb-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = known_hosts_file(&dir);
+        std::fs::write(&file, "not json").unwrap();
+
+        let known = load_known_hosts(&file);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(known.is_empty());
     }
 }

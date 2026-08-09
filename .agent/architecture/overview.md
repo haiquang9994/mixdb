@@ -64,9 +64,14 @@ Mongo is configured as a single connection string, not host/port/user/password â
 
 ## Security posture
 
-Two deliberate tradeoffs, both marked in the code:
+`ssh_tunnel.rs` verifies host keys on a trust-on-first-use basis: a server never seen before is
+accepted and its SHA-256 fingerprint written to `known_hosts.json` in the app data directory, and
+a later connection offering a different key is refused with both fingerprints in the message. Its
+own file, not OpenSSH's `~/.ssh/known_hosts`. Accepting a rebuilt server's new key means deleting
+its entry there.
 
-- `ssh_tunnel.rs` accepts **any** host key (no `known_hosts` verification).
+One deliberate tradeoff, marked in the code:
+
 - `mysql.rs` runs user-authored SQL through `sqlx::AssertSqlSafe`, opting out of sqlx's injection
   guard. This is a database client â€” arbitrary SQL is the product, not a bug. Identifiers the app
   itself interpolates (database/table/column names) still go through `quote_ident`.

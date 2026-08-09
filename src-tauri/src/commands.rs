@@ -25,8 +25,8 @@ async fn with_timeout<T>(
 }
 
 #[tauri::command]
-pub async fn test_ssh_tunnel(ssh: SshConfig) -> Result<(), String> {
-    ssh_tunnel::test_connection(&ssh).await
+pub async fn test_ssh_tunnel(app: AppHandle, ssh: SshConfig) -> Result<(), String> {
+    ssh_tunnel::test_connection(&ssh, &app_data_dir(&app)?).await
 }
 
 /// The address to dial and, when the connection goes through SSH, the tunnel that has to stay
@@ -34,11 +34,12 @@ pub async fn test_ssh_tunnel(ssh: SshConfig) -> Result<(), String> {
 /// closes the forward again rather than leaving it running unattended.
 async fn resolve_endpoint(
     config: &ConnectionConfig,
+    app_data: &std::path::Path,
 ) -> Result<(String, u16, Option<ssh_tunnel::Tunnel>), String> {
     match &config.ssh {
         Some(ssh) => {
             let (local_port, tunnel) =
-                ssh_tunnel::open_tunnel(ssh, &config.host, config.port).await?;
+                ssh_tunnel::open_tunnel(ssh, &config.host, config.port, app_data).await?;
             Ok(("127.0.0.1".to_string(), local_port, Some(tunnel)))
         }
         None => Ok((config.host.clone(), config.port, None)),
@@ -46,10 +47,15 @@ async fn resolve_endpoint(
 }
 
 #[tauri::command]
-pub async fn connect_db(state: State<'_, AppState>, config: ConnectionConfig) -> Result<String, String> {
+pub async fn connect_db(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: ConnectionConfig,
+) -> Result<String, String> {
+    let app_data = app_data_dir(&app)?;
     let (handle, endpoint, tunnel) = match config.kind {
         DbKind::Mysql => {
-            let (host, port, tunnel) = resolve_endpoint(&config).await?;
+            let (host, port, tunnel) = resolve_endpoint(&config, &app_data).await?;
             let username = config.username.clone().unwrap_or_default();
             let password = config.password.clone().unwrap_or_default();
             let pool = with_timeout(
@@ -77,7 +83,7 @@ pub async fn connect_db(state: State<'_, AppState>, config: ConnectionConfig) ->
             let (endpoint, tunnel) = match &config.ssh {
                 Some(ssh) => {
                     let (host, port) = mongo::first_endpoint(uri).await?;
-                    let (local_port, task) = ssh_tunnel::open_tunnel(ssh, &host, port).await?;
+                    let (local_port, task) = ssh_tunnel::open_tunnel(ssh, &host, port, &app_data).await?;
                     (Some(("127.0.0.1".to_string(), local_port)), Some(task))
                 }
                 None => (None, None),
@@ -87,7 +93,7 @@ pub async fn connect_db(state: State<'_, AppState>, config: ConnectionConfig) ->
             (DbHandle::Mongo(client), endpoint, tunnel)
         }
         DbKind::Redis => {
-            let (host, port, tunnel) = resolve_endpoint(&config).await?;
+            let (host, port, tunnel) = resolve_endpoint(&config, &app_data).await?;
             let db_index = config.database.as_deref().and_then(|d| d.parse().ok()).unwrap_or(0);
             let conn = with_timeout(
                 redis_db::connect(
@@ -348,12 +354,17 @@ where
         .map_err(|e| format!("The task did not finish: {e}"))?
 }
 
-/// Where MixDB keeps the tools it downloaded for itself.
-fn tools_dir(app: &AppHandle) -> Result<PathBuf, String> {
+/// Where MixDB keeps what it remembers between runs: the tools it downloaded, and the SSH host
+/// keys it has seen.
+fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
-        .map(|dir| dir.join("tools"))
-        .map_err(|e| format!("There is nowhere to keep the tools: {e}"))
+        .map_err(|e| format!("There is nowhere for MixDB to keep its own files: {e}"))
+}
+
+/// Where MixDB keeps the tools it downloaded for itself.
+fn tools_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app_data_dir(app).map(|dir| dir.join("tools"))
 }
 
 /// Every dump tool and where it stands: a path the user chose, a copy MixDB downloaded, something
