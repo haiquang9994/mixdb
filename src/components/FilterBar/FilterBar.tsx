@@ -48,8 +48,8 @@ function FilterBar<Op extends string>({
   /** The row whose value box is owed the focus, cleared as soon as it has been given it. */
   const [pendingFocus, setPendingFocus] = useState<number | null>(null);
 
-  // Focusing from an effect rather than straight out of the operator handler, for two reasons:
-  // the box is still disabled until the render that the new operator brings, and the select
+  // Focusing from an effect rather than straight out of the select handlers, for two reasons:
+  // the box is still disabled until the render that a new operator brings, and the select
   // hands focus back to its own trigger on the way out of the handler.
   useEffect(() => {
     if (pendingFocus === null) return;
@@ -66,6 +66,13 @@ function FilterBar<Op extends string>({
 
   function updateRow(id: number, patch: Partial<FilterRow<Op>>) {
     onChange(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  }
+
+  function changeField(row: FilterRow<Op>, column: string) {
+    updateRow(row.id, { column });
+    // Same reasoning as the operator below: the field alone is not a condition, so the caret
+    // moves on to the value — unless the operator already on the row takes none.
+    if (operatorArity(row.operator) !== "none") setPendingFocus(row.id);
   }
 
   function changeOperator(row: FilterRow<Op>, operator: Op) {
@@ -115,7 +122,7 @@ function FilterBar<Op extends string>({
                   ariaLabel={t("filterBar.field")}
                   searchable
                   searchPlaceholder={t("filterBar.fieldSearch")}
-                  onChange={(column) => updateRow(row.id, { column })}
+                  onChange={(column) => changeField(row, column)}
                 />
                 <Select
                   size="small"
