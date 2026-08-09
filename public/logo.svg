@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="mixdb-logo-title">
+  <title id="mixdb-logo-title">MixDB</title>
+  <!-- Three data platters fanned out like a hand of cards being shuffled: several databases, one
+       client. The fan is what carries the name — a square-on stack would just be the generic
+       database cylinder every DB tool already uses.
+
+       Drawn as an app tile rather than a bare mark. A shape on a transparent ground has no
+       presence in a taskbar or a dock, and the mark here is white, so it needs a ground of its
+       own to sit on instead of borrowing the page's. -->
+  <defs>
+    <linearGradient id="mixdb-tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4364e0"/>
+      <stop offset="1" stop-color="#8a44c4"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#mixdb-tile)"/>
+  <!-- Each platter is a body at 72% white with a solid white top face over it, which is the whole
+       of the shading — enough to read as a solid, with no gradient or blur to survive being
+       rasterised down to a 16px .ico. Bottom platter first, so each one above overlaps it. -->
+  <g fill="#fff">
+    <g transform="rotate(10 32 43)">
+      <path d="M19 43a13 5 0 0 1 26 0v5a13 5 0 0 1-26 0z" opacity=".72"/>
+      <ellipse cx="32" cy="43" rx="13" ry="5"/>
+    </g>
+    <g>
+      <path d="M19 29.5a13 5 0 0 1 26 0v5a13 5 0 0 1-26 0z" opacity=".72"/>
+      <ellipse cx="32" cy="29.5" rx="13" ry="5"/>
+    </g>
+    <g transform="rotate(-10 32 16)">
+      <path d="M19 16a13 5 0 0 1 26 0v5a13 5 0 0 1-26 0z" opacity=".72"/>
+      <ellipse cx="32" cy="16" rx="13" ry="5"/>
+    </g>
+  </g>
+</svg>
