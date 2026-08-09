@@ -85,6 +85,10 @@ export function splitFilterList(raw: string): string[] {
       continue;
     }
     if (ch === "'" || ch === '"') {
+      // Whitespace between the comma and the opening quote is padding around the item rather than
+      // part of it — a quoted item is not trimmed afterwards, so `'a', 'b'` would otherwise ask
+      // for a value beginning with a space.
+      if (current.trim() === "") current = "";
       quote = ch;
       quoted = true;
       continue;
@@ -93,6 +97,8 @@ export function splitFilterList(raw: string): string[] {
       flush();
       continue;
     }
+    // The same padding on the other side of the closing quote.
+    if (quoted && ch.trim() === "") continue;
     current += ch;
   }
   flush();

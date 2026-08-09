@@ -45,10 +45,18 @@ pub fn split_list_parts(raw: &str) -> Vec<ListItem> {
             Some(q) if ch == q => quote = None,
             Some(_) => current.push(ch),
             None if ch == '\'' || ch == '"' => {
+                // Whitespace between the comma and the opening quote is padding around the item
+                // rather than part of it — a quoted item is not trimmed afterwards, so `'a', 'b'`
+                // would otherwise ask for a value beginning with a space.
+                if current.trim().is_empty() {
+                    current.clear();
+                }
                 quote = Some(ch);
                 quoted = true;
             }
             None if ch == ',' => flush(&mut current, &mut quoted),
+            // The same padding on the other side of the closing quote.
+            None if quoted && ch.is_whitespace() => {}
             None => current.push(ch),
         }
     }
@@ -79,4 +87,62 @@ pub fn unquote(raw: &str) -> Option<&str> {
         return None;
     }
     Some(&raw[first.len_utf8()..raw.len() - last.len_utf8()])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{split_list_parts, unquote};
+
+    fn texts(raw: &str) -> Vec<String> {
+        split_list_parts(raw)
+            .into_iter()
+            .map(|item| item.text)
+            .collect()
+    }
+
+    #[test]
+    fn splits_on_commas_and_trims_what_is_left() {
+        assert_eq!(texts("1, 2 ,3"), ["1", "2", "3"]);
+        // A trailing comma names no item, so `1,2,` is two items and not three.
+        assert_eq!(texts("1,2,"), ["1", "2"]);
+        assert_eq!(texts("   "), Vec::<String>::new());
+    }
+
+    /// Quotes are how a value carrying a comma — or spaces that matter — gets through in one
+    /// piece, and the only way to ask for the empty string.
+    #[test]
+    fn quotes_hold_a_value_together() {
+        assert_eq!(texts("'a,b', c"), ["a,b", "c"]);
+        assert_eq!(texts("' padded '"), [" padded "]);
+        assert_eq!(texts("''"), [""]);
+        assert_eq!(texts(r#""double", 'single'"#), ["double", "single"]);
+    }
+
+    /// The spaces a list is typed with are around the items, not in them: only what stands between
+    /// the quotes is the value.
+    #[test]
+    fn ignores_the_spacing_around_a_quoted_item() {
+        assert_eq!(texts("'a' , 'b'"), ["a", "b"]);
+        assert_eq!(texts("  'a'  "), ["a"]);
+    }
+
+    /// Whether an item arrived quoted is what a caller inferring types goes by: `123` is a number,
+    /// `'123'` is that number spelled out.
+    #[test]
+    fn reports_which_items_were_quoted() {
+        let parts = split_list_parts("123, '123'");
+        assert_eq!(parts.len(), 2);
+        assert!(!parts[0].quoted);
+        assert!(parts[1].quoted);
+    }
+
+    #[test]
+    fn unquotes_only_a_matching_pair() {
+        assert_eq!(unquote("'x'"), Some("x"));
+        assert_eq!(unquote("\"x\""), Some("x"));
+        assert_eq!(unquote("''"), Some(""));
+        assert_eq!(unquote("'x\""), None);
+        assert_eq!(unquote("x"), None);
+        assert_eq!(unquote("'"), None);
+    }
 }
