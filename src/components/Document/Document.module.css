@@ -4,6 +4,11 @@
   padding: 0.4rem 0.5rem;
   background: var(--surface-bg, transparent);
   position: relative;
+  /* A page holds up to 200 of these, each a deep tree of rows: skip layout and paint for
+   * the ones scrolled out of view. `auto` on the intrinsic size makes the browser reuse
+   * each card's last measured height, so the scrollbar doesn't jump as cards go by. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
 }
 
 .docCardHeader {

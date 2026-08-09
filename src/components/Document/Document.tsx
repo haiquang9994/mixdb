@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DocUpdateOps } from "../../mongo/api";
+import { deleteAtPath, getAtPath, renameKeyAtPath, setAtPath } from "../../mongo/docOps";
 import { isWrapper, type TypedDocument, type TypedValue } from "../../mongo/bsonTypes";
 import DocumentNode, { ValueEditor, type DocumentEditMode } from "../DocumentNode";
 import Input from "../Input";
@@ -11,6 +13,8 @@ interface ActiveEdit {
 }
 
 const EMPTY_SET: Set<string> = new Set();
+const NOOP = () => {};
+const SAVED_FLASH_MS = 1500;
 
 function idPreviewText(idValue: TypedValue): string {
   if (idValue === null || idValue === undefined) return "null";
@@ -24,84 +28,264 @@ function idPreviewText(idValue: TypedValue): string {
   return JSON.stringify(idValue);
 }
 
+function collapseOpsUnderPrefix(setOps: Record<string, TypedValue>, unsetOps: Set<string>, prefix: string) {
+  const dotted = `${prefix}.`;
+  for (const key of Object.keys(setOps)) {
+    if (key === prefix || key.startsWith(dotted)) delete setOps[key];
+  }
+  for (const key of Array.from(unsetOps)) {
+    if (key === prefix || key.startsWith(dotted)) unsetOps.delete(key);
+  }
+}
+
+/** Sorts deletion paths so array elements are removed highest-index-first, keeping lower
+ * indices of the same array stable while several siblings go in one flush. */
+function comparePathsForDeletion(a: string, b: string): number {
+  const aParts = a.split(".");
+  const bParts = b.split(".");
+  const len = Math.min(aParts.length, bParts.length);
+  for (let idx = 0; idx < len; idx++) {
+    if (aParts[idx] !== bParts[idx]) {
+      const an = Number(aParts[idx]);
+      const bn = Number(bParts[idx]);
+      if (!Number.isNaN(an) && !Number.isNaN(bn)) return bn - an;
+      return aParts[idx] < bParts[idx] ? -1 : 1;
+    }
+  }
+  return bParts.length - aParts.length;
+}
+
 export interface DocumentProps {
+  /** The document as fetched. Read once, to seed this card's working copy — remount the
+   * card (via `key`) to adopt a newly fetched version of it. */
   doc: TypedDocument;
   /** 1-based position shown in the card header, page offset already applied. */
   displayNumber: number;
-  /** Dotted paths staged for deletion, applied on Save. */
-  deletedPaths?: Set<string>;
-  /** Staged edits (value changes + delete marks); a non-zero count shows Save/Discard. */
-  pendingCount: number;
-  /** Shows the transient "saved" confirmation in the header. */
-  saved: boolean;
-  /** Disables the delete control while the document is being removed server-side. */
-  deleting: boolean;
-  onSetValue: (path: string[], value: TypedValue) => void;
-  onRenameProp: (path: string[], newKey: string) => void;
-  onAddChild: (parentPath: string[], key: string | undefined, value: TypedValue) => void;
-  onToggleDelete: (path: string[]) => void;
-  onSave: () => void;
-  onDiscard: () => void;
-  onDelete: () => void;
+  /** Hands the list a way to write out this card's staged edits before it refetches.
+   * Returns the matching unregister function. */
+  registerFlush: (flush: () => Promise<void>) => () => void;
+  /** Asks the list to apply `ops` to this document. Resolves to whether the write landed —
+   * the card adopts its edits on success and rolls them back on failure. The list owns the
+   * connection, the progress indicator and the error reporting. */
+  onWrite: (id: TypedValue, ops: DocUpdateOps) => Promise<boolean>;
+  /** Asks the list to remove this document; it refetches the page afterwards. */
+  onDelete: (id: TypedValue) => Promise<boolean>;
 }
 
-/** One MongoDB document rendered as a card: header controls plus a DocumentNode tree
- * per root property. Owns only view state (which field is being edited, collapse,
- * delete confirmation, the add-property row) — the document data, its staged edits and
- * everything that talks to the server live in the parent, which addresses documents by
- * index. Remount this component (via `key`) to reset that view state on a page load. */
-function Document({
-  doc,
-  displayNumber,
-  deletedPaths,
-  pendingCount,
-  saved,
-  deleting,
-  onSetValue,
-  onRenameProp,
-  onAddChild,
-  onToggleDelete,
-  onSave,
-  onDiscard,
-  onDelete,
-}: DocumentProps) {
+/** One MongoDB document, rendered as a card over a tree of DocumentNodes.
+ *
+ * The card owns everything about its document that has not been written yet: a working copy
+ * of the data, the edits staged against it, and which field is being edited. It never talks
+ * to the database itself — it builds the ops and hands them to the list. Value edits and
+ * property deletions are staged and go out together on Save; renames are applied
+ * immediately, because they move the paths everything else is keyed by. */
+function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDelete }: DocumentProps) {
   const { t } = useTranslation();
+
+  // Document data: the working copy on screen, plus what is staged against it.
+  const [doc, setDoc] = useState<TypedDocument>(fetchedDoc);
+  const [pendingSet, setPendingSet] = useState<Record<string, TypedValue>>({});
+  const [deletedPaths, setDeletedPaths] = useState<Set<string>>(EMPTY_SET);
+
+  // View state.
   const [collapsed, setCollapsed] = useState(false);
   const [activeEdit, setActiveEdit] = useState<ActiveEdit | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [addingRoot, setAddingRoot] = useState(false);
   const [newRootKey, setNewRootKey] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
+  const idRef = useRef<TypedValue>(fetchedDoc._id ?? null);
+  /** The document as the server last confirmed it: the baseline an edit is diffed against,
+   * and what to roll back to when a write fails. */
+  const originalRef = useRef<TypedDocument>(fetchedDoc);
+  // Set once this document is on its way out: its staged edits are moot, and the page-wide
+  // flush that precedes the delete must not write them back moments before it lands.
+  const abandonedRef = useRef(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Render-phase mirror of the working copy. The handlers below need to read the current
+  // document but must stay referentially stable, since DocumentNode is memoized and a new
+  // callback identity would re-render every row in the tree.
+  const docRef = useRef(doc);
+  docRef.current = doc;
+
+  const pendingCount = Object.keys(pendingSet).length + deletedPaths.size;
   const idValue = (doc._id ?? null) as TypedValue;
   const otherKeys = Object.keys(doc).filter((k) => k !== "_id");
-  const marks = deletedPaths ?? EMPTY_SET;
-  // "Edit mode" (field click affordances, always-visible delete icons) reflects whether a
-  // prop-name/value input is actually open right now — it's separate from "has unsaved
-  // changes", which drives the Save/Discard buttons.
+  // "Edit mode" (field click affordances, always-visible delete icons) reflects whether an
+  // input is open right now — separate from "has unsaved changes", which drives Save/Discard.
   const isEditing = activeEdit !== null || addingRoot;
+
+  const flashSaved = useCallback(() => {
+    setSaved(true);
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = setTimeout(() => {
+      setSaved(false);
+      savedTimerRef.current = null;
+    }, SAVED_FLASH_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    };
+  }, []);
+
+  /** Turns the staged value edits and delete marks into one set of ops and hands them up. A
+   * no-op when nothing is staged, and safe to call twice — the second call sees the state
+   * the first one cleared. */
+  async function flush() {
+    if (abandonedRef.current) return;
+    if (Object.keys(pendingSet).length === 0 && deletedPaths.size === 0) return;
+
+    const setOps: Record<string, TypedValue> = { ...pendingSet };
+    const unsetOps = new Set<string>();
+    let workingDoc = doc;
+
+    for (const pathStr of Array.from(deletedPaths).sort(comparePathsForDeletion)) {
+      const path = pathStr.split(".");
+      const parentPath = path.slice(0, -1);
+      const parentValue = parentPath.length === 0 ? workingDoc : getAtPath(workingDoc, parentPath);
+      const newDoc = deleteAtPath(workingDoc, path) as TypedDocument;
+      if (Array.isArray(parentValue)) {
+        // $unset on an array index leaves a null hole, so rewrite the spliced array whole —
+        // and drop the staged ops that pointed into the version being replaced.
+        const arrayPathStr = parentPath.join(".");
+        collapseOpsUnderPrefix(setOps, unsetOps, arrayPathStr);
+        setOps[arrayPathStr] = getAtPath(newDoc, parentPath) ?? [];
+      } else {
+        delete setOps[pathStr];
+        unsetOps.add(pathStr);
+      }
+      workingDoc = newDoc;
+    }
+
+    setPendingSet({});
+    setDeletedPaths(EMPTY_SET);
+
+    const ops: DocUpdateOps = { set: setOps, unset: Array.from(unsetOps), rename: {} };
+    if (await onWrite(idRef.current, ops)) {
+      originalRef.current = workingDoc;
+      setDoc(workingDoc);
+      flashSaved();
+    } else {
+      setDoc(originalRef.current);
+    }
+  }
+
+  // `flush` closes over the current render's staged state, so the hook registered with the
+  // list has to reach it through a ref rather than capture one render's version of it.
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+  const runFlush = useCallback(() => flushRef.current(), []);
+
+  useEffect(() => registerFlush(runFlush), [registerFlush, runFlush]);
+
+  useEffect(() => {
+    // Selecting another collection refetches without anyone flushing first, so a card on its
+    // way out saves itself. Fire-and-forget: it is unmounted by the time this resolves, and
+    // reporting the outcome is the list's job anyway.
+    return () => {
+      void flushRef.current();
+    };
+  }, []);
+
+  const setValue = useCallback((path: string[], value: TypedValue) => {
+    const pathStr = path.join(".");
+    setPendingSet((prev) => {
+      const next = { ...prev };
+      // Editing a field back to what the server already holds isn't a change worth sending.
+      if (JSON.stringify(getAtPath(originalRef.current, path)) === JSON.stringify(value)) delete next[pathStr];
+      else next[pathStr] = value;
+      return next;
+    });
+    setDoc((prev) => setAtPath(prev, path, value) as TypedDocument);
+  }, []);
+
+  const addChild = useCallback(
+    (parentPath: string[], key: string | undefined, value: TypedValue) => {
+      const parentValue = parentPath.length === 0 ? docRef.current : getAtPath(docRef.current, parentPath);
+      // Array items are appended at the next index; object properties need a name.
+      if (!Array.isArray(parentValue) && !key) return;
+      const childPath = Array.isArray(parentValue)
+        ? [...parentPath, String(parentValue.length)]
+        : [...parentPath, key ?? ""];
+      setValue(childPath, value);
+    },
+    [setValue],
+  );
+
+  const toggleDelete = useCallback((path: string[]) => {
+    const pathStr = path.join(".");
+    setDeletedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(pathStr)) next.delete(pathStr);
+      else next.add(pathStr);
+      // Fall back to the shared empty set so an untouched card keeps one stable identity.
+      return next.size === 0 ? EMPTY_SET : next;
+    });
+  }, []);
+
+  const renameProp = useCallback(
+    async (path: string[], newKey: string) => {
+      const before = docRef.current;
+      setDoc((prev) => renameKeyAtPath(prev, path, newKey) as TypedDocument);
+      const ops: DocUpdateOps = { set: {}, unset: [], rename: { [path.join(".")]: newKey } };
+      if (await onWrite(idRef.current, ops)) {
+        // The server document moved, so the baseline setValue diffs against has to move too.
+        originalRef.current = renameKeyAtPath(originalRef.current, path, newKey) as TypedDocument;
+      } else {
+        setDoc(before);
+      }
+    },
+    [onWrite],
+  );
+
+  const activateEdit = useCallback((path: string[], mode: DocumentEditMode) => {
+    setActiveEdit({ path: path.join("."), mode });
+  }, []);
 
   /** Closes the inline editor at `path`/`mode` — a no-op once a different field has taken
    * over, so a late close can't clobber a switch that already moved the editor. */
-  function finishEdit(path: string[], mode: DocumentEditMode) {
+  const finishEdit = useCallback((path: string[], mode: DocumentEditMode) => {
     const pathStr = path.join(".");
     setActiveEdit((prev) => (prev && prev.path === pathStr && prev.mode === mode ? null : prev));
+  }, []);
+
+  function discard() {
+    setActiveEdit(null);
+    setPendingSet({});
+    setDeletedPaths(EMPTY_SET);
+    setDoc(originalRef.current);
   }
 
-  const nodeProps = {
-    parentKind: "object" as const,
-    depth: 0,
-    documentEditing: isEditing,
-    activeEditPath: activeEdit?.path ?? null,
-    activeEditMode: activeEdit?.mode ?? null,
-    deletedPaths: marks,
-    onRequestEdit: () => {},
-    onActivateEdit: (path: string[], mode: DocumentEditMode) => setActiveEdit({ path: path.join("."), mode }),
-    onFinishEdit: finishEdit,
-    onToggleDelete,
-    onSetValue,
-    onRenameProp,
-    onAddChild,
-  };
+  async function performDelete() {
+    setConfirmingDelete(false);
+    setDeleting(true);
+    abandonedRef.current = true;
+    if (!(await onDelete(idRef.current))) abandonedRef.current = false;
+    setDeleting(false);
+  }
+
+  const nodeProps = useMemo(
+    () => ({
+      parentKind: "object" as const,
+      depth: 0,
+      documentEditing: isEditing,
+      activeEditPath: activeEdit?.path ?? null,
+      activeEditMode: activeEdit?.mode ?? null,
+      deletedPaths,
+      onRequestEdit: NOOP,
+      onActivateEdit: activateEdit,
+      onFinishEdit: finishEdit,
+      onToggleDelete: toggleDelete,
+      onSetValue: setValue,
+      onRenameProp: renameProp,
+      onAddChild: addChild,
+    }),
+    [isEditing, activeEdit, deletedPaths, activateEdit, finishEdit, toggleDelete, setValue, renameProp, addChild],
+  );
 
   return (
     <div className={styles.docCard}>
@@ -127,19 +311,12 @@ function Document({
               className={styles.saveBtn}
               onClick={() => {
                 setActiveEdit(null);
-                onSave();
+                void flush();
               }}
             >
               {t("common.save")}
             </button>
-            <button
-              type="button"
-              className={styles.discardBtn}
-              onClick={() => {
-                setActiveEdit(null);
-                onDiscard();
-              }}
-            >
+            <button type="button" className={styles.discardBtn} onClick={discard}>
               {t("noSqlTable.discardChanges")}
             </button>
           </>
@@ -148,14 +325,7 @@ function Document({
         {confirmingDelete ? (
           <span className={styles.confirmDelete}>
             {t("noSqlTable.confirmDeleteDocument")}
-            <button
-              type="button"
-              className={styles.confirmDeleteYes}
-              onClick={() => {
-                setConfirmingDelete(false);
-                onDelete();
-              }}
-            >
+            <button type="button" className={styles.confirmDeleteYes} onClick={() => void performDelete()}>
               {t("common.delete")}
             </button>
             <button type="button" className={styles.confirmDeleteNo} onClick={() => setConfirmingDelete(false)}>
@@ -193,7 +363,7 @@ function Document({
                 initialValue=""
                 onCommit={(value) => {
                   if (!newRootKey.trim()) return;
-                  onAddChild([], newRootKey.trim(), value);
+                  addChild([], newRootKey.trim(), value);
                   setAddingRoot(false);
                   setNewRootKey("");
                 }}
@@ -214,4 +384,6 @@ function Document({
   );
 }
 
-export default Document;
+/** Memoized: with the list holding nothing per-document, a card only ever re-renders from
+ * its own state — editing one document can no longer touch any of the others. */
+export default memo(Document);

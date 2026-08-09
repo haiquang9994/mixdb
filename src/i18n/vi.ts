@@ -96,6 +96,7 @@ const vi: TranslationDict = {
   },
   noSqlTable: {
     loading: "Đang tải...",
+    saving: "Đang lưu...",
     noDocuments: "Không có document nào.",
     idReadOnlyTooltip: "_id không thể sửa sau khi document đã tồn tại",
     addProperty: "Thêm property",
@@ -122,9 +123,6 @@ const vi: TranslationDict = {
     confirmDeleteDocument: "Xóa document này? Không thể hoàn tác.",
     collapseDocument: "Thu gọn document",
     expandDocument: "Mở rộng document",
-    searchPlaceholder: "Tìm trong document...",
-    searchMatchCount: "{{matched}}/{{total}} document khớp",
-    noMatches: "Không có document nào khớp với tìm kiếm.",
     typeLabel: {
       objectId: "ObjectId",
       string: "Chuỗi",

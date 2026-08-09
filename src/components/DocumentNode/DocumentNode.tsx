@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import Select from "../Select";
 import Input from "../Input";
 import { useTranslation, type TranslationKey } from "../../i18n";
@@ -505,7 +505,7 @@ function DocumentNode({
     return (
       <div className={styles.children}>
         {visible.map((entry) => (
-          <DocumentNode
+          <MemoizedDocumentNode
             key={entry.key}
             path={entry.childPath}
             propKey={entry.key}
@@ -699,4 +699,9 @@ function displayScalar(value: TypedValue): string {
   return String(value);
 }
 
-export default DocumentNode;
+/** Memoized, and used for the recursive children above too. `setAtPath` shares structure
+ * outside the branch it writes to, so committing one value leaves every sibling subtree's
+ * `value` identical — those subtrees then skip re-rendering entirely. */
+const MemoizedDocumentNode = memo(DocumentNode);
+
+export default MemoizedDocumentNode;

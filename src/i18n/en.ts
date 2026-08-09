@@ -94,6 +94,7 @@ const en = {
   },
   noSqlTable: {
     loading: "Loading...",
+    saving: "Saving...",
     noDocuments: "No documents.",
     idReadOnlyTooltip: "_id cannot be changed after a document exists",
     addProperty: "Add property",
@@ -120,9 +121,6 @@ const en = {
     confirmDeleteDocument: "Delete this document? This cannot be undone.",
     collapseDocument: "Collapse document",
     expandDocument: "Expand document",
-    searchPlaceholder: "Search documents...",
-    searchMatchCount: "{{matched}}/{{total}} documents match",
-    noMatches: "No documents match your search.",
     typeLabel: {
       objectId: "ObjectId",
       string: "String",
