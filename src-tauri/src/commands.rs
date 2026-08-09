@@ -189,6 +189,22 @@ pub async fn mysql_update_row(
 }
 
 #[tauri::command]
+pub async fn mysql_insert_rows(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    rows: Vec<Map<String, Value>>,
+) -> Result<(), String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mysql(pool)) => mysql::insert_rows(pool, &database, &table, &rows).await,
+        Some(_) => Err("Connection is not a MySQL connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn mysql_delete_rows(
     state: State<'_, AppState>,
     id: String,

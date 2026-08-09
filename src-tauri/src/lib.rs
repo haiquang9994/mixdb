@@ -23,6 +23,7 @@ pub fn run() {
             commands::mysql_list_tables,
             commands::mysql_table_data,
             commands::mysql_update_row,
+            commands::mysql_insert_rows,
             commands::mysql_delete_rows,
             commands::mongo_list_databases,
             commands::mongo_server_info,

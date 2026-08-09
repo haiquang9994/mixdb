@@ -5,6 +5,7 @@ export {
   ChevronLeftIcon,
   ChevronRightIcon,
   CloseIcon,
+  CopyIcon,
   DotIcon,
   EyeIcon,
   EyeOffIcon,

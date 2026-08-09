@@ -47,6 +47,20 @@ export function mysqlUpdateRow(
 }
 
 /**
+ * Inserts one or more rows in a single transaction — one rejected row means none of them land.
+ * Each entry maps a column to the text to write, or to null for an explicit SQL NULL; a column
+ * left out of the map is left out of that row's INSERT, so the table's own default fills it.
+ */
+export function mysqlInsertRows(
+  id: string,
+  database: string,
+  table: string,
+  rows: Record<string, string | null>[]
+): Promise<void> {
+  return invoke<void>("mysql_insert_rows", { id, database, table, rows });
+}
+
+/**
  * Deletes the rows matched by `keys` — or, with `all`, every row in the table regardless of what
  * `keys` holds. `resetAutoIncrement` puts the table's AUTO_INCREMENT counter back to 1 afterwards.
  */

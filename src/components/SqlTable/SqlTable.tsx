@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { mysqlDeleteRows, mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
+import { mysqlDeleteRows, mysqlInsertRows, mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
 import ActionBar from "../ActionBar";
 import ConfirmDialog from "../ConfirmDialog";
+import InsertRowsDialog from "../InsertRowsDialog";
 import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
-import { ReloadIcon, TrashIcon } from "../../icons";
+import { CopyIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import type { MysqlColumnMeta } from "../../types";
 import styles from "./SqlTable.module.css";
 
 interface EditingCell {
@@ -34,7 +36,7 @@ function tableCacheKey(db: string, table: string): string {
 
 interface TableColumnsInfo {
   columns: string[];
-  columnTypes: Record<string, string>;
+  columnMeta: Record<string, MysqlColumnMeta>;
   primaryKey: string[];
   autoIncrementColumn: string | null;
 }
@@ -55,7 +57,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   const [pageSize, setPageSize] = useState(100);
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
-  const [columnTypes, setColumnTypes] = useState<Record<string, string>>({});
+  const [columnMeta, setColumnMeta] = useState<Record<string, MysqlColumnMeta>>({});
   const [primaryKey, setPrimaryKey] = useState<string[]>([]);
   const [autoIncrementColumn, setAutoIncrementColumn] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
@@ -89,6 +91,10 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   const [deleteWholeTable, setDeleteWholeTable] = useState(false);
   const [resetAutoIncrement, setResetAutoIncrement] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // What the insert form opens on — a blank row, or a copy of each selected row. `null` is the
+  // form being closed. The rows a clone starts from are read at render time rather than stored
+  // here, so they are the ones on screen when the form mounts, staged edits included.
+  const [insertMode, setInsertMode] = useState<"new" | "clone" | null>(null);
 
   function clearSelection() {
     setSelectedRows(new Set());
@@ -157,12 +163,12 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     const cached = columnsCacheRef.current.get(tableCacheKey(selectedDb, selectedTable));
     if (cached) {
       setColumns(cached.columns);
-      setColumnTypes(cached.columnTypes);
+      setColumnMeta(cached.columnMeta);
       setPrimaryKey(cached.primaryKey);
       setAutoIncrementColumn(cached.autoIncrementColumn);
     } else {
       setColumns([]);
-      setColumnTypes({});
+      setColumnMeta({});
       setPrimaryKey([]);
       setAutoIncrementColumn(null);
     }
@@ -185,13 +191,13 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
         if (cancelled) return;
         columnsCacheRef.current.set(tableCacheKey(db, table), {
           columns: result.columns,
-          columnTypes: result.columnTypes,
+          columnMeta: result.columnMeta,
           primaryKey: result.primaryKey,
           autoIncrementColumn: result.autoIncrementColumn,
         });
         setRows(result.rows);
         setColumns(result.columns);
-        setColumnTypes(result.columnTypes);
+        setColumnMeta(result.columnMeta);
         setPrimaryKey(result.primaryKey);
         setAutoIncrementColumn(result.autoIncrementColumn);
         setTotal(result.total);
@@ -273,6 +279,15 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     setReloadToken((n) => n + 1);
   }
 
+  /** The selected rows themselves, in the order they sit on screen — `selectedRows` holds their
+   * indices, and a Set keeps no order of its own. */
+  function selectedRowsInOrder(): Record<string, unknown>[] {
+    return [...selectedRows]
+      .sort((a, b) => a - b)
+      .map((i) => rows[i])
+      .filter((row): row is Record<string, unknown> => row !== undefined);
+  }
+
   /** Identifies one row to the server: its primary key columns, or — when the table has none —
    * every column, the same fallback an update uses. */
   function rowKey(row: Record<string, unknown>): Record<string, string | null> {
@@ -280,6 +295,23 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     const key: Record<string, string | null> = {};
     for (const c of keyCols) key[c] = normalizeCellValue(row[c]);
     return key;
+  }
+
+  /** Opens the insert form, either on a single blank row or on a copy of each selected row —
+   * a clone gets looked over, and its unique columns changed, before it is written. */
+  async function openInsert(mode: "new" | "clone") {
+    // Write out a staged edit first: the form is modal, and the blur that would otherwise flush
+    // it never comes while it is up.
+    await commitAndExit();
+    setInsertMode(mode);
+  }
+
+  /** Hands the form's rows to the server. Errors are left to reject so the form can show them
+   * and stay open with the typed values still in it. */
+  async function submitInsert(newRows: Record<string, string | null>[]) {
+    await mysqlInsertRows(connectionId, selectedDb, selectedTable, newRows);
+    setInsertMode(null);
+    setReloadToken((n) => n + 1);
   }
 
   async function openDeleteConfirm() {
@@ -292,10 +324,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   }
 
   async function confirmDelete() {
-    const keys = [...selectedRows]
-      .map((i) => rows[i])
-      .filter((row) => row !== undefined)
-      .map(rowKey);
+    const keys = selectedRowsInOrder().map(rowKey);
     const wholeTable = deleteWholeTable;
     setConfirmingDelete(false);
     setDeleting(true);
@@ -500,7 +529,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
                   {columns.map((c) => {
                     const isEditing = editingCell?.rowIndex === i && editingCell.col === c;
                     if (isEditing) {
-                      const multiline = isMultilineType(columnTypes[c]);
+                      const multiline = isMultilineType(columnMeta[c]?.dataType);
                       const cellWidth = columnWidths[c];
                       return (
                         <td
@@ -586,6 +615,20 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
               onClick: () => void reload(),
             },
             {
+              key: "insert",
+              icon: PlusIcon,
+              label: t("sqlTable.insertRows"),
+              disabled: loading || deleting || columns.length === 0,
+              onClick: () => void openInsert("new"),
+            },
+            {
+              key: "clone",
+              icon: CopyIcon,
+              label: t("sqlTable.cloneRows"),
+              disabled: loading || deleting || selectedRows.size === 0,
+              onClick: () => void openInsert("clone"),
+            },
+            {
               key: "delete",
               icon: TrashIcon,
               label: t("sqlTable.deleteRows"),
@@ -609,6 +652,16 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
           }}
         />
       </div>
+      {insertMode !== null && (
+        <InsertRowsDialog
+          table={selectedTable}
+          columns={columns}
+          columnMeta={columnMeta}
+          seedRows={insertMode === "clone" ? selectedRowsInOrder() : undefined}
+          onCancel={() => setInsertMode(null)}
+          onSubmit={submitInsert}
+        />
+      )}
       {confirmingDelete && (
         <ConfirmDialog
           title={t("sqlTable.deleteRowsTitle")}

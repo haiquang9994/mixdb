@@ -38,9 +38,23 @@ export const DEFAULT_PORTS: Record<DbKind, number> = {
   redis: 6379,
 };
 
+/** What the server knows about one column beyond its name — what a new row has to respect. */
+export interface MysqlColumnMeta {
+  /** The declared type as MySQL spells it, e.g. `varchar(255)` or `int unsigned`. */
+  dataType: string;
+  nullable: boolean;
+  /** The column's DEFAULT, or null when it has none. An expression default (`CURRENT_TIMESTAMP`,
+   *  `(uuid())`) arrives here unquoted, indistinguishable from a literal on its own — `extra` is
+   *  what tells the two apart. */
+  defaultValue: string | null;
+  /** `SHOW COLUMNS`' Extra: `auto_increment`, `DEFAULT_GENERATED`, `STORED GENERATED`, ... */
+  extra: string;
+}
+
 export interface MysqlTablePage {
   columns: string[];
-  columnTypes: Record<string, string>;
+  /** Keyed by column name; `columns` is what carries their order. */
+  columnMeta: Record<string, MysqlColumnMeta>;
   primaryKey: string[];
   /** The AUTO_INCREMENT column, or null when the table has none — only such a table has a
    *  counter that resetting after a delete would mean anything for. */

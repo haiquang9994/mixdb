@@ -56,6 +56,17 @@ export function PlusIcon(props: IconProps) {
   );
 }
 
+/** Duplicate: the table's "clone the selected rows" action. Two sheets, the front one offset
+ * over the back one — the same shape the OS file managers use for a copy. */
+export function CopyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5" />
+    </Icon>
+  );
+}
+
 /** Collapsed disclosure, and "next" in a pager. */
 export function ChevronRightIcon(props: IconProps) {
   return (

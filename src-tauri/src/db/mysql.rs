@@ -2,6 +2,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlRow, MySqlSslMode};
 use sqlx::{Column, MySqlPool, Row, TypeInfo};
+use std::collections::BTreeMap;
 
 pub async fn connect(
     host: &str,
@@ -120,11 +121,29 @@ pub async fn list_tables(pool: &MySqlPool, database: &str) -> Result<Vec<String>
     Ok(rows.iter().map(|r| r.get::<String, _>(0)).collect())
 }
 
+/// What `SHOW COLUMNS` knows about one column beyond its name — everything a new row has to
+/// respect: the type it is written as, whether it may be left NULL, and what it falls back to
+/// when an INSERT leaves it out.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnMeta {
+    /// The declared type as MySQL spells it, e.g. `varchar(255)` or `int unsigned`.
+    pub data_type: String,
+    pub nullable: bool,
+    /// The column's DEFAULT, or `None` when it has none. An expression default
+    /// (`CURRENT_TIMESTAMP`, `(uuid())`) is reported here too, unquoted and by itself
+    /// indistinguishable from a literal — `extra` is what tells the two apart.
+    pub default_value: Option<String>,
+    /// `SHOW COLUMNS`' Extra: `auto_increment`, `DEFAULT_GENERATED`, `STORED GENERATED`, ...
+    pub extra: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TablePage {
     pub columns: Vec<String>,
-    pub column_types: Map<String, Value>,
+    /// Keyed by column name; `columns` is what carries their order.
+    pub column_meta: BTreeMap<String, ColumnMeta>,
     pub primary_key: Vec<String>,
     /// The AUTO_INCREMENT column, if the table has one. Only such a table has a
     /// counter worth offering to reset after a delete.
@@ -154,12 +173,17 @@ pub async fn table_data(
         .iter()
         .map(|r| r.get::<String, _>("Field"))
         .collect();
-    let column_types: Map<String, Value> = column_rows
+    let column_meta: BTreeMap<String, ColumnMeta> = column_rows
         .iter()
         .map(|r| {
             (
                 r.get::<String, _>("Field"),
-                Value::String(r.get::<String, _>("Type")),
+                ColumnMeta {
+                    data_type: r.get::<String, _>("Type"),
+                    nullable: r.get::<String, _>("Null") == "YES",
+                    default_value: r.try_get::<Option<String>, _>("Default").unwrap_or(None),
+                    extra: r.get::<String, _>("Extra"),
+                },
             )
         })
         .collect();
@@ -189,7 +213,7 @@ pub async fn table_data(
 
     Ok(TablePage {
         columns,
-        column_types,
+        column_meta,
         primary_key,
         auto_increment_column,
         rows: rows.iter().map(row_to_json).collect(),
@@ -273,6 +297,54 @@ pub async fn update_row(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Inserts `rows`, one map per new row, all in a single transaction: if any one of them is
+/// rejected, none of them land.
+///
+/// A row only carries the columns it has something to say about — a column left out of the map
+/// is left out of that row's INSERT too, so the table's own DEFAULT (or AUTO_INCREMENT, or a
+/// generated expression) is what fills it. That is also why each row is its own statement
+/// rather than one multi-VALUES INSERT: rows may fill in different sets of columns, and the
+/// error a rejected row produces can then say which row it was.
+pub async fn insert_rows(
+    pool: &MySqlPool,
+    database: &str,
+    table: &str,
+    rows: &[Map<String, Value>],
+) -> Result<(), String> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    for (i, row) in rows.iter().enumerate() {
+        // `() VALUES ()` is MySQL's way of spelling "a row that is nothing but defaults".
+        let sql = if row.is_empty() {
+            format!("INSERT INTO {qualified} () VALUES ()")
+        } else {
+            let columns = row
+                .keys()
+                .map(|c| quote_ident(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let placeholders = vec!["?"; row.len()].join(", ");
+            format!("INSERT INTO {qualified} ({columns}) VALUES ({placeholders})")
+        };
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+        for v in row.values() {
+            query = bind_value(query, v);
+        }
+        if let Err(e) = query.execute(&mut *tx).await {
+            tx.rollback().await.map_err(|e| e.to_string())?;
+            return Err(format!("Row {}: {e}", i + 1));
+        }
+    }
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
