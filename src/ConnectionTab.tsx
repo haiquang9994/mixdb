@@ -15,36 +15,11 @@ import ErrorBanner from "./components/ErrorBanner";
 import ConfirmDialog from "./components/ConfirmDialog";
 import Button from "./components/Button";
 import Input from "./components/Input";
+import { EyeIcon, EyeOffIcon } from "./icons";
 import { useTranslation } from "./i18n";
 
 interface Props {
   onTitleChange: (title: string) => void;
-}
-
-const EYE_PATHS = (
-  <>
-    <path d="M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8Z" />
-    <circle cx="8" cy="8" r="2" />
-  </>
-);
-
-function eyeIcon(struckThrough: boolean) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {EYE_PATHS}
-      {struckThrough && <path d="M2.5 13.5 13.5 2.5" />}
-    </svg>
-  );
 }
 
 const KIND_BADGE: Record<DbKind, string> = {
@@ -466,7 +441,9 @@ function ConnectionTab({ onTitleChange }: Props) {
                 title={uriRevealed ? t("connection.hideConnectionString") : t("connection.revealConnectionString")}
                 onClick={() => (uriRevealed ? setUriRevealed(false) : setConfirmingReveal(true))}
               >
-                {eyeIcon(uriRevealed)}
+                {/* The struck-through eye marks the state the button moves *to*: shown now,
+                    click to hide. */}
+                {uriRevealed ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
               </Button>
             </label>
           </div>

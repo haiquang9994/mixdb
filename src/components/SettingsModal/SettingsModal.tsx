@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { ThemeMode } from "../../theme";
 import type { Language } from "../../i18n";
+import { CloseIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import styles from "./SettingsModal.module.css";
 
@@ -39,7 +40,7 @@ function SettingsModal({ theme, onThemeChange, onClose }: SettingsModalProps) {
         <div className={styles.header}>
           <h3 className={styles.title}>{t("settings.title")}</h3>
           <button type="button" className={styles.close} onClick={onClose} title={t("settings.close")}>
-            ×
+            <CloseIcon />
           </button>
         </div>
 

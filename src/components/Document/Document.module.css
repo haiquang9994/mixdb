@@ -23,6 +23,8 @@
 
 .collapseToggle {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
   border: none;
   background: transparent;
   box-shadow: none;
@@ -30,7 +32,7 @@
   opacity: 0.6;
   cursor: pointer;
   line-height: 1;
-  font-size: 0.8em;
+  font-size: 0.9em;
 }
 
 .collapseToggle:hover {
@@ -83,6 +85,9 @@
 }
 
 .unsaved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
   font-size: 0.75em;
   color: rgb(190, 140, 0);
   white-space: nowrap;
@@ -121,6 +126,9 @@
 
 .savedFlash {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
   font-size: 0.75em;
   color: #2e9e4f;
   white-space: nowrap;
@@ -166,17 +174,21 @@
 
 .deleteDocButton {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
   border: none;
   background: transparent;
   box-shadow: none;
-  padding: 0 4px;
+  padding: 2px 4px;
   opacity: 0.5;
   cursor: pointer;
   line-height: 1;
+  font-size: 0.9em;
 }
 
 .deleteDocButton:hover {
   opacity: 1;
+  color: #c94a4a;
   background: rgba(201, 74, 74, 0.15);
   border-radius: 4px;
 }

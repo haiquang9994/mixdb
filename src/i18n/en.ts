@@ -119,7 +119,7 @@ const en = {
     showMore: "+{{n}} more...",
     collapse: "Collapse",
     expand: "Expand",
-    unsavedChanges: "\u25cf {{n}} unsaved",
+    unsavedChanges: "{{n}} unsaved",
     saveError: "Failed to save",
     selectTypePlaceholder: "Type",
     maxDepthReached: "\u2026 (max depth reached)",

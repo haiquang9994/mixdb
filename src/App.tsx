@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import ConnectionTab from "./ConnectionTab";
 import SettingsModal from "./components/SettingsModal";
+import { CloseIcon, PlusIcon } from "./icons";
 import { useTheme } from "./theme";
 import { useTranslation } from "./i18n";
 import "./App.css";
@@ -88,12 +89,12 @@ function App() {
               }}
               title={t("app.closeTab")}
             >
-              ×
+              <CloseIcon />
             </button>
           </div>
         ))}
         <button className="tab-new" onClick={openTab} title={t("app.newConnectionTab")}>
-          +
+          <PlusIcon />
         </button>
       </div>
 

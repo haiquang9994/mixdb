@@ -31,6 +31,8 @@
 }
 
 .lock {
+  display: inline-flex;
+  align-items: center;
   margin-left: 0.25rem;
   opacity: 0.6;
   font-size: 0.85em;
@@ -91,13 +93,16 @@
 
 .iconButton {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
   border: none;
   background: transparent;
   box-shadow: none;
-  padding: 0 4px;
+  padding: 2px 4px;
   opacity: 0.5;
   cursor: pointer;
   line-height: 1;
+  font-size: 0.9em;
 }
 
 .iconButton:hover {

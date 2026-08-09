@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ChevronDownIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import styles from "./Select.module.css";
 
@@ -182,15 +183,9 @@ function Select<T extends string | number>({
         <span className={styles.value} style={{ textAlign: optionAlign }}>
           {selected ? selected.label : placeholder ?? t("select.placeholder")}
         </span>
-        <svg
-          className={styles.chevron}
-          width="10"
-          height="6"
-          viewBox="0 0 10 6"
-          aria-hidden="true"
-        >
-          <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        {/* Sized above 1em because the shared icon grid leaves margin around the glyph it
+            draws, and below the trigger's line box so the icon never sets its height. */}
+        <ChevronDownIcon size="1.2em" className={styles.chevron} />
       </button>
       {open &&
         createPortal(

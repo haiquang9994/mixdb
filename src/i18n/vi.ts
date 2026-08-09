@@ -121,7 +121,7 @@ const vi: TranslationDict = {
     showMore: "+{{n}} nữa...",
     collapse: "Thu gọn",
     expand: "Mở rộng",
-    unsavedChanges: "● {{n}} thay đổi chưa lưu",
+    unsavedChanges: "{{n}} thay đổi chưa lưu",
     saveError: "Lưu thất bại",
     selectTypePlaceholder: "Kiểu",
     maxDepthReached: "… (đã đạt độ sâu tối đa)",

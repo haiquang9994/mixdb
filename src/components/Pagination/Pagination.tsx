@@ -1,5 +1,6 @@
 import Select from "../Select";
 import Button from "../Button";
+import { ChevronLeftIcon, ChevronRightIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import styles from "./Pagination.module.css";
 
@@ -36,7 +37,7 @@ function Pagination({
         disabled={page <= 0 || loading}
         onClick={() => onPageChange(Math.max(0, page - 1))}
       >
-        ‹
+        <ChevronLeftIcon />
       </Button>
       <span>{t("pagination.status", { page: page + 1, pageCount, total })}</span>
       <Button
@@ -46,7 +47,7 @@ function Pagination({
         disabled={page + 1 >= pageCount || loading}
         onClick={() => onPageChange(page + 1)}
       >
-        ›
+        <ChevronRightIcon />
       </Button>
       <Select
         value={pageSize}

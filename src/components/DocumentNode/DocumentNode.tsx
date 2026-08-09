@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import Select from "../Select";
 import Input, { Textarea } from "../Input";
+import { LockIcon, TrashIcon } from "../../icons";
 import { useTranslation, type TranslationKey } from "../../i18n";
 import {
   CREATABLE_TYPES,
@@ -700,7 +701,11 @@ function DocumentNode({
             }}
           >
             {parentKind === "array" ? `[${propKey}]` : propKey}
-            {readOnly && <span className={styles.lock} title={t("noSqlTable.idReadOnlyTooltip")}>🔒</span>}
+            {readOnly && (
+              <span className={styles.lock} title={t("noSqlTable.idReadOnlyTooltip")}>
+                <LockIcon />
+              </span>
+            )}
           </span>
         )}
         <span
@@ -761,7 +766,7 @@ function DocumentNode({
             title={marked ? t("noSqlTable.undoDeleteProperty") : t("noSqlTable.deleteProperty")}
             onClick={() => onToggleDelete(path)}
           >
-            🗑
+            <TrashIcon />
           </button>
         )}
       </div>

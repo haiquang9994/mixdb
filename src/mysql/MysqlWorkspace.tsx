@@ -6,6 +6,7 @@ import Input from "../components/Input";
 import SqlTable from "../components/SqlTable";
 import ItemList from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
+import { ReloadIcon } from "../icons";
 import { useTranslation } from "../i18n";
 
 interface Props {
@@ -240,22 +241,10 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
               disabled={!selectedDb || tablesLoading}
               onClick={reloadTables}
             >
-              <svg
+              <ReloadIcon
+                size={14}
                 className={`mysql-sidebar-action-icon${tablesLoading ? " mysql-sidebar-action-icon-spinning" : ""}`}
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                aria-hidden="true"
-              >
-                <path
-                  d="M13.5 8a5.5 5.5 0 1 1-1.6-3.89M13.5 2v3.2h-3.2"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              />
             </button>
           </div>
         </aside>

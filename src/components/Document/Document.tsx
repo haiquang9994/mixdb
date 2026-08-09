@@ -3,6 +3,7 @@ import type { DocUpdateOps } from "../../mongo/api";
 import { deleteAtPath, getAtPath, renameKeyAtPath, setAtPath } from "../../mongo/docOps";
 import { isWrapper, type TypedDocument, type TypedValue } from "../../mongo/bsonTypes";
 import DocumentNode, { ValueEditor, type DocumentEditMode } from "../DocumentNode";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, DotIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import styles from "./Document.module.css";
 
@@ -492,7 +493,7 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
           onClick={() => setCollapsed((prev) => !prev)}
           title={collapsed ? t("noSqlTable.expandDocument") : t("noSqlTable.collapseDocument")}
         >
-          {collapsed ? "▸" : "▾"}
+          {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
         </button>
         <span className={styles.docIndex}>#{displayNumber}</span>
         <span className={styles.docIdPreview} title={idPreviewText(idValue)}>
@@ -501,7 +502,10 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
         <div className={styles.docHeaderSpacer} />
         {pendingCount > 0 && (
           <>
-            <span className={styles.unsaved}>{t("noSqlTable.unsavedChanges", { n: pendingCount })}</span>
+            <span className={styles.unsaved}>
+              <DotIcon />
+              {t("noSqlTable.unsavedChanges", { n: pendingCount })}
+            </span>
             <button
               type="button"
               className={styles.saveBtn}
@@ -517,7 +521,12 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
             </button>
           </>
         )}
-        {pendingCount === 0 && saved && <span className={styles.savedFlash}>✓ {t("noSqlTable.savedFlash")}</span>}
+        {pendingCount === 0 && saved && (
+          <span className={styles.savedFlash}>
+            <CheckIcon />
+            {t("noSqlTable.savedFlash")}
+          </span>
+        )}
         {confirmingDelete ? (
           <span className={styles.confirmDelete}>
             {t("noSqlTable.confirmDeleteDocument")}
@@ -536,7 +545,7 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
             title={t("noSqlTable.deleteDocument")}
             onClick={() => setConfirmingDelete(true)}
           >
-            🗑
+            <TrashIcon />
           </button>
         )}
       </div>

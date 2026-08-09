@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { CloseIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import styles from "./ErrorBanner.module.css";
 
@@ -26,7 +27,7 @@ function ErrorBanner({ message, onDismiss }: Props) {
     <p className={styles.banner}>
       {message}
       <button type="button" className={styles.dismiss} aria-label={t("errorBanner.dismiss")} onClick={onDismiss}>
-        ×
+        <CloseIcon />
       </button>
       <span className={styles.countdown}>
         {/* key={message} remounts the bar (and its CSS animation) per new error */}
