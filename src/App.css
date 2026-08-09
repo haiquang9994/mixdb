@@ -515,6 +515,13 @@ body {
   border-color: transparent;
 }
 
+.context-menu button:disabled,
+.context-menu button:disabled:hover {
+  background: transparent;
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .context-menu-delete {
   color: #d32f2f;
 }

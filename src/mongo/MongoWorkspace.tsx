@@ -7,6 +7,7 @@ import {
   mongoRenameCollection,
   mongoServerInfo,
 } from "./api";
+import { isMongoSystemDatabase } from "./system";
 import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DatabaseActions from "../components/DatabaseActions";
@@ -289,9 +290,26 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     }
   }
 
+  /** A database the server keeps for itself: its collections are read here like any other, but
+   * nothing in it may be created, renamed or dropped, nor anything done to it as a whole. */
+  const systemDatabase = selectedDb !== "" && isMongoSystemDatabase(selectedDb);
+
   const collectionActions: ItemAction[] = [
-    { key: "rename", label: t("mongo.renameCollection"), onSelect: setRenamingCollection },
-    { key: "drop", label: t("mongo.dropCollection"), danger: true, onSelect: setDroppingCollection },
+    {
+      key: "rename",
+      label: t("mongo.renameCollection"),
+      disabled: systemDatabase,
+      disabledHint: t("mongo.systemCollection", { database: selectedDb }),
+      onSelect: setRenamingCollection,
+    },
+    {
+      key: "drop",
+      label: t("mongo.dropCollection"),
+      danger: true,
+      disabled: systemDatabase,
+      disabledHint: t("mongo.systemCollection", { database: selectedDb }),
+      onSelect: setDroppingCollection,
+    },
   ];
 
   const filteredCollections = collectionFilter.trim()
@@ -412,8 +430,10 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                 {
                   key: "add",
                   icon: PlusIcon,
-                  label: t("mongo.addCollection"),
-                  disabled: !selectedDb || collectionsLoading,
+                  label: systemDatabase
+                    ? t("mongo.addCollectionSystem", { database: selectedDb })
+                    : t("mongo.addCollection"),
+                  disabled: !selectedDb || collectionsLoading || systemDatabase,
                   onClick: () => setCreatingCollection(true),
                 },
               ]}

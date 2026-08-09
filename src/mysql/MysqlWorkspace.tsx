@@ -9,6 +9,7 @@ import {
   mysqlRenameTable,
   mysqlServerInfo,
 } from "./api";
+import { isMysqlSystemDatabase } from "./system";
 import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DatabaseActions from "../components/DatabaseActions";
@@ -303,9 +304,26 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     }
   }
 
+  /** A database the server keeps for itself: its tables are read here like any other, but nothing
+   * in it may be created, renamed or dropped, nor anything done to it as a whole. */
+  const systemDatabase = selectedDb !== "" && isMysqlSystemDatabase(selectedDb);
+
   const tableActions: ItemAction[] = [
-    { key: "rename", label: t("mysql.renameTable"), onSelect: setRenamingTable },
-    { key: "drop", label: t("mysql.dropTable"), danger: true, onSelect: setDroppingTable },
+    {
+      key: "rename",
+      label: t("mysql.renameTable"),
+      disabled: systemDatabase,
+      disabledHint: t("mysql.systemTable", { database: selectedDb }),
+      onSelect: setRenamingTable,
+    },
+    {
+      key: "drop",
+      label: t("mysql.dropTable"),
+      danger: true,
+      disabled: systemDatabase,
+      disabledHint: t("mysql.systemTable", { database: selectedDb }),
+      onSelect: setDroppingTable,
+    },
   ];
 
   const filteredTables = tableFilter.trim()
@@ -422,8 +440,10 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                 {
                   key: "add",
                   icon: PlusIcon,
-                  label: t("mysql.addTable"),
-                  disabled: !selectedDb || tablesLoading,
+                  label: systemDatabase
+                    ? t("mysql.addTableSystem", { database: selectedDb })
+                    : t("mysql.addTable"),
+                  disabled: !selectedDb || tablesLoading || systemDatabase,
                   onClick: () => setCreatingTable(true),
                 },
               ]}

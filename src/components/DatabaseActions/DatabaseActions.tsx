@@ -8,7 +8,9 @@ import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { toolsInstall, toolsReady } from "../../tools";
 import { mongoDropDatabase, mongoDump, mongoRestore } from "../../mongo/api";
+import { isMongoSystemDatabase } from "../../mongo/system";
 import { mysqlDropDatabase, mysqlDump, mysqlRestore } from "../../mysql/api";
+import { isMysqlSystemDatabase } from "../../mysql/system";
 import type { MysqlDumpMode } from "../../mysql/api";
 
 /** What the workspace is told happened, so it can reload what the change touched. */
@@ -54,7 +56,17 @@ function DatabaseActions({
   const [running, setRunning] = useState(false);
 
   const suite = kind;
-  const busy = disabled || running || database === "";
+  /** A database the server keeps for itself: none of the three has anything sensible to do to one,
+   * and dropping it would break the server, so all three are switched off over it. */
+  const system =
+    database !== "" &&
+    (kind === "mysql" ? isMysqlSystemDatabase(database) : isMongoSystemDatabase(database));
+  const busy = disabled || running || database === "" || system;
+
+  /** The button's tooltip, replaced over a system database by what is stopping it. */
+  function label(key: "dump.dump" | "dump.restore" | "dump.drop") {
+    return system ? t("dump.systemDatabase", { database }) : t(key);
+  }
 
   /** Runs one tool with the overlay up, and reports whatever it says went wrong. */
   async function withBusy(label: string, work: () => Promise<void>): Promise<boolean> {
@@ -173,21 +185,21 @@ function DatabaseActions({
           {
             key: "dump",
             icon: DownloadIcon,
-            label: t("dump.dump"),
+            label: label("dump.dump"),
             disabled: busy,
             onClick: () => void startDump(),
           },
           {
             key: "restore",
             icon: UploadIcon,
-            label: t("dump.restore"),
+            label: label("dump.restore"),
             disabled: busy,
             onClick: () => void startRestore(),
           },
           {
             key: "drop",
             icon: TrashIcon,
-            label: t("dump.drop"),
+            label: label("dump.drop"),
             danger: true,
             disabled: busy,
             onClick: () => setDropping(true),

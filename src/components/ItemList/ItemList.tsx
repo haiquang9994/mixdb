@@ -9,6 +9,11 @@ export interface ItemAction {
   label: string;
   /** Paints the entry as destructive. For actions that lose data, not merely risky ones. */
   danger?: boolean;
+  /** Greys the entry out and stops it being chosen. Shown rather than hidden, so what the menu
+   * offers stays the same wherever it is opened and the missing one is not read as a bug. */
+  disabled?: boolean;
+  /** Why it is greyed out, as the entry's tooltip — a disabled entry with no reason is a dead end. */
+  disabledHint?: string;
   /** Given the item the menu was opened on — the menu closes first, so this may open a dialog. */
   onSelect: (item: string) => void;
 }
@@ -100,6 +105,8 @@ function ItemList({
                   key={action.key}
                   type="button"
                   className={action.danger ? "context-menu-delete" : undefined}
+                  disabled={action.disabled}
+                  title={action.disabled ? action.disabledHint : undefined}
                   onClick={() => {
                     setMenu(null);
                     action.onSelect(menu.item);
