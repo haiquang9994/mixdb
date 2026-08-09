@@ -1,26 +1,46 @@
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use redis::Value as RedisValue;
-use redis::{ConnectionAddr, IntoConnectionInfo, RedisConnectionInfo};
+use redis::{ConnectionAddr, ConnectionInfo, IntoConnectionInfo, RedisConnectionInfo};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
-/// Opens a connection to `host:port`, already switched to database `db`.
+/// One tab's connection to a Redis server, and everything needed to open it again.
 ///
-/// The address and credentials are passed as values rather than formatted into a `redis://` URL:
-/// a URL percent-decodes what it carries, so a password holding a `%`, `@`, `/` or `#` — all
-/// perfectly ordinary in a generated password — would arrive at the server as different
-/// characters, or make the URL unparseable outright.
+/// The commands go through a `ConnectionManager` rather than a plain multiplexed connection: a
+/// desktop client sits idle for long stretches, and an idle socket is exactly what a server's
+/// `timeout` (or anything between the two) closes. The manager notices the dropped socket and
+/// dials again in the background, where a bare connection would fail every command from then on
+/// and leave the user to reconnect the tab by hand.
+pub struct Connection {
+    /// What the manager was built from — address, credentials and the selected database.
+    info: ConnectionInfo,
+    manager: ConnectionManager,
+}
+
+impl Connection {
+    /// The handle every command is sent through.
+    pub fn commands(&mut self) -> &mut ConnectionManager {
+        &mut self.manager
+    }
+}
+
+/// The connection details for `host:port`, database `db`.
+///
+/// Built as values rather than formatted into a `redis://` URL: a URL percent-decodes what it
+/// carries, so a password holding a `%`, `@`, `/` or `#` — all perfectly ordinary in a generated
+/// password — would arrive at the server as different characters, or make the URL unparseable
+/// outright.
 ///
 /// `username` is the Redis 6 ACL user. Left empty it is sent as nothing at all, which is what an
 /// older server (or the default user's `requirepass`) expects.
-pub async fn connect(
+fn connection_info(
     host: &str,
     port: u16,
     username: Option<&str>,
     password: Option<&str>,
     db: i64,
-) -> Result<MultiplexedConnection, String> {
+) -> Result<ConnectionInfo, String> {
     let mut redis_settings = RedisConnectionInfo::default().set_db(db);
     if let Some(username) = username.filter(|u| !u.is_empty()) {
         redis_settings = redis_settings.set_username(username);
@@ -28,20 +48,33 @@ pub async fn connect(
     if let Some(password) = password.filter(|p| !p.is_empty()) {
         redis_settings = redis_settings.set_password(password);
     }
-    let info = ConnectionAddr::Tcp(host.to_string(), port)
+    ConnectionAddr::Tcp(host.to_string(), port)
         .into_connection_info()
-        .map_err(|e| e.to_string())?
-        .set_redis_settings(redis_settings);
-
-    let client = redis::Client::open(info).map_err(|e| e.to_string())?;
-    client
-        .get_multiplexed_async_connection()
-        .await
         .map_err(|e| e.to_string())
+        .map(|info| info.set_redis_settings(redis_settings))
+}
+
+async fn open(info: ConnectionInfo) -> Result<Connection, String> {
+    let client = redis::Client::open(info.clone()).map_err(|e| e.to_string())?;
+    let manager = ConnectionManager::new(client)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(Connection { info, manager })
+}
+
+/// Opens a connection to `host:port`, already switched to database `db`.
+pub async fn connect(
+    host: &str,
+    port: u16,
+    username: Option<&str>,
+    password: Option<&str>,
+    db: i64,
+) -> Result<Connection, String> {
+    open(connection_info(host, port, username, password, db)?).await
 }
 
 pub async fn run_command(
-    conn: &mut MultiplexedConnection,
+    conn: &mut ConnectionManager,
     args: Vec<String>,
 ) -> Result<Value, String> {
     let Some((name, rest)) = args.split_first() else {
@@ -100,7 +133,7 @@ pub struct ServerInfo {
 
 /// Reads what the header shows about the server, off `INFO server` — a section every Redis
 /// serves, unlike `CONFIG`, which managed deployments often withhold.
-pub async fn server_info(conn: &mut MultiplexedConnection) -> Result<ServerInfo, String> {
+pub async fn server_info(conn: &mut ConnectionManager) -> Result<ServerInfo, String> {
     let text: String = redis::cmd("INFO")
         .arg("server")
         .query_async(conn)
@@ -134,7 +167,7 @@ const DEFAULT_DATABASE_COUNT: i64 = 16;
 /// How many databases this server was configured with. `CONFIG GET` is disabled or renamed on a
 /// good number of managed Redis offerings, so a failure here is ordinary rather than exceptional
 /// and falls back to the default instead of failing the listing.
-async fn database_count(conn: &mut MultiplexedConnection) -> i64 {
+async fn database_count(conn: &mut ConnectionManager) -> i64 {
     let config: Result<HashMap<String, String>, _> = redis::cmd("CONFIG")
         .arg("GET")
         .arg("databases")
@@ -147,7 +180,7 @@ async fn database_count(conn: &mut MultiplexedConnection) -> i64 {
         .unwrap_or(DEFAULT_DATABASE_COUNT)
 }
 
-pub async fn list_databases(conn: &mut MultiplexedConnection) -> Result<Vec<DbInfo>, String> {
+pub async fn list_databases(conn: &mut ConnectionManager) -> Result<Vec<DbInfo>, String> {
     let count = database_count(conn).await;
     // `INFO keyspace` lists only the databases that hold something, one line per database:
     // `db0:keys=12,expires=1,avg_ttl=0`. Every other index exists too, it is simply empty.
@@ -184,12 +217,16 @@ pub async fn list_databases(conn: &mut MultiplexedConnection) -> Result<Vec<DbIn
 
 /// Points this connection at another numbered database. Sticky: the connection is one per open
 /// tab, and everything read afterwards comes from the database selected here.
-pub async fn select_db(conn: &mut MultiplexedConnection, index: i64) -> Result<(), String> {
-    redis::cmd("SELECT")
-        .arg(index)
-        .query_async::<()>(conn)
-        .await
-        .map_err(|e| e.to_string())
+///
+/// Opens a fresh connection rather than sending `SELECT` over the current one. The manager
+/// reconnects on its own after a dropped socket, and it does so from the `ConnectionInfo` it was
+/// built with — a `SELECT` sent by hand would be forgotten by that reconnect, and the tab would
+/// quietly go on reading a different database than the one it is showing.
+pub async fn select_db(conn: &mut Connection, index: i64) -> Result<(), String> {
+    let settings = conn.info.redis_settings().clone().set_db(index);
+    let info = conn.info.clone().set_redis_settings(settings);
+    *conn = open(info).await?;
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]
@@ -221,7 +258,7 @@ const MAX_SCAN_ROUNDS: usize = 20;
 /// Reads TYPE for a batch of keys in one round trip. Worth pipelining: the type is what the
 /// list shows next to each name, so it is one command per key on every page otherwise.
 async fn key_types(
-    conn: &mut MultiplexedConnection,
+    conn: &mut ConnectionManager,
     names: &[String],
 ) -> Result<Vec<String>, String> {
     if names.is_empty() {
@@ -242,7 +279,7 @@ async fn key_types(
 /// partition — `SCAN` may hand back a key twice across rounds, and only a key present for the
 /// whole walk is guaranteed to show up at all.
 pub async fn scan_keys(
-    conn: &mut MultiplexedConnection,
+    conn: &mut ConnectionManager,
     pattern: &str,
     cursor: &str,
     count: i64,
@@ -322,7 +359,7 @@ fn score_to_json(score: f64) -> Value {
 }
 
 pub async fn key_value(
-    conn: &mut MultiplexedConnection,
+    conn: &mut ConnectionManager,
     key: &str,
     cursor: Option<&str>,
     count: i64,
@@ -474,7 +511,7 @@ pub async fn key_value(
 /// large collection's memory happens on a background thread instead of blocking the server.
 /// Servers older than 4.0 don't have it, so a failure retries with `DEL`.
 pub async fn delete_keys(
-    conn: &mut MultiplexedConnection,
+    conn: &mut ConnectionManager,
     keys: &[String],
 ) -> Result<i64, String> {
     if keys.is_empty() {
@@ -546,9 +583,13 @@ mod tests {
         Some(args)
     }
 
-    /// What every test server is: a connection, and one canned reply per command it receives.
+    /// What every test server is: a listener, and one canned reply per command it receives.
     /// Commands the script has no answer for get `+OK` — that covers the handshake redis-rs
     /// performs on connect, which is not what any of these tests are about.
+    ///
+    /// Every connection is served, not just the first, and they all log into the same list:
+    /// selecting a database opens a second connection, and what that one is handed at the
+    /// handshake is the point of the test that does it.
     async fn serve<F>(script: F) -> (String, Arc<Mutex<Vec<Vec<String>>>>)
     where
         F: Fn(&[String]) -> Option<String> + Send + Sync + 'static,
@@ -557,26 +598,34 @@ mod tests {
         let addr = listener.local_addr().unwrap().to_string();
         let received: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
         let log = Arc::clone(&received);
+        let script = Arc::new(script);
         tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            let mut reader = BufReader::new(stream);
-            while let Some(args) = read_command(&mut reader).await {
-                let reply = script(&args).unwrap_or_else(|| simple("OK"));
-                log.lock().unwrap().push(args);
-                if reader.get_mut().write_all(reply.as_bytes()).await.is_err() {
-                    break;
-                }
+            while let Ok((stream, _)) = listener.accept().await {
+                let log = Arc::clone(&log);
+                let script = Arc::clone(&script);
+                tokio::spawn(async move {
+                    let mut reader = BufReader::new(stream);
+                    while let Some(args) = read_command(&mut reader).await {
+                        let reply = script(&args).unwrap_or_else(|| simple("OK"));
+                        log.lock().unwrap().push(args);
+                        if reader.get_mut().write_all(reply.as_bytes()).await.is_err() {
+                            break;
+                        }
+                    }
+                });
             }
         });
         (addr, received)
     }
 
-    async fn connect_to(addr: &str) -> MultiplexedConnection {
-        redis::Client::open(format!("redis://{addr}"))
-            .unwrap()
-            .get_multiplexed_async_connection()
-            .await
-            .unwrap()
+    async fn open_connection(addr: &str) -> Connection {
+        let (host, port) = addr.rsplit_once(':').unwrap();
+        let info = connection_info(host, port.parse().unwrap(), None, None, 0).unwrap();
+        open(info).await.unwrap()
+    }
+
+    async fn connect_to(addr: &str) -> ConnectionManager {
+        open_connection(addr).await.manager
     }
 
     /// The command name as the dispatchers below match on it.
@@ -844,5 +893,21 @@ mod tests {
 
         assert_eq!(info.version, "7.2.4");
         assert_eq!(info.os, "Linux 5.15.0 x86_64");
+    }
+
+    /// Selecting a database has to survive a reconnect, and the manager reconnects from the
+    /// connection info it holds — so the database has to be part of that info rather than a
+    /// `SELECT` sent by hand over the socket of the moment.
+    #[tokio::test]
+    async fn selecting_a_database_reopens_the_connection() {
+        let (addr, received) = serve(|_| None).await;
+
+        let mut conn = open_connection(&addr).await;
+        select_db(&mut conn, 3).await.unwrap();
+
+        let commands = received.lock().unwrap();
+        assert!(commands
+            .iter()
+            .any(|args| name(args) == "SELECT" && args.get(1).map(String::as_str) == Some("3")));
     }
 }

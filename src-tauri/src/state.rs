@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 pub enum DbHandle {
     Mysql(sqlx::MySqlPool),
     Mongo(mongodb::Client),
-    Redis(redis::aio::MultiplexedConnection),
+    Redis(crate::db::redis::Connection),
 }
 
 pub struct ActiveConnection {

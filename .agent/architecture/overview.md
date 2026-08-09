@@ -30,14 +30,19 @@ live handle up by it in `AppState.connections`.
 1. `connect_db(config)` — if `config.ssh` is set, `ssh_tunnel::open_tunnel` first opens a local
    listener that forwards to the real host, and the driver is pointed at `127.0.0.1:<local_port>`
    instead. All three kinds are wrapped in a 10s timeout.
-2. The resulting handle (`MySqlPool`, `mongodb::Client` or a Redis multiplexed connection) is
-   stored in `AppState.connections` under a new UUID, together with the tunnel's `JoinHandle`.
+2. The resulting handle (`MySqlPool`, `mongodb::Client` or a `redis::Connection`) is stored in
+   `AppState.connections` under a new UUID, together with the `Tunnel`.
 3. Every later command takes that `id`, locks the map, matches the handle against the kind it
    expects, and errors with `"Connection is not a … connection"` on a mismatch.
-4. `disconnect_db(id)` removes the entry. `ActiveConnection`'s `Drop` aborts the tunnel task, so
-   dropping the entry is enough to tear the SSH hop down too. `ConnectionTab` calls it both from
-   the Disconnect button and from an unmount cleanup — closing a tab is a disconnect, and the
-   backend hears about it no other way.
+4. `disconnect_db(id)` removes the entry, which drops the handle and with it the `Tunnel`, whose
+   own `Drop` aborts the forward. `ConnectionTab` calls it both from the Disconnect button and
+   from an unmount cleanup — closing a tab is a disconnect, and the backend hears about it no
+   other way.
+
+Redis is the one kind whose handle reconnects itself: it goes through a `ConnectionManager`, since
+a desktop client idles long enough for a server's `timeout` to close the socket underneath it. The
+selected database is therefore part of the connection info rather than a `SELECT` sent by hand —
+`redis::select_db` reopens the connection so that a later reconnect still lands in the right one.
 
 ## MongoDB is the odd one
 

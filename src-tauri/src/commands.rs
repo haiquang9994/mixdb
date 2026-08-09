@@ -942,7 +942,7 @@ pub async fn redis_command(
 ) -> Result<Value, String> {
     let mut connections = state.connections.lock().await;
     match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::run_command(conn, args).await,
+        Some(DbHandle::Redis(conn)) => redis_db::run_command(conn.commands(), args).await,
         Some(_) => Err("Connection is not a Redis connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }
@@ -955,7 +955,7 @@ pub async fn redis_server_info(
 ) -> Result<redis_db::ServerInfo, String> {
     let mut connections = state.connections.lock().await;
     match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::server_info(conn).await,
+        Some(DbHandle::Redis(conn)) => redis_db::server_info(conn.commands()).await,
         Some(_) => Err("Connection is not a Redis connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }
@@ -968,7 +968,7 @@ pub async fn redis_list_databases(
 ) -> Result<Vec<redis_db::DbInfo>, String> {
     let mut connections = state.connections.lock().await;
     match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::list_databases(conn).await,
+        Some(DbHandle::Redis(conn)) => redis_db::list_databases(conn.commands()).await,
         Some(_) => Err("Connection is not a Redis connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }
@@ -998,7 +998,7 @@ pub async fn redis_scan_keys(
 ) -> Result<redis_db::KeyPage, String> {
     let mut connections = state.connections.lock().await;
     match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::scan_keys(conn, &pattern, &cursor, count).await,
+        Some(DbHandle::Redis(conn)) => redis_db::scan_keys(conn.commands(), &pattern, &cursor, count).await,
         Some(_) => Err("Connection is not a Redis connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }
@@ -1014,7 +1014,7 @@ pub async fn redis_key_value(
 ) -> Result<redis_db::KeyValuePage, String> {
     let mut connections = state.connections.lock().await;
     match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::key_value(conn, &key, cursor.as_deref(), count).await,
+        Some(DbHandle::Redis(conn)) => redis_db::key_value(conn.commands(), &key, cursor.as_deref(), count).await,
         Some(_) => Err("Connection is not a Redis connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }
@@ -1028,7 +1028,7 @@ pub async fn redis_delete_keys(
 ) -> Result<i64, String> {
     let mut connections = state.connections.lock().await;
     match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::delete_keys(conn, &keys).await,
+        Some(DbHandle::Redis(conn)) => redis_db::delete_keys(conn.commands(), &keys).await,
         Some(_) => Err("Connection is not a Redis connection".to_string()),
         None => Err("Unknown connection id".to_string()),
     }
