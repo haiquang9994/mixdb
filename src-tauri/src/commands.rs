@@ -29,11 +29,17 @@ pub async fn test_ssh_tunnel(ssh: SshConfig) -> Result<(), String> {
     ssh_tunnel::test_connection(&ssh).await
 }
 
-async fn resolve_endpoint(config: &ConnectionConfig) -> Result<(String, u16, Option<tokio::task::JoinHandle<()>>), String> {
+/// The address to dial and, when the connection goes through SSH, the tunnel that has to stay
+/// alive for it to keep working. A caller that gives up before storing the tunnel drops it, which
+/// closes the forward again rather than leaving it running unattended.
+async fn resolve_endpoint(
+    config: &ConnectionConfig,
+) -> Result<(String, u16, Option<ssh_tunnel::Tunnel>), String> {
     match &config.ssh {
         Some(ssh) => {
-            let (local_port, task) = ssh_tunnel::open_tunnel(ssh, &config.host, config.port).await?;
-            Ok(("127.0.0.1".to_string(), local_port, Some(task)))
+            let (local_port, tunnel) =
+                ssh_tunnel::open_tunnel(ssh, &config.host, config.port).await?;
+            Ok(("127.0.0.1".to_string(), local_port, Some(tunnel)))
         }
         None => Ok((config.host.clone(), config.port, None)),
     }

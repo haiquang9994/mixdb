@@ -1,7 +1,7 @@
 use crate::models::ConnectionConfig;
+use crate::ssh_tunnel::Tunnel;
 use std::collections::HashMap;
 use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
 
 pub enum DbHandle {
     Mysql(sqlx::MySqlPool),
@@ -18,16 +18,11 @@ pub struct ActiveConnection {
     /// host and port when there is not. `None` for a MongoDB connection with no tunnel, whose
     /// address is whatever its URI says.
     pub endpoint: Option<(String, u16)>,
-    /// Keeps the SSH port-forward task alive; aborted on disconnect/drop.
-    pub tunnel: Option<JoinHandle<()>>,
-}
-
-impl Drop for ActiveConnection {
-    fn drop(&mut self) {
-        if let Some(task) = &self.tunnel {
-            task.abort();
-        }
-    }
+    /// Keeps the SSH port forward open. Never read, and not meant to be: holding it here is the
+    /// whole point, since dropping this connection drops the tunnel with it and that is what tears
+    /// the forward down — see {@link Tunnel}.
+    #[allow(dead_code)]
+    pub tunnel: Option<Tunnel>,
 }
 
 #[derive(Default)]

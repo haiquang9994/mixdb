@@ -11,6 +11,22 @@ use tokio::time::timeout;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const CHANNEL_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// A running port forward, torn down as soon as this is dropped.
+///
+/// The task cannot be held as a bare `JoinHandle`: dropping one of those detaches the task rather
+/// than stopping it. Every connection attempt that failed *after* the tunnel came up — a mistyped
+/// database password, say — would then leave an authenticated SSH session and a bound local port
+/// running for the life of the process, with nothing left holding a handle to either.
+pub struct Tunnel {
+    task: JoinHandle<()>,
+}
+
+impl Drop for Tunnel {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 struct TunnelHandler;
 
 impl client::Handler for TunnelHandler {
@@ -102,12 +118,13 @@ pub async fn test_connection(ssh: &SshConfig) -> Result<(), String> {
 
 /// Opens an SSH connection and a direct-tcpip channel to (remote_host, remote_port),
 /// bridged to a freshly bound local TCP port. Returns the local port to connect to
-/// instead of the real database host, plus the background task handle bridging it.
+/// instead of the real database host, plus the {@link Tunnel} keeping the bridge alive —
+/// dropping that is what closes the forward again.
 pub async fn open_tunnel(
     ssh: &SshConfig,
     remote_host: &str,
     remote_port: u16,
-) -> Result<(u16, JoinHandle<()>), String> {
+) -> Result<(u16, Tunnel), String> {
     let session = authenticate(ssh).await?;
 
     let listener = TcpListener::bind(("127.0.0.1", 0))
@@ -140,7 +157,7 @@ pub async fn open_tunnel(
         }
     });
 
-    Ok((local_port, task))
+    Ok((local_port, Tunnel { task }))
 }
 
 async fn bridge_connection(
