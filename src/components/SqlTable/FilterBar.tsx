@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import Button from "../Button";
 import Input from "../Input";
 import Select from "../Select";
@@ -74,6 +75,18 @@ interface Props {
  * never costs a round trip. */
 function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
   const { t } = useTranslation();
+  const valueRefs = useRef(new Map<number, HTMLInputElement>());
+  /** The row whose value box is owed the focus, cleared as soon as it has been given it. */
+  const [pendingFocus, setPendingFocus] = useState<number | null>(null);
+
+  // Focusing from an effect rather than straight out of the operator handler, for two reasons:
+  // the box is still disabled until the render that the new operator brings, and the select
+  // hands focus back to its own trigger on the way out of the handler.
+  useEffect(() => {
+    if (pendingFocus === null) return;
+    valueRefs.current.get(pendingFocus)?.focus();
+    setPendingFocus(null);
+  }, [pendingFocus]);
 
   const columnOptions = columns.map((c) => ({ value: c, label: c }));
   const operatorOptions = FILTER_OPERATORS.map((op) => ({
@@ -90,6 +103,9 @@ function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
     // disabled box reads as if it were still part of the condition.
     const clears = operatorArity(operator) === "none";
     updateRow(row.id, { operator, ...(clears ? { value: "" } : null) });
+    // Picking an operator is only ever half of writing a condition, so the value is where the
+    // typing goes next — unless the operator is one of the value-less ones.
+    if (!clears) setPendingFocus(row.id);
   }
 
   function valuePlaceholder(operator: FilterOperator): string {
@@ -142,6 +158,10 @@ function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
                   onChange={(operator) => changeOperator(row, operator)}
                 />
                 <Input
+                  ref={(el) => {
+                    if (el) valueRefs.current.set(row.id, el);
+                    else valueRefs.current.delete(row.id);
+                  }}
                   size="small"
                   className={styles.value}
                   value={row.value}

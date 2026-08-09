@@ -1,9 +1,11 @@
-import type { InputHTMLAttributes } from "react";
+import type { ComponentPropsWithRef } from "react";
 import styles from "./Input.module.css";
 
 export type InputSize = "small" | "normal" | "large";
 
-interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
+/** Includes `ref`, which rides along in the rest props onto the underlying input — a caller that
+ * needs to move focus here (the filter bar does) has no other way to reach the element. */
+interface InputProps extends Omit<ComponentPropsWithRef<"input">, "size"> {
   size?: InputSize;
 }
 
