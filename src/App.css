@@ -416,11 +416,36 @@ fieldset .row input {
   width: 100%;
 }
 
+/* Smaller monospace type, same box: the size class writes its padding and line height in `em`,
+   so they shrink along with the font and leave this field a few pixels shorter than every other
+   large control on the form. Restating both in `rem` pins the box to the large size — `:root`
+   fixes the rem at 16px — while only the text gets smaller. */
 .field-connection-string input {
   flex: 1;
   min-width: 0;
   font-family: "Fira Code", monospace;
   font-size: 0.9em;
+  line-height: 1.5rem;
+  padding: 0.6rem 1.2rem;
+}
+
+/* Hidden is the field's resting state, so the value is a mask the user can't type over. */
+.field-connection-string input[readonly] {
+  opacity: 0.75;
+  cursor: default;
+}
+
+/* A large Button so it stands exactly as tall as the field it closes, but squared off: the
+   size's horizontal padding is meant for a word, and this one carries a 16px icon, with the
+   wording it would have had in its `title`. Scoped to the field so it outranks the size class
+   regardless of which stylesheet the bundler emits first. */
+.field-connection-string .reveal-toggle {
+  flex: 0 0 auto;
+  padding: 0.6em;
+  /* The size class sizes a button around a line of text; this one holds a 16px icon, which is a
+     shorter box, so it would sit lower than the input beside it. Taking the field's own height
+     instead of computing one keeps the two aligned however the input is sized. */
+  align-self: stretch;
 }
 
 textarea {

@@ -12,12 +12,39 @@ import MysqlWorkspace from "./mysql/MysqlWorkspace";
 import MongoWorkspace from "./mongo/MongoWorkspace";
 import Select from "./components/Select";
 import ErrorBanner from "./components/ErrorBanner";
+import ConfirmDialog from "./components/ConfirmDialog";
 import Button from "./components/Button";
 import Input from "./components/Input";
 import { useTranslation } from "./i18n";
 
 interface Props {
   onTitleChange: (title: string) => void;
+}
+
+const EYE_PATHS = (
+  <>
+    <path d="M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8Z" />
+    <circle cx="8" cy="8" r="2" />
+  </>
+);
+
+function eyeIcon(struckThrough: boolean) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {EYE_PATHS}
+      {struckThrough && <path d="M2.5 13.5 13.5 2.5" />}
+    </svg>
+  );
 }
 
 const KIND_BADGE: Record<DbKind, string> = {
@@ -65,6 +92,31 @@ function mongoUriDatabase(uri: string): string {
   }
 }
 
+/** Fixed width, not the value's own: the length of a password is itself worth not showing. */
+const MASK = "****";
+
+/** The `user:password@` prefix, i.e. everything the string reveals about credentials. */
+const MONGO_URI_CREDENTIALS_RE = /^(mongodb(?:\+srv)?:\/\/)([^@/?]+)@/i;
+
+/**
+ * What the field shows while hidden. Only the credentials are covered, so the host and options
+ * stay readable — those are what you check a connection against at a glance. A string with no
+ * credentials in it isn't therefore safe to show: it may be one this app never parsed as Mongo at
+ * all, so nothing in it is known to be harmless and the whole value is covered instead.
+ */
+function maskMongoUri(uri: string): string {
+  if (!uri) return "";
+  const credentials = MONGO_URI_CREDENTIALS_RE.exec(uri);
+  if (!credentials) return MASK;
+  const [full, scheme, userinfo] = credentials;
+  // `user:password`, `user` alone, and the empty-password `user:` all mask one part per segment.
+  const masked = userinfo
+    .split(":")
+    .map(() => MASK)
+    .join(":");
+  return `${scheme}${masked}@${uri.slice(full.length)}`;
+}
+
 function ConnectionTab({ onTitleChange }: Props) {
   const { t } = useTranslation();
   const [kind, setKind] = useState<DbKind>("mysql");
@@ -74,6 +126,10 @@ function ConnectionTab({ onTitleChange }: Props) {
   const [password, setPassword] = useState("");
   const [database, setDatabase] = useState("");
   const [uri, setUri] = useState("");
+  // A connection string is only editable once shown, and showing it puts a password on screen —
+  // so an empty one starts open (there is nothing to protect yet) and a saved one starts hidden.
+  const [uriRevealed, setUriRevealed] = useState(true);
+  const [confirmingReveal, setConfirmingReveal] = useState(false);
   const [useSsl, setUseSsl] = useState(true);
 
   const [tunnelType, setTunnelType] = useState<"direct" | "ssh">("direct");
@@ -146,6 +202,8 @@ function ConnectionTab({ onTitleChange }: Props) {
     setPassword(c.password ?? "");
     setDatabase(c.database ?? "");
     setUri(c.uri ?? "");
+    setUriRevealed(!c.uri);
+    setConfirmingReveal(false);
     setUseSsl(c.use_ssl ?? true);
     setTunnelType(c.ssh ? "ssh" : "direct");
     setSshHost("");
@@ -185,6 +243,8 @@ function ConnectionTab({ onTitleChange }: Props) {
     setPassword("");
     setDatabase("");
     setUri("");
+    setUriRevealed(true);
+    setConfirmingReveal(false);
     setUseSsl(true);
     setTunnelType("direct");
     setSshHost("");
@@ -384,10 +444,20 @@ function ConnectionTab({ onTitleChange }: Props) {
               {t("connection.connectionStringLabel")}{" "}
               <Input
                 size="large"
-                value={uri}
+                value={uriRevealed ? uri : maskMongoUri(uri)}
                 onChange={(e) => setUri(e.target.value)}
                 placeholder={t("connection.connectionStringPlaceholder")}
+                readOnly={!uriRevealed}
               />
+              <Button
+                size="large"
+                className="reveal-toggle"
+                aria-pressed={uriRevealed}
+                title={uriRevealed ? t("connection.hideConnectionString") : t("connection.revealConnectionString")}
+                onClick={() => (uriRevealed ? setUriRevealed(false) : setConfirmingReveal(true))}
+              >
+                {eyeIcon(uriRevealed)}
+              </Button>
             </label>
           </div>
         ) : (
@@ -572,6 +642,19 @@ function ConnectionTab({ onTitleChange }: Props) {
           </Button>
         </div>
       </div>
+
+      {confirmingReveal && (
+        <ConfirmDialog
+          title={t("connection.revealConnectionStringTitle")}
+          message={t("connection.revealConnectionStringMessage")}
+          confirmLabel={t("connection.revealConnectionStringConfirm")}
+          onConfirm={() => {
+            setUriRevealed(true);
+            setConfirmingReveal(false);
+          }}
+          onCancel={() => setConfirmingReveal(false)}
+        />
+      )}
     </>
   );
 
