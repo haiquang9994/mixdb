@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlRow, MySqlSslMode};
 use sqlx::{Column, MySqlPool, Row, TypeInfo};
@@ -184,6 +184,159 @@ async fn foreign_keys(
     Ok(keys)
 }
 
+/// One condition on the rows a page is cut out of — the grid's filter bar sends a list of these,
+/// and they are ANDed together. `value` carries whatever the user typed, as text: the operator is
+/// what says how to read it (a single value, a comma-separated list, a pair), and operators like
+/// `isNull` ignore it entirely.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Filter {
+    pub column: String,
+    pub operator: String,
+    #[serde(default)]
+    pub value: Option<String>,
+}
+
+/// Splits an `IN`/`BETWEEN` value into its items: comma-separated, with each item trimmed.
+///
+/// An item may be wrapped in single or double quotes, which is how a value that itself contains a
+/// comma (or leading/trailing spaces that matter) gets through: the quotes are stripped and the
+/// text inside them is taken as-is. Empty items are dropped, so `1,2,` is two items — but a
+/// quoted `''` is kept, as that is the only way to ask for an empty string in a list.
+///
+/// The frontend mirrors this in `src/mysql/filters.ts` to decide whether a row has enough to be
+/// worth sending; the two must agree on how many items a value holds.
+fn split_list(raw: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut quoted = false;
+
+    let mut flush = |current: &mut String, quoted: &mut bool| {
+        let item = if *quoted {
+            std::mem::take(current)
+        } else {
+            current.trim().to_string()
+        };
+        if *quoted || !item.is_empty() {
+            items.push(item);
+        }
+        current.clear();
+        *quoted = false;
+    };
+
+    for ch in raw.chars() {
+        match quote {
+            Some(q) if ch == q => quote = None,
+            Some(_) => current.push(ch),
+            None if ch == '\'' || ch == '"' => {
+                quote = Some(ch);
+                quoted = true;
+            }
+            None if ch == ',' => flush(&mut current, &mut quoted),
+            None => current.push(ch),
+        }
+    }
+    flush(&mut current, &mut quoted);
+    items
+}
+
+/// Escapes the wildcards out of text that is about to be pasted into a LIKE pattern, so a value
+/// with a `%` or `_` in it is matched as itself. Only for the operators that build the pattern
+/// (contains/starts with/ends with) — `like` hands the user's own pattern through untouched.
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+/// Turns the filter rows into a WHERE clause (leading space included, empty when nothing filters)
+/// and the values to bind into its placeholders, in order.
+///
+/// Every value reaches MySQL as a bound parameter, never as SQL text — the column name is the one
+/// part that has to be interpolated, which is why it is checked against the table's own columns
+/// first. A row whose operator wants a value it wasn't given is dropped rather than matched
+/// literally: the bar's opening `id =` row must not become `WHERE id = ''` before anything is
+/// typed into it.
+fn build_where(filters: &[Filter], columns: &[String]) -> Result<(String, Vec<String>), String> {
+    let mut clauses: Vec<String> = Vec::new();
+    let mut binds: Vec<String> = Vec::new();
+
+    for filter in filters {
+        if !columns.iter().any(|c| c == &filter.column) {
+            return Err(format!("Unknown filter column `{}`", filter.column));
+        }
+        let col = quote_ident(&filter.column);
+        let value = filter.value.as_deref().unwrap_or("");
+        let operator = filter.operator.as_str();
+
+        let (clause, mut values): (String, Vec<String>) = match operator {
+            "eq" => (format!("{col} = ?"), vec![value.to_string()]),
+            "ne" => (format!("{col} <> ?"), vec![value.to_string()]),
+            "gt" => (format!("{col} > ?"), vec![value.to_string()]),
+            "gte" => (format!("{col} >= ?"), vec![value.to_string()]),
+            "lt" => (format!("{col} < ?"), vec![value.to_string()]),
+            "lte" => (format!("{col} <= ?"), vec![value.to_string()]),
+            "contains" => (
+                format!("{col} LIKE ?"),
+                vec![format!("%{}%", escape_like(value))],
+            ),
+            "notContains" => (
+                format!("{col} NOT LIKE ?"),
+                vec![format!("%{}%", escape_like(value))],
+            ),
+            "startsWith" => (
+                format!("{col} LIKE ?"),
+                vec![format!("{}%", escape_like(value))],
+            ),
+            "endsWith" => (
+                format!("{col} LIKE ?"),
+                vec![format!("%{}", escape_like(value))],
+            ),
+            "like" => (format!("{col} LIKE ?"), vec![value.to_string()]),
+            "notLike" => (format!("{col} NOT LIKE ?"), vec![value.to_string()]),
+            "regexp" => (format!("{col} REGEXP ?"), vec![value.to_string()]),
+            "notRegexp" => (format!("{col} NOT REGEXP ?"), vec![value.to_string()]),
+            "in" | "notIn" => {
+                let items = split_list(value);
+                if items.is_empty() {
+                    continue;
+                }
+                let placeholders = vec!["?"; items.len()].join(", ");
+                let sql_op = if operator == "in" { "IN" } else { "NOT IN" };
+                (format!("{col} {sql_op} ({placeholders})"), items)
+            }
+            "between" | "notBetween" => {
+                let items = split_list(value);
+                // Two bounds or nothing — one of them alone says nothing about a range.
+                if items.len() < 2 {
+                    continue;
+                }
+                let sql_op = if operator == "between" {
+                    "BETWEEN"
+                } else {
+                    "NOT BETWEEN"
+                };
+                (format!("{col} {sql_op} ? AND ?"), items[..2].to_vec())
+            }
+            "isNull" => (format!("{col} IS NULL"), Vec::new()),
+            "isNotNull" => (format!("{col} IS NOT NULL"), Vec::new()),
+            "isEmpty" => (format!("{col} = ''"), Vec::new()),
+            "isNotEmpty" => (format!("{col} <> ''"), Vec::new()),
+            other => return Err(format!("Unknown filter operator `{other}`")),
+        };
+
+        clauses.push(clause);
+        binds.append(&mut values);
+    }
+
+    if clauses.is_empty() {
+        return Ok((String::new(), binds));
+    }
+    Ok((format!(" WHERE {}", clauses.join(" AND ")), binds))
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TablePage {
@@ -202,6 +355,9 @@ pub struct TablePage {
 /// it — sorting is the server's job, not the page's, or each page would only be sorted within
 /// itself. It is ignored unless it names a real column of this table, which is also what keeps it
 /// out of the SQL text unchecked.
+///
+/// `filters` narrows the table down first, ANDed together; `total` counts what is left after
+/// them, so the pager measures the filtered table rather than the whole one.
 pub async fn table_data(
     pool: &MySqlPool,
     database: &str,
@@ -210,6 +366,7 @@ pub async fn table_data(
     page_size: i64,
     sort_column: Option<&str>,
     sort_desc: bool,
+    filters: &[Filter],
 ) -> Result<TablePage, String> {
     let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
     let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
@@ -256,8 +413,14 @@ pub async fn table_data(
         .find(|r| r.get::<String, _>("Extra").contains("auto_increment"))
         .map(|r| r.get::<String, _>("Field"));
 
-    let count_sql = format!("SELECT COUNT(*) FROM {qualified}");
-    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql))
+    let (where_clause, binds) = build_where(filters, &columns)?;
+
+    let count_sql = format!("SELECT COUNT(*) FROM {qualified}{where_clause}");
+    let mut count_query = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql));
+    for value in &binds {
+        count_query = count_query.bind(value.as_str());
+    }
+    let total: i64 = count_query
         .fetch_one(&mut *conn)
         .await
         .map_err(|e| e.to_string())?;
@@ -276,9 +439,14 @@ pub async fn table_data(
             )
         })
         .unwrap_or_default();
-    let data_sql =
-        format!("SELECT * FROM {qualified}{order_by} LIMIT {page_size} OFFSET {offset}");
-    let rows = sqlx::query(sqlx::AssertSqlSafe(data_sql))
+    let data_sql = format!(
+        "SELECT * FROM {qualified}{where_clause}{order_by} LIMIT {page_size} OFFSET {offset}"
+    );
+    let mut data_query = sqlx::query(sqlx::AssertSqlSafe(data_sql));
+    for value in &binds {
+        data_query = data_query.bind(value.as_str());
+    }
+    let rows = data_query
         .fetch_all(&mut *conn)
         .await
         .map_err(|e| e.to_string())?;

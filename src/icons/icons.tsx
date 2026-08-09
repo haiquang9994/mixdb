@@ -56,6 +56,16 @@ export function PlusIcon(props: IconProps) {
   );
 }
 
+/** Remove one of a repeating set — the filter bar's "drop this row" button. {@link PlusIcon}'s
+ * counterpart, and drawn as its horizontal stroke alone so the pair reads together. */
+export function MinusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12h14" />
+    </Icon>
+  );
+}
+
 /** Duplicate: the table's "clone the selected rows" action. Two sheets, the front one offset
  * over the back one — the same shape the OS file managers use for a copy. */
 export function CopyIcon(props: IconProps) {

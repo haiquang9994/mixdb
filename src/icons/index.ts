@@ -11,6 +11,7 @@ export {
   EyeIcon,
   EyeOffIcon,
   LockIcon,
+  MinusIcon,
   PlusIcon,
   ReloadIcon,
   TrashIcon,

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { MysqlTablePage } from "../types";
+import type { MysqlFilter } from "./filters";
 
 export function mysqlListDatabases(id: string): Promise<string[]> {
   return invoke<string[]>("mysql_list_databases", { id });
@@ -21,7 +22,8 @@ export function mysqlServerInfo(id: string): Promise<MysqlServerInfo> {
 /**
  * Reads one page of a table. `sortColumn` orders the whole table before the page is cut out of it,
  * so paging through a sorted table stays in that order; passing null leaves the rows in whatever
- * order MySQL returns them.
+ * order MySQL returns them. `filters` narrows the table down before either happens, ANDed
+ * together — the page's `total` counts what is left after them.
  */
 export function mysqlTableData(
   id: string,
@@ -30,7 +32,8 @@ export function mysqlTableData(
   page: number,
   pageSize: number,
   sortColumn: string | null = null,
-  sortDesc = false
+  sortDesc = false,
+  filters: MysqlFilter[] = []
 ): Promise<MysqlTablePage> {
   return invoke<MysqlTablePage>("mysql_table_data", {
     id,
@@ -40,6 +43,7 @@ export function mysqlTableData(
     pageSize,
     sortColumn,
     sortDesc,
+    filters,
   });
 }
 

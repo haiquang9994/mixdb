@@ -2,11 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { mysqlDeleteRows, mysqlInsertRows, mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
 import ActionBar from "../ActionBar";
 import ConfirmDialog from "../ConfirmDialog";
+import FilterBar, { initialFilterRows, toQueryFilters, type FilterRow } from "./FilterBar";
 import InsertRowsDialog from "../InsertRowsDialog";
 import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
 import { ChevronDownIcon, ChevronUpIcon, CopyIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import type { MysqlFilter } from "../../mysql/filters";
 import type { MysqlColumnMeta } from "../../types";
 import styles from "./SqlTable.module.css";
 
@@ -75,6 +77,14 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   const [autoIncrementColumn, setAutoIncrementColumn] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [sort, setSort] = useState<Sort | null>(null);
+  // The filter bar edits `filterRows` freely; only Apply copies them into `appliedFilters`, which
+  // is what the fetch below reads. Keeping the two apart is what stops a half-typed condition
+  // from reloading the grid on every keystroke.
+  const [filterRows, setFilterRows] = useState<FilterRow[]>([]);
+  const [appliedFilters, setAppliedFilters] = useState<MysqlFilter[]>([]);
+  // The table whose columns the bar was last seeded from. The seed needs the column list, which
+  // is only known once the first fetch lands (or from the cache, when there is one).
+  const filtersSeededForRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Bumped by the reload action to re-run the fetch below with the page/size unchanged.
   const [reloadToken, setReloadToken] = useState(0);
@@ -182,17 +192,24 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     setPage(0);
     // A sort names a column, and the next table need not have one by that name.
     setSort(null);
-    const cached = columnsCacheRef.current.get(tableCacheKey(selectedDb, selectedTable));
+    // Neither does a filter — the bar starts over on the new table's own columns.
+    setAppliedFilters([]);
+    const key = tableCacheKey(selectedDb, selectedTable);
+    const cached = columnsCacheRef.current.get(key);
     if (cached) {
       setColumns(cached.columns);
       setColumnMeta(cached.columnMeta);
       setPrimaryKey(cached.primaryKey);
       setAutoIncrementColumn(cached.autoIncrementColumn);
+      setFilterRows(initialFilterRows(cached.columns));
+      filtersSeededForRef.current = key;
     } else {
       setColumns([]);
       setColumnMeta({});
       setPrimaryKey([]);
       setAutoIncrementColumn(null);
+      setFilterRows([]);
+      filtersSeededForRef.current = null;
     }
   }, [selectedDb, selectedTable]);
 
@@ -201,22 +218,38 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   // new table — drops the selection rather than carrying it onto different rows.
   useEffect(() => {
     clearSelection();
-  }, [selectedDb, selectedTable, page, pageSize, sort, reloadToken]);
+  }, [selectedDb, selectedTable, page, pageSize, sort, appliedFilters, reloadToken]);
 
   useEffect(() => {
     const db = selectedDb;
     const table = selectedTable;
     let cancelled = false;
     setLoading(true);
-    mysqlTableData(connectionId, db, table, page, pageSize, sort?.column ?? null, sort?.desc ?? false)
+    mysqlTableData(
+      connectionId,
+      db,
+      table,
+      page,
+      pageSize,
+      sort?.column ?? null,
+      sort?.desc ?? false,
+      appliedFilters,
+    )
       .then((result) => {
         if (cancelled) return;
-        columnsCacheRef.current.set(tableCacheKey(db, table), {
+        const key = tableCacheKey(db, table);
+        columnsCacheRef.current.set(key, {
           columns: result.columns,
           columnMeta: result.columnMeta,
           primaryKey: result.primaryKey,
           autoIncrementColumn: result.autoIncrementColumn,
         });
+        // First look at this table's columns — the bar has been waiting for them to put its
+        // opening `id` row together.
+        if (filtersSeededForRef.current !== key) {
+          setFilterRows(initialFilterRows(result.columns));
+          filtersSeededForRef.current = key;
+        }
         setRows(result.rows);
         setColumns(result.columns);
         setColumnMeta(result.columnMeta);
@@ -231,7 +264,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     return () => {
       cancelled = true;
     };
-  }, [connectionId, selectedDb, selectedTable, page, pageSize, sort, reloadToken]);
+  }, [connectionId, selectedDb, selectedTable, page, pageSize, sort, appliedFilters, reloadToken]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -299,6 +332,18 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   async function reload() {
     await commitAndExit();
     setReloadToken((n) => n + 1);
+  }
+
+  /** Runs the filter bar's rows against the table. Like a reload, a staged edit is written first:
+   * the rows come back filtered, and the pending row index would no longer point at the row that
+   * was edited. The result is a different set of rows, so the grid goes back to the first page —
+   * the page the user was on need not even exist under the new conditions. */
+  async function applyFilters() {
+    await commitAndExit();
+    // A new array every time on purpose: pressing Apply twice on the same conditions is a
+    // request to refetch, and an equal-but-identical array would be a no-op.
+    setAppliedFilters(toQueryFilters(filterRows));
+    setPage(0);
   }
 
   /** Moves the clicked column to its next sort state. Like a reload, a staged edit is written
@@ -528,16 +573,31 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const allPageRowsSelected = rows.length > 0 && selectedRows.size === rows.length;
+  // Under a filter, `total` counts the matching rows rather than the table's — and a whole-table
+  // delete would still take every row, matching or not. Neither of the two shortcuts below can
+  // say what it means then, so both are withheld until the filters are cleared.
+  const unfiltered = appliedFilters.length === 0;
   // Only worth offering while the page is a window onto a bigger table: with a single page,
   // deleting every selected row already is deleting the whole table.
-  const canDeleteWholeTable = allPageRowsSelected && pageCount > 1;
+  const canDeleteWholeTable = unfiltered && allPageRowsSelected && pageCount > 1;
   // Resetting the counter only means anything when the delete leaves the table empty — with
   // rows still in it, the next insert has to keep clearing the ids that are already there.
   const canResetAutoIncrement =
-    autoIncrementColumn !== null && (deleteWholeTable || (allPageRowsSelected && pageCount === 1));
+    autoIncrementColumn !== null &&
+    unfiltered &&
+    (deleteWholeTable || (allPageRowsSelected && pageCount === 1));
 
   return (
     <div className={styles.sqlTable}>
+      {columns.length > 0 && (
+        <FilterBar
+          columns={columns}
+          rows={filterRows}
+          onChange={setFilterRows}
+          onApply={() => void applyFilters()}
+          applyDisabled={loading || deleting}
+        />
+      )}
       <div className={styles.scrollWrap}>
         <div
           className={styles.scroll}

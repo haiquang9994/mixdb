@@ -164,8 +164,10 @@ pub async fn mysql_table_data(
     page_size: i64,
     sort_column: Option<String>,
     sort_desc: bool,
+    filters: Option<Vec<mysql::Filter>>,
 ) -> Result<mysql::TablePage, String> {
     let connections = state.connections.lock().await;
+    let filters = filters.unwrap_or_default();
     match connections.get(&id).map(|c| &c.handle) {
         Some(DbHandle::Mysql(pool)) => {
             mysql::table_data(
@@ -176,6 +178,7 @@ pub async fn mysql_table_data(
                 page_size,
                 sort_column.as_deref(),
                 sort_desc,
+                &filters,
             )
             .await
         }
