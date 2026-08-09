@@ -30,12 +30,8 @@ pub async fn mysql_list_tables(
     id: String,
     database: String,
 ) -> Result<Vec<String>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql::list_tables(pool, &database).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql::list_tables(&pool, &database).await
 }
 ```
 
@@ -45,8 +41,10 @@ Conventions baked into that shape:
   `.map_err(|e| e.to_string())` and prepend context when the raw message wouldn't be actionable
   (`"SSH connect failed: {e}"`). The string reaches the user in an `ErrorBanner` verbatim, so write
   it for a human.
-- **The state lock is held across the await.** Fine at this scale (one user, few connections), but
-  don't add long-running work inside the guard.
+- **The connection map is never locked across a query.** `mysql_pool` / `mongo_client` /
+  `redis_connection` look the connection up, clone the handle — a pool, a driver client, or an
+  `Arc` — and drop the guard before returning it. One lock covers every connection in the app, so
+  awaiting under it would make one slow query stop every tab.
 - **Connect paths get `with_timeout`** (10s, `DB_CONNECT_TIMEOUT`) so a wrong host fails fast
   instead of hanging the UI.
 

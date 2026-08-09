@@ -32,8 +32,11 @@ live handle up by it in `AppState.connections`.
    instead. All three kinds are wrapped in a 10s timeout.
 2. The resulting handle (`MySqlPool`, `mongodb::Client` or a `redis::Connection`) is stored in
    `AppState.connections` under a new UUID, together with the `Tunnel`.
-3. Every later command takes that `id`, locks the map, matches the handle against the kind it
-   expects, and errors with `"Connection is not a … connection"` on a mismatch.
+3. Every later command takes that `id` and calls one of `commands::{mysql_pool, mongo_client,
+   redis_connection}`, which lock the map, **clone the handle out, and release the lock** before
+   anything is run on it, erroring with `"Connection is not a … connection"` on a kind mismatch.
+   Never hold `connections` across an `await` on a query: the map is one lock for the whole app,
+   and a query awaited under it stops every other tab.
 4. `disconnect_db(id)` removes the entry, which drops the handle and with it the `Tunnel`, whose
    own `Drop` aborts the forward. `ConnectionTab` calls it both from the Disconnect button and
    from an unmount cleanup — closing a tab is a disconnect, and the backend hears about it no

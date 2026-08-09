@@ -1,7 +1,9 @@
 use serde_json::{Map, Value};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::db::{dump, mongo, mysql, mysql_script, mysql_structure, redis as redis_db, tools};
@@ -106,7 +108,11 @@ pub async fn connect_db(
                 "Redis connection",
             )
             .await?;
-            (DbHandle::Redis(conn), Some((host, port)), tunnel)
+            (
+                DbHandle::Redis(Arc::new(Mutex::new(conn))),
+                Some((host, port)),
+                tunnel,
+            )
         }
     };
 
@@ -129,6 +135,49 @@ pub async fn disconnect_db(state: State<'_, AppState>, id: String) -> Result<(),
     Ok(())
 }
 
+/// The handle `id` names, cloned out of the connection map so that the map is unlocked again
+/// before the command runs anything on it.
+///
+/// This is what `DbHandle` is cheap to clone for. Awaiting a query while holding the map would
+/// turn that lock into a queue for the whole app: a slow `SELECT` in one tab would stop a key
+/// listing in another, and stop the Disconnect button meant to put an end to it.
+async fn handle(state: &State<'_, AppState>, id: &str) -> Result<DbHandle, String> {
+    state
+        .connections
+        .lock()
+        .await
+        .get(id)
+        .map(|connection| connection.handle.clone())
+        .ok_or_else(|| "Unknown connection id".to_string())
+}
+
+async fn mysql_pool(state: &State<'_, AppState>, id: &str) -> Result<sqlx::MySqlPool, String> {
+    match handle(state, id).await? {
+        DbHandle::Mysql(pool) => Ok(pool),
+        _ => Err("Connection is not a MySQL connection".to_string()),
+    }
+}
+
+async fn mongo_client(state: &State<'_, AppState>, id: &str) -> Result<mongodb::Client, String> {
+    match handle(state, id).await? {
+        DbHandle::Mongo(client) => Ok(client),
+        _ => Err("Connection is not a MongoDB connection".to_string()),
+    }
+}
+
+/// The Redis connection `id` names. Locked by the caller for the length of one command, which is
+/// as long as anything needs it: the lock is this connection's own, so two tabs no longer wait on
+/// each other.
+async fn redis_connection(
+    state: &State<'_, AppState>,
+    id: &str,
+) -> Result<Arc<Mutex<redis_db::Connection>>, String> {
+    match handle(state, id).await? {
+        DbHandle::Redis(conn) => Ok(conn),
+        _ => Err("Connection is not a Redis connection".to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn mysql_query(
     state: State<'_, AppState>,
@@ -136,32 +185,20 @@ pub async fn mysql_query(
     sql: String,
     database: Option<String>,
 ) -> Result<Vec<Map<String, Value>>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql::query(pool, &sql, database.as_deref()).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql::query(&pool, &sql, database.as_deref()).await
 }
 
 #[tauri::command]
 pub async fn mysql_list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql::list_databases(pool).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql::list_databases(&pool).await
 }
 
 #[tauri::command]
 pub async fn mysql_server_info(state: State<'_, AppState>, id: String) -> Result<mysql::ServerInfo, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql::server_info(pool).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql::server_info(&pool).await
 }
 
 #[tauri::command]
@@ -170,12 +207,8 @@ pub async fn mysql_list_tables(
     id: String,
     database: String,
 ) -> Result<Vec<String>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql::list_tables(pool, &database).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql::list_tables(&pool, &database).await
 }
 
 /// What every table in the database weighs, for the workspace's Statistics tab.
@@ -185,12 +218,8 @@ pub async fn mysql_table_stats(
     id: String,
     database: String,
 ) -> Result<Vec<mysql_structure::TableStats>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql_structure::table_stats(pool, &database).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_structure::table_stats(&pool, &database).await
 }
 
 #[tauri::command]
@@ -201,12 +230,8 @@ pub async fn mysql_table_data(
     table: String,
     query: mysql::PageQuery,
 ) -> Result<mysql::TablePage, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql::table_data(pool, &database, &table, &query).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql::table_data(&pool, &database, &table, &query).await
 }
 
 #[tauri::command]
@@ -218,12 +243,8 @@ pub async fn mysql_update_row(
     updates: Map<String, Value>,
     key: Map<String, Value>,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql::update_row(pool, &database, &table, &updates, &key).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql::update_row(&pool, &database, &table, &updates, &key).await
 }
 
 #[tauri::command]
@@ -234,12 +255,8 @@ pub async fn mysql_insert_rows(
     table: String,
     rows: Vec<Map<String, Value>>,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql::insert_rows(pool, &database, &table, &rows).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql::insert_rows(&pool, &database, &table, &rows).await
 }
 
 #[tauri::command]
@@ -252,14 +269,8 @@ pub async fn mysql_delete_rows(
     all: bool,
     reset_auto_increment: bool,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => {
-            mysql::delete_rows(pool, &database, &table, &keys, all, reset_auto_increment).await
-        }
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+        mysql::delete_rows(&pool, &database, &table, &keys, all, reset_auto_increment).await
 }
 
 #[tauri::command]
@@ -269,12 +280,8 @@ pub async fn mysql_table_structure(
     database: String,
     table: String,
 ) -> Result<mysql_structure::TableStructure, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql_structure::table_structure(pool, &database, &table).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_structure::table_structure(&pool, &database, &table).await
 }
 
 /// The collations this server has, for the column editor's picker. A property of the server rather
@@ -284,12 +291,8 @@ pub async fn mysql_collations(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<Vec<mysql_structure::Collation>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql_structure::collations(pool).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_structure::collations(&pool).await
 }
 
 /// What a dump or restore needs to dial the server itself: the address actually in use (the
@@ -421,17 +424,9 @@ pub async fn mysql_dump(
     let tool = tools::require(tools::Tool::MysqlDump, &tools_dir(&app)?)?;
     // Read through the pool, before the endpoint: the character set the dump is transferred in and
     // the server's own version are properties of the server, not of how the tool is invoked.
-    let (charset, version) = {
-        let connections = state.connections.lock().await;
-        match connections.get(&id).map(|c| &c.handle) {
-            Some(DbHandle::Mysql(pool)) => (
-                mysql_structure::dump_charset(pool, &database).await?,
-                mysql::server_info(pool).await.map(|info| info.version),
-            ),
-            Some(_) => return Err("Connection is not a MySQL connection".to_string()),
-            None => return Err("Unknown connection id".to_string()),
-        }
-    };
+    let pool = mysql_pool(&state, &id).await?;
+    let charset = mysql_structure::dump_charset(&pool, &database).await?;
+    let version = mysql::server_info(&pool).await.map(|info| info.version);
     // Only 8.0 and up has the histogram table an 8.0 mysqldump reads by default. A version that
     // could not be read is treated as old, which costs a dump nothing but the histograms.
     let column_statistics = version
@@ -523,12 +518,8 @@ pub async fn mysql_drop_database(
     id: String,
     database: String,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql_structure::drop_database(pool, &database).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_structure::drop_database(&pool, &database).await
 }
 
 /// Drops a database and every collection in it.
@@ -538,12 +529,8 @@ pub async fn mongo_drop_database(
     id: String,
     db: String,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => mongo::drop_database(client, &db).await,
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+    mongo::drop_database(&client, &db).await
 }
 
 /// Creates a database, for the header's database picker.
@@ -554,14 +541,8 @@ pub async fn mysql_create_database(
     name: String,
     collation: Option<String>,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => {
-            mysql_structure::create_database(pool, &name, collation.as_deref()).await
-        }
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+        mysql_structure::create_database(&pool, &name, collation.as_deref()).await
 }
 
 /// Creates an empty table — one `id` column and its primary key — for the sidebar's add button.
@@ -573,14 +554,8 @@ pub async fn mysql_create_table(
     table: String,
     collation: Option<String>,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => {
-            mysql_structure::create_table(pool, &database, &table, collation.as_deref()).await
-        }
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+        mysql_structure::create_table(&pool, &database, &table, collation.as_deref()).await
 }
 
 /// Renames a table, for the sidebar's context menu.
@@ -592,14 +567,8 @@ pub async fn mysql_rename_table(
     table: String,
     new_name: String,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => {
-            mysql_structure::rename_table(pool, &database, &table, &new_name).await
-        }
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+        mysql_structure::rename_table(&pool, &database, &table, &new_name).await
 }
 
 /// Drops a table and everything in it, for the sidebar's context menu.
@@ -610,12 +579,8 @@ pub async fn mysql_drop_table(
     database: String,
     table: String,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql_structure::drop_table(pool, &database, &table).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_structure::drop_table(&pool, &database, &table).await
 }
 
 #[tauri::command]
@@ -626,12 +591,8 @@ pub async fn mysql_add_column(
     table: String,
     spec: mysql_structure::ColumnSpec,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql_structure::add_column(pool, &database, &table, &spec).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_structure::add_column(&pool, &database, &table, &spec).await
 }
 
 #[tauri::command]
@@ -643,14 +604,8 @@ pub async fn mysql_modify_column(
     name: String,
     spec: mysql_structure::ColumnSpec,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => {
-            mysql_structure::modify_column(pool, &database, &table, &name, &spec).await
-        }
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+        mysql_structure::modify_column(&pool, &database, &table, &name, &spec).await
 }
 
 #[tauri::command]
@@ -661,12 +616,8 @@ pub async fn mysql_drop_column(
     table: String,
     name: String,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql_structure::drop_column(pool, &database, &table, &name).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_structure::drop_column(&pool, &database, &table, &name).await
 }
 
 #[tauri::command]
@@ -677,12 +628,8 @@ pub async fn mysql_add_index(
     table: String,
     spec: mysql_structure::IndexSpec,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql_structure::add_index(pool, &database, &table, &spec).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_structure::add_index(&pool, &database, &table, &spec).await
 }
 
 #[tauri::command]
@@ -694,14 +641,8 @@ pub async fn mysql_modify_index(
     name: String,
     spec: mysql_structure::IndexSpec,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => {
-            mysql_structure::modify_index(pool, &database, &table, &name, &spec).await
-        }
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+        mysql_structure::modify_index(&pool, &database, &table, &name, &spec).await
 }
 
 #[tauri::command]
@@ -712,12 +653,8 @@ pub async fn mysql_drop_index(
     table: String,
     name: String,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql_structure::drop_index(pool, &database, &table, &name).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_structure::drop_index(&pool, &database, &table, &name).await
 }
 
 /// Runs the Query tab's editor contents. `database` is the one selected in the header, applied as a
@@ -730,32 +667,20 @@ pub async fn mysql_run_script(
     sql: String,
     database: Option<String>,
 ) -> Result<Vec<mysql_script::StatementResult>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mysql(pool)) => mysql_script::run(pool, &sql, database.as_deref()).await,
-        Some(_) => Err("Connection is not a MySQL connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_script::run(&pool, &sql, database.as_deref()).await
 }
 
 #[tauri::command]
 pub async fn mongo_list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => mongo::list_databases(client).await,
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+    mongo::list_databases(&client).await
 }
 
 #[tauri::command]
 pub async fn mongo_server_info(state: State<'_, AppState>, id: String) -> Result<mongo::ServerInfo, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => mongo::server_info(client).await,
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+    mongo::server_info(&client).await
 }
 
 #[tauri::command]
@@ -764,12 +689,8 @@ pub async fn mongo_list_collections(
     id: String,
     db: String,
 ) -> Result<Vec<String>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => mongo::list_collections(client, &db).await,
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+    mongo::list_collections(&client, &db).await
 }
 
 /// What every collection in the database weighs, for the workspace's Statistics tab.
@@ -779,12 +700,8 @@ pub async fn mongo_collection_stats(
     id: String,
     db: String,
 ) -> Result<Vec<mongo::CollectionStats>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => mongo::collection_stats(client, &db).await,
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+    mongo::collection_stats(&client, &db).await
 }
 
 /// Creates an empty collection, for the sidebar's add button.
@@ -795,12 +712,8 @@ pub async fn mongo_create_collection(
     db: String,
     collection: String,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => mongo::create_collection(client, &db, &collection).await,
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+    mongo::create_collection(&client, &db, &collection).await
 }
 
 /// Renames a collection, for the sidebar's context menu.
@@ -812,14 +725,8 @@ pub async fn mongo_rename_collection(
     collection: String,
     new_name: String,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => {
-            mongo::rename_collection(client, &db, &collection, &new_name).await
-        }
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+        mongo::rename_collection(&client, &db, &collection, &new_name).await
 }
 
 /// Drops a collection and every document in it, for the sidebar's context menu.
@@ -830,12 +737,8 @@ pub async fn mongo_drop_collection(
     db: String,
     collection: String,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => mongo::drop_collection(client, &db, &collection).await,
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+    mongo::drop_collection(&client, &db, &collection).await
 }
 
 #[tauri::command]
@@ -847,12 +750,8 @@ pub async fn mongo_find(
     filter: String,
     limit: i64,
 ) -> Result<Vec<Value>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => mongo::find(client, &db, &collection, &filter, limit).await,
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+    mongo::find(&client, &db, &collection, &filter, limit).await
 }
 
 #[tauri::command]
@@ -865,15 +764,9 @@ pub async fn mongo_collection_page(
     page_size: i64,
     filters: Option<Vec<mongo::Filter>>,
 ) -> Result<mongo::CollectionPage, String> {
-    let connections = state.connections.lock().await;
     let filters = filters.unwrap_or_default();
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => {
-            mongo::collection_page(client, &db, &collection, page, page_size, &filters).await
-        }
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+        mongo::collection_page(&client, &db, &collection, page, page_size, &filters).await
 }
 
 #[tauri::command]
@@ -884,12 +777,8 @@ pub async fn mongo_next_ids(
     collection: String,
     count: i64,
 ) -> Result<Vec<Value>, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => mongo::next_ids(client, &db, &collection, count).await,
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+    mongo::next_ids(&client, &db, &collection, count).await
 }
 
 #[tauri::command]
@@ -900,14 +789,8 @@ pub async fn mongo_insert_documents(
     collection: String,
     documents: Vec<Value>,
 ) -> Result<usize, String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => {
-            mongo::insert_documents(client, &db, &collection, &documents).await
-        }
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+        mongo::insert_documents(&client, &db, &collection, &documents).await
 }
 
 #[tauri::command]
@@ -919,14 +802,8 @@ pub async fn mongo_update_document(
     doc_id: Value,
     ops: mongo::DocUpdateOps,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => {
-            mongo::update_document(client, &db, &collection, &doc_id, &ops).await
-        }
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+        mongo::update_document(&client, &db, &collection, &doc_id, &ops).await
 }
 
 #[tauri::command]
@@ -937,12 +814,8 @@ pub async fn mongo_delete_document(
     collection: String,
     doc_id: Value,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().await;
-    match connections.get(&id).map(|c| &c.handle) {
-        Some(DbHandle::Mongo(client)) => mongo::delete_document(client, &db, &collection, &doc_id).await,
-        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let client = mongo_client(&state, &id).await?;
+    mongo::delete_document(&client, &db, &collection, &doc_id).await
 }
 
 #[tauri::command]
@@ -951,12 +824,9 @@ pub async fn redis_command(
     id: String,
     args: Vec<String>,
 ) -> Result<Value, String> {
-    let mut connections = state.connections.lock().await;
-    match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::run_command(conn.commands(), args).await,
-        Some(_) => Err("Connection is not a Redis connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let conn = redis_connection(&state, &id).await?;
+    let mut conn = conn.lock().await;
+    redis_db::run_command(conn.commands(), args).await
 }
 
 #[tauri::command]
@@ -964,12 +834,9 @@ pub async fn redis_server_info(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<redis_db::ServerInfo, String> {
-    let mut connections = state.connections.lock().await;
-    match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::server_info(conn.commands()).await,
-        Some(_) => Err("Connection is not a Redis connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let conn = redis_connection(&state, &id).await?;
+    let mut conn = conn.lock().await;
+    redis_db::server_info(conn.commands()).await
 }
 
 #[tauri::command]
@@ -977,12 +844,9 @@ pub async fn redis_list_databases(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<Vec<redis_db::DbInfo>, String> {
-    let mut connections = state.connections.lock().await;
-    match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::list_databases(conn.commands()).await,
-        Some(_) => Err("Connection is not a Redis connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let conn = redis_connection(&state, &id).await?;
+    let mut conn = conn.lock().await;
+    redis_db::list_databases(conn.commands()).await
 }
 
 #[tauri::command]
@@ -991,12 +855,9 @@ pub async fn redis_select_db(
     id: String,
     index: i64,
 ) -> Result<(), String> {
-    let mut connections = state.connections.lock().await;
-    match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::select_db(conn, index).await,
-        Some(_) => Err("Connection is not a Redis connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let conn = redis_connection(&state, &id).await?;
+    let mut conn = conn.lock().await;
+    redis_db::select_db(&mut conn, index).await
 }
 
 #[tauri::command]
@@ -1007,12 +868,9 @@ pub async fn redis_scan_keys(
     cursor: String,
     count: i64,
 ) -> Result<redis_db::KeyPage, String> {
-    let mut connections = state.connections.lock().await;
-    match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::scan_keys(conn.commands(), &pattern, &cursor, count).await,
-        Some(_) => Err("Connection is not a Redis connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let conn = redis_connection(&state, &id).await?;
+    let mut conn = conn.lock().await;
+    redis_db::scan_keys(conn.commands(), &pattern, &cursor, count).await
 }
 
 #[tauri::command]
@@ -1023,12 +881,9 @@ pub async fn redis_key_value(
     cursor: Option<String>,
     count: i64,
 ) -> Result<redis_db::KeyValuePage, String> {
-    let mut connections = state.connections.lock().await;
-    match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::key_value(conn.commands(), &key, cursor.as_deref(), count).await,
-        Some(_) => Err("Connection is not a Redis connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let conn = redis_connection(&state, &id).await?;
+    let mut conn = conn.lock().await;
+    redis_db::key_value(conn.commands(), &key, cursor.as_deref(), count).await
 }
 
 #[tauri::command]
@@ -1037,10 +892,7 @@ pub async fn redis_delete_keys(
     id: String,
     keys: Vec<String>,
 ) -> Result<i64, String> {
-    let mut connections = state.connections.lock().await;
-    match connections.get_mut(&id).map(|c| &mut c.handle) {
-        Some(DbHandle::Redis(conn)) => redis_db::delete_keys(conn.commands(), &keys).await,
-        Some(_) => Err("Connection is not a Redis connection".to_string()),
-        None => Err("Unknown connection id".to_string()),
-    }
+    let conn = redis_connection(&state, &id).await?;
+    let mut conn = conn.lock().await;
+    redis_db::delete_keys(conn.commands(), &keys).await
 }

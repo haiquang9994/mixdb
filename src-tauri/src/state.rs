@@ -1,12 +1,21 @@
 use crate::models::ConnectionConfig;
 use crate::ssh_tunnel::Tunnel;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// A live connection to one server, in the form its driver hands out.
+///
+/// Cloning one is cheap by construction — a pool, a driver client, or an `Arc` — because that is
+/// how a command gets hold of a connection without holding the connection map while it runs: see
+/// `commands::handle`.
+#[derive(Clone)]
 pub enum DbHandle {
     Mysql(sqlx::MySqlPool),
     Mongo(mongodb::Client),
-    Redis(crate::db::redis::Connection),
+    /// Behind a lock of its own: unlike the other two, a Redis connection is used through `&mut`,
+    /// and selecting a database replaces it outright.
+    Redis(Arc<Mutex<crate::db::redis::Connection>>),
 }
 
 pub struct ActiveConnection {
@@ -27,5 +36,10 @@ pub struct ActiveConnection {
 
 #[derive(Default)]
 pub struct AppState {
+    /// Every open connection, by the id handed to the frontend.
+    ///
+    /// The lock guards the map and nothing else. It is taken to look a connection up and released
+    /// again before anything is run on what was found — a query awaited while holding it would
+    /// stop every other command in the app, in every tab, for as long as it took.
     pub connections: Mutex<HashMap<String, ActiveConnection>>,
 }
