@@ -3,6 +3,7 @@ import { mysqlCancelQuery, mysqlRunScript } from "../../mysql/api";
 import Button from "../Button";
 import LoadingOverlay from "../LoadingOverlay";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import type { MysqlStatementResult } from "../../types";
 import styles from "./QueryEditor.module.css";
 
@@ -61,7 +62,7 @@ function QueryEditor({ connectionId, database }: Props) {
     try {
       setResults(await mysqlRunScript(connectionId, text, database || undefined));
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(t, e));
       setResults(null);
     } finally {
       setRunning(false);
@@ -78,7 +79,7 @@ function QueryEditor({ connectionId, database }: Props) {
     try {
       await mysqlCancelQuery(connectionId);
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(t, e));
       setCancelling(false);
     }
   }

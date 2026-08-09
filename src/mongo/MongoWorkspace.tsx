@@ -23,6 +23,7 @@ import type { ItemAction } from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
 import { PlusIcon, ReloadIcon } from "../icons";
 import { useTranslation } from "../i18n";
+import { errorMessage } from "../errors";
 
 interface Props {
   connectionId: string;
@@ -167,7 +168,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       const selected = selectedDbRef.current;
       setDatabases(selected && !dbs.includes(selected) ? [...dbs, selected] : dbs);
     } catch (e) {
-      setLocalError(String(e));
+      setLocalError(errorMessage(t, e));
     } finally {
       setDatabasesLoading(false);
     }
@@ -205,7 +206,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       .then((c) => {
         if (!cancelled) setCollections(c);
       })
-      .catch((e) => setLocalError(String(e)));
+      .catch((e) => setLocalError(errorMessage(t, e)));
     return () => {
       cancelled = true;
     };
@@ -216,7 +217,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     setCollectionsLoading(true);
     mongoListCollections(connectionId, selectedDb)
       .then((c) => setCollections(c))
-      .catch((e) => setLocalError(String(e)))
+      .catch((e) => setLocalError(errorMessage(t, e)))
       .finally(() => setCollectionsLoading(false));
   }, [connectionId, selectedDb]);
 
@@ -233,7 +234,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     try {
       setDatabases(await mongoListDatabases(connectionId));
     } catch (e) {
-      setLocalError(String(e));
+      setLocalError(errorMessage(t, e));
     }
   }
 
@@ -284,7 +285,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       if (selectedCollection === collection) setSelectedCollection(null);
       reloadCollections();
     } catch (e) {
-      setLocalError(String(e));
+      setLocalError(errorMessage(t, e));
     }
   }
 

@@ -37,10 +37,12 @@ pub async fn mysql_list_tables(
 
 Conventions baked into that shape:
 
-- **Errors are `String`.** No custom error enum, no `anyhow`. Map driver errors with
-  `.map_err(|e| e.to_string())` and prepend context when the raw message wouldn't be actionable
-  (`"SSH connect failed: {e}"`). The string reaches the user in an `ErrorBanner` verbatim, so write
-  it for a human.
+- **Errors are `AppError`**, a translation key plus its parameters — see
+  [error.rs](../../src-tauri/src/error.rs). Write `err!("error.tableNameRequired")`, or
+  `err!("error.cannotWriteFile", path = path.display(), message = e)`, and add the key to **both**
+  `src/i18n/en.ts` and `vi.ts` under `error.*`. A driver's own words are not translated: they ride
+  along as `message` under a code like `error.mysql`. Wrapping one failure in another
+  (`err!("error.rowFailed", index = i).caused_by(inner)`) gives the outer message a `{{cause}}`.
 - **The connection map is never locked across a query.** `mysql_pool` / `mongo_client` /
   `redis_connection` look the connection up, clone the handle — a pool, a driver client, or an
   `Arc` — and drop the guard before returning it. One lock covers every connection in the app, so

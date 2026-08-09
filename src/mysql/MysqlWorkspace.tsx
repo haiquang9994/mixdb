@@ -29,6 +29,7 @@ import type { ItemAction } from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
 import { PlusIcon, ReloadIcon } from "../icons";
 import { useTranslation } from "../i18n";
+import { errorMessage } from "../errors";
 import type { MysqlCollation } from "../types";
 
 interface Props {
@@ -171,7 +172,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       setDatabases(dbs);
       setSelectedDb((prev) => (prev && dbs.includes(prev) ? prev : ""));
     } catch (e) {
-      setLocalError(String(e));
+      setLocalError(errorMessage(t, e));
     } finally {
       setDatabasesLoading(false);
     }
@@ -226,7 +227,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       .then((t) => {
         if (!cancelled) setTables(t);
       })
-      .catch((e) => setLocalError(String(e)));
+      .catch((e) => setLocalError(errorMessage(t, e)));
     return () => {
       cancelled = true;
     };
@@ -241,7 +242,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     setTablesLoading(true);
     mysqlListTables(connectionId, selectedDb)
       .then((t) => setTables(t))
-      .catch((e) => setLocalError(String(e)))
+      .catch((e) => setLocalError(errorMessage(t, e)))
       .finally(() => setTablesLoading(false));
   }, [connectionId, selectedDb]);
 
@@ -298,7 +299,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       if (selectedTable === table) setSelectedTable(null);
       reloadTables();
     } catch (e) {
-      setLocalError(String(e));
+      setLocalError(errorMessage(t, e));
     }
   }
 

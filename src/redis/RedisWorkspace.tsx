@@ -17,6 +17,7 @@ import RedisValue from "../components/RedisValue";
 import keyListStyles from "../components/RedisKeyList/RedisKeyList.module.css";
 import { ReloadIcon } from "../icons";
 import { useTranslation } from "../i18n";
+import { errorMessage } from "../errors";
 
 interface Props {
   connectionId: string;
@@ -190,7 +191,7 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     setDatabasesLoading(true);
     redisListDatabases(connectionId)
       .then(setDatabases)
-      .catch((e) => setLocalError(String(e)))
+      .catch((e) => setLocalError(errorMessage(t, e)))
       .finally(() => setDatabasesLoading(false));
   }, [connectionId]);
 
@@ -209,7 +210,7 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
         setScanDone(page.done);
       })
       .catch((e) => {
-        if (!cancelled) setLocalError(String(e));
+        if (!cancelled) setLocalError(errorMessage(t, e));
       })
       .finally(() => {
         if (!cancelled) setKeysLoading(false);
@@ -233,7 +234,7 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
         setCursor(page.cursor);
         setScanDone(page.done);
       })
-      .catch((e) => setLocalError(String(e)))
+      .catch((e) => setLocalError(errorMessage(t, e)))
       .finally(() => setLoadingMore(false));
   }
 
@@ -259,7 +260,7 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
       setSelectedDb(index);
       loadDatabases();
     } catch (e) {
-      setLocalError(String(e));
+      setLocalError(errorMessage(t, e));
     }
   }
 

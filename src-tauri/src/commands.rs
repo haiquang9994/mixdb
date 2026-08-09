@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use serde_json::{Map, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,20 +16,17 @@ use crate::state::{ActiveConnection, AppState, DbHandle};
 const DB_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 async fn with_timeout<T>(
-    fut: impl std::future::Future<Output = Result<T, String>>,
-    what: &str,
-) -> Result<T, String> {
+    fut: impl std::future::Future<Output = Result<T, AppError>>,
+    kind: &'static str,
+) -> Result<T, AppError> {
     match tokio::time::timeout(DB_CONNECT_TIMEOUT, fut).await {
         Ok(result) => result,
-        Err(_) => Err(format!(
-            "{what} timed out after {}s — check host/port/firewall",
-            DB_CONNECT_TIMEOUT.as_secs()
-        )),
+        Err(_) => Err(err!("error.connectTimeout", kind = kind, seconds = DB_CONNECT_TIMEOUT.as_secs())),
     }
 }
 
 #[tauri::command]
-pub async fn test_ssh_tunnel(app: AppHandle, ssh: SshConfig) -> Result<(), String> {
+pub async fn test_ssh_tunnel(app: AppHandle, ssh: SshConfig) -> Result<(), AppError> {
     ssh_tunnel::test_connection(&ssh, &app_data_dir(&app)?).await
 }
 
@@ -38,7 +36,7 @@ pub async fn test_ssh_tunnel(app: AppHandle, ssh: SshConfig) -> Result<(), Strin
 async fn resolve_endpoint(
     config: &ConnectionConfig,
     app_data: &std::path::Path,
-) -> Result<(String, u16, Option<ssh_tunnel::Tunnel>), String> {
+) -> Result<(String, u16, Option<ssh_tunnel::Tunnel>), AppError> {
     match &config.ssh {
         Some(ssh) => {
             let (local_port, tunnel) =
@@ -54,7 +52,7 @@ pub async fn connect_db(
     app: AppHandle,
     state: State<'_, AppState>,
     config: ConnectionConfig,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let app_data = app_data_dir(&app)?;
     let (handle, endpoint, tunnel) = match config.kind {
         DbKind::Mysql => {
@@ -70,7 +68,7 @@ pub async fn connect_db(
                     config.database.as_deref(),
                     config.use_ssl,
                 ),
-                "MySQL connection",
+                "MySQL",
             )
             .await?;
             (DbHandle::Mysql(pool), Some((host, port)), tunnel)
@@ -81,7 +79,7 @@ pub async fn connect_db(
         DbKind::Mongo => {
             let uri = config.uri.as_deref().unwrap_or_default().trim();
             if uri.is_empty() {
-                return Err("MongoDB connection string is required".to_string());
+                return Err(err!("error.mongoUriRequired"));
             }
             let (endpoint, tunnel) = match &config.ssh {
                 Some(ssh) => {
@@ -92,7 +90,7 @@ pub async fn connect_db(
                 None => (None, None),
             };
             let client =
-                with_timeout(mongo::connect(uri, endpoint.clone()), "MongoDB connection").await?;
+                with_timeout(mongo::connect(uri, endpoint.clone()), "MongoDB").await?;
             (DbHandle::Mongo(client), endpoint, tunnel)
         }
         DbKind::Redis => {
@@ -106,7 +104,7 @@ pub async fn connect_db(
                     config.password.as_deref(),
                     db_index,
                 ),
-                "Redis connection",
+                "Redis",
             )
             .await?;
             (
@@ -131,7 +129,7 @@ pub async fn connect_db(
 }
 
 #[tauri::command]
-pub async fn disconnect_db(state: State<'_, AppState>, id: String) -> Result<(), String> {
+pub async fn disconnect_db(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
     state.connections.lock().await.remove(&id);
     Ok(())
 }
@@ -142,27 +140,27 @@ pub async fn disconnect_db(state: State<'_, AppState>, id: String) -> Result<(),
 /// This is what `DbHandle` is cheap to clone for. Awaiting a query while holding the map would
 /// turn that lock into a queue for the whole app: a slow `SELECT` in one tab would stop a key
 /// listing in another, and stop the Disconnect button meant to put an end to it.
-async fn handle(state: &State<'_, AppState>, id: &str) -> Result<DbHandle, String> {
+async fn handle(state: &State<'_, AppState>, id: &str) -> Result<DbHandle, AppError> {
     state
         .connections
         .lock()
         .await
         .get(id)
         .map(|connection| connection.handle.clone())
-        .ok_or_else(|| "Unknown connection id".to_string())
+        .ok_or_else(|| err!("error.unknownConnection"))
 }
 
-async fn mysql_pool(state: &State<'_, AppState>, id: &str) -> Result<sqlx::MySqlPool, String> {
+async fn mysql_pool(state: &State<'_, AppState>, id: &str) -> Result<sqlx::MySqlPool, AppError> {
     match handle(state, id).await? {
         DbHandle::Mysql(pool) => Ok(pool),
-        _ => Err("Connection is not a MySQL connection".to_string()),
+        _ => Err(err!("error.wrongConnectionKind", kind = "MySQL")),
     }
 }
 
-async fn mongo_client(state: &State<'_, AppState>, id: &str) -> Result<mongodb::Client, String> {
+async fn mongo_client(state: &State<'_, AppState>, id: &str) -> Result<mongodb::Client, AppError> {
     match handle(state, id).await? {
         DbHandle::Mongo(client) => Ok(client),
-        _ => Err("Connection is not a MongoDB connection".to_string()),
+        _ => Err(err!("error.wrongConnectionKind", kind = "MongoDB")),
     }
 }
 
@@ -172,10 +170,10 @@ async fn mongo_client(state: &State<'_, AppState>, id: &str) -> Result<mongodb::
 async fn redis_connection(
     state: &State<'_, AppState>,
     id: &str,
-) -> Result<Arc<Mutex<redis_db::Connection>>, String> {
+) -> Result<Arc<Mutex<redis_db::Connection>>, AppError> {
     match handle(state, id).await? {
         DbHandle::Redis(conn) => Ok(conn),
-        _ => Err("Connection is not a Redis connection".to_string()),
+        _ => Err(err!("error.wrongConnectionKind", kind = "Redis")),
     }
 }
 
@@ -185,19 +183,19 @@ pub async fn mysql_query(
     id: String,
     sql: String,
     database: Option<String>,
-) -> Result<Vec<Map<String, Value>>, String> {
+) -> Result<Vec<Map<String, Value>>, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql::query(&pool, &sql, database.as_deref()).await
 }
 
 #[tauri::command]
-pub async fn mysql_list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, String> {
+pub async fn mysql_list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql::list_databases(&pool).await
 }
 
 #[tauri::command]
-pub async fn mysql_server_info(state: State<'_, AppState>, id: String) -> Result<mysql::ServerInfo, String> {
+pub async fn mysql_server_info(state: State<'_, AppState>, id: String) -> Result<mysql::ServerInfo, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql::server_info(&pool).await
 }
@@ -207,7 +205,7 @@ pub async fn mysql_list_tables(
     state: State<'_, AppState>,
     id: String,
     database: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql::list_tables(&pool, &database).await
 }
@@ -218,7 +216,7 @@ pub async fn mysql_table_stats(
     state: State<'_, AppState>,
     id: String,
     database: String,
-) -> Result<Vec<mysql_structure::TableStats>, String> {
+) -> Result<Vec<mysql_structure::TableStats>, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql_structure::table_stats(&pool, &database).await
 }
@@ -230,7 +228,7 @@ pub async fn mysql_table_data(
     database: String,
     table: String,
     query: mysql::PageQuery,
-) -> Result<mysql::TablePage, String> {
+) -> Result<mysql::TablePage, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql::table_data(&pool, &database, &table, &query).await
 }
@@ -243,7 +241,7 @@ pub async fn mysql_update_row(
     table: String,
     updates: Map<String, Value>,
     key: Map<String, Value>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql::update_row(&pool, &database, &table, &updates, &key).await
 }
@@ -255,7 +253,7 @@ pub async fn mysql_insert_rows(
     database: String,
     table: String,
     rows: Vec<Map<String, Value>>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql::insert_rows(&pool, &database, &table, &rows).await
 }
@@ -269,7 +267,7 @@ pub async fn mysql_delete_rows(
     keys: Vec<Map<String, Value>>,
     all: bool,
     reset_auto_increment: bool,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
         mysql::delete_rows(&pool, &database, &table, &keys, all, reset_auto_increment).await
 }
@@ -280,7 +278,7 @@ pub async fn mysql_table_structure(
     id: String,
     database: String,
     table: String,
-) -> Result<mysql_structure::TableStructure, String> {
+) -> Result<mysql_structure::TableStructure, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql_structure::table_structure(&pool, &database, &table).await
 }
@@ -291,7 +289,7 @@ pub async fn mysql_table_structure(
 pub async fn mysql_collations(
     state: State<'_, AppState>,
     id: String,
-) -> Result<Vec<mysql_structure::Collation>, String> {
+) -> Result<Vec<mysql_structure::Collation>, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql_structure::collations(&pool).await
 }
@@ -309,16 +307,16 @@ struct MysqlEndpoint {
     password: String,
 }
 
-async fn mysql_endpoint(state: &State<'_, AppState>, id: &str) -> Result<MysqlEndpoint, String> {
+async fn mysql_endpoint(state: &State<'_, AppState>, id: &str) -> Result<MysqlEndpoint, AppError> {
     let connections = state.connections.lock().await;
-    let connection = connections.get(id).ok_or("Unknown connection id")?;
+    let connection = connections.get(id).ok_or_else(|| err!("error.unknownConnection"))?;
     if !matches!(connection.handle, DbHandle::Mysql(_)) {
-        return Err("Connection is not a MySQL connection".to_string());
+        return Err(err!("error.wrongConnectionKind", kind = "MySQL"));
     }
     let (host, port) = connection
         .endpoint
         .clone()
-        .ok_or("This connection has no address to dump from")?;
+        .ok_or_else(|| err!("error.noDumpAddress"))?;
     Ok(MysqlEndpoint {
         host,
         port,
@@ -331,31 +329,31 @@ async fn mysql_endpoint(state: &State<'_, AppState>, id: &str) -> Result<MysqlEn
 async fn mongo_endpoint(
     state: &State<'_, AppState>,
     id: &str,
-) -> Result<(String, Option<(String, u16)>), String> {
+) -> Result<(String, Option<(String, u16)>), AppError> {
     let connections = state.connections.lock().await;
-    let connection = connections.get(id).ok_or("Unknown connection id")?;
+    let connection = connections.get(id).ok_or_else(|| err!("error.unknownConnection"))?;
     if !matches!(connection.handle, DbHandle::Mongo(_)) {
-        return Err("Connection is not a MongoDB connection".to_string());
+        return Err(err!("error.wrongConnectionKind", kind = "MongoDB"));
     }
     let uri = connection
         .config
         .uri
         .clone()
         .filter(|uri| !uri.trim().is_empty())
-        .ok_or("This connection has no connection string to dump with")?;
+        .ok_or_else(|| err!("error.noDumpUri"))?;
     Ok((uri, connection.endpoint.clone()))
 }
 
 /// Runs one of the command-line tools off the async runtime: they block for as long as the dump
 /// takes, which is not something an async worker should be spending itself on.
-async fn in_background<T, F>(work: F) -> Result<T, String>
+async fn in_background<T, F>(work: F) -> Result<T, AppError>
 where
-    F: FnOnce() -> Result<T, String> + Send + 'static,
+    F: FnOnce() -> Result<T, AppError> + Send + 'static,
     T: Send + 'static,
 {
     tokio::task::spawn_blocking(work)
         .await
-        .map_err(|e| format!("The task did not finish: {e}"))?
+        .map_err(|e| err!("error.backgroundTaskFailed", message = e))?
 }
 
 /// Writes a saved connection's secrets to the OS credential store, replacing what was there.
@@ -363,45 +361,45 @@ where
 /// Off the async runtime: the credential stores are blocking, and on macOS opening one may put a
 /// prompt on screen — which is not something to hold a runtime worker for.
 #[tauri::command]
-pub async fn secrets_save(id: String, secrets: secrets::Secrets) -> Result<(), String> {
+pub async fn secrets_save(id: String, secrets: secrets::Secrets) -> Result<(), AppError> {
     in_background(move || secrets::save(&id, &secrets)).await
 }
 
 /// A saved connection's secrets, or nothing when it has none stored.
 #[tauri::command]
-pub async fn secrets_load(id: String) -> Result<secrets::Secrets, String> {
+pub async fn secrets_load(id: String) -> Result<secrets::Secrets, AppError> {
     in_background(move || secrets::load(&id)).await
 }
 
 /// Forgets a saved connection's secrets, for when the connection itself is deleted.
 #[tauri::command]
-pub async fn secrets_delete(id: String) -> Result<(), String> {
+pub async fn secrets_delete(id: String) -> Result<(), AppError> {
     in_background(move || secrets::delete(&id)).await
 }
 
 /// Where MixDB keeps what it remembers between runs: the tools it downloaded, and the SSH host
 /// keys it has seen.
-fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     app.path()
         .app_data_dir()
-        .map_err(|e| format!("There is nowhere for MixDB to keep its own files: {e}"))
+        .map_err(|e| err!("error.noAppDataDir", message = e))
 }
 
 /// Where MixDB keeps the tools it downloaded for itself.
-fn tools_dir(app: &AppHandle) -> Result<PathBuf, String> {
+fn tools_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     app_data_dir(app).map(|dir| dir.join("tools"))
 }
 
 /// Every dump tool and where it stands: a path the user chose, a copy MixDB downloaded, something
 /// already on the machine, or nothing at all.
 #[tauri::command]
-pub async fn tools_status(app: AppHandle) -> Result<Vec<tools::ToolStatus>, String> {
+pub async fn tools_status(app: AppHandle) -> Result<Vec<tools::ToolStatus>, AppError> {
     Ok(tools::status(&tools_dir(&app)?))
 }
 
 /// Whether a suite is usable at all — what the dump and restore buttons check before running.
 #[tauri::command]
-pub async fn tools_ready(app: AppHandle, suite: String) -> Result<bool, String> {
+pub async fn tools_ready(app: AppHandle, suite: String) -> Result<bool, AppError> {
     let suite = tools::Suite::parse(&suite)?;
     Ok(tools::installed(suite, &tools_dir(&app)?))
 }
@@ -412,21 +410,21 @@ pub async fn tools_set_path(
     app: AppHandle,
     tool: String,
     path: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let tool = tools::Tool::parse(&tool)?;
     tools::set_path(tool, path.as_deref(), &tools_dir(&app)?)
 }
 
 /// Deletes the copy MixDB downloaded. What was already on the machine is left where it is.
 #[tauri::command]
-pub async fn tools_uninstall(app: AppHandle, suite: String) -> Result<(), String> {
+pub async fn tools_uninstall(app: AppHandle, suite: String) -> Result<(), AppError> {
     let suite = tools::Suite::parse(&suite)?;
     tools::uninstall(suite, &tools_dir(&app)?)
 }
 
 /// Downloads one suite of tools. Long-running and quiet: the frontend shows that it is happening.
 #[tauri::command]
-pub async fn tools_install(app: AppHandle, suite: String) -> Result<(), String> {
+pub async fn tools_install(app: AppHandle, suite: String) -> Result<(), AppError> {
     let suite = tools::Suite::parse(&suite)?;
     let dir = tools_dir(&app)?;
     in_background(move || tools::install(suite, &dir)).await
@@ -441,7 +439,7 @@ pub async fn mysql_dump(
     database: String,
     mode: String,
     path: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let mode = dump::DumpMode::parse(&mode)?;
     let tool = tools::require(tools::Tool::MysqlDump, &tools_dir(&app)?)?;
     // Read through the pool, before the endpoint: the character set the dump is transferred in and
@@ -480,7 +478,7 @@ pub async fn mysql_restore(
     id: String,
     database: String,
     path: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let tool = tools::require(tools::Tool::MysqlClient, &tools_dir(&app)?)?;
     let endpoint = mysql_endpoint(&state, &id).await?;
     in_background(move || {
@@ -505,7 +503,7 @@ pub async fn mongo_dump(
     id: String,
     db: String,
     path: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let tool = tools::require(tools::Tool::MongoDump, &tools_dir(&app)?)?;
     let (uri, endpoint) = mongo_endpoint(&state, &id).await?;
     in_background(move || {
@@ -523,7 +521,7 @@ pub async fn mongo_restore(
     id: String,
     db: String,
     path: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let tool = tools::require(tools::Tool::MongoRestore, &tools_dir(&app)?)?;
     let (uri, endpoint) = mongo_endpoint(&state, &id).await?;
     in_background(move || {
@@ -539,7 +537,7 @@ pub async fn mysql_drop_database(
     state: State<'_, AppState>,
     id: String,
     database: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql_structure::drop_database(&pool, &database).await
 }
@@ -550,7 +548,7 @@ pub async fn mongo_drop_database(
     state: State<'_, AppState>,
     id: String,
     db: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::drop_database(&client, &db).await
 }
@@ -562,7 +560,7 @@ pub async fn mysql_create_database(
     id: String,
     name: String,
     collation: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
         mysql_structure::create_database(&pool, &name, collation.as_deref()).await
 }
@@ -575,7 +573,7 @@ pub async fn mysql_create_table(
     database: String,
     table: String,
     collation: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
         mysql_structure::create_table(&pool, &database, &table, collation.as_deref()).await
 }
@@ -588,7 +586,7 @@ pub async fn mysql_rename_table(
     database: String,
     table: String,
     new_name: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
         mysql_structure::rename_table(&pool, &database, &table, &new_name).await
 }
@@ -600,7 +598,7 @@ pub async fn mysql_drop_table(
     id: String,
     database: String,
     table: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql_structure::drop_table(&pool, &database, &table).await
 }
@@ -612,7 +610,7 @@ pub async fn mysql_add_column(
     database: String,
     table: String,
     spec: mysql_structure::ColumnSpec,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql_structure::add_column(&pool, &database, &table, &spec).await
 }
@@ -625,7 +623,7 @@ pub async fn mysql_modify_column(
     table: String,
     name: String,
     spec: mysql_structure::ColumnSpec,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
         mysql_structure::modify_column(&pool, &database, &table, &name, &spec).await
 }
@@ -637,7 +635,7 @@ pub async fn mysql_drop_column(
     database: String,
     table: String,
     name: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql_structure::drop_column(&pool, &database, &table, &name).await
 }
@@ -649,7 +647,7 @@ pub async fn mysql_add_index(
     database: String,
     table: String,
     spec: mysql_structure::IndexSpec,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql_structure::add_index(&pool, &database, &table, &spec).await
 }
@@ -662,7 +660,7 @@ pub async fn mysql_modify_index(
     table: String,
     name: String,
     spec: mysql_structure::IndexSpec,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
         mysql_structure::modify_index(&pool, &database, &table, &name, &spec).await
 }
@@ -674,7 +672,7 @@ pub async fn mysql_drop_index(
     database: String,
     table: String,
     name: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql_structure::drop_index(&pool, &database, &table, &name).await
 }
@@ -688,7 +686,7 @@ pub async fn mysql_run_script(
     id: String,
     sql: String,
     database: Option<String>,
-) -> Result<Vec<mysql_script::StatementResult>, String> {
+) -> Result<Vec<mysql_script::StatementResult>, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     let result = mysql_script::run(&pool, &sql, database.as_deref(), |thread| {
         state
@@ -711,7 +709,7 @@ pub async fn mysql_run_script(
 /// results are on their way back often enough, and the user's intent — that it not still be
 /// running — is satisfied either way.
 #[tauri::command]
-pub async fn mysql_cancel_query(state: State<'_, AppState>, id: String) -> Result<(), String> {
+pub async fn mysql_cancel_query(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
     let thread = state.running_queries.lock().unwrap().get(&id).copied();
     let Some(thread) = thread else {
         return Ok(());
@@ -720,13 +718,13 @@ pub async fn mysql_cancel_query(state: State<'_, AppState>, id: String) -> Resul
 }
 
 #[tauri::command]
-pub async fn mongo_list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, String> {
+pub async fn mongo_list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::list_databases(&client).await
 }
 
 #[tauri::command]
-pub async fn mongo_server_info(state: State<'_, AppState>, id: String) -> Result<mongo::ServerInfo, String> {
+pub async fn mongo_server_info(state: State<'_, AppState>, id: String) -> Result<mongo::ServerInfo, AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::server_info(&client).await
 }
@@ -736,7 +734,7 @@ pub async fn mongo_list_collections(
     state: State<'_, AppState>,
     id: String,
     db: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::list_collections(&client, &db).await
 }
@@ -747,7 +745,7 @@ pub async fn mongo_collection_stats(
     state: State<'_, AppState>,
     id: String,
     db: String,
-) -> Result<Vec<mongo::CollectionStats>, String> {
+) -> Result<Vec<mongo::CollectionStats>, AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::collection_stats(&client, &db).await
 }
@@ -759,7 +757,7 @@ pub async fn mongo_create_collection(
     id: String,
     db: String,
     collection: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::create_collection(&client, &db, &collection).await
 }
@@ -772,7 +770,7 @@ pub async fn mongo_rename_collection(
     db: String,
     collection: String,
     new_name: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let client = mongo_client(&state, &id).await?;
         mongo::rename_collection(&client, &db, &collection, &new_name).await
 }
@@ -784,7 +782,7 @@ pub async fn mongo_drop_collection(
     id: String,
     db: String,
     collection: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::drop_collection(&client, &db, &collection).await
 }
@@ -797,7 +795,7 @@ pub async fn mongo_find(
     collection: String,
     filter: String,
     limit: i64,
-) -> Result<Vec<Value>, String> {
+) -> Result<Vec<Value>, AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::find(&client, &db, &collection, &filter, limit).await
 }
@@ -811,7 +809,7 @@ pub async fn mongo_collection_page(
     page: i64,
     page_size: i64,
     filters: Option<Vec<mongo::Filter>>,
-) -> Result<mongo::CollectionPage, String> {
+) -> Result<mongo::CollectionPage, AppError> {
     let filters = filters.unwrap_or_default();
     let client = mongo_client(&state, &id).await?;
         mongo::collection_page(&client, &db, &collection, page, page_size, &filters).await
@@ -824,7 +822,7 @@ pub async fn mongo_next_ids(
     db: String,
     collection: String,
     count: i64,
-) -> Result<Vec<Value>, String> {
+) -> Result<Vec<Value>, AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::next_ids(&client, &db, &collection, count).await
 }
@@ -836,7 +834,7 @@ pub async fn mongo_insert_documents(
     db: String,
     collection: String,
     documents: Vec<Value>,
-) -> Result<usize, String> {
+) -> Result<usize, AppError> {
     let client = mongo_client(&state, &id).await?;
         mongo::insert_documents(&client, &db, &collection, &documents).await
 }
@@ -849,7 +847,7 @@ pub async fn mongo_update_document(
     collection: String,
     doc_id: Value,
     ops: mongo::DocUpdateOps,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let client = mongo_client(&state, &id).await?;
         mongo::update_document(&client, &db, &collection, &doc_id, &ops).await
 }
@@ -861,7 +859,7 @@ pub async fn mongo_delete_document(
     db: String,
     collection: String,
     doc_id: Value,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::delete_document(&client, &db, &collection, &doc_id).await
 }
@@ -871,7 +869,7 @@ pub async fn redis_command(
     state: State<'_, AppState>,
     id: String,
     args: Vec<String>,
-) -> Result<Value, String> {
+) -> Result<Value, AppError> {
     let conn = redis_connection(&state, &id).await?;
     let mut conn = conn.lock().await;
     redis_db::run_command(conn.commands(), args).await
@@ -881,7 +879,7 @@ pub async fn redis_command(
 pub async fn redis_server_info(
     state: State<'_, AppState>,
     id: String,
-) -> Result<redis_db::ServerInfo, String> {
+) -> Result<redis_db::ServerInfo, AppError> {
     let conn = redis_connection(&state, &id).await?;
     let mut conn = conn.lock().await;
     redis_db::server_info(conn.commands()).await
@@ -891,7 +889,7 @@ pub async fn redis_server_info(
 pub async fn redis_list_databases(
     state: State<'_, AppState>,
     id: String,
-) -> Result<Vec<redis_db::DbInfo>, String> {
+) -> Result<Vec<redis_db::DbInfo>, AppError> {
     let conn = redis_connection(&state, &id).await?;
     let mut conn = conn.lock().await;
     redis_db::list_databases(conn.commands()).await
@@ -902,7 +900,7 @@ pub async fn redis_select_db(
     state: State<'_, AppState>,
     id: String,
     index: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let conn = redis_connection(&state, &id).await?;
     let mut conn = conn.lock().await;
     redis_db::select_db(&mut conn, index).await
@@ -915,7 +913,7 @@ pub async fn redis_scan_keys(
     pattern: String,
     cursor: String,
     count: i64,
-) -> Result<redis_db::KeyPage, String> {
+) -> Result<redis_db::KeyPage, AppError> {
     let conn = redis_connection(&state, &id).await?;
     let mut conn = conn.lock().await;
     redis_db::scan_keys(conn.commands(), &pattern, &cursor, count).await
@@ -928,7 +926,7 @@ pub async fn redis_key_value(
     key: String,
     cursor: Option<String>,
     count: i64,
-) -> Result<redis_db::KeyValuePage, String> {
+) -> Result<redis_db::KeyValuePage, AppError> {
     let conn = redis_connection(&state, &id).await?;
     let mut conn = conn.lock().await;
     redis_db::key_value(conn.commands(), &key, cursor.as_deref(), count).await
@@ -939,7 +937,7 @@ pub async fn redis_delete_keys(
     state: State<'_, AppState>,
     id: String,
     keys: Vec<String>,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     let conn = redis_connection(&state, &id).await?;
     let mut conn = conn.lock().await;
     redis_db::delete_keys(conn.commands(), &keys).await

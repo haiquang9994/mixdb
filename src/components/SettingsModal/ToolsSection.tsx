@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import { toolsInstall, toolsSetPath, toolsStatus, toolsUninstall } from "../../tools";
 import type { ToolStatus, ToolSuite } from "../../tools";
 import styles from "./SettingsModal.module.css";
@@ -35,7 +36,7 @@ function ToolsSection() {
   const refresh = useCallback(() => {
     toolsStatus()
       .then(setTools)
-      .catch((e) => onError(String(e)));
+      .catch((e) => onError(errorMessage(t, e)));
   }, [onError]);
 
   useEffect(refresh, [refresh]);
@@ -46,7 +47,7 @@ function ToolsSection() {
     try {
       await work();
     } catch (e) {
-      onError(String(e));
+      onError(errorMessage(t, e));
     } finally {
       setWorking(null);
       refresh();
@@ -59,7 +60,7 @@ function ToolsSection() {
     try {
       await toolsSetPath(tool.name, path);
     } catch (e) {
-      onError(String(e));
+      onError(errorMessage(t, e));
     }
     refresh();
   }
@@ -68,7 +69,7 @@ function ToolsSection() {
     try {
       await toolsSetPath(tool.name, null);
     } catch (e) {
-      onError(String(e));
+      onError(errorMessage(t, e));
     }
     refresh();
   }

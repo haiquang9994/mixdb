@@ -641,6 +641,134 @@ const vi: TranslationDict = {
     dropMongoMessage:
       "Xóa {{database}} cùng toàn bộ collection và document trong đó? Thao tác này không thể hoàn tác — nên dump lại trước nếu còn cần.",
   },
+
+  // Thông báo khi một lệnh ở backend thất bại. Khóa ở đây chính là `code` mà `AppError` mang theo
+  // — xem src-tauri/src/error.rs. `{{message}}` là nguyên văn lời của driver, không dịch: đó là
+  // máy chủ đang nói, và cũng là phần đáng tra cứu nhất.
+  error: {
+    // Ba loại driver, khi lỗi đến từ chính máy chủ.
+    mysql: "MySQL: {{message}}",
+    mongo: "MongoDB: {{message}}",
+    redis: "Redis: {{message}}",
+
+    // Kết nối
+    unknownConnection: "Kết nối này không còn mở — hãy kết nối lại.",
+    wrongConnectionKind: "Đây không phải kết nối {{kind}}.",
+    connectTimeout:
+      "Kết nối {{kind}} quá hạn sau {{seconds}} giây — kiểm tra host, cổng và tường lửa.",
+    mongoUriRequired: "Cần có chuỗi kết nối MongoDB.",
+    mongoNoTcpHost: "Chuỗi kết nối không chỉ ra host TCP nào để mở tunnel.",
+    emptyRedisCommand: "Không có lệnh nào để chạy.",
+
+    // SSH
+    sshTimeout:
+      "Kết nối SSH tới {{host}}:{{port}} quá hạn sau {{seconds}} giây — kiểm tra host, cổng và tường lửa.",
+    sshConnectFailed: "Không kết nối được tới máy chủ SSH: {{message}}",
+    sshAuthFailed: "Xác thực SSH thất bại: {{message}}",
+    sshAuthRejected:
+      "Máy chủ SSH từ chối đăng nhập (partial success: {{partialSuccess}}). Máy chủ chấp nhận: {{methods}}.",
+    sshHostKeyChanged:
+      "Máy chủ SSH tại {{endpoint}} đang đưa ra khóa khác với khóa MixDB từng thấy ({{fingerprint}} bây giờ, trước đó là {{known}}). Hoặc máy chủ vừa được dựng lại, hoặc có ai đó đang đứng giữa. Nếu thay đổi này là mong đợi, hãy xóa mục tương ứng trong {{file}} rồi kết nối lại.",
+    cannotReadPrivateKey: "Không đọc được file khóa riêng: {{message}}",
+    invalidPrivateKey: "Đây không phải khóa riêng mà MixDB đọc được: {{message}}",
+    cannotBindTunnelPort: "Không mở được cổng cục bộ cho tunnel: {{message}}",
+    cannotSaveKnownHost: "Không ghi nhớ được khóa của máy chủ: {{message}}",
+
+    // Ghi dòng và document
+    updateWithoutKey: "Dòng này không có cột nào định danh nó, nên không thể cập nhật.",
+    deleteWithoutKey: "Dòng này không có cột nào định danh nó, nên không thể xóa.",
+    rowsMatched: "Lẽ ra phải khớp đúng 1 dòng, nhưng khớp {{matched}} dòng — không thay đổi gì.",
+    rowFailed: "Dòng {{index}}: {{cause}}",
+    documentsMatched: "Lẽ ra phải khớp đúng 1 document, nhưng khớp {{matched}}.",
+    documentsDeleted: "Lẽ ra phải xóa đúng 1 document, nhưng đã xóa {{deleted}}.",
+    documentInvalid: "Document {{index}}: {{cause}}",
+    documentNotObject: "Document {{index}} không phải là một object.",
+
+    // Bộ lọc
+    unknownFilterColumn: "Bảng không có cột nào tên {{column}}.",
+    invalidFilterField: "{{field}} không phải trường mà bộ lọc này dùng được.",
+    unknownFilterOperator: "Toán tử lọc {{operator}} không hợp lệ.",
+
+    // Cấu trúc
+    databaseNameRequired: "Cơ sở dữ liệu phải có tên.",
+    tableNameRequired: "Bảng phải có tên.",
+    collectionNameRequired: "Collection phải có tên.",
+    columnNameRequired: "Cột phải có tên.",
+    columnTypeRequired: "Cột phải có kiểu dữ liệu.",
+    indexNameRequired: "Index phải có tên.",
+    indexNeedsColumn: "Index cần ít nhất một cột.",
+    indexColumnNameRequired: "Mọi cột trong index đều phải có tên.",
+    invalidCollation: "Máy chủ này không có collation {{collation}}.",
+    unknownIndexKind: "Loại index {{kind}} không hợp lệ.",
+    unknownIndexType: "Kiểu index {{type}} không hợp lệ.",
+    noVisibleColumns:
+      "Không thấy cột nào của {{database}}.{{table}} — có thể bảng không tồn tại, hoặc tài khoản của bạn không có quyền trên bảng đó.",
+    nothingToRun: "Không có gì để chạy.",
+
+    // Giá trị BSON
+    bsonObjectId: "ObjectId phải là chuỗi hex 24 ký tự.",
+    bsonInt32Range: "Số này nằm ngoài phạm vi của Int32.",
+    bsonDate: "Ngày giờ phải viết theo RFC 3339, ví dụ 2024-01-31T09:00:00.000Z.",
+    bsonInvalidValue: "Đây không phải giá trị {{type}} hợp lệ.",
+    bsonInvalidNumber: "Đây không phải số mà MixDB lưu được.",
+    bsonMissingField: "Giá trị {{type}} cần có {{field}}.",
+    bsonReadOnlyType: "{{type}} chỉ đọc được, không ghi được.",
+    bsonUnknownType: "Kiểu BSON {{type}} không hợp lệ.",
+
+    // Dump và restore
+    unknownDumpMode: "Chế độ dump {{mode}} không hợp lệ.",
+    notMongoUri: "Chuỗi kết nối không phải URI mongodb://.",
+    srvOverTunnel:
+      "Dump qua SSH tunnel cần chuỗi kết nối mongodb:// thường — chuỗi mongodb+srv:// tự phân giải host của nó, mà tunnel không tới được những host đó.",
+    notMongoArchive:
+      "{{path}} không phải archive của mongodump — MixDB chỉ restore được archive một file do chính nó dump ra.",
+    archiveDatabaseUnreadable:
+      "Không xác định được {{path}} chứa cơ sở dữ liệu nào — có thể file đã bị nén: {{message}}",
+    archiveNamesNoDatabase: "{{path}} không ghi cơ sở dữ liệu nào để restore.",
+    noDumpAddress: "Kết nối này không có địa chỉ để dump.",
+    noDumpUri: "Kết nối này không có chuỗi kết nối để dump.",
+    cannotRunTool: "Không chạy được {{tool}}: {{message}}",
+    toolWaitFailed: "Không chờ được {{tool}} chạy xong: {{message}}",
+    toolFailed: "{{tool}} thất bại:\n{{message}}",
+
+    // Bộ công cụ tải về
+    unknownTool: "Công cụ {{tool}} không hợp lệ.",
+    unknownToolSuite: "Bộ công cụ {{suite}} không hợp lệ.",
+    mysqlToolNotFound:
+      "Không tìm thấy {{tool}}. Hãy cài MySQL client tools, trỏ MixDB tới một bản có sẵn trong Cài đặt, hoặc để MixDB tự tải về.",
+    mongoToolNotFound:
+      "Không tìm thấy {{tool}}. Hãy cài MongoDB Database Tools, trỏ MixDB tới một bản có sẵn trong Cài đặt, hoặc để MixDB tự tải về.",
+    noFileAt: "Không có file nào ở {{path}}.",
+    noMysqlArchive:
+      "MySQL không phát hành bản nén thuần của client tools cho nền tảng này — hãy cài qua trình quản lý gói (mysql-client / mariadb-client), MixDB sẽ tự tìm thấy trên PATH.",
+    downloadFailed: "Tải về thất bại: {{message}}",
+    unpackFailed: "Giải nén bản tải về thất bại: {{message}}",
+    downloadIncomplete:
+      "Bản tải về không chứa các công cụ cần có — có thể phiên bản MixDB yêu cầu đã bị gỡ khỏi máy chủ.",
+    checksumMismatch:
+      "Bản tải về không đúng file MixDB mong đợi (checksum là {{actual}}, không phải {{expected}}). Có thể bản phát hành đã bị gỡ hoặc thay thế — hãy tự cài công cụ rồi trỏ MixDB tới chúng trong Cài đặt.",
+    cannotReadDownload: "Không đọc lại được bản tải về: {{message}}",
+    cannotCopyTool: "Không đặt được {{tool}} vào {{path}}: {{message}}",
+    cannotSaveToolPath: "Không ghi nhớ được vị trí công cụ đó: {{message}}",
+    helperMissing: "Thao tác này cần {{program}} nhưng không chạy được: {{message}}",
+
+    // Mật khẩu đã lưu
+    credentialStoreUnreachable: "Không truy cập được kho mật khẩu của hệ điều hành: {{message}}",
+    cannotSavePassword: "Không lưu được mật khẩu: {{message}}",
+    cannotReadPassword: "Không đọc lại được mật khẩu đã lưu: {{message}}",
+    cannotRemovePassword: "Không xóa được mật khẩu đã lưu: {{message}}",
+
+    // File và thư mục riêng của ứng dụng
+    cannotReadFile: "Không đọc được {{path}}: {{message}}",
+    cannotWriteFile: "Không ghi được {{path}}: {{message}}",
+    cannotCreateDirectory: "Không tạo được {{path}}: {{message}}",
+    cannotRemoveDirectory: "Không xóa được {{path}}: {{message}}",
+    noAppDataDir: "MixDB không có chỗ nào để lưu file riêng của nó: {{message}}",
+    backgroundTaskFailed: "Tác vụ không hoàn tất: {{message}}",
+
+    /** Dạng lỗi MixDB không nhận ra — hiển thị nguyên trạng thay vì nuốt mất. */
+    unknown: "{{message}}",
+  },
 };
 
 export default vi;

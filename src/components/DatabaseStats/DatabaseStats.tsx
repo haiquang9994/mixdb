@@ -3,6 +3,7 @@ import ActionBar from "../ActionBar";
 import LoadingOverlay from "../LoadingOverlay";
 import { ChevronDownIcon, ChevronUpIcon, ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import { mongoCollectionStats } from "../../mongo/api";
 import { mysqlTableStats } from "../../mysql/api";
 import type { TableStats } from "../../types";
@@ -104,7 +105,7 @@ function DatabaseStats({ kind, connectionId, database, active, onError }: Props)
         if (cancelled) return;
         // Nothing is cached for a read that failed, so coming back to the tab tries again rather
         // than settling on an empty grid.
-        onError(String(e));
+        onError(errorMessage(t, e));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

@@ -11,6 +11,7 @@
 //! through a temporary option file that only this user can read. MongoDB's have nowhere else to go
 //! — its tools take a URI and nothing else — which is a limitation of those tools.
 
+use crate::error::AppError;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -28,12 +29,12 @@ pub enum DumpMode {
 }
 
 impl DumpMode {
-    pub fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> Result<Self, AppError> {
         match value {
             "structure" => Ok(Self::Structure),
             "data" => Ok(Self::Data),
             "all" => Ok(Self::All),
-            other => Err(format!("Unknown dump mode `{other}`")),
+            other => Err(err!("error.unknownDumpMode", mode = other)),
         }
     }
 }
@@ -47,9 +48,10 @@ struct OptionFile {
 }
 
 impl OptionFile {
-    fn new(host: &str, port: u16, user: &str, password: &str) -> Result<Self, String> {
+    fn new(host: &str, port: u16, user: &str, password: &str) -> Result<Self, AppError> {
         let path = std::env::temp_dir().join(format!("mixdb-{}.cnf", uuid::Uuid::new_v4()));
-        let mut file = File::create(&path).map_err(|e| format!("Cannot write {path:?}: {e}"))?;
+        let mut file = File::create(&path)
+            .map_err(|e| err!("error.cannotWriteFile", path = path.display(), message = e))?;
         // Values are double-quoted, which is the one form of an option file value that may hold
         // `#`, spaces or a leading digit — with `\` and `"` escaped so the quoting holds.
         let quoted = |value: &str| format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""));
@@ -60,7 +62,7 @@ impl OptionFile {
             quoted(password)
         );
         file.write_all(body.as_bytes())
-            .map_err(|e| format!("Cannot write {path:?}: {e}"))?;
+            .map_err(|e| err!("error.cannotWriteFile", path = path.display(), message = e))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -87,7 +89,7 @@ fn run(
     stdin: Option<File>,
     stdout: Option<File>,
     what: &str,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let mut command = Command::new(tool);
     command
         .args(args)
@@ -104,9 +106,9 @@ fn run(
 
     let output = command
         .spawn()
-        .map_err(|e| format!("Cannot run {}: {e}", tool.display()))?
+        .map_err(|e| err!("error.cannotRunTool", tool = tool.display(), message = e))?
         .wait_with_output()
-        .map_err(|e| format!("{what} could not be waited for: {e}"))?;
+        .map_err(|e| err!("error.toolWaitFailed", tool = what, message = e))?;
 
     if output.status.success() {
         return Ok(());
@@ -124,19 +126,15 @@ fn run(
         .rev()
         .collect::<Vec<_>>()
         .join("\n");
-    Err(if tail.is_empty() {
-        format!("{what} failed ({})", output.status)
-    } else {
-        format!("{what} failed ({}):\n{tail}", output.status)
-    })
+    Err(err!("error.toolFailed", tool = what, status = output.status, message = tail))
 }
 
-fn create_file(path: &str) -> Result<File, String> {
-    File::create(path).map_err(|e| format!("Cannot write {path}: {e}"))
+fn create_file(path: &str) -> Result<File, AppError> {
+    File::create(path).map_err(|e| err!("error.cannotWriteFile", path = path, message = e))
 }
 
-fn open_file(path: &str) -> Result<File, String> {
-    File::open(path).map_err(|e| format!("Cannot read {path}: {e}"))
+fn open_file(path: &str) -> Result<File, AppError> {
+    File::open(path).map_err(|e| err!("error.cannotReadFile", path = path, message = e))
 }
 
 /// Writes `database` to `path` as SQL.
@@ -161,7 +159,7 @@ pub fn mysql_dump(
     mode: DumpMode,
     column_statistics: bool,
     path: &str,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let options = OptionFile::new(host, port, user, password)?;
 
     let mut args = vec![
@@ -229,7 +227,7 @@ pub fn mysql_restore(
     password: &str,
     database: &str,
     path: &str,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let options = OptionFile::new(host, port, user, password)?;
 
     let args = vec![
@@ -248,10 +246,10 @@ pub fn mysql_restore(
 
 /// Splits a MongoDB URI into the parts this module rewrites: what is before the host list, the
 /// host list itself, the `/database` path, and the `?options`.
-fn split_uri(uri: &str) -> Result<(String, String, String, String), String> {
+fn split_uri(uri: &str) -> Result<(String, String, String, String), AppError> {
     let (scheme, rest) = uri
         .split_once("://")
-        .ok_or_else(|| "Connection string is not a mongodb:// URI".to_string())?;
+        .ok_or_else(|| err!("error.notMongoUri"))?;
     let (credentials, hosts_and_more) = match rest.rsplit_once('@') {
         Some((credentials, rest)) => (format!("{credentials}@"), rest),
         None => (String::new(), rest),
@@ -277,17 +275,13 @@ fn split_uri(uri: &str) -> Result<(String, String, String, String), String> {
 ///
 /// The `/` that stood before the dropped database stays: a URI whose options follow the host list
 /// with nothing between them is one the tools refuse to parse at all.
-fn tool_uri(uri: &str, endpoint: Option<(&str, u16)>) -> Result<String, String> {
+fn tool_uri(uri: &str, endpoint: Option<(&str, u16)>) -> Result<String, AppError> {
     let (head, hosts, _path, query) = split_uri(uri)?;
     let Some((host, port)) = endpoint else {
         return Ok(format!("{head}{hosts}/{query}"));
     };
     if head.starts_with("mongodb+srv://") {
-        return Err(
-            "Dumping over an SSH tunnel needs a plain mongodb:// connection string — a \
-             mongodb+srv:// one resolves its own hosts, which the tunnel does not reach."
-                .to_string(),
-        );
+        return Err(err!("error.srvOverTunnel"));
     }
     // Only the one host is forwarded, so the tools must talk to it directly rather than discover
     // the replica set's own addresses and try to reach those.
@@ -305,7 +299,7 @@ pub fn mongo_dump(
     endpoint: Option<(&str, u16)>,
     database: &str,
     path: &str,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let args = vec![
         format!("--uri={}", tool_uri(uri, endpoint)?),
         format!("--db={database}"),
@@ -325,30 +319,26 @@ const ARCHIVE_MAGIC: u32 = 0x8199_e26d;
 ///
 /// This is needed because `mongorestore` puts documents back into the namespaces the archive
 /// names, and the only way to send them somewhere else is to tell it what to rename *from*.
-fn archive_database(path: &str) -> Result<String, String> {
+fn archive_database(path: &str) -> Result<String, AppError> {
     use mongodb::bson::Document;
     use std::io::Read;
 
     let mut file = open_file(path)?;
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic)
-        .map_err(|e| format!("Cannot read {path}: {e}"))?;
+        .map_err(|e| err!("error.cannotReadFile", path = path, message = e))?;
     if u32::from_le_bytes(magic) != ARCHIVE_MAGIC {
-        return Err(format!(
-            "{path} is not a mongodump archive — MixDB restores the single-file archives its own \
-             dump writes."
-        ));
+        return Err(err!("error.notMongoArchive", path = path));
     }
-    let unreadable = |e: mongodb::bson::de::Error| {
-        format!("Cannot tell which database {path} holds — it may be compressed: {e}")
-    };
+    let unreadable =
+        |e: mongodb::bson::de::Error| err!("error.archiveDatabaseUnreadable", path = path, message = e);
     // The header, which carries versions rather than namespaces.
     Document::from_reader(&mut file).map_err(unreadable)?;
     let metadata = Document::from_reader(&mut file).map_err(unreadable)?;
     metadata
         .get_str("db")
         .map(str::to_string)
-        .map_err(|_| format!("{path} names no database to restore from"))
+        .map_err(|_| err!("error.archiveNamesNoDatabase", path = path))
 }
 
 /// Restores a mongodump archive into `database`, whatever database it was dumped from.
@@ -362,7 +352,7 @@ pub fn mongo_restore(
     endpoint: Option<(&str, u16)>,
     database: &str,
     path: &str,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let mut args = vec![
         format!("--uri={}", tool_uri(uri, endpoint)?),
         format!("--archive={path}"),

@@ -18,6 +18,7 @@ import Button from "./components/Button";
 import Input from "./components/Input";
 import { EyeIcon, EyeOffIcon } from "./icons";
 import { useTranslation } from "./i18n";
+import { errorMessage } from "./errors";
 
 interface Props {
   onTitleChange: (title: string) => void;
@@ -355,7 +356,7 @@ function ConnectionTab({ onTitleChange }: Props) {
       await invoke("test_ssh_tunnel", { ssh });
       setTunnelStatus(t("connection.tunnelOk"));
     } catch (e) {
-      setTunnelStatus(t("connection.tunnelFailed", { error: String(e) }));
+      setTunnelStatus(t("connection.tunnelFailed", { error: errorMessage(t, e) }));
     }
   }
 
@@ -373,7 +374,7 @@ function ConnectionTab({ onTitleChange }: Props) {
       );
     } catch (e) {
       setStatus("");
-      setError(String(e));
+      setError(errorMessage(t, e));
     }
   }
 

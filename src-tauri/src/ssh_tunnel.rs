@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use crate::models::{SshAuth, SshConfig};
 use russh::client::{self};
 use russh::ChannelMsg;
@@ -28,15 +29,16 @@ fn load_known_hosts(path: &Path) -> HashMap<String, String> {
         .unwrap_or_default()
 }
 
-fn remember_host(path: &Path, endpoint: &str, fingerprint: &str) -> Result<(), String> {
+fn remember_host(path: &Path, endpoint: &str, fingerprint: &str) -> Result<(), AppError> {
     let mut known = load_known_hosts(path);
     known.insert(endpoint.to_string(), fingerprint.to_string());
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create {}: {e}", parent.display()))?;
+            .map_err(|e| err!("error.cannotCreateDirectory", path = parent.display(), message = e))?;
     }
-    let text = serde_json::to_string_pretty(&known).map_err(|e| e.to_string())?;
-    std::fs::write(path, text).map_err(|e| format!("Cannot remember the server's key: {e}"))
+    let text = serde_json::to_string_pretty(&known)
+        .map_err(|e| err!("error.cannotSaveKnownHost", message = e))?;
+    std::fs::write(path, text).map_err(|e| err!("error.cannotSaveKnownHost", message = e))
 }
 
 /// A running port forward, torn down as soon as this is dropped.
@@ -68,7 +70,7 @@ struct TunnelHandler {
     known_hosts: PathBuf,
     /// Why the key was refused, kept for the caller: `check_server_key` may only say yes or no,
     /// and "no" reaches the user as russh's own unspecific error otherwise.
-    refused: Arc<Mutex<Option<String>>>,
+    refused: Arc<Mutex<Option<AppError>>>,
 }
 
 impl client::Handler for TunnelHandler {
@@ -85,13 +87,12 @@ impl client::Handler for TunnelHandler {
         match load_known_hosts(&self.known_hosts).get(&self.endpoint) {
             Some(known) if known == &fingerprint => Ok(true),
             Some(known) => {
-                *self.refused.lock().unwrap() = Some(format!(
-                    "The SSH server at {} is offering a different key than the one MixDB saw \
-                     before ({fingerprint} now, {known} previously). Either the server was \
-                     rebuilt, or something is standing between you and it. If the change was \
-                     expected, remove the entry from {} and connect again.",
-                    self.endpoint,
-                    self.known_hosts.display()
+                *self.refused.lock().unwrap() = Some(err!(
+                    "error.sshHostKeyChanged",
+                    endpoint = &self.endpoint,
+                    fingerprint = fingerprint,
+                    known = known,
+                    file = self.known_hosts.display(),
                 ));
                 Ok(false)
             }
@@ -110,14 +111,14 @@ impl client::Handler for TunnelHandler {
 async fn authenticate(
     ssh: &SshConfig,
     app_data: &Path,
-) -> Result<client::Handle<TunnelHandler>, String> {
+) -> Result<client::Handle<TunnelHandler>, AppError> {
     match timeout(CONNECT_TIMEOUT, authenticate_inner(ssh, app_data)).await {
         Ok(result) => result,
-        Err(_) => Err(format!(
-            "SSH connection to {}:{} timed out after {}s — check host/port/firewall",
-            ssh.host,
-            ssh.port,
-            CONNECT_TIMEOUT.as_secs()
+        Err(_) => Err(err!(
+            "error.sshTimeout",
+            host = &ssh.host,
+            port = ssh.port,
+            seconds = CONNECT_TIMEOUT.as_secs(),
         )),
     }
 }
@@ -125,9 +126,9 @@ async fn authenticate(
 async fn authenticate_inner(
     ssh: &SshConfig,
     app_data: &Path,
-) -> Result<client::Handle<TunnelHandler>, String> {
+) -> Result<client::Handle<TunnelHandler>, AppError> {
     let config = Arc::new(client::Config::default());
-    let refused: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let refused: Arc<Mutex<Option<AppError>>> = Arc::new(Mutex::new(None));
     let handler = TunnelHandler {
         endpoint: format!("{}:{}", ssh.host, ssh.port),
         known_hosts: known_hosts_file(app_data),
@@ -139,7 +140,7 @@ async fn authenticate_inner(
         // the key — the reason the handler wrote down is the one worth showing.
         Err(e) => {
             let refused = refused.lock().unwrap().take();
-            return Err(refused.unwrap_or_else(|| format!("SSH connect failed: {e}")));
+            return Err(refused.unwrap_or_else(|| err!("error.sshConnectFailed", message = e)));
         }
     };
 
@@ -147,12 +148,12 @@ async fn authenticate_inner(
         SshAuth::Password { password } => session
             .authenticate_password(&ssh.username, password)
             .await
-            .map_err(|e| format!("SSH auth failed: {e}"))?,
+            .map_err(|e| err!("error.sshAuthFailed", message = e))?,
         SshAuth::PrivateKey { key_path, passphrase } => {
             let key_data = std::fs::read_to_string(key_path)
-                .map_err(|e| format!("Cannot read private key file: {e}"))?;
+                .map_err(|e| err!("error.cannotReadPrivateKey", message = e))?;
             let key_pair = russh::keys::decode_secret_key(&key_data, passphrase.as_deref())
-                .map_err(|e| format!("Invalid private key: {e}"))?;
+                .map_err(|e| err!("error.invalidPrivateKey", message = e))?;
             session
                 .authenticate_publickey(
                     &ssh.username,
@@ -166,7 +167,7 @@ async fn authenticate_inner(
                     ),
                 )
                 .await
-                .map_err(|e| format!("SSH auth failed: {e}"))?
+                .map_err(|e| err!("error.sshAuthFailed", message = e))?
         }
     };
 
@@ -182,9 +183,10 @@ async fn authenticate_inner(
             // or publickey). Surfacing what it *does* accept saves a lot of
             // guessing.
             let accepted: Vec<&str> = remaining_methods.iter().map(<&str>::from).collect();
-            Err(format!(
-                "SSH authentication was rejected by the server (partial_success={partial_success}). Server accepts: {}",
-                if accepted.is_empty() { "none advertised".to_string() } else { accepted.join(", ") }
+            Err(err!(
+                "error.sshAuthRejected",
+                partialSuccess = partial_success,
+                methods = accepted.join(", "),
             ))
         }
     }
@@ -193,7 +195,7 @@ async fn authenticate_inner(
 /// Authenticates against the SSH server without opening any port forward.
 /// Used by the UI's "Test tunnel" action to validate credentials/connectivity
 /// independently of the database connection itself.
-pub async fn test_connection(ssh: &SshConfig, app_data: &Path) -> Result<(), String> {
+pub async fn test_connection(ssh: &SshConfig, app_data: &Path) -> Result<(), AppError> {
     let session = authenticate(ssh, app_data).await?;
     let _ = session.disconnect(russh::Disconnect::ByApplication, "", "English").await;
     Ok(())
@@ -208,15 +210,15 @@ pub async fn open_tunnel(
     remote_host: &str,
     remote_port: u16,
     app_data: &Path,
-) -> Result<(u16, Tunnel), String> {
+) -> Result<(u16, Tunnel), AppError> {
     let session = authenticate(ssh, app_data).await?;
 
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .await
-        .map_err(|e| format!("Cannot bind local tunnel port: {e}"))?;
+        .map_err(|e| err!("error.cannotBindTunnelPort", message = e))?;
     let local_port = listener
         .local_addr()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| err!("error.cannotBindTunnelPort", message = e))?
         .port();
 
     let remote_host = remote_host.to_string();

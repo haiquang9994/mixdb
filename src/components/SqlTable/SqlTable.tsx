@@ -8,6 +8,7 @@ import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
 import { ChevronDownIcon, ChevronUpIcon, CopyIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import { initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
 import {
   FILTER_OPERATORS,
@@ -260,7 +261,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
         setAutoIncrementColumn(result.autoIncrementColumn);
         setTotal(result.total);
       })
-      .catch((e) => onError(String(e)))
+      .catch((e) => onError(errorMessage(t, e)))
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
@@ -314,7 +315,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     try {
       await mysqlUpdateRow(connectionId, dbAtFlush, tableAtFlush, pending.changes, key);
     } catch (e) {
-      onError(String(e));
+      onError(errorMessage(t, e));
       setRows((prevRows) => {
         if (currentTableRef.current.db !== dbAtFlush || currentTableRef.current.table !== tableAtFlush) {
           return prevRows;
@@ -422,7 +423,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
       if (wholeTable) setPage(0);
       setReloadToken((n) => n + 1);
     } catch (e) {
-      onError(String(e));
+      onError(errorMessage(t, e));
     } finally {
       setDeleting(false);
     }

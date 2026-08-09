@@ -23,6 +23,7 @@ import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
 import { PlusIcon, ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import { initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
 import styles from "./NoSqlTable.module.css";
 
@@ -128,7 +129,7 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
         // Whatever these documents carry that the bar didn't know about yet is now filterable.
         setFields((known) => mergeDocumentFields(known, result.documents));
       })
-      .catch((e) => onError(String(e)))
+      .catch((e) => onError(errorMessage(t, e)))
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
@@ -149,7 +150,7 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
         await mongoUpdateDocument(target.connectionId, target.database, target.collection, id, ops);
         return true;
       } catch (e) {
-        onError(String(e));
+        onError(errorMessage(t, e));
         return false;
       } finally {
         setWriteCount((n) => n - 1);
@@ -170,7 +171,7 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
         loadPage();
         return true;
       } catch (e) {
-        onError(String(e));
+        onError(errorMessage(t, e));
         return false;
       } finally {
         setWriteCount((n) => n - 1);
@@ -186,7 +187,7 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
       // A failed write is already reported by writeDocument; whatever else could surface here
       // must not leave the list stuck on a page the user has moved away from.
       flushAll()
-        .catch((e) => onError(String(e)))
+        .catch((e) => onError(errorMessage(t, e)))
         .finally(action);
     },
     [flushAll, onError],

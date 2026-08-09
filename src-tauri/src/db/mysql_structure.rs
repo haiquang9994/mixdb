@@ -5,6 +5,7 @@
 //! user has privileges on — so a short list means "this is what you may see", not necessarily
 //! "this is all there is".
 
+use crate::error::AppError;
 use super::mysql::quote_ident;
 use serde::{Deserialize, Serialize};
 use sqlx::mysql::MySqlRow;
@@ -220,7 +221,7 @@ fn default_clause(value: &str, is_expression: bool, data_type: &str) -> String {
 ///
 /// A collation name is never a quotable value in MySQL's grammar — it goes in bare — so the only
 /// safe thing to do with one is to refuse anything that is not shaped like a name.
-fn validated_collation(collation: Option<&str>) -> Result<Option<&str>, String> {
+fn validated_collation(collation: Option<&str>) -> Result<Option<&str>, AppError> {
     let Some(collation) = collation.map(str::trim).filter(|c| !c.is_empty()) else {
         return Ok(None);
     };
@@ -228,7 +229,7 @@ fn validated_collation(collation: Option<&str>) -> Result<Option<&str>, String> 
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '_')
     {
-        return Err(format!("Invalid collation `{collation}`"));
+        return Err(err!("error.invalidCollation", collation = collation));
     }
     Ok(Some(collation))
 }
@@ -239,13 +240,13 @@ fn validated_collation(collation: Option<&str>) -> Result<Option<&str>, String> 
 /// and this client runs user-authored SQL by design. The statement it lands in is a prepared one,
 /// which MySQL will not accept more than one statement for, so a `;` in the text cannot become a
 /// second statement.
-fn column_definition(spec: &ColumnSpec) -> Result<String, String> {
+fn column_definition(spec: &ColumnSpec) -> Result<String, AppError> {
     if spec.name.trim().is_empty() {
-        return Err("Column name is required".to_string());
+        return Err(err!("error.columnNameRequired"));
     }
     let data_type = spec.data_type.trim();
     if data_type.is_empty() {
-        return Err("Column type is required".to_string());
+        return Err(err!("error.columnTypeRequired"));
     }
 
     let mut sql = format!("{} {}", quote_ident(spec.name.trim()), data_type);
@@ -282,9 +283,9 @@ fn position_clause(after: Option<&str>) -> String {
 }
 
 /// The `ADD ...` clause that creates an index, minus the `ALTER TABLE` in front of it.
-fn add_index_clause(spec: &IndexSpec) -> Result<String, String> {
+fn add_index_clause(spec: &IndexSpec) -> Result<String, AppError> {
     if spec.columns.is_empty() {
-        return Err("An index needs at least one column".to_string());
+        return Err(err!("error.indexNeedsColumn"));
     }
 
     let columns = spec
@@ -292,7 +293,7 @@ fn add_index_clause(spec: &IndexSpec) -> Result<String, String> {
         .iter()
         .map(|column| {
             if column.name.trim().is_empty() {
-                return Err("An index column must be named".to_string());
+                return Err(err!("error.indexColumnNameRequired"));
             }
             let quoted = quote_ident(column.name.trim());
             Ok(match column.prefix_length {
@@ -300,7 +301,7 @@ fn add_index_clause(spec: &IndexSpec) -> Result<String, String> {
                 _ => quoted,
             })
         })
-        .collect::<Result<Vec<_>, String>>()?
+        .collect::<Result<Vec<_>, AppError>>()?
         .join(", ");
 
     let kind = spec.kind.to_lowercase();
@@ -315,7 +316,7 @@ fn add_index_clause(spec: &IndexSpec) -> Result<String, String> {
         "unique" => "UNIQUE INDEX",
         "fulltext" => "FULLTEXT INDEX",
         "spatial" => "SPATIAL INDEX",
-        other => return Err(format!("Unknown index kind `{other}`")),
+        other => return Err(err!("error.unknownIndexKind", kind = other)),
     };
     let name = spec.name.trim();
     let named = if name.is_empty() {
@@ -338,7 +339,7 @@ fn add_index_clause(spec: &IndexSpec) -> Result<String, String> {
         {
             let upper = index_type.to_uppercase();
             if upper != "BTREE" && upper != "HASH" {
-                return Err(format!("Unknown index type `{index_type}`"));
+                return Err(err!("error.unknownIndexType", type = index_type));
             }
             clause.push_str(&format!(" USING {upper}"));
         }
@@ -366,20 +367,20 @@ fn qualified(database: &str, table: &str) -> String {
 
 /// Runs one statement built here. Prepared rather than sent as text, so that MySQL itself refuses
 /// anything that turns out to be more than a single statement.
-async fn execute(pool: &MySqlPool, sql: String) -> Result<(), String> {
+async fn execute(pool: &MySqlPool, sql: String) -> Result<(), AppError> {
     sqlx::query(sqlx::AssertSqlSafe(sql))
         .execute(pool)
         .await
         .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(|e| err!("error.mysql", message = e))
 }
 
 pub async fn table_structure(
     pool: &MySqlPool,
     database: &str,
     table: &str,
-) -> Result<TableStructure, String> {
-    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+) -> Result<TableStructure, AppError> {
+    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
 
     let column_rows = sqlx::query(
         "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT,
@@ -392,13 +393,10 @@ pub async fn table_structure(
     .bind(table)
     .fetch_all(&mut *conn)
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| err!("error.mysql", message = e))?;
 
     if column_rows.is_empty() {
-        return Err(format!(
-            "No columns of `{database}`.`{table}` are visible — the table may not exist, or the \
-             connected user may have no privileges on it"
-        ));
+        return Err(err!("error.noVisibleColumns", database = database, table = table));
     }
 
     let columns = column_rows
@@ -442,7 +440,7 @@ pub async fn table_structure(
     .bind(table)
     .fetch_all(&mut *conn)
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| err!("error.mysql", message = e))?;
 
     let mut indexes: Vec<TableIndex> = Vec::new();
     for row in &index_rows {
@@ -475,7 +473,7 @@ pub async fn table_structure(
 
 /// Every collation the server supports, in character set order. Read once and offered as a list to
 /// choose from, so a column's `COLLATE` can only ever name something this server knows.
-pub async fn collations(pool: &MySqlPool) -> Result<Vec<Collation>, String> {
+pub async fn collations(pool: &MySqlPool) -> Result<Vec<Collation>, AppError> {
     let rows = sqlx::query(
         "SELECT COLLATION_NAME, CHARACTER_SET_NAME, IS_DEFAULT
          FROM information_schema.COLLATIONS
@@ -483,7 +481,7 @@ pub async fn collations(pool: &MySqlPool) -> Result<Vec<Collation>, String> {
     )
     .fetch_all(pool)
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| err!("error.mysql", message = e))?;
 
     Ok(rows
         .iter()
@@ -518,7 +516,7 @@ pub struct TableStats {
 /// Only base tables are counted. A view stores nothing of its own and `information_schema` reports
 /// NULL for all four numbers on one, which would show up here as a table with no rows in it rather
 /// than as what it is.
-pub async fn table_stats(pool: &MySqlPool, database: &str) -> Result<Vec<TableStats>, String> {
+pub async fn table_stats(pool: &MySqlPool, database: &str) -> Result<Vec<TableStats>, AppError> {
     let rows = sqlx::query(
         "SELECT TABLE_NAME, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH, AVG_ROW_LENGTH
          FROM information_schema.TABLES
@@ -528,7 +526,7 @@ pub async fn table_stats(pool: &MySqlPool, database: &str) -> Result<Vec<TableSt
     .bind(database)
     .fetch_all(pool)
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| err!("error.mysql", message = e))?;
 
     Ok(rows
         .iter()
@@ -566,10 +564,10 @@ pub async fn create_database(
     pool: &MySqlPool,
     name: &str,
     collation: Option<&str>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let name = name.trim();
     if name.is_empty() {
-        return Err("Database name is required".to_string());
+        return Err(err!("error.databaseNameRequired"));
     }
     let mut sql = format!("CREATE DATABASE {}", quote_ident(name));
     if let Some(collation) = validated_collation(collation)? {
@@ -579,10 +577,10 @@ pub async fn create_database(
 }
 
 /// Drops a database and every table in it.
-pub async fn drop_database(pool: &MySqlPool, name: &str) -> Result<(), String> {
+pub async fn drop_database(pool: &MySqlPool, name: &str) -> Result<(), AppError> {
     let name = name.trim();
     if name.is_empty() {
-        return Err("The database being dropped must be named".to_string());
+        return Err(err!("error.databaseNameRequired"));
     }
     execute(pool, format!("DROP DATABASE {}", quote_ident(name))).await
 }
@@ -596,7 +594,7 @@ pub async fn drop_database(pool: &MySqlPool, name: &str) -> Result<(), String> {
 /// `utf8mb4` is picked as the one that can hold everything the others can (every character set
 /// MySQL supports maps into Unicode), with mysqldump's own `SET NAMES` telling the restore how to
 /// read it back.
-pub async fn dump_charset(pool: &MySqlPool, database: &str) -> Result<String, String> {
+pub async fn dump_charset(pool: &MySqlPool, database: &str) -> Result<String, AppError> {
     const FALLBACK: &str = "utf8mb4";
 
     let mut charsets: Vec<String> = sqlx::query(
@@ -611,7 +609,7 @@ pub async fn dump_charset(pool: &MySqlPool, database: &str) -> Result<String, St
     .bind(database)
     .fetch_all(pool)
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| err!("error.mysql", message = e))?
     .iter()
     .filter_map(|row| text(row, "charset"))
     // The name is about to reach a command line, so anything not shaped like a character set name
@@ -644,10 +642,10 @@ pub async fn create_table(
     database: &str,
     table: &str,
     collation: Option<&str>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let name = table.trim();
     if name.is_empty() {
-        return Err("Table name is required".to_string());
+        return Err(err!("error.tableNameRequired"));
     }
     let id = quote_ident("id");
     let mut sql = format!(
@@ -667,10 +665,10 @@ pub async fn rename_table(
     database: &str,
     table: &str,
     new_name: &str,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let new_name = new_name.trim();
     if table.trim().is_empty() || new_name.is_empty() {
-        return Err("Table name is required".to_string());
+        return Err(err!("error.tableNameRequired"));
     }
     execute(
         pool,
@@ -685,9 +683,9 @@ pub async fn rename_table(
 
 /// Drops a table and everything in it. Plain `DROP TABLE`, not `IF EXISTS`: asking to drop
 /// something that is not there is worth being told about rather than passing quietly.
-pub async fn drop_table(pool: &MySqlPool, database: &str, table: &str) -> Result<(), String> {
+pub async fn drop_table(pool: &MySqlPool, database: &str, table: &str) -> Result<(), AppError> {
     if table.trim().is_empty() {
-        return Err("The table being dropped must be named".to_string());
+        return Err(err!("error.tableNameRequired"));
     }
     execute(
         pool,
@@ -701,7 +699,7 @@ pub async fn add_column(
     database: &str,
     table: &str,
     spec: &ColumnSpec,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let definition = column_definition(spec)?;
     let position = position_clause(spec.after.as_deref());
     execute(
@@ -723,9 +721,9 @@ pub async fn modify_column(
     table: &str,
     name: &str,
     spec: &ColumnSpec,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if name.trim().is_empty() {
-        return Err("The column being changed must be named".to_string());
+        return Err(err!("error.columnNameRequired"));
     }
     let definition = column_definition(spec)?;
     let position = position_clause(spec.after.as_deref());
@@ -745,9 +743,9 @@ pub async fn drop_column(
     database: &str,
     table: &str,
     name: &str,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if name.trim().is_empty() {
-        return Err("The column being dropped must be named".to_string());
+        return Err(err!("error.columnNameRequired"));
     }
     execute(
         pool,
@@ -765,7 +763,7 @@ pub async fn add_index(
     database: &str,
     table: &str,
     spec: &IndexSpec,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let clause = add_index_clause(spec)?;
     execute(
         pool,
@@ -783,9 +781,9 @@ pub async fn modify_index(
     table: &str,
     name: &str,
     spec: &IndexSpec,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if name.trim().is_empty() {
-        return Err("The index being changed must be named".to_string());
+        return Err(err!("error.indexNameRequired"));
     }
     let clause = add_index_clause(spec)?;
     execute(
@@ -804,9 +802,9 @@ pub async fn drop_index(
     database: &str,
     table: &str,
     name: &str,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if name.trim().is_empty() {
-        return Err("The index being dropped must be named".to_string());
+        return Err(err!("error.indexNameRequired"));
     }
     execute(
         pool,

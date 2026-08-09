@@ -3,6 +3,7 @@
 //! comes back is one result per statement — a result set, a count of rows changed, or plain
 //! confirmation that the statement ran.
 
+use crate::error::AppError;
 use super::mysql::{column_value, quote_ident};
 use futures_util::StreamExt;
 use serde::Serialize;
@@ -205,13 +206,13 @@ pub async fn run(
     sql: &str,
     database: Option<&str>,
     announce: impl FnOnce(u64),
-) -> Result<Vec<StatementResult>, String> {
+) -> Result<Vec<StatementResult>, AppError> {
     let statements = split_statements(sql);
     if statements.is_empty() {
-        return Err("There is nothing to run".to_string());
+        return Err(err!("error.nothingToRun"));
     }
 
-    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
     announce(super::mysql::thread_id(&mut conn).await?);
     if let Some(db) = database.filter(|d| !d.is_empty()) {
         // Sent as text, not prepared: MySQL refuses `USE` in the prepared statement protocol
@@ -219,7 +220,7 @@ pub async fn run(
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!("USE {}", quote_ident(db))))
             .execute(&mut *conn)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| err!("error.mysql", message = e))?;
     }
 
     let mut results: Vec<StatementResult> = Vec::new();

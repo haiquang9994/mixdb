@@ -8,6 +8,7 @@
 //! A downloaded copy lives under the app's data directory and is never put on `PATH`: it belongs
 //! to MixDB rather than to the machine.
 
+use crate::error::AppError;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -31,11 +32,11 @@ pub enum Suite {
 }
 
 impl Suite {
-    pub fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> Result<Self, AppError> {
         match value {
             "mysql" => Ok(Self::Mysql),
             "mongo" => Ok(Self::Mongo),
-            other => Err(format!("Unknown tool suite `{other}`")),
+            other => Err(err!("error.unknownToolSuite", suite = other)),
         }
     }
 
@@ -70,11 +71,11 @@ impl Tool {
         Tool::MongoRestore,
     ];
 
-    pub fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> Result<Self, AppError> {
         Self::ALL
             .into_iter()
             .find(|tool| tool.stem() == value)
-            .ok_or_else(|| format!("Unknown tool `{value}`"))
+            .ok_or_else(|| err!("error.unknownTool", tool = value))
     }
 
     pub fn stem(self) -> &'static str {
@@ -139,12 +140,12 @@ fn load_overrides(tools_dir: &Path) -> HashMap<String, String> {
 }
 
 /// Remembers where the user said a tool is, or forgets it when given no path.
-pub fn set_path(tool: Tool, path: Option<&str>, tools_dir: &Path) -> Result<(), String> {
+pub fn set_path(tool: Tool, path: Option<&str>, tools_dir: &Path) -> Result<(), AppError> {
     let mut overrides = load_overrides(tools_dir);
     match path.map(str::trim).filter(|path| !path.is_empty()) {
         Some(path) => {
             if !Path::new(path).is_file() {
-                return Err(format!("There is no file at {path}"));
+                return Err(err!("error.noFileAt", path = path));
             }
             overrides.insert(tool.stem().to_string(), path.to_string());
         }
@@ -153,10 +154,11 @@ pub fn set_path(tool: Tool, path: Option<&str>, tools_dir: &Path) -> Result<(), 
         }
     }
     std::fs::create_dir_all(tools_dir)
-        .map_err(|e| format!("Cannot create {}: {e}", tools_dir.display()))?;
-    let text = serde_json::to_string_pretty(&overrides).map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.cannotCreateDirectory", path = tools_dir.display(), message = e))?;
+    let text = serde_json::to_string_pretty(&overrides)
+        .map_err(|e| err!("error.cannotSaveToolPath", message = e))?;
     std::fs::write(overrides_file(tools_dir), text)
-        .map_err(|e| format!("Cannot remember the choice: {e}"))
+        .map_err(|e| err!("error.cannotSaveToolPath", message = e))
 }
 
 /// The MySQL client version downloaded. An 8.0 client talks to 5.5 and up, so one build covers
@@ -278,27 +280,21 @@ pub fn status(tools_dir: &Path) -> Vec<ToolStatus> {
 
 /// Deletes the copy MixDB downloaded. Anything found on the machine itself is left alone — it was
 /// never MixDB's to remove.
-pub fn uninstall(suite: Suite, tools_dir: &Path) -> Result<(), String> {
+pub fn uninstall(suite: Suite, tools_dir: &Path) -> Result<(), AppError> {
     let dir = suite.dir(tools_dir);
     if !dir.exists() {
         return Ok(());
     }
-    std::fs::remove_dir_all(&dir).map_err(|e| format!("Cannot remove {}: {e}", dir.display()))
+    std::fs::remove_dir_all(&dir)
+        .map_err(|e| err!("error.cannotRemoveDirectory", path = dir.display(), message = e))
 }
 
 /// Where `tool` is, or the error the caller shows: the frontend asks whether a suite is present
 /// before running anything, so reaching this message means it went missing in between.
-pub fn require(tool: Tool, tools_dir: &Path) -> Result<PathBuf, String> {
-    find(tool, tools_dir).ok_or_else(|| {
-        let suite = match tool.suite() {
-            Suite::Mysql => "the MySQL client tools",
-            Suite::Mongo => "the MongoDB Database Tools",
-        };
-        format!(
-            "`{}` was not found. Install {suite}, point MixDB at a copy in Settings, or let it \
-             download one.",
-            tool.stem()
-        )
+pub fn require(tool: Tool, tools_dir: &Path) -> Result<PathBuf, AppError> {
+    find(tool, tools_dir).ok_or_else(|| match tool.suite() {
+        Suite::Mysql => err!("error.mysqlToolNotFound", tool = tool.stem()),
+        Suite::Mongo => err!("error.mongoToolNotFound", tool = tool.stem()),
     })
 }
 
@@ -376,27 +372,23 @@ fn archive_source(suite: Suite) -> Option<(String, &'static str)> {
 /// withdrawn or rebuilt under the same name, a download that came back truncated, or something
 /// between here and the vendor handing over a different file. None of those should be unpacked
 /// and then run with the credentials of every database the user connects to.
-fn verify_sha256(path: &Path, expected: &str) -> Result<(), String> {
+fn verify_sha256(path: &Path, expected: &str) -> Result<(), AppError> {
     use sha2::{Digest, Sha256};
 
     let mut file = std::fs::File::open(path)
-        .map_err(|e| format!("Cannot read the download back: {e}"))?;
+        .map_err(|e| err!("error.cannotReadDownload", message = e))?;
     let mut hasher = Sha256::new();
     std::io::copy(&mut file, &mut hasher)
-        .map_err(|e| format!("Cannot read the download back: {e}"))?;
+        .map_err(|e| err!("error.cannotReadDownload", message = e))?;
     let actual = format!("{:x}", hasher.finalize());
     if actual != expected {
-        return Err(format!(
-            "The download is not the file MixDB expects (its checksum is {actual}, not \
-             {expected}). The release may have been withdrawn or replaced — install the tools \
-             yourself and point MixDB at them in Settings."
-        ));
+        return Err(err!("error.checksumMismatch", actual = actual, expected = expected));
     }
     Ok(())
 }
 
 /// Runs a helper program, with its output thrown away and its complaints kept for the error.
-fn run(program: &str, args: &[&str], what: &str) -> Result<(), String> {
+fn run(program: &str, args: &[&str], what: &'static str) -> Result<(), AppError> {
     let mut command = Command::new(program);
     command
         .args(args)
@@ -411,20 +403,20 @@ fn run(program: &str, args: &[&str], what: &str) -> Result<(), String> {
     }
     let output = command
         .spawn()
-        .map_err(|e| format!("{what} needs `{program}`, which could not be run: {e}"))?
+        .map_err(|e| err!("error.helperMissing", program = program, message = e))?
         .wait_with_output()
-        .map_err(|e| format!("{what} could not be waited for: {e}"))?;
+        .map_err(|e| AppError::new(what).with("message", e))?;
     if output.status.success() {
         return Ok(());
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
     let tail = stderr.lines().rev().take(4).collect::<Vec<_>>().join(" ");
-    Err(format!("{what} failed ({}): {tail}", output.status))
+    Err(AppError::new(what).with("message", tail))
 }
 
 /// Copies out of `dir`, recursively, every file the suite needs: the tools themselves, and — on
 /// Windows — the libraries sitting beside them, which they will not start without.
-fn collect(dir: &Path, suite: Suite, tools_dir: &Path) -> Result<usize, String> {
+fn collect(dir: &Path, suite: Suite, tools_dir: &Path) -> Result<usize, AppError> {
     let wanted: Vec<String> = suite.tools().iter().map(|tool| tool.file_name()).collect();
     let mut found = 0;
     let mut stack = vec![dir.to_path_buf()];
@@ -449,7 +441,7 @@ fn collect(dir: &Path, suite: Suite, tools_dir: &Path) -> Result<usize, String> 
                 continue;
             }
             std::fs::copy(&path, tools_dir.join(&name))
-                .map_err(|e| format!("Cannot put {name} in {}: {e}", tools_dir.display()))?;
+                .map_err(|e| err!("error.cannotCopyTool", tool = name, path = tools_dir.display(), message = e))?;
             if is_tool {
                 found += 1;
             }
@@ -466,20 +458,15 @@ fn collect(dir: &Path, suite: Suite, tools_dir: &Path) -> Result<usize, String> 
 ///
 /// The archive holds an entire server distribution in MySQL's case, so it is unpacked to a
 /// temporary directory, the few files that matter are taken out of it, and the rest is deleted.
-pub fn install(suite: Suite, tools_dir: &Path) -> Result<(), String> {
-    let (url, sha256) = archive_source(suite).ok_or_else(|| {
-        "MySQL publishes no plain archive of its client tools for this platform — install them \
-         through your package manager (they are in `mysql-client` / `mariadb-client`), and MixDB \
-         will find them on PATH."
-            .to_string()
-    })?;
+pub fn install(suite: Suite, tools_dir: &Path) -> Result<(), AppError> {
+    let (url, sha256) = archive_source(suite).ok_or_else(|| err!("error.noMysqlArchive"))?;
 
     let target = suite.dir(tools_dir);
     std::fs::create_dir_all(&target)
-        .map_err(|e| format!("Cannot create {}: {e}", target.display()))?;
+        .map_err(|e| err!("error.cannotCreateDirectory", path = target.display(), message = e))?;
     let staging = tools_dir.join(format!("download-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&staging)
-        .map_err(|e| format!("Cannot create {}: {e}", staging.display()))?;
+        .map_err(|e| err!("error.cannotCreateDirectory", path = staging.display(), message = e))?;
     // Whatever happens next, the staging directory goes: it holds a whole unpacked server.
     let cleanup = || {
         let _ = std::fs::remove_dir_all(&staging);
@@ -500,13 +487,13 @@ pub fn install(suite: Suite, tools_dir: &Path) -> Result<(), String> {
                 &archive.to_string_lossy(),
                 &url,
             ],
-            "The download",
+            "error.downloadFailed",
         )?;
         // Before anything is unpacked, let alone run.
         verify_sha256(&archive, sha256)?;
         let unpacked = staging.join("unpacked");
         std::fs::create_dir_all(&unpacked)
-            .map_err(|e| format!("Cannot create {}: {e}", unpacked.display()))?;
+            .map_err(|e| err!("error.cannotCreateDirectory", path = unpacked.display(), message = e))?;
         run(
             "tar",
             &[
@@ -515,15 +502,11 @@ pub fn install(suite: Suite, tools_dir: &Path) -> Result<(), String> {
                 "-C",
                 &unpacked.to_string_lossy(),
             ],
-            "Unpacking the download",
+            "error.unpackFailed",
         )?;
         let found = collect(&unpacked, suite, &target)?;
         if found < suite.tools().len() {
-            return Err(
-                "The download did not contain the tools it was supposed to — the version MixDB \
-                 asks for may have been withdrawn."
-                    .to_string(),
-            );
+            return Err(err!("error.downloadIncomplete"));
         }
         #[cfg(unix)]
         {
@@ -565,7 +548,8 @@ mod tests {
         assert!(matching.is_ok());
         let message = mismatched.unwrap_err();
         // The message has to name both halves: which file arrived, and which was expected.
-        assert!(message.contains(EMPTY_SHA256), "{message}");
+        assert_eq!(message.code, "error.checksumMismatch");
+        assert_eq!(message.params.get("actual"), Some(&EMPTY_SHA256.to_string()));
     }
 
     #[test]

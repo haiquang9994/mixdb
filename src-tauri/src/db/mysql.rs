@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use super::filters::split_list;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -12,7 +13,7 @@ pub async fn connect(
     password: &str,
     database: Option<&str>,
     use_ssl: Option<bool>,
-) -> Result<MySqlPool, String> {
+) -> Result<MySqlPool, AppError> {
     let mut opts = MySqlConnectOptions::new()
         .host(host)
         .port(port)
@@ -38,32 +39,32 @@ pub async fn connect(
         .max_connections(5)
         .connect_with(opts)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| err!("error.mysql", message = e))
 }
 
 pub async fn query(
     pool: &MySqlPool,
     sql: &str,
     database: Option<&str>,
-) -> Result<Vec<Map<String, Value>>, String> {
+) -> Result<Vec<Map<String, Value>>, AppError> {
     // Querying a &Pool directly requires 'static query text (sqlx's Executor
     // impl for &Pool boxes the acquire+execute future); acquiring a connection
     // first lets us run borrowed, non-'static SQL text instead.
-    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
     if let Some(db) = database.filter(|d| !d.is_empty()) {
         let use_sql = format!("USE {}", quote_ident(db));
         // Text protocol: `USE` is one of the statements MySQL will not accept as a prepared one.
         sqlx::raw_sql(sqlx::AssertSqlSafe(use_sql))
             .execute(&mut *conn)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| err!("error.mysql", message = e))?;
     }
     // AssertSqlSafe opts out of sqlx's SQL-injection speed bump: this client
     // runs arbitrary, user-authored SQL by design, not app-embedded queries.
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mysql", message = e))?;
 
     Ok(rows.iter().map(row_to_json).collect())
 }
@@ -75,11 +76,11 @@ pub(super) fn quote_ident(ident: &str) -> String {
 }
 
 /// The server's own id for this session, which is what `KILL QUERY` names.
-pub async fn thread_id(conn: &mut sqlx::MySqlConnection) -> Result<u64, String> {
+pub async fn thread_id(conn: &mut sqlx::MySqlConnection) -> Result<u64, AppError> {
     sqlx::query_scalar("SELECT CONNECTION_ID()")
         .fetch_one(conn)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| err!("error.mysql", message = e))
 }
 
 /// Asks the server to stop whatever session `thread_id` is running.
@@ -91,14 +92,14 @@ pub async fn thread_id(conn: &mut sqlx::MySqlConnection) -> Result<u64, String> 
 /// Runs on a connection of its own out of the same pool, since the one being killed is busy. A
 /// server that no longer has that session (the query finished first) reports "Unknown thread id",
 /// which is not a failure worth showing: the user asked for it to stop, and it has.
-pub async fn kill_query(pool: &MySqlPool, thread_id: u64) -> Result<(), String> {
+pub async fn kill_query(pool: &MySqlPool, thread_id: u64) -> Result<(), AppError> {
     match sqlx::query(sqlx::AssertSqlSafe(format!("KILL QUERY {thread_id}")))
         .execute(pool)
         .await
     {
         Ok(_) => Ok(()),
         Err(e) if e.to_string().contains("Unknown thread id") => Ok(()),
-        Err(e) => Err(e.to_string()),
+        Err(e) => Err(err!("error.mysql", message = e)),
     }
 }
 
@@ -112,15 +113,15 @@ pub struct ServerInfo {
 /// Reads what the header shows about the server. The compile variables are the only place a
 /// MySQL connection names its machine: the platform it was built for, and the architecture it
 /// was built for — "Linux x86_64".
-pub async fn server_info(pool: &MySqlPool) -> Result<ServerInfo, String> {
-    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+pub async fn server_info(pool: &MySqlPool) -> Result<ServerInfo, AppError> {
+    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
     let rows = sqlx::query(
         "SHOW VARIABLES WHERE Variable_name IN \
          ('version', 'version_compile_os', 'version_compile_machine')",
     )
     .fetch_all(&mut *conn)
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| err!("error.mysql", message = e))?;
 
     let mut version = String::new();
     let mut platform = String::new();
@@ -146,22 +147,22 @@ pub async fn server_info(pool: &MySqlPool) -> Result<ServerInfo, String> {
     Ok(ServerInfo { version, os })
 }
 
-pub async fn list_databases(pool: &MySqlPool) -> Result<Vec<String>, String> {
-    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+pub async fn list_databases(pool: &MySqlPool) -> Result<Vec<String>, AppError> {
+    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
     let rows = sqlx::query("SHOW DATABASES")
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mysql", message = e))?;
     Ok(rows.iter().map(|r| r.get::<String, _>(0)).collect())
 }
 
-pub async fn list_tables(pool: &MySqlPool, database: &str) -> Result<Vec<String>, String> {
-    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+pub async fn list_tables(pool: &MySqlPool, database: &str) -> Result<Vec<String>, AppError> {
+    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
     let sql = format!("SHOW TABLES FROM {}", quote_ident(database));
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mysql", message = e))?;
     Ok(rows.iter().map(|r| r.get::<String, _>(0)).collect())
 }
 
@@ -204,7 +205,7 @@ async fn foreign_keys(
     conn: &mut sqlx::MySqlConnection,
     database: &str,
     table: &str,
-) -> Result<BTreeMap<String, ForeignKey>, String> {
+) -> Result<BTreeMap<String, ForeignKey>, AppError> {
     let rows = sqlx::query(
         "SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
          FROM information_schema.KEY_COLUMN_USAGE
@@ -215,7 +216,7 @@ async fn foreign_keys(
     .bind(table)
     .fetch_all(&mut *conn)
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| err!("error.mysql", message = e))?;
 
     let mut keys = BTreeMap::new();
     for row in &rows {
@@ -259,13 +260,13 @@ fn escape_like(value: &str) -> String {
 /// first. A row whose operator wants a value it wasn't given is dropped rather than matched
 /// literally: the bar's opening `id =` row must not become `WHERE id = ''` before anything is
 /// typed into it.
-fn build_where(filters: &[Filter], columns: &[String]) -> Result<(String, Vec<String>), String> {
+fn build_where(filters: &[Filter], columns: &[String]) -> Result<(String, Vec<String>), AppError> {
     let mut clauses: Vec<String> = Vec::new();
     let mut binds: Vec<String> = Vec::new();
 
     for filter in filters {
         if !columns.iter().any(|c| c == &filter.column) {
-            return Err(format!("Unknown filter column `{}`", filter.column));
+            return Err(err!("error.unknownFilterColumn", column = &filter.column));
         }
         let col = quote_ident(&filter.column);
         let value = filter.value.as_deref().unwrap_or("");
@@ -324,7 +325,7 @@ fn build_where(filters: &[Filter], columns: &[String]) -> Result<(String, Vec<St
             "isNotNull" => (format!("{col} IS NOT NULL"), Vec::new()),
             "isEmpty" => (format!("{col} = ''"), Vec::new()),
             "isNotEmpty" => (format!("{col} <> ''"), Vec::new()),
-            other => return Err(format!("Unknown filter operator `{other}`")),
+            other => return Err(err!("error.unknownFilterOperator", operator = other)),
         };
 
         clauses.push(clause);
@@ -384,8 +385,8 @@ pub async fn table_data(
     database: &str,
     table: &str,
     query: &PageQuery,
-) -> Result<TablePage, String> {
-    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+) -> Result<TablePage, AppError> {
+    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
     let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
 
     // SHOW COLUMNS gives us the column list (in table order) even when the
@@ -394,7 +395,7 @@ pub async fn table_data(
     let column_rows = sqlx::query(sqlx::AssertSqlSafe(columns_sql))
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mysql", message = e))?;
     let columns: Vec<String> = column_rows
         .iter()
         .map(|r| r.get::<String, _>("Field"))
@@ -440,7 +441,7 @@ pub async fn table_data(
     let total: i64 = count_query
         .fetch_one(&mut *conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mysql", message = e))?;
 
     let page_size = query.page_size.clamp(1, 1000);
     let offset = query.page.max(0).saturating_mul(page_size);
@@ -468,7 +469,7 @@ pub async fn table_data(
     let rows = data_query
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mysql", message = e))?;
 
     Ok(TablePage {
         columns,
@@ -503,12 +504,12 @@ pub async fn update_row(
     table: &str,
     updates: &Map<String, Value>,
     key: &Map<String, Value>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if updates.is_empty() {
         return Ok(());
     }
     if key.is_empty() {
-        return Err("Cannot update a row without any identifying columns".to_string());
+        return Err(err!("error.updateWithoutKey"));
     }
 
     let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
@@ -525,7 +526,7 @@ pub async fn update_row(
         .collect::<Vec<_>>()
         .join(" AND ");
 
-    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let mut tx = pool.begin().await.map_err(|e| err!("error.mysql", message = e))?;
 
     let count_sql = format!("SELECT COUNT(*) FROM {qualified} WHERE {where_clause}");
     let mut count_query = sqlx::query(sqlx::AssertSqlSafe(count_sql));
@@ -535,13 +536,11 @@ pub async fn update_row(
     let matched: i64 = count_query
         .fetch_one(&mut *tx)
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| err!("error.mysql", message = e))?
         .get::<i64, _>(0);
     if matched != 1 {
-        tx.rollback().await.map_err(|e| e.to_string())?;
-        return Err(format!(
-            "Expected to match exactly 1 row, matched {matched} — update aborted"
-        ));
+        tx.rollback().await.map_err(|e| err!("error.mysql", message = e))?;
+        return Err(err!("error.rowsMatched", matched = matched));
     }
 
     let update_sql = format!("UPDATE {qualified} SET {set_clause} WHERE {where_clause}");
@@ -555,9 +554,9 @@ pub async fn update_row(
     update_query
         .execute(&mut *tx)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mysql", message = e))?;
 
-    tx.commit().await.map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| err!("error.mysql", message = e))?;
     Ok(())
 }
 
@@ -574,13 +573,13 @@ pub async fn insert_rows(
     database: &str,
     table: &str,
     rows: &[Map<String, Value>],
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if rows.is_empty() {
         return Ok(());
     }
 
     let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
-    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let mut tx = pool.begin().await.map_err(|e| err!("error.mysql", message = e))?;
 
     for (i, row) in rows.iter().enumerate() {
         // `() VALUES ()` is MySQL's way of spelling "a row that is nothing but defaults".
@@ -600,12 +599,12 @@ pub async fn insert_rows(
             query = bind_value(query, v);
         }
         if let Err(e) = query.execute(&mut *tx).await {
-            tx.rollback().await.map_err(|e| e.to_string())?;
-            return Err(format!("Row {}: {e}", i + 1));
+            tx.rollback().await.map_err(|e| err!("error.mysql", message = e))?;
+            return Err(err!("error.rowFailed", index = i + 1).caused_by(err!("error.mysql", message = e)));
         }
     }
 
-    tx.commit().await.map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| err!("error.mysql", message = e))?;
     Ok(())
 }
 
@@ -624,25 +623,25 @@ pub async fn delete_rows(
     keys: &[Map<String, Value>],
     all: bool,
     reset_auto_increment: bool,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if !all && keys.is_empty() {
         return Ok(());
     }
 
     let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
-    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let mut tx = pool.begin().await.map_err(|e| err!("error.mysql", message = e))?;
 
     if all {
         let sql = format!("DELETE FROM {qualified}");
         sqlx::query(sqlx::AssertSqlSafe(sql))
             .execute(&mut *tx)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| err!("error.mysql", message = e))?;
     } else {
         for key in keys {
             if key.is_empty() {
-                tx.rollback().await.map_err(|e| e.to_string())?;
-                return Err("Cannot delete a row without any identifying columns".to_string());
+                tx.rollback().await.map_err(|e| err!("error.mysql", message = e))?;
+                return Err(err!("error.deleteWithoutKey"));
             }
             // `<=>` is MySQL's NULL-safe equality operator, so a key column that
             // is itself NULL still matches (plain `=` never matches NULL).
@@ -656,11 +655,11 @@ pub async fn delete_rows(
             for v in key.values() {
                 query = bind_value(query, v);
             }
-            query.execute(&mut *tx).await.map_err(|e| e.to_string())?;
+            query.execute(&mut *tx).await.map_err(|e| err!("error.mysql", message = e))?;
         }
     }
 
-    tx.commit().await.map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| err!("error.mysql", message = e))?;
 
     // Outside the transaction on purpose: ALTER TABLE forces an implicit commit
     // in MySQL, so running it inside would end the transaction behind our back.
@@ -669,7 +668,7 @@ pub async fn delete_rows(
         sqlx::query(sqlx::AssertSqlSafe(sql))
             .execute(pool)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| err!("error.mysql", message = e))?;
     }
 
     Ok(())

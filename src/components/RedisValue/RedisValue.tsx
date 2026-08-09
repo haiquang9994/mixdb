@@ -12,6 +12,7 @@ import JsonView from "../JsonView";
 import LoadingOverlay from "../LoadingOverlay";
 import { ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import styles from "./RedisValue.module.css";
 
 interface Props {
@@ -128,7 +129,7 @@ function RedisValue({ connectionId, keyName, onError, onDeleted }: Props) {
         setCursor(result.nextCursor);
       })
       .catch((e) => {
-        if (!cancelled) onError(String(e));
+        if (!cancelled) onError(errorMessage(t, e));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -153,7 +154,7 @@ function RedisValue({ connectionId, keyName, onError, onDeleted }: Props) {
         // what the last page reported is the fresher answer.
         setPage((prev) => (prev ? { ...prev, ttl: result.ttl, total: result.total } : result));
       })
-      .catch((e) => onError(String(e)))
+      .catch((e) => onError(errorMessage(t, e)))
       .finally(() => setLoadingMore(false));
   }
 
@@ -164,7 +165,7 @@ function RedisValue({ connectionId, keyName, onError, onDeleted }: Props) {
       await redisDeleteKeys(connectionId, [keyName]);
       onDeleted(keyName);
     } catch (e) {
-      onError(String(e));
+      onError(errorMessage(t, e));
     } finally {
       setDeleting(false);
     }

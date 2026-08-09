@@ -16,6 +16,7 @@ import IndexDialog, { indexKind } from "../IndexDialog";
 import LoadingOverlay from "../LoadingOverlay";
 import { PencilIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import type {
   MysqlCollation,
   MysqlColumnSpec,
@@ -109,7 +110,7 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
         if (cancelled) return;
         // The previous table's structure would otherwise stay on screen under this table's name.
         setStructure(null);
-        onError(String(e));
+        onError(errorMessage(t, e));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -170,7 +171,7 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
           : mysqlDropIndex(connectionId, selectedDb, selectedTable, target.name),
       );
     } catch (e) {
-      onError(String(e));
+      onError(errorMessage(t, e));
     }
   }
 

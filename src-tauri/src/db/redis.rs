@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use redis::aio::ConnectionManager;
 use redis::Value as RedisValue;
 use redis::{ConnectionAddr, ConnectionInfo, IntoConnectionInfo, RedisConnectionInfo};
@@ -40,7 +41,7 @@ fn connection_info(
     username: Option<&str>,
     password: Option<&str>,
     db: i64,
-) -> Result<ConnectionInfo, String> {
+) -> Result<ConnectionInfo, AppError> {
     let mut redis_settings = RedisConnectionInfo::default().set_db(db);
     if let Some(username) = username.filter(|u| !u.is_empty()) {
         redis_settings = redis_settings.set_username(username);
@@ -50,15 +51,15 @@ fn connection_info(
     }
     ConnectionAddr::Tcp(host.to_string(), port)
         .into_connection_info()
-        .map_err(|e| e.to_string())
+        .map_err(|e| err!("error.redis", message = e))
         .map(|info| info.set_redis_settings(redis_settings))
 }
 
-async fn open(info: ConnectionInfo) -> Result<Connection, String> {
-    let client = redis::Client::open(info.clone()).map_err(|e| e.to_string())?;
+async fn open(info: ConnectionInfo) -> Result<Connection, AppError> {
+    let client = redis::Client::open(info.clone()).map_err(|e| err!("error.redis", message = e))?;
     let manager = ConnectionManager::new(client)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.redis", message = e))?;
     Ok(Connection { info, manager })
 }
 
@@ -69,22 +70,22 @@ pub async fn connect(
     username: Option<&str>,
     password: Option<&str>,
     db: i64,
-) -> Result<Connection, String> {
+) -> Result<Connection, AppError> {
     open(connection_info(host, port, username, password, db)?).await
 }
 
 pub async fn run_command(
     conn: &mut ConnectionManager,
     args: Vec<String>,
-) -> Result<Value, String> {
+) -> Result<Value, AppError> {
     let Some((name, rest)) = args.split_first() else {
-        return Err("Empty command".to_string());
+        return Err(err!("error.emptyRedisCommand"));
     };
     let mut cmd = redis::cmd(name);
     for a in rest {
         cmd.arg(a);
     }
-    let reply: RedisValue = cmd.query_async(conn).await.map_err(|e| e.to_string())?;
+    let reply: RedisValue = cmd.query_async(conn).await.map_err(|e| err!("error.redis", message = e))?;
     Ok(redis_value_to_json(reply))
 }
 
@@ -133,12 +134,12 @@ pub struct ServerInfo {
 
 /// Reads what the header shows about the server, off `INFO server` — a section every Redis
 /// serves, unlike `CONFIG`, which managed deployments often withhold.
-pub async fn server_info(conn: &mut ConnectionManager) -> Result<ServerInfo, String> {
+pub async fn server_info(conn: &mut ConnectionManager) -> Result<ServerInfo, AppError> {
     let text: String = redis::cmd("INFO")
         .arg("server")
         .query_async(conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.redis", message = e))?;
 
     let mut version = String::new();
     let mut os = String::new();
@@ -180,7 +181,7 @@ async fn database_count(conn: &mut ConnectionManager) -> i64 {
         .unwrap_or(DEFAULT_DATABASE_COUNT)
 }
 
-pub async fn list_databases(conn: &mut ConnectionManager) -> Result<Vec<DbInfo>, String> {
+pub async fn list_databases(conn: &mut ConnectionManager) -> Result<Vec<DbInfo>, AppError> {
     let count = database_count(conn).await;
     // `INFO keyspace` lists only the databases that hold something, one line per database:
     // `db0:keys=12,expires=1,avg_ttl=0`. Every other index exists too, it is simply empty.
@@ -188,7 +189,7 @@ pub async fn list_databases(conn: &mut ConnectionManager) -> Result<Vec<DbInfo>,
         .arg("keyspace")
         .query_async(conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.redis", message = e))?;
 
     let mut counts: HashMap<i64, i64> = HashMap::new();
     for line in keyspace.lines() {
@@ -222,7 +223,7 @@ pub async fn list_databases(conn: &mut ConnectionManager) -> Result<Vec<DbInfo>,
 /// reconnects on its own after a dropped socket, and it does so from the `ConnectionInfo` it was
 /// built with — a `SELECT` sent by hand would be forgotten by that reconnect, and the tab would
 /// quietly go on reading a different database than the one it is showing.
-pub async fn select_db(conn: &mut Connection, index: i64) -> Result<(), String> {
+pub async fn select_db(conn: &mut Connection, index: i64) -> Result<(), AppError> {
     let settings = conn.info.redis_settings().clone().set_db(index);
     let info = conn.info.clone().set_redis_settings(settings);
     *conn = open(info).await?;
@@ -260,7 +261,7 @@ const MAX_SCAN_ROUNDS: usize = 20;
 async fn key_types(
     conn: &mut ConnectionManager,
     names: &[String],
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, AppError> {
     if names.is_empty() {
         return Ok(Vec::new());
     }
@@ -268,7 +269,7 @@ async fn key_types(
     for name in names {
         pipe.cmd("TYPE").arg(name);
     }
-    pipe.query_async(conn).await.map_err(|e| e.to_string())
+    pipe.query_async(conn).await.map_err(|e| err!("error.redis", message = e))
 }
 
 /// One page of the keyspace. `cursor` is `"0"` for the first page and whatever the previous page
@@ -283,7 +284,7 @@ pub async fn scan_keys(
     pattern: &str,
     cursor: &str,
     count: i64,
-) -> Result<KeyPage, String> {
+) -> Result<KeyPage, AppError> {
     let pattern = match pattern.trim() {
         "" => "*",
         p => p,
@@ -301,7 +302,7 @@ pub async fn scan_keys(
             .arg(count)
             .query_async(conn)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| err!("error.redis", message = e))?;
         for raw in &batch {
             let name = to_text(raw);
             if seen.insert(name.clone()) {
@@ -363,18 +364,18 @@ pub async fn key_value(
     key: &str,
     cursor: Option<&str>,
     count: i64,
-) -> Result<KeyValuePage, String> {
+) -> Result<KeyValuePage, AppError> {
     let count = count.max(1);
     let kind: String = redis::cmd("TYPE")
         .arg(key)
         .query_async(conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.redis", message = e))?;
     let ttl: i64 = redis::cmd("TTL")
         .arg(key)
         .query_async(conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.redis", message = e))?;
 
     let (total, items, next_cursor) = match kind.as_str() {
         "string" => {
@@ -382,7 +383,7 @@ pub async fn key_value(
                 .arg(key)
                 .query_async(conn)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| err!("error.redis", message = e))?;
             let items = raw
                 .map(|bytes| vec![json!({ "value": to_text(&bytes) })])
                 .unwrap_or_default();
@@ -394,7 +395,7 @@ pub async fn key_value(
                 .arg(key)
                 .query_async(conn)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| err!("error.redis", message = e))?;
             let start: i64 = cursor.and_then(|c| c.parse().ok()).unwrap_or(0);
             let batch: Vec<Vec<u8>> = redis::cmd("LRANGE")
                 .arg(key)
@@ -402,7 +403,7 @@ pub async fn key_value(
                 .arg(start + count - 1)
                 .query_async(conn)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| err!("error.redis", message = e))?;
             let next = start + batch.len() as i64;
             let items = batch
                 .iter()
@@ -419,7 +420,7 @@ pub async fn key_value(
                 .arg(key)
                 .query_async(conn)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| err!("error.redis", message = e))?;
             let start: i64 = cursor.and_then(|c| c.parse().ok()).unwrap_or(0);
             let batch: Vec<(Vec<u8>, f64)> = redis::cmd("ZRANGE")
                 .arg(key)
@@ -428,7 +429,7 @@ pub async fn key_value(
                 .arg("WITHSCORES")
                 .query_async(conn)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| err!("error.redis", message = e))?;
             let next = start + batch.len() as i64;
             let items = batch
                 .iter()
@@ -442,7 +443,7 @@ pub async fn key_value(
                 .arg(key)
                 .query_async(conn)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| err!("error.redis", message = e))?;
             let mut cursor = cursor.unwrap_or("0").to_string();
             let mut items = Vec::new();
             for _ in 0..MAX_VALUE_SCAN_ROUNDS {
@@ -453,7 +454,7 @@ pub async fn key_value(
                     .arg(count)
                     .query_async(conn)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| err!("error.redis", message = e))?;
                 items.extend(batch.iter().map(|raw| json!({ "value": to_text(raw) })));
                 cursor = next;
                 if cursor == "0" || items.len() as i64 >= count {
@@ -468,7 +469,7 @@ pub async fn key_value(
                 .arg(key)
                 .query_async(conn)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| err!("error.redis", message = e))?;
             let mut cursor = cursor.unwrap_or("0").to_string();
             let mut items = Vec::new();
             for _ in 0..MAX_VALUE_SCAN_ROUNDS {
@@ -480,7 +481,7 @@ pub async fn key_value(
                     .arg(count)
                     .query_async(conn)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| err!("error.redis", message = e))?;
                 items.extend(batch.chunks(2).filter(|pair| pair.len() == 2).map(|pair| {
                     json!({ "field": to_text(&pair[0]), "value": to_text(&pair[1]) })
                 }));
@@ -513,7 +514,7 @@ pub async fn key_value(
 pub async fn delete_keys(
     conn: &mut ConnectionManager,
     keys: &[String],
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     if keys.is_empty() {
         return Ok(0);
     }
@@ -528,7 +529,7 @@ pub async fn delete_keys(
     for key in keys {
         del.arg(key);
     }
-    del.query_async(conn).await.map_err(|e| e.to_string())
+    del.query_async(conn).await.map_err(|e| err!("error.redis", message = e))
 }
 
 /// Exercises the readers above against a scripted RESP server rather than a real Redis: what is

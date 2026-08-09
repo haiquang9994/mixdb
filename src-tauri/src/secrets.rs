@@ -9,6 +9,7 @@
 //! One entry per connection rather than one per field: a connection's secrets are written and
 //! forgotten together, and a single JSON object is one prompt on the platforms that ask.
 
+use crate::error::AppError;
 use keyring::Entry;
 use std::collections::HashMap;
 
@@ -19,39 +20,39 @@ const SERVICE: &str = "MixDB";
 /// `sshPassword`, `sshPassphrase`). The frontend decides what goes in; this side only carries it.
 pub type Secrets = HashMap<String, String>;
 
-fn entry(id: &str) -> Result<Entry, String> {
-    Entry::new(SERVICE, id).map_err(|e| format!("Cannot reach the credential store: {e}"))
+fn entry(id: &str) -> Result<Entry, AppError> {
+    Entry::new(SERVICE, id).map_err(|e| err!("error.credentialStoreUnreachable", message = e))
 }
 
 /// Writes the connection's secrets, replacing whatever was there. An empty set deletes the entry
 /// rather than storing `{}` — a connection with nothing to hide should leave nothing behind.
-pub fn save(id: &str, secrets: &Secrets) -> Result<(), String> {
+pub fn save(id: &str, secrets: &Secrets) -> Result<(), AppError> {
     if secrets.is_empty() {
         return delete(id);
     }
-    let json = serde_json::to_string(secrets).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(secrets).map_err(|e| err!("error.cannotSavePassword", message = e))?;
     entry(id)?
         .set_password(&json)
-        .map_err(|e| format!("Cannot save the password: {e}"))
+        .map_err(|e| err!("error.cannotSavePassword", message = e))
 }
 
 /// The connection's secrets, or an empty set when it has none — which is also what a connection
 /// saved before MixDB used the credential store looks like, and what one whose entry the user
 /// deleted from the OS store looks like.
-pub fn load(id: &str) -> Result<Secrets, String> {
+pub fn load(id: &str) -> Result<Secrets, AppError> {
     match entry(id)?.get_password() {
-        Ok(json) => serde_json::from_str(&json).map_err(|e| e.to_string()),
+        Ok(json) => serde_json::from_str(&json).map_err(|e| err!("error.cannotReadPassword", message = e)),
         Err(keyring::Error::NoEntry) => Ok(Secrets::new()),
-        Err(e) => Err(format!("Cannot read the password back: {e}")),
+        Err(e) => Err(err!("error.cannotReadPassword", message = e)),
     }
 }
 
 /// Forgets everything stored for the connection. Deleting what is not there is not a failure: it
 /// is what removing a connection saved before the credential store existed looks like.
-pub fn delete(id: &str) -> Result<(), String> {
+pub fn delete(id: &str) -> Result<(), AppError> {
     match entry(id)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!("Cannot remove the password: {e}")),
+        Err(e) => Err(err!("error.cannotRemovePassword", message = e)),
     }
 }
 

@@ -5,6 +5,7 @@ import ConfirmDialog from "../ConfirmDialog";
 import DumpDialog from "../DumpDialog";
 import { DownloadIcon, TrashIcon, UploadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import { toolsInstall, toolsReady } from "../../tools";
 import { mongoDropDatabase, mongoDump, mongoRestore } from "../../mongo/api";
 import { mysqlDropDatabase, mysqlDump, mysqlRestore } from "../../mysql/api";
@@ -63,7 +64,7 @@ function DatabaseActions({
       await work();
       return true;
     } catch (e) {
-      onError(String(e));
+      onError(errorMessage(t, e));
       return false;
     } finally {
       setRunning(false);
@@ -77,7 +78,7 @@ function DatabaseActions({
     try {
       if (await toolsReady(suite)) return true;
     } catch (e) {
-      onError(String(e));
+      onError(errorMessage(t, e));
       return false;
     }
     setInstallFor(pending);

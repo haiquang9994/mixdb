@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import Button from "../Button";
 import Input from "../Input";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import styles from "./NameDialog.module.css";
 
 interface Props {
@@ -80,7 +81,7 @@ function NameDialog({
     try {
       await onSubmit(trimmed);
     } catch (e) {
-      setErrors([String(e)]);
+      setErrors([errorMessage(t, e)]);
     } finally {
       setSaving(false);
     }

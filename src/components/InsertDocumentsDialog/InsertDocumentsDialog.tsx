@@ -4,6 +4,7 @@ import Button from "../Button";
 import Document from "../Document";
 import { PlusIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import type { TypedDocument, TypedValue } from "../../mongo/bsonTypes";
 import styles from "./InsertDocumentsDialog.module.css";
 
@@ -106,7 +107,7 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
         if (cancelled) return;
         // Without ids the form still works: a document inserted with no `_id` gets one from the
         // server. Say why the field is missing rather than refusing to open.
-        setErrors([String(e)]);
+        setErrors([errorMessage(t, e)]);
         setDrafts(build([]));
       })
       .finally(() => {
@@ -143,7 +144,7 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
       const id = ids[ids.length - 1];
       setDrafts((prev) => [...prev, { key: nextKeyRef.current++, seed: id === undefined ? {} : { _id: id } }]);
     } catch (e) {
-      setErrors([String(e)]);
+      setErrors([errorMessage(t, e)]);
     } finally {
       setAddingDraft(false);
     }
@@ -168,7 +169,7 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
     try {
       await onSubmit(documents);
     } catch (e) {
-      setErrors([String(e)]);
+      setErrors([errorMessage(t, e)]);
     } finally {
       setSaving(false);
     }

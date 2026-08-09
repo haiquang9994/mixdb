@@ -641,6 +641,134 @@ const en = {
     dropMongoMessage:
       "Drop {{database}} with every collection and document in it? This cannot be undone \u2014 dump it first if you may want it back.",
   },
+
+  // What a failed backend command says. The keys here are the `code` an `AppError` carries \u2014 see
+  // src-tauri/src/error.rs \u2014 and `{{message}}` is where a driver's own words go, untranslated
+  // because they are the server talking and the part worth searching for.
+  error: {
+    // The three drivers, when what went wrong is what the server said.
+    mysql: "MySQL: {{message}}",
+    mongo: "MongoDB: {{message}}",
+    redis: "Redis: {{message}}",
+
+    // Connections
+    unknownConnection: "This connection is no longer open \u2014 connect again.",
+    wrongConnectionKind: "This is not a {{kind}} connection.",
+    connectTimeout:
+      "The {{kind}} connection timed out after {{seconds}}s \u2014 check the host, the port and the firewall.",
+    mongoUriRequired: "A MongoDB connection string is required.",
+    mongoNoTcpHost: "The connection string names no TCP host to tunnel to.",
+    emptyRedisCommand: "There is no command to run.",
+
+    // SSH
+    sshTimeout:
+      "The SSH connection to {{host}}:{{port}} timed out after {{seconds}}s \u2014 check the host, the port and the firewall.",
+    sshConnectFailed: "Cannot reach the SSH server: {{message}}",
+    sshAuthFailed: "SSH authentication failed: {{message}}",
+    sshAuthRejected:
+      "The SSH server rejected the login (partial success: {{partialSuccess}}). It accepts: {{methods}}.",
+    sshHostKeyChanged:
+      "The SSH server at {{endpoint}} is offering a different key than the one MixDB saw before ({{fingerprint}} now, {{known}} before). Either the server was rebuilt, or something is standing between you and it. If the change was expected, remove its entry from {{file}} and connect again.",
+    cannotReadPrivateKey: "Cannot read the private key file: {{message}}",
+    invalidPrivateKey: "That is not a private key MixDB can read: {{message}}",
+    cannotBindTunnelPort: "Cannot open a local port for the tunnel: {{message}}",
+    cannotSaveKnownHost: "Cannot remember the server's key: {{message}}",
+
+    // Writing rows and documents
+    updateWithoutKey: "This row has no column that identifies it, so it cannot be updated.",
+    deleteWithoutKey: "This row has no column that identifies it, so it cannot be deleted.",
+    rowsMatched: "Expected to match exactly 1 row, matched {{matched}} \u2014 nothing was changed.",
+    rowFailed: "Row {{index}}: {{cause}}",
+    documentsMatched: "Expected to match exactly 1 document, matched {{matched}}.",
+    documentsDeleted: "Expected to delete exactly 1 document, deleted {{deleted}}.",
+    documentInvalid: "Document {{index}}: {{cause}}",
+    documentNotObject: "Document {{index}} is not an object.",
+
+    // Filters
+    unknownFilterColumn: "The table has no column called {{column}}.",
+    invalidFilterField: "{{field}} is not a field this filter can use.",
+    unknownFilterOperator: "Unknown filter operator {{operator}}.",
+
+    // Structure
+    databaseNameRequired: "The database has to be named.",
+    tableNameRequired: "The table has to be named.",
+    collectionNameRequired: "The collection has to be named.",
+    columnNameRequired: "The column has to be named.",
+    columnTypeRequired: "The column needs a type.",
+    indexNameRequired: "The index has to be named.",
+    indexNeedsColumn: "An index needs at least one column.",
+    indexColumnNameRequired: "Every column of an index has to be named.",
+    invalidCollation: "{{collation}} is not a collation this server has.",
+    unknownIndexKind: "Unknown index kind {{kind}}.",
+    unknownIndexType: "Unknown index type {{type}}.",
+    noVisibleColumns:
+      "No columns of {{database}}.{{table}} are visible \u2014 the table may not exist, or your user may have no privileges on it.",
+    nothingToRun: "There is nothing to run.",
+
+    // BSON values
+    bsonObjectId: "An ObjectId has to be a 24-character hex string.",
+    bsonInt32Range: "That number is outside the range of an Int32.",
+    bsonDate: "A date has to be written in RFC 3339, e.g. 2024-01-31T09:00:00.000Z.",
+    bsonInvalidValue: "That is not a valid {{type}}.",
+    bsonInvalidNumber: "That is not a number MixDB can store.",
+    bsonMissingField: "A {{type}} needs its {{field}}.",
+    bsonReadOnlyType: "{{type}} can be read but not written.",
+    bsonUnknownType: "Unknown BSON type {{type}}.",
+
+    // Dump and restore
+    unknownDumpMode: "Unknown dump mode {{mode}}.",
+    notMongoUri: "The connection string is not a mongodb:// URI.",
+    srvOverTunnel:
+      "Dumping over an SSH tunnel needs a plain mongodb:// connection string \u2014 a mongodb+srv:// one resolves its own hosts, which the tunnel does not reach.",
+    notMongoArchive:
+      "{{path}} is not a mongodump archive \u2014 MixDB restores the single-file archives its own dump writes.",
+    archiveDatabaseUnreadable:
+      "Cannot tell which database {{path}} holds \u2014 it may be compressed: {{message}}",
+    archiveNamesNoDatabase: "{{path}} names no database to restore from.",
+    noDumpAddress: "This connection has no address to dump from.",
+    noDumpUri: "This connection has no connection string to dump with.",
+    cannotRunTool: "Cannot run {{tool}}: {{message}}",
+    toolWaitFailed: "{{tool}} could not be waited for: {{message}}",
+    toolFailed: "{{tool}} failed:\n{{message}}",
+
+    // The downloaded tools
+    unknownTool: "Unknown tool {{tool}}.",
+    unknownToolSuite: "Unknown tool suite {{suite}}.",
+    mysqlToolNotFound:
+      "{{tool}} was not found. Install the MySQL client tools, point MixDB at a copy in Settings, or let it download one.",
+    mongoToolNotFound:
+      "{{tool}} was not found. Install the MongoDB Database Tools, point MixDB at a copy in Settings, or let it download one.",
+    noFileAt: "There is no file at {{path}}.",
+    noMysqlArchive:
+      "MySQL publishes no plain archive of its client tools for this platform \u2014 install them through your package manager (mysql-client / mariadb-client) and MixDB will find them on PATH.",
+    downloadFailed: "The download failed: {{message}}",
+    unpackFailed: "Unpacking the download failed: {{message}}",
+    downloadIncomplete:
+      "The download did not contain the tools it was supposed to \u2014 the version MixDB asks for may have been withdrawn.",
+    checksumMismatch:
+      "The download is not the file MixDB expects (its checksum is {{actual}}, not {{expected}}). The release may have been withdrawn or replaced \u2014 install the tools yourself and point MixDB at them in Settings.",
+    cannotReadDownload: "Cannot read the download back: {{message}}",
+    cannotCopyTool: "Cannot put {{tool}} in {{path}}: {{message}}",
+    cannotSaveToolPath: "Cannot remember where that tool is: {{message}}",
+    helperMissing: "{{program}} is needed for this and could not be run: {{message}}",
+
+    // Saved passwords
+    credentialStoreUnreachable: "Cannot reach the system credential store: {{message}}",
+    cannotSavePassword: "Cannot save the password: {{message}}",
+    cannotReadPassword: "Cannot read the saved password back: {{message}}",
+    cannotRemovePassword: "Cannot remove the saved password: {{message}}",
+
+    // Files and the app's own directory
+    cannotReadFile: "Cannot read {{path}}: {{message}}",
+    cannotWriteFile: "Cannot write {{path}}: {{message}}",
+    cannotCreateDirectory: "Cannot create {{path}}: {{message}}",
+    cannotRemoveDirectory: "Cannot remove {{path}}: {{message}}",
+    noAppDataDir: "There is nowhere for MixDB to keep its own files: {{message}}",
+    backgroundTaskFailed: "The task did not finish: {{message}}",
+
+    /** An error shape MixDB doesn't recognise \u2014 shown as-is rather than swallowed. */
+    unknown: "{{message}}",
+  },
 };
 
 export default en;

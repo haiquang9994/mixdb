@@ -6,6 +6,7 @@ import Input from "../Input";
 import Select from "../Select";
 import type { SelectOption } from "../Select";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import type { MysqlCollation, MysqlColumnSpec, MysqlStructureColumn } from "../../types";
 import styles from "./ColumnDialog.module.css";
 
@@ -298,7 +299,7 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
     try {
       await onSubmit(toSpec());
     } catch (e) {
-      setErrors([String(e)]);
+      setErrors([errorMessage(t, e)]);
     } finally {
       setSaving(false);
     }

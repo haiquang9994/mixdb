@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use super::filters::{split_list_parts, unquote, ListItem};
 use base64::Engine;
 use futures_util::stream::{self, StreamExt, TryStreamExt};
@@ -16,18 +17,18 @@ use std::str::FromStr;
 /// The first host a connection string points at. A tunnel needs a concrete address to forward
 /// to, and with a URI that address is only knowable after parsing â€” a `mongodb+srv://` string
 /// doesn't even contain it literally, it resolves to its hosts over DNS during the parse.
-pub async fn first_endpoint(uri: &str) -> Result<(String, u16), String> {
-    let opts = ClientOptions::parse(uri).await.map_err(|e| e.to_string())?;
+pub async fn first_endpoint(uri: &str) -> Result<(String, u16), AppError> {
+    let opts = ClientOptions::parse(uri).await.map_err(|e| err!("error.mongo", message = e))?;
     match opts.hosts.first() {
         Some(ServerAddress::Tcp { host, port }) => Ok((host.clone(), port.unwrap_or(27017))),
-        _ => Err("Connection string names no TCP host to tunnel to".to_string()),
+        _ => Err(err!("error.mongoNoTcpHost")),
     }
 }
 
 /// `endpoint`, when given, replaces the host the URI names: an SSH tunnel listens on a local
 /// port, so the address written in the connection string is no longer the one to dial.
-pub async fn connect(uri: &str, endpoint: Option<(String, u16)>) -> Result<Client, String> {
-    let mut opts = ClientOptions::parse(uri).await.map_err(|e| e.to_string())?;
+pub async fn connect(uri: &str, endpoint: Option<(String, u16)>) -> Result<Client, AppError> {
+    let mut opts = ClientOptions::parse(uri).await.map_err(|e| err!("error.mongo", message = e))?;
     opts.app_name = Some("MixDB".to_string());
     if let Some((host, port)) = endpoint {
         opts.hosts = vec![ServerAddress::Tcp { host, port: Some(port) }];
@@ -37,13 +38,13 @@ pub async fn connect(uri: &str, endpoint: Option<(String, u16)>) -> Result<Clien
         opts.direct_connection = Some(true);
         opts.repl_set_name = None;
     }
-    let client = Client::with_options(opts).map_err(|e| e.to_string())?;
+    let client = Client::with_options(opts).map_err(|e| err!("error.mongo", message = e))?;
     // Fail fast on bad credentials/host instead of only failing on first query.
     client
         .database("admin")
         .run_command(doc! { "ping": 1 })
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mongo", message = e))?;
     Ok(client)
 }
 
@@ -58,12 +59,12 @@ pub struct ServerInfo {
 /// server actually runs on â€” distribution, release and architecture, the same detail Redis
 /// reports â€” but it needs a privilege managed deployments often withhold, so a server that
 /// refuses it falls back to `buildInfo`, which only knows what the server was built for.
-pub async fn server_info(client: &Client) -> Result<ServerInfo, String> {
+pub async fn server_info(client: &Client) -> Result<ServerInfo, AppError> {
     let admin = client.database("admin");
     let build = admin
         .run_command(doc! { "buildInfo": 1 })
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mongo", message = e))?;
 
     let version = build.get_str("version").unwrap_or_default().to_string();
     let os = admin
@@ -111,16 +112,16 @@ fn build_os(info: &Document) -> String {
     parts.join(" ")
 }
 
-pub async fn list_databases(client: &Client) -> Result<Vec<String>, String> {
-    client.list_database_names().await.map_err(|e| e.to_string())
+pub async fn list_databases(client: &Client) -> Result<Vec<String>, AppError> {
+    client.list_database_names().await.map_err(|e| err!("error.mongo", message = e))
 }
 
-pub async fn list_collections(client: &Client, db: &str) -> Result<Vec<String>, String> {
+pub async fn list_collections(client: &Client, db: &str) -> Result<Vec<String>, AppError> {
     let mut names = client
         .database(db)
         .list_collection_names()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mongo", message = e))?;
     names.sort_by(|a, b| {
         a.to_lowercase()
             .cmp(&b.to_lowercase())
@@ -156,15 +157,15 @@ const STATS_CONCURRENCY: usize = 8;
 /// What every collection in the database weighs, listed by name.
 ///
 /// Views are left out: one stores nothing of its own, and `$collStats` refuses to run on it at all.
-pub async fn collection_stats(client: &Client, db: &str) -> Result<Vec<CollectionStats>, String> {
+pub async fn collection_stats(client: &Client, db: &str) -> Result<Vec<CollectionStats>, AppError> {
     let database = client.database(db);
     let mut specs = database
         .list_collections()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mongo", message = e))?;
 
     let mut names = Vec::new();
-    while let Some(spec) = specs.try_next().await.map_err(|e| e.to_string())? {
+    while let Some(spec) = specs.try_next().await.map_err(|e| err!("error.mongo", message = e))? {
         if !matches!(spec.collection_type, CollectionType::View) {
             names.push(spec.name);
         }
@@ -193,19 +194,19 @@ pub async fn collection_stats(client: &Client, db: &str) -> Result<Vec<Collectio
 /// Measures one collection. `$collStats` reads what the collection itself keeps rather than any of
 /// its documents, so this is cheap wherever the collection is large — it is the round trip that
 /// costs, not the work at the far end.
-async fn collection_size(database: &Database, name: String) -> Result<CollectionStats, String> {
+async fn collection_size(database: &Database, name: String) -> Result<CollectionStats, AppError> {
     let mut cursor = database
         .collection::<Document>(&name)
         .aggregate(vec![doc! { "$collStats": { "storageStats": {} } }])
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mongo", message = e))?;
 
     let mut rows = 0u64;
     let mut data_size = 0u64;
     let mut index_size = 0u64;
     // A sharded collection answers once per shard, each for the part of it that shard holds, so
     // the replies are added up rather than the first one taken.
-    while let Some(reply) = cursor.try_next().await.map_err(|e| e.to_string())? {
+    while let Some(reply) = cursor.try_next().await.map_err(|e| err!("error.mongo", message = e))? {
         if let Ok(storage) = reply.get_document("storageStats") {
             rows += counter(storage, "count");
             data_size += counter(storage, "size");
@@ -240,29 +241,29 @@ fn counter(stats: &Document, key: &str) -> u64 {
 /// MongoDB makes one on the first write anyway, so this is about saying a collection exists before
 /// there is anything to put in it — and about being told straight away when the name is taken or
 /// not allowed, rather than at the first insert.
-pub async fn create_collection(client: &Client, db: &str, name: &str) -> Result<(), String> {
+pub async fn create_collection(client: &Client, db: &str, name: &str) -> Result<(), AppError> {
     let name = name.trim();
     if name.is_empty() {
-        return Err("Collection name is required".to_string());
+        return Err(err!("error.collectionNameRequired"));
     }
     client
         .database(db)
         .create_collection(name)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| err!("error.mongo", message = e))
 }
 
 /// Drops a database and every collection in it.
-pub async fn drop_database(client: &Client, db: &str) -> Result<(), String> {
+pub async fn drop_database(client: &Client, db: &str) -> Result<(), AppError> {
     let db = db.trim();
     if db.is_empty() {
-        return Err("The database being dropped must be named".to_string());
+        return Err(err!("error.databaseNameRequired"));
     }
     client
         .database(db)
         .drop()
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| err!("error.mongo", message = e))
 }
 
 /// Renames a collection within its database.
@@ -275,11 +276,11 @@ pub async fn rename_collection(
     db: &str,
     name: &str,
     new_name: &str,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let name = name.trim();
     let new_name = new_name.trim();
     if name.is_empty() || new_name.is_empty() {
-        return Err("Collection name is required".to_string());
+        return Err(err!("error.collectionNameRequired"));
     }
     client
         .database("admin")
@@ -288,22 +289,22 @@ pub async fn rename_collection(
             "to": format!("{db}.{new_name}"),
         })
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mongo", message = e))?;
     Ok(())
 }
 
 /// Drops a collection and every document in it, along with its indexes.
-pub async fn drop_collection(client: &Client, db: &str, name: &str) -> Result<(), String> {
+pub async fn drop_collection(client: &Client, db: &str, name: &str) -> Result<(), AppError> {
     let name = name.trim();
     if name.is_empty() {
-        return Err("The collection being dropped must be named".to_string());
+        return Err(err!("error.collectionNameRequired"));
     }
     client
         .database(db)
         .collection::<Document>(name)
         .drop()
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| err!("error.mongo", message = e))
 }
 
 pub async fn find(
@@ -312,12 +313,12 @@ pub async fn find(
     collection: &str,
     filter_json: &str,
     limit: i64,
-) -> Result<Vec<Value>, String> {
+) -> Result<Vec<Value>, AppError> {
     let filter: Document = if filter_json.trim().is_empty() {
         doc! {}
     } else {
-        let parsed: Value = serde_json::from_str(filter_json).map_err(|e| e.to_string())?;
-        mongodb::bson::to_document(&parsed).map_err(|e| e.to_string())?
+        let parsed: Value = serde_json::from_str(filter_json).map_err(|e| err!("error.mongo", message = e))?;
+        mongodb::bson::to_document(&parsed).map_err(|e| err!("error.mongo", message = e))?
     };
 
     let coll = client.database(db).collection::<Document>(collection);
@@ -325,11 +326,11 @@ pub async fn find(
         .find(filter)
         .limit(limit)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mongo", message = e))?;
 
     let mut out = Vec::new();
-    while let Some(doc) = cursor.try_next().await.map_err(|e| e.to_string())? {
-        out.push(serde_json::to_value(&doc).map_err(|e| e.to_string())?);
+    while let Some(doc) = cursor.try_next().await.map_err(|e| err!("error.mongo", message = e))? {
+        out.push(serde_json::to_value(&doc).map_err(|e| err!("error.mongo", message = e))?);
     }
     Ok(out)
 }
@@ -404,7 +405,7 @@ pub fn bson_to_json(bson: &Bson) -> Value {
 /// Inverse of `bson_to_json`. Recognizes the `{"$type","$value"}` shape for
 /// ambiguous scalars; a plain JSON object with no `$type` key is treated as
 /// a BSON subdocument.
-pub fn json_to_bson(value: &Value) -> Result<Bson, String> {
+pub fn json_to_bson(value: &Value) -> Result<Bson, AppError> {
     match value {
         Value::Null => Ok(Bson::Null),
         Value::Bool(b) => Ok(Bson::Boolean(*b)),
@@ -424,7 +425,7 @@ pub fn json_to_bson(value: &Value) -> Result<Bson, String> {
                 }
             })
             .or_else(|| n.as_f64().map(Bson::Double))
-            .ok_or_else(|| "Invalid number".to_string()),
+            .ok_or_else(|| err!("error.bsonInvalidNumber")),
         Value::Object(map) => match (map.get("$type"), map.get("$value")) {
             (Some(Value::String(tag)), Some(inner)) => decode_typed(tag, inner),
             _ => {
@@ -438,51 +439,51 @@ pub fn json_to_bson(value: &Value) -> Result<Bson, String> {
     }
 }
 
-fn decode_typed(tag: &str, v: &Value) -> Result<Bson, String> {
+fn decode_typed(tag: &str, v: &Value) -> Result<Bson, AppError> {
     match tag {
         "ObjectId" => v
             .as_str()
-            .ok_or_else(|| "ObjectId: expected hex string".to_string())
-            .and_then(|s| ObjectId::parse_str(s).map_err(|e| format!("ObjectId: {e}")))
+            .ok_or_else(|| err!("error.bsonObjectId"))
+            .and_then(|s| ObjectId::parse_str(s).map_err(|_| err!("error.bsonObjectId")))
             .map(Bson::ObjectId),
         "Int32" => v
             .as_i64()
             .and_then(|n| i32::try_from(n).ok())
             .map(Bson::Int32)
-            .ok_or_else(|| "Int32: out of range".to_string()),
+            .ok_or_else(|| err!("error.bsonInt32Range")),
         "Int64" => v
             .as_str()
             .and_then(|s| s.parse::<i64>().ok())
             .or_else(|| v.as_i64())
             .map(Bson::Int64)
-            .ok_or_else(|| "Int64: invalid".to_string()),
+            .ok_or_else(|| err!("error.bsonInvalidValue", type = "Int64")),
         "Double" => v
             .as_f64()
             .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
             .map(Bson::Double)
-            .ok_or_else(|| "Double: invalid".to_string()),
+            .ok_or_else(|| err!("error.bsonInvalidValue", type = "Double")),
         "Decimal128" => v
             .as_str()
             .and_then(|s| Decimal128::from_str(s).ok())
             .map(Bson::Decimal128)
-            .ok_or_else(|| "Decimal128: invalid".to_string()),
+            .ok_or_else(|| err!("error.bsonInvalidValue", type = "Decimal128")),
         "Date" => v
             .as_str()
             .and_then(|s| BsonDateTime::parse_rfc3339_str(s).ok())
             .map(Bson::DateTime)
-            .ok_or_else(|| "Date: invalid RFC3339".to_string()),
+            .ok_or_else(|| err!("error.bsonDate")),
         "Binary" => {
             let b64 = v
                 .get("base64")
                 .and_then(Value::as_str)
-                .ok_or("Binary: missing base64")?;
+                .ok_or_else(|| err!("error.bsonMissingField", type = "Binary", field = "base64"))?;
             let sub = v
                 .get("subType")
                 .and_then(Value::as_u64)
-                .ok_or("Binary: missing subType")? as u8;
+                .ok_or_else(|| err!("error.bsonMissingField", type = "Binary", field = "subType"))? as u8;
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(b64)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| err!("error.mongo", message = e))?;
             Ok(Bson::Binary(Binary {
                 subtype: BinarySubtype::from(sub),
                 bytes,
@@ -492,7 +493,7 @@ fn decode_typed(tag: &str, v: &Value) -> Result<Bson, String> {
             let pattern = v
                 .get("pattern")
                 .and_then(Value::as_str)
-                .ok_or("RegExp: missing pattern")?;
+                .ok_or_else(|| err!("error.bsonMissingField", type = "RegExp", field = "pattern"))?;
             let options = v.get("options").and_then(Value::as_str).unwrap_or("");
             Ok(Bson::RegularExpression(Regex {
                 pattern: pattern.into(),
@@ -503,26 +504,26 @@ fn decode_typed(tag: &str, v: &Value) -> Result<Bson, String> {
             let t = v
                 .get("t")
                 .and_then(Value::as_u64)
-                .ok_or("Timestamp: missing t")? as u32;
+                .ok_or_else(|| err!("error.bsonMissingField", type = "Timestamp", field = "t"))? as u32;
             let i = v
                 .get("i")
                 .and_then(Value::as_u64)
-                .ok_or("Timestamp: missing i")? as u32;
+                .ok_or_else(|| err!("error.bsonMissingField", type = "Timestamp", field = "i"))? as u32;
             Ok(Bson::Timestamp(Timestamp { time: t, increment: i }))
         }
         "JavaScript" => v
             .as_str()
             .map(|s| Bson::JavaScriptCode(s.to_string()))
-            .ok_or_else(|| "JavaScript: expected string".to_string()),
+            .ok_or_else(|| err!("error.bsonInvalidValue", type = "JavaScript")),
         "Symbol" => v
             .as_str()
             .map(|s| Bson::Symbol(s.to_string()))
-            .ok_or_else(|| "Symbol: expected string".to_string()),
+            .ok_or_else(|| err!("error.bsonInvalidValue", type = "Symbol")),
         "Undefined" => Ok(Bson::Undefined),
         "MinKey" => Ok(Bson::MinKey),
         "MaxKey" => Ok(Bson::MaxKey),
-        "JavaScriptWithScope" | "DbPointer" => Err(format!("{tag}: read-only type, cannot write")),
-        other => Err(format!("Unknown type tag: {other}")),
+        "JavaScriptWithScope" | "DbPointer" => Err(err!("error.bsonReadOnlyType", type = tag)),
+        other => Err(err!("error.bsonUnknownType", type = other)),
     }
 }
 
@@ -662,7 +663,7 @@ fn parse_item(item: &ListItem) -> Bson {
 ///
 /// A row whose operator wants a value it wasn't given is dropped rather than matched literally:
 /// the bar's opening `_id =` row must not become `{_id: ""}` before anything is typed into it.
-fn build_filter(filters: &[Filter]) -> Result<Document, String> {
+fn build_filter(filters: &[Filter]) -> Result<Document, AppError> {
     let mut clauses: Vec<Document> = Vec::new();
 
     for filter in filters {
@@ -673,7 +674,7 @@ fn build_filter(filters: &[Filter]) -> Result<Document, String> {
         // A leading `$` would make the field name read as a query operator, which is not a
         // document this bar has any way to mean.
         if field.starts_with('$') {
-            return Err(format!("Invalid filter field `{field}`"));
+            return Err(err!("error.invalidFilterField", field = field));
         }
         let raw = filter.value.as_deref().unwrap_or("");
         let operator = filter.operator.as_str();
@@ -747,7 +748,7 @@ fn build_filter(filters: &[Filter]) -> Result<Document, String> {
             "isNotNull" => doc! { "$exists": true, "$not": { "$type": "null" } }.into(),
             "isEmpty" => doc! { "$eq": "" }.into(),
             "isNotEmpty" => doc! { "$exists": true, "$ne": "" }.into(),
-            other => return Err(format!("Unknown filter operator `{other}`")),
+            other => return Err(err!("error.unknownFilterOperator", operator = other)),
         };
 
         let mut clause = Document::new();
@@ -771,7 +772,7 @@ pub async fn collection_page(
     page: i64,
     page_size: i64,
     filters: &[Filter],
-) -> Result<CollectionPage, String> {
+) -> Result<CollectionPage, AppError> {
     let coll = client.database(db).collection::<Document>(collection);
     let page_size = page_size.clamp(1, 1000);
     let skip = (page.max(0) * page_size) as u64;
@@ -780,16 +781,16 @@ pub async fn collection_page(
     let total = coll
         .count_documents(query.clone())
         .await
-        .map_err(|e| e.to_string())? as i64;
+        .map_err(|e| err!("error.mongo", message = e))? as i64;
     let mut cursor = coll
         .find(query)
         .skip(skip)
         .limit(page_size)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mongo", message = e))?;
 
     let mut documents = Vec::new();
-    while let Some(d) = cursor.try_next().await.map_err(|e| e.to_string())? {
+    while let Some(d) = cursor.try_next().await.map_err(|e| err!("error.mongo", message = e))? {
         documents.push(bson_to_json(&Bson::Document(d)));
     }
     Ok(CollectionPage { documents, total })
@@ -812,7 +813,7 @@ pub async fn next_ids(
     db: &str,
     collection: &str,
     count: i64,
-) -> Result<Vec<Value>, String> {
+) -> Result<Vec<Value>, AppError> {
     let count = count.clamp(1, 100) as usize;
     let coll = client.database(db).collection::<Document>(collection);
     // Descending `_id` is the highest one under BSON's own type ordering, where every number
@@ -823,7 +824,7 @@ pub async fn next_ids(
         .sort(doc! { "_id": -1 })
         .projection(doc! { "_id": 1 })
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| err!("error.mongo", message = e))?
         .and_then(|d| d.get("_id").cloned());
 
     let ids: Vec<Bson> = match highest {
@@ -850,7 +851,7 @@ pub async fn insert_documents(
     db: &str,
     collection: &str,
     documents: &[Value],
-) -> Result<usize, String> {
+) -> Result<usize, AppError> {
     if documents.is_empty() {
         return Ok(0);
     }
@@ -860,16 +861,19 @@ pub async fn insert_documents(
         // whose only keys are `$type` and `$value` as a wrapped scalar rather than as itself.
         let map = value
             .as_object()
-            .ok_or_else(|| format!("Document {}: expected an object", i + 1))?;
+            .ok_or_else(|| err!("error.documentNotObject", index = i + 1))?;
         let mut d = Document::new();
         for (k, v) in map {
-            d.insert(k.clone(), json_to_bson(v).map_err(|e| format!("Document {}: {e}", i + 1))?);
+            d.insert(
+                k.clone(),
+                json_to_bson(v).map_err(|e| err!("error.documentInvalid", index = i + 1).caused_by(e))?,
+            );
         }
         docs.push(d);
     }
 
     let coll = client.database(db).collection::<Document>(collection);
-    let result = coll.insert_many(docs).await.map_err(|e| e.to_string())?;
+    let result = coll.insert_many(docs).await.map_err(|e| err!("error.mongo", message = e))?;
     Ok(result.inserted_ids.len())
 }
 
@@ -883,7 +887,7 @@ pub async fn update_document(
     collection: &str,
     doc_id: &Value,
     ops: &DocUpdateOps,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if ops.set.is_empty() && ops.unset.is_empty() && ops.rename.is_empty() {
         return Ok(());
     }
@@ -917,12 +921,9 @@ pub async fn update_document(
     let result = coll
         .update_one(filter, update)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err!("error.mongo", message = e))?;
     if result.matched_count != 1 {
-        return Err(format!(
-            "Expected to match exactly 1 document, matched {}",
-            result.matched_count
-        ));
+        return Err(err!("error.documentsMatched", matched = result.matched_count));
     }
     Ok(())
 }
@@ -933,16 +934,13 @@ pub async fn delete_document(
     db: &str,
     collection: &str,
     doc_id: &Value,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let coll = client.database(db).collection::<Document>(collection);
     let filter = doc! { "_id": json_to_bson(doc_id)? };
 
-    let result = coll.delete_one(filter).await.map_err(|e| e.to_string())?;
+    let result = coll.delete_one(filter).await.map_err(|e| err!("error.mongo", message = e))?;
     if result.deleted_count != 1 {
-        return Err(format!(
-            "Expected to delete exactly 1 document, deleted {}",
-            result.deleted_count
-        ));
+        return Err(err!("error.documentsDeleted", deleted = result.deleted_count));
     }
     Ok(())
 }

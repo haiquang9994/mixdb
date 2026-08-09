@@ -5,6 +5,7 @@ import Input from "../Input";
 import Select from "../Select";
 import { MinusIcon, PlusIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import { errorMessage } from "../../errors";
 import type { MysqlIndexKind, MysqlIndexSpec, MysqlTableIndex } from "../../types";
 import styles from "./IndexDialog.module.css";
 
@@ -145,7 +146,7 @@ function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
     try {
       await onSubmit(spec);
     } catch (e) {
-      setErrors([String(e)]);
+      setErrors([errorMessage(t, e)]);
     } finally {
       setSaving(false);
     }
