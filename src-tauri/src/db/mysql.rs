@@ -74,6 +74,34 @@ pub(super) fn quote_ident(ident: &str) -> String {
     format!("`{}`", ident.replace('`', "``"))
 }
 
+/// The server's own id for this session, which is what `KILL QUERY` names.
+pub async fn thread_id(conn: &mut sqlx::MySqlConnection) -> Result<u64, String> {
+    sqlx::query_scalar("SELECT CONNECTION_ID()")
+        .fetch_one(conn)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Asks the server to stop whatever session `thread_id` is running.
+///
+/// `KILL QUERY` rather than `KILL`: it ends the statement and leaves the session itself open, so
+/// the connection it was running on goes back to the pool usable — the temporary tables, session
+/// variables and open transaction a script may have built up are still there.
+///
+/// Runs on a connection of its own out of the same pool, since the one being killed is busy. A
+/// server that no longer has that session (the query finished first) reports "Unknown thread id",
+/// which is not a failure worth showing: the user asked for it to stop, and it has.
+pub async fn kill_query(pool: &MySqlPool, thread_id: u64) -> Result<(), String> {
+    match sqlx::query(sqlx::AssertSqlSafe(format!("KILL QUERY {thread_id}")))
+        .execute(pool)
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(e) if e.to_string().contains("Unknown thread id") => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerInfo {

@@ -278,3 +278,15 @@ export function mysqlRunScript(
 ): Promise<MysqlStatementResult[]> {
   return invoke<MysqlStatementResult[]>("mysql_run_script", { id, sql, database });
 }
+
+/**
+ * Stops the script this connection is running, by asking the server to kill the statement in
+ * flight (`KILL QUERY`, which leaves the session and everything it has set up intact).
+ *
+ * The killed statement comes back through {@link mysqlRunScript} as a failed one, carrying the
+ * server's own "Query execution was interrupted" — so the results of the statements before it are
+ * still shown. Cancelling when nothing is running does nothing and reports no error.
+ */
+export function mysqlCancelQuery(id: string): Promise<void> {
+  return invoke<void>("mysql_cancel_query", { id });
+}

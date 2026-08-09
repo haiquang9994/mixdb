@@ -273,6 +273,8 @@ const vi: TranslationDict = {
   query: {
     run: "Chạy",
     running: "Đang chạy...",
+    cancel: "Dừng",
+    cancelling: "Đang dừng...",
     runHint: "Ctrl+Enter để chạy · nếu đang bôi đen thì chỉ chạy phần được chọn",
     placeholder: "SELECT * FROM ...",
     editorLabel: "Trình soạn SQL",

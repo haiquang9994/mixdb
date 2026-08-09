@@ -47,6 +47,7 @@ pub fn run() {
             commands::mysql_modify_index,
             commands::mysql_drop_index,
             commands::mysql_run_script,
+            commands::mysql_cancel_query,
             commands::mongo_list_databases,
             commands::mongo_server_info,
             commands::mongo_list_collections,

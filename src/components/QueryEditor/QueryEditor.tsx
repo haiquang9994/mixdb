@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { mysqlRunScript } from "../../mysql/api";
+import { mysqlCancelQuery, mysqlRunScript } from "../../mysql/api";
 import Button from "../Button";
 import LoadingOverlay from "../LoadingOverlay";
 import { useTranslation } from "../../i18n";
@@ -36,6 +36,8 @@ function QueryEditor({ connectionId, database }: Props) {
   const [sql, setSql] = useState("");
   const [results, setResults] = useState<MysqlStatementResult[] | null>(null);
   const [running, setRunning] = useState(false);
+  /** Set once the server has been asked to stop the statement, until the script comes back. */
+  const [cancelling, setCancelling] = useState(false);
   /** A failure to run the script at all — a lost connection, or nothing to run. Per-statement
    * errors are not this: they arrive inside the results and are shown against the statement. */
   const [error, setError] = useState("");
@@ -54,6 +56,7 @@ function QueryEditor({ connectionId, database }: Props) {
     const text = textToRun();
     if (text.trim() === "" || running) return;
     setRunning(true);
+    setCancelling(false);
     setError("");
     try {
       setResults(await mysqlRunScript(connectionId, text, database || undefined));
@@ -62,6 +65,21 @@ function QueryEditor({ connectionId, database }: Props) {
       setResults(null);
     } finally {
       setRunning(false);
+      setCancelling(false);
+    }
+  }
+
+  /** Asks the server to stop the statement in flight. The script itself still returns through
+   * {@link run} — with the killed statement carrying the server's reason — so there is nothing to
+   * do here but say that it has been asked for. */
+  async function cancel() {
+    if (!running || cancelling) return;
+    setCancelling(true);
+    try {
+      await mysqlCancelQuery(connectionId);
+    } catch (e) {
+      setError(String(e));
+      setCancelling(false);
     }
   }
 
@@ -109,6 +127,11 @@ function QueryEditor({ connectionId, database }: Props) {
         <Button size="small" onClick={() => void run()} disabled={running || sql.trim() === ""}>
           {running ? t("query.running") : t("query.run")}
         </Button>
+        {running && (
+          <Button size="small" onClick={() => void cancel()} disabled={cancelling}>
+            {cancelling ? t("query.cancelling") : t("query.cancel")}
+          </Button>
+        )}
         <span className={styles.hint}>{t("query.runHint")}</span>
         <span className={styles.target}>
           {database ? t("query.targetDatabase", { database }) : t("query.noDatabase")}
@@ -198,7 +221,9 @@ function QueryEditor({ connectionId, database }: Props) {
             </section>
           ))}
         </div>
-        {running && <LoadingOverlay label={t("query.running")} />}
+        {running && (
+          <LoadingOverlay label={cancelling ? t("query.cancelling") : t("query.running")} />
+        )}
       </div>
     </div>
   );

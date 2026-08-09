@@ -42,4 +42,11 @@ pub struct AppState {
     /// again before anything is run on what was found — a query awaited while holding it would
     /// stop every other command in the app, in every tab, for as long as it took.
     pub connections: Mutex<HashMap<String, ActiveConnection>>,
+    /// The MySQL session id of the script each connection is running, while it runs one. It is
+    /// what `KILL QUERY` names, and so the only thing that lets the Cancel button reach a
+    /// statement already in flight.
+    ///
+    /// A blocking lock rather than an async one: nothing is awaited while it is held, and it has
+    /// to be usable from the plain closure `mysql_script::run` announces the id through.
+    pub running_queries: std::sync::Mutex<HashMap<String, u64>>,
 }

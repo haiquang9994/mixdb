@@ -273,6 +273,8 @@ const en = {
   query: {
     run: "Run",
     running: "Running...",
+    cancel: "Cancel",
+    cancelling: "Cancelling...",
     runHint: "Ctrl+Enter to run · with text selected, only the selection runs",
     placeholder: "SELECT * FROM ...",
     editorLabel: "SQL editor",

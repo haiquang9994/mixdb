@@ -668,7 +668,33 @@ pub async fn mysql_run_script(
     database: Option<String>,
 ) -> Result<Vec<mysql_script::StatementResult>, String> {
     let pool = mysql_pool(&state, &id).await?;
-    mysql_script::run(&pool, &sql, database.as_deref()).await
+    let result = mysql_script::run(&pool, &sql, database.as_deref(), |thread| {
+        state
+            .running_queries
+            .lock()
+            .unwrap()
+            .insert(id.clone(), thread);
+    })
+    .await;
+    // However it ended — finished, failed, or killed from `mysql_cancel_query` — there is nothing
+    // left to cancel, and the id would otherwise name a session running someone else's statement
+    // by the time the button was next pressed.
+    state.running_queries.lock().unwrap().remove(&id);
+    result
+}
+
+/// Stops the script this connection is running, if it is running one.
+///
+/// Asking to cancel what has already finished is not an error: the button is pressed while the
+/// results are on their way back often enough, and the user's intent — that it not still be
+/// running — is satisfied either way.
+#[tauri::command]
+pub async fn mysql_cancel_query(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let thread = state.running_queries.lock().unwrap().get(&id).copied();
+    let Some(thread) = thread else {
+        return Ok(());
+    };
+    mysql::kill_query(&mysql_pool(&state, &id).await?, thread).await
 }
 
 #[tauri::command]

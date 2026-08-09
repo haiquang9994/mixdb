@@ -197,10 +197,14 @@ fn is_write_verb(verb: &str) -> bool {
 ///
 /// A statement that fails stops the script: its own result carries the error, and the results
 /// before it are still returned rather than being lost with it.
+/// `announce` is handed the session's thread id once, before the first statement runs. That is
+/// what makes the script interruptible: the id is the only handle another connection has on it,
+/// and `mysql::kill_query` needs it to stop a statement that is still going.
 pub async fn run(
     pool: &MySqlPool,
     sql: &str,
     database: Option<&str>,
+    announce: impl FnOnce(u64),
 ) -> Result<Vec<StatementResult>, String> {
     let statements = split_statements(sql);
     if statements.is_empty() {
@@ -208,6 +212,7 @@ pub async fn run(
     }
 
     let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+    announce(super::mysql::thread_id(&mut conn).await?);
     if let Some(db) = database.filter(|d| !d.is_empty()) {
         // Sent as text, not prepared: MySQL refuses `USE` in the prepared statement protocol
         // (error 1295), and the whole script would fail before its first statement ran.
