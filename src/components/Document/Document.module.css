@@ -56,6 +56,12 @@
   min-width: 0;
 }
 
+/* A draft with no _id of its own: the slot still says what will happen, rather than going blank. */
+.docIdMissing {
+  opacity: 0.5;
+  font-style: italic;
+}
+
 .docHeaderSpacer {
   flex: 1;
 }
@@ -172,7 +178,8 @@
   opacity: 1;
 }
 
-.deleteDocButton {
+.deleteDocButton,
+.cloneDocButton {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -190,5 +197,12 @@
   opacity: 1;
   color: #c94a4a;
   background: rgba(201, 74, 74, 0.15);
+  border-radius: 4px;
+}
+
+.cloneDocButton:hover {
+  opacity: 1;
+  color: #4a90d9;
+  background: rgba(74, 144, 217, 0.15);
   border-radius: 4px;
 }

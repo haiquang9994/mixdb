@@ -358,6 +358,84 @@ pub async fn collection_page(
     Ok(CollectionPage { documents, total })
 }
 
+/// Ids to prefill the `_id` of `count` new documents with.
+///
+/// Mongo has no auto-increment to read off: the id of a document that does not exist yet is
+/// whatever the writer decides, and what every driver decides — including this one, when an
+/// insert names no `_id` — is a freshly minted ObjectId. So that is the answer here too, and it
+/// is a real "next id": an ObjectId leads with its creation timestamp, so the ones handed out
+/// now sort after everything already in the collection.
+///
+/// The exception worth honouring is a collection keyed by numbers. Those are counted by hand
+/// somewhere, and the only sensible next value is the highest plus one — so the highest `_id`
+/// is read first, and its type decides. Anything else (strings, compound keys, an empty
+/// collection) falls back to ObjectIds, since no scheme can be inferred from them.
+pub async fn next_ids(
+    client: &Client,
+    db: &str,
+    collection: &str,
+    count: i64,
+) -> Result<Vec<Value>, String> {
+    let count = count.clamp(1, 100) as usize;
+    let coll = client.database(db).collection::<Document>(collection);
+    // Descending `_id` is the highest one under BSON's own type ordering, where every number
+    // sorts below every string and ObjectId. In a numerically keyed collection that is exactly
+    // the largest number; in a mixed one it is something else, and the fallback takes over.
+    let highest = coll
+        .find_one(doc! {})
+        .sort(doc! { "_id": -1 })
+        .projection(doc! { "_id": 1 })
+        .await
+        .map_err(|e| e.to_string())?
+        .and_then(|d| d.get("_id").cloned());
+
+    let ids: Vec<Bson> = match highest {
+        Some(Bson::Int32(n)) => (1..=count)
+            .map(|i| Bson::Int32(n.saturating_add(i as i32)))
+            .collect(),
+        Some(Bson::Int64(n)) => (1..=count)
+            .map(|i| Bson::Int64(n.saturating_add(i as i64)))
+            .collect(),
+        Some(Bson::Double(n)) => (1..=count).map(|i| Bson::Double(n + i as f64)).collect(),
+        _ => (0..count).map(|_| Bson::ObjectId(ObjectId::new())).collect(),
+    };
+    Ok(ids.iter().map(bson_to_json).collect())
+}
+
+/// Writes new documents into a collection, in the order given.
+///
+/// Ordered rather than atomic: a transaction needs a replica set, which a standalone server is
+/// not, so a failure partway through leaves the documents before it inserted. The caller is
+/// expected to refetch the page afterwards — on failure as much as on success — so what landed
+/// is what is on screen.
+pub async fn insert_documents(
+    client: &Client,
+    db: &str,
+    collection: &str,
+    documents: &[Value],
+) -> Result<usize, String> {
+    if documents.is_empty() {
+        return Ok(0);
+    }
+    let mut docs = Vec::with_capacity(documents.len());
+    for (i, value) in documents.iter().enumerate() {
+        // Built field by field rather than through `json_to_bson`, which would read a document
+        // whose only keys are `$type` and `$value` as a wrapped scalar rather than as itself.
+        let map = value
+            .as_object()
+            .ok_or_else(|| format!("Document {}: expected an object", i + 1))?;
+        let mut d = Document::new();
+        for (k, v) in map {
+            d.insert(k.clone(), json_to_bson(v).map_err(|e| format!("Document {}: {e}", i + 1))?);
+        }
+        docs.push(d);
+    }
+
+    let coll = client.database(db).collection::<Document>(collection);
+    let result = coll.insert_many(docs).await.map_err(|e| e.to_string())?;
+    Ok(result.inserted_ids.len())
+}
+
 /// Applies a `$set`/`$unset`/`$rename` update to exactly one document,
 /// identified by its (unchanging) `_id`. Unlike MySQL rows, Mongo documents
 /// always have a natural single-field key, so no primary-key-discovery

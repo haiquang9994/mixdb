@@ -31,6 +31,30 @@ export function mongoCollectionPage(
   );
 }
 
+/** `count` ids to prefill new documents with — fresh ObjectIds, or the next numbers along when
+ * the collection is keyed by numbers. Ids are derived from what is in the collection *now*, so
+ * two calls hand back the same numbers: ask for as many as the form holds in one go rather
+ * than one at a time. */
+export function mongoNextIds(
+  id: string,
+  db: string,
+  collection: string,
+  count: number,
+): Promise<TypedValue[]> {
+  return invoke<TypedValue[]>("mongo_next_ids", { id, db, collection, count });
+}
+
+/** Writes new documents, in order. Resolves to how many were inserted; a rejection can still
+ * leave the documents before the failing one written, so refetch either way. */
+export function mongoInsertDocuments(
+  id: string,
+  db: string,
+  collection: string,
+  documents: TypedDocument[],
+): Promise<number> {
+  return invoke<number>("mongo_insert_documents", { id, db, collection, documents });
+}
+
 export interface DocUpdateOps {
   set: Record<string, TypedValue>;
   unset: string[];

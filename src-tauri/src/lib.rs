@@ -30,6 +30,8 @@ pub fn run() {
             commands::mongo_list_collections,
             commands::mongo_find,
             commands::mongo_collection_page,
+            commands::mongo_next_ids,
+            commands::mongo_insert_documents,
             commands::mongo_update_document,
             commands::mongo_delete_document,
             commands::redis_command,

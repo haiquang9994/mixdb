@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { mongoCollectionPage, mongoDeleteDocument, mongoUpdateDocument, type DocUpdateOps } from "../../mongo/api";
+import {
+  mongoCollectionPage,
+  mongoDeleteDocument,
+  mongoInsertDocuments,
+  mongoNextIds,
+  mongoUpdateDocument,
+  type DocUpdateOps,
+} from "../../mongo/api";
 import type { TypedDocument, TypedValue } from "../../mongo/bsonTypes";
 import ActionBar from "../ActionBar";
 import Document from "../Document";
+import InsertDocumentsDialog from "../InsertDocumentsDialog";
 import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
-import { ReloadIcon } from "../../icons";
+import { PlusIcon, ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import styles from "./NoSqlTable.module.css";
 
@@ -49,6 +57,9 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
   // Bumped on every load and folded into each card's key, so cards remount and rebuild
   // themselves from the new data rather than carrying the previous page's state into it.
   const [loadId, setLoadId] = useState(0);
+  // What the insert form opens on: an empty array for a blank document, or the documents a
+  // clone starts from. `null` is the form being closed.
+  const [insertSeeds, setInsertSeeds] = useState<TypedDocument[] | null>(null);
 
   const flushersRef = useRef<Set<() => Promise<void>>>(new Set());
 
@@ -149,6 +160,37 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
     [flushAll, onError],
   );
 
+  /** Opens the insert form on `seeds` — an empty array for a blank document. Whatever the cards
+   * have staged is written out first: the form is modal, so nothing would flush it while it is
+   * up, and a clone seeded from a card should be inserted alongside the edits it was copied
+   * from rather than instead of them. */
+  const openInsert = useCallback(
+    (seeds: TypedDocument[]) => flushThen(() => setInsertSeeds(seeds)),
+    [flushThen],
+  );
+
+  // Handed to every card, so it has to keep one identity — the cards are memoized.
+  const cloneDocument = useCallback((doc: TypedDocument) => openInsert([doc]), [openInsert]);
+
+  const nextIds = useCallback(
+    (count: number) => mongoNextIds(connectionId, selectedDb, selectedCollection, count),
+    [connectionId, selectedDb, selectedCollection],
+  );
+
+  /** Hands the form's documents to the server. Errors are left to reject so the form can show
+   * them and stay open with the drafts still in it. */
+  async function submitInsert(documents: TypedDocument[]) {
+    try {
+      await mongoInsertDocuments(connectionId, selectedDb, selectedCollection, documents);
+    } finally {
+      // The insert is ordered rather than atomic, so a failure partway through still leaves the
+      // documents before it written: refetch either way, and let the form report the error over
+      // the page it lands on.
+      loadPage();
+    }
+    setInsertSeeds(null);
+  }
+
   const busy = loading || writeCount > 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
@@ -165,6 +207,7 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
               registerFlush={registerFlush}
               onWrite={writeDocument}
               onDelete={removeDocument}
+              onClone={cloneDocument}
             />
           ))}
         </div>
@@ -182,6 +225,13 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
               // Same as changing page: whatever the cards have staged is written out before the
               // refetch replaces them.
               onClick: () => flushThen(loadPage),
+            },
+            {
+              key: "insert",
+              icon: PlusIcon,
+              label: t("noSqlTable.insertDocuments"),
+              disabled: busy,
+              onClick: () => openInsert([]),
             },
           ]}
         />
@@ -201,6 +251,15 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
           }
         />
       </div>
+      {insertSeeds !== null && (
+        <InsertDocumentsDialog
+          collection={selectedCollection}
+          seedDocs={insertSeeds}
+          nextIds={nextIds}
+          onCancel={() => setInsertSeeds(null)}
+          onSubmit={submitInsert}
+        />
+      )}
     </div>
   );
 }

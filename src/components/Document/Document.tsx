@@ -3,7 +3,7 @@ import type { DocUpdateOps } from "../../mongo/api";
 import { deleteAtPath, getAtPath, renameKeyAtPath, setAtPath } from "../../mongo/docOps";
 import { isWrapper, type TypedDocument, type TypedValue } from "../../mongo/bsonTypes";
 import DocumentNode, { ValueEditor, type DocumentEditMode } from "../DocumentNode";
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, DotIcon, TrashIcon } from "../../icons";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, DotIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import styles from "./Document.module.css";
 
@@ -143,15 +143,28 @@ export interface DocumentProps {
   doc: TypedDocument;
   /** 1-based position shown in the card header, page offset already applied. */
   displayNumber: number;
+  /** A document that does not exist on the server yet, being composed in the insert form.
+   * Nothing is written from here: edits land in the working copy and are reported through
+   * `onChange`, `_id` is editable like any other field, and the header carries a "drop this
+   * draft" button in place of Save/Discard/Delete. */
+  draft?: boolean;
   /** Hands the list a way to write out this card's staged edits before it refetches.
-   * Returns the matching unregister function. */
-  registerFlush: (flush: () => Promise<void>) => () => void;
+   * Returns the matching unregister function. Not used by a draft. */
+  registerFlush?: (flush: () => Promise<void>) => () => void;
   /** Asks the list to apply `ops` to this document. Resolves to whether the write landed —
    * the card adopts its edits on success and rolls them back on failure. The list owns the
-   * connection, the progress indicator and the error reporting. */
-  onWrite: (id: TypedValue, ops: DocUpdateOps) => Promise<boolean>;
+   * connection, the progress indicator and the error reporting. Not used by a draft. */
+  onWrite?: (id: TypedValue, ops: DocUpdateOps) => Promise<boolean>;
   /** Asks the list to remove this document; it refetches the page afterwards. */
-  onDelete: (id: TypedValue) => Promise<boolean>;
+  onDelete?: (id: TypedValue) => Promise<boolean>;
+  /** Draft only: the working copy, reported on every change so the form can submit it. */
+  onChange?: (doc: TypedDocument) => void;
+  /** Draft only: drops this draft from the form. Left out, the draft cannot be removed —
+   * which is how the last one left is kept on screen. */
+  onRemove?: () => void;
+  /** Adds a header button that opens the insert form seeded with this document, staged edits
+   * and all. Left out, no such button is shown. */
+  onClone?: (doc: TypedDocument) => void;
 }
 
 /** One MongoDB document, rendered as a card over a tree of DocumentNodes.
@@ -160,8 +173,23 @@ export interface DocumentProps {
  * of the data, the edits staged against it, and which field is being edited. It never talks
  * to the database itself — it builds the ops and hands them to the list. Value edits and
  * property deletions are staged and go out together on Save; renames are applied
- * immediately, because they move the paths everything else is keyed by. */
-function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDelete }: DocumentProps) {
+ * immediately, because they move the paths everything else is keyed by.
+ *
+ * In `draft` mode the same tree composes a document that does not exist yet: the baseline it
+ * diffs against is the empty document, so every field reads as added and removing one drops
+ * it outright rather than marking it, and nothing is ever sent — the form above collects the
+ * working copies and inserts them itself. */
+function Document({
+  doc: fetchedDoc,
+  displayNumber,
+  draft = false,
+  registerFlush,
+  onWrite,
+  onDelete,
+  onChange,
+  onRemove,
+  onClone,
+}: DocumentProps) {
   const { t } = useTranslation();
 
   // Document data: the working copy on screen, plus what is staged against it.
@@ -184,8 +212,9 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
 
   const idRef = useRef<TypedValue>(fetchedDoc._id ?? null);
   /** The document as the server last confirmed it: the baseline an edit is diffed against,
-   * and what to roll back to when a write fails. */
-  const originalRef = useRef<TypedDocument>(fetchedDoc);
+   * and what to roll back to when a write fails. A draft has no such version — the empty
+   * document stands in, which is what makes every field of it read as newly added. */
+  const originalRef = useRef<TypedDocument>(draft ? {} : fetchedDoc);
   // Set once this document is on its way out: its staged edits are moot, and the page-wide
   // flush that precedes the delete must not write them back moments before it lands.
   const abandonedRef = useRef(false);
@@ -217,6 +246,7 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
     return { changedPaths: changed, addedPaths: added };
   }, [pendingSet]);
 
+  const hasId = "_id" in doc;
   const idValue = (doc._id ?? null) as TypedValue;
   const otherKeys = Object.keys(doc).filter((k) => k !== "_id");
   // "Edit mode" (field click affordances, always-visible delete icons) reflects whether an
@@ -242,7 +272,9 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
    * no-op when nothing is staged, and safe to call twice — the second call sees the state
    * the first one cleared. */
   async function flush() {
-    if (abandonedRef.current) return;
+    // A draft has nowhere to flush to: its working copy *is* the pending state, and the form
+    // reads it off `onChange` when the user submits.
+    if (draft || !onWrite || abandonedRef.current) return;
     if (Object.keys(pendingSet).length === 0 && deletedPaths.size === 0) return;
 
     let setOps: Record<string, TypedValue> = { ...pendingSet };
@@ -290,7 +322,15 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
   flushRef.current = flush;
   const runFlush = useCallback(() => flushRef.current(), []);
 
-  useEffect(() => registerFlush(runFlush), [registerFlush, runFlush]);
+  useEffect(() => registerFlush?.(runFlush), [registerFlush, runFlush]);
+
+  // The form above holds no copy of a draft's data — this card does — so every change to the
+  // working copy is reported up as it happens, seed included on the first run.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  useEffect(() => {
+    if (draft) onChangeRef.current?.(doc);
+  }, [draft, doc]);
 
   useEffect(() => {
     // Selecting another collection refetches without anyone flushing first, so a card on its
@@ -404,6 +444,10 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
       // Marks already recorded move with the paths they name, same as the staged ops.
       setRenamedPaths(new Set(remapStagedPaths(before.renamedPaths, oldPath, newPath)).add(newPath));
 
+      // A draft's property has never been stored under the old name, so there is nothing to
+      // move on the server — moving it in the working copy is the whole rename.
+      if (draft || !onWrite) return;
+
       const ops: DocUpdateOps = { set: {}, unset: [], rename: { [oldPath]: newPath } };
       if (await onWrite(idRef.current, ops)) {
         // The server document moved, so the baseline setValue diffs against has to move too.
@@ -415,7 +459,7 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
         setRenamedPaths(before.renamedPaths);
       }
     },
-    [onWrite],
+    [draft, onWrite],
   );
 
   const activateEdit = useCallback((path: string[], mode: DocumentEditMode) => {
@@ -443,6 +487,7 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
 
   async function performDelete() {
     setConfirmingDelete(false);
+    if (!onDelete) return;
     setDeleting(true);
     abandonedRef.current = true;
     if (!(await onDelete(idRef.current))) abandonedRef.current = false;
@@ -496,11 +541,17 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
           {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
         </button>
         <span className={styles.docIndex}>#{displayNumber}</span>
-        <span className={styles.docIdPreview} title={idPreviewText(idValue)}>
-          {idPreviewText(idValue)}
-        </span>
+        {hasId ? (
+          <span className={styles.docIdPreview} title={idPreviewText(idValue)}>
+            {idPreviewText(idValue)}
+          </span>
+        ) : (
+          <span className={`${styles.docIdPreview} ${styles.docIdMissing}`}>
+            {t("insertDocuments.serverAssignedId")}
+          </span>
+        )}
         <div className={styles.docHeaderSpacer} />
-        {pendingCount > 0 && (
+        {!draft && pendingCount > 0 && (
           <>
             <span className={styles.unsaved}>
               <DotIcon />
@@ -521,37 +572,72 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
             </button>
           </>
         )}
-        {pendingCount === 0 && saved && (
+        {!draft && pendingCount === 0 && saved && (
           <span className={styles.savedFlash}>
             <CheckIcon />
             {t("noSqlTable.savedFlash")}
           </span>
         )}
-        {confirmingDelete ? (
-          <span className={styles.confirmDelete}>
-            {t("noSqlTable.confirmDeleteDocument")}
-            <button type="button" className={styles.confirmDeleteYes} onClick={() => void performDelete()}>
-              {t("common.delete")}
-            </button>
-            <button type="button" className={styles.confirmDeleteNo} onClick={() => setConfirmingDelete(false)}>
-              {t("common.cancel")}
-            </button>
-          </span>
-        ) : (
-          <button
-            type="button"
-            className={styles.deleteDocButton}
-            disabled={deleting}
-            title={t("noSqlTable.deleteDocument")}
-            onClick={() => setConfirmingDelete(true)}
-          >
-            <TrashIcon />
-          </button>
-        )}
+        {/* A draft is discarded outright rather than confirmed away: nothing has been stored,
+            so there is nothing to lose that the form has not still got on screen. */}
+        {draft
+          ? onRemove && (
+              <button
+                type="button"
+                className={styles.deleteDocButton}
+                title={t("insertDocuments.removeDocument")}
+                onClick={onRemove}
+              >
+                <TrashIcon />
+              </button>
+            )
+          : confirmingDelete
+            ? (
+              <span className={styles.confirmDelete}>
+                {t("noSqlTable.confirmDeleteDocument")}
+                <button type="button" className={styles.confirmDeleteYes} onClick={() => void performDelete()}>
+                  {t("common.delete")}
+                </button>
+                <button type="button" className={styles.confirmDeleteNo} onClick={() => setConfirmingDelete(false)}>
+                  {t("common.cancel")}
+                </button>
+              </span>
+            )
+            : (
+              <>
+                {onClone && (
+                  <button
+                    type="button"
+                    className={styles.cloneDocButton}
+                    disabled={deleting}
+                    title={t("noSqlTable.cloneDocument")}
+                    // The working copy, not the fetched one: a clone starts from what is on
+                    // screen, staged edits included, the same as cloning a row does.
+                    onClick={() => onClone(doc)}
+                  >
+                    <CopyIcon />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={styles.deleteDocButton}
+                  disabled={deleting}
+                  title={t("noSqlTable.deleteDocument")}
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  <TrashIcon />
+                </button>
+              </>
+            )}
       </div>
       {!collapsed && (
         <>
-          <DocumentNode {...nodeProps} path={["_id"]} propKey="_id" value={idValue} readOnly />
+          {/* `_id` is fixed once a document exists, but a draft's is still being decided: it is
+              prefilled and left editable, and may even be dropped — a document inserted without
+              one gets whatever the server assigns, so the row simply goes away. */}
+          {hasId && (
+            <DocumentNode {...nodeProps} path={["_id"]} propKey="_id" value={idValue} readOnly={!draft} />
+          )}
           {otherKeys.map((key) => (
             <DocumentNode {...nodeProps} key={key} path={[key]} propKey={key} value={doc[key]} />
           ))}

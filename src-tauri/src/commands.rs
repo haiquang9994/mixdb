@@ -295,6 +295,40 @@ pub async fn mongo_collection_page(
 }
 
 #[tauri::command]
+pub async fn mongo_next_ids(
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+    collection: String,
+    count: i64,
+) -> Result<Vec<Value>, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mongo(client)) => mongo::next_ids(client, &db, &collection, count).await,
+        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn mongo_insert_documents(
+    state: State<'_, AppState>,
+    id: String,
+    db: String,
+    collection: String,
+    documents: Vec<Value>,
+) -> Result<usize, String> {
+    let connections = state.connections.lock().await;
+    match connections.get(&id).map(|c| &c.handle) {
+        Some(DbHandle::Mongo(client)) => {
+            mongo::insert_documents(client, &db, &collection, &documents).await
+        }
+        Some(_) => Err("Connection is not a MongoDB connection".to_string()),
+        None => Err("Unknown connection id".to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn mongo_update_document(
     state: State<'_, AppState>,
     id: String,
