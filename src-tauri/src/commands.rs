@@ -299,11 +299,13 @@ pub async fn mongo_collection_page(
     collection: String,
     page: i64,
     page_size: i64,
+    filters: Option<Vec<mongo::Filter>>,
 ) -> Result<mongo::CollectionPage, String> {
     let connections = state.connections.lock().await;
+    let filters = filters.unwrap_or_default();
     match connections.get(&id).map(|c| &c.handle) {
         Some(DbHandle::Mongo(client)) => {
-            mongo::collection_page(client, &db, &collection, page, page_size).await
+            mongo::collection_page(client, &db, &collection, page, page_size, &filters).await
         }
         Some(_) => Err("Connection is not a MongoDB connection".to_string()),
         None => Err("Unknown connection id".to_string()),

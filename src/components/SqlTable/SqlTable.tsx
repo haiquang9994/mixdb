@@ -2,13 +2,19 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { mysqlDeleteRows, mysqlInsertRows, mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
 import ActionBar from "../ActionBar";
 import ConfirmDialog from "../ConfirmDialog";
-import FilterBar, { initialFilterRows, toQueryFilters, type FilterRow } from "./FilterBar";
+import FilterBar from "../FilterBar";
 import InsertRowsDialog from "../InsertRowsDialog";
 import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
 import { ChevronDownIcon, ChevronUpIcon, CopyIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import type { MysqlFilter } from "../../mysql/filters";
+import { initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
+import {
+  FILTER_OPERATORS,
+  operatorArity,
+  type FilterOperator,
+  type MysqlFilter,
+} from "../../mysql/filters";
 import type { MysqlColumnMeta } from "../../types";
 import styles from "./SqlTable.module.css";
 
@@ -80,7 +86,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   // The filter bar edits `filterRows` freely; only Apply copies them into `appliedFilters`, which
   // is what the fetch below reads. Keeping the two apart is what stops a half-typed condition
   // from reloading the grid on every keystroke.
-  const [filterRows, setFilterRows] = useState<FilterRow[]>([]);
+  const [filterRows, setFilterRows] = useState<FilterRow<FilterOperator>[]>([]);
   const [appliedFilters, setAppliedFilters] = useState<MysqlFilter[]>([]);
   // The table whose columns the bar was last seeded from. The seed needs the column list, which
   // is only known once the first fetch lands (or from the cache, when there is one).
@@ -201,7 +207,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
       setColumnMeta(cached.columnMeta);
       setPrimaryKey(cached.primaryKey);
       setAutoIncrementColumn(cached.autoIncrementColumn);
-      setFilterRows(initialFilterRows(cached.columns));
+      setFilterRows(initialFilterRows(cached.columns, "eq"));
       filtersSeededForRef.current = key;
     } else {
       setColumns([]);
@@ -247,7 +253,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
         // First look at this table's columns — the bar has been waiting for them to put its
         // opening `id` row together.
         if (filtersSeededForRef.current !== key) {
-          setFilterRows(initialFilterRows(result.columns));
+          setFilterRows(initialFilterRows(result.columns, "eq"));
           filtersSeededForRef.current = key;
         }
         setRows(result.rows);
@@ -342,7 +348,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     await commitAndExit();
     // A new array every time on purpose: pressing Apply twice on the same conditions is a
     // request to refetch, and an equal-but-identical array would be a no-op.
-    setAppliedFilters(toQueryFilters(filterRows));
+    setAppliedFilters(toQueryFilters(filterRows, operatorArity));
     setPage(0);
   }
 
@@ -591,7 +597,10 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     <div className={styles.sqlTable}>
       {columns.length > 0 && (
         <FilterBar
-          columns={columns}
+          fields={columns}
+          operators={FILTER_OPERATORS}
+          defaultOperator="eq"
+          operatorLabel={(op) => t(`sqlTable.op.${op}`)}
           rows={filterRows}
           onChange={setFilterRows}
           onApply={() => void applyFilters()}

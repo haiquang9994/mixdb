@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { MongoCollectionPage } from "../types";
 import type { TypedDocument, TypedValue } from "./bsonTypes";
+import type { MongoFilter } from "./filters";
 
 export function mongoListDatabases(id: string): Promise<string[]> {
   return invoke<string[]>("mongo_list_databases", { id });
@@ -19,16 +20,26 @@ export interface MongoDocumentPage {
   total: number;
 }
 
+/**
+ * Reads one page of a collection. `filters` narrows it down first, ANDed together — the page's
+ * `total` counts what is left after them.
+ */
 export function mongoCollectionPage(
   id: string,
   db: string,
   collection: string,
   page: number,
   pageSize: number,
+  filters: MongoFilter[] = [],
 ): Promise<MongoDocumentPage> {
-  return invoke<MongoCollectionPage>("mongo_collection_page", { id, db, collection, page, pageSize }).then(
-    (result) => ({ documents: result.documents as TypedDocument[], total: result.total }),
-  );
+  return invoke<MongoCollectionPage>("mongo_collection_page", {
+    id,
+    db,
+    collection,
+    page,
+    pageSize,
+    filters,
+  }).then((result) => ({ documents: result.documents as TypedDocument[], total: result.total }));
 }
 
 /** `count` ids to prefill new documents with — fresh ObjectIds, or the next numbers along when

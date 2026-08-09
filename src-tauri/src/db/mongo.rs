@@ -1,3 +1,4 @@
+use super::filters::{split_list_parts, unquote, ListItem};
 use base64::Engine;
 use futures_util::TryStreamExt;
 use mongodb::bson::spec::BinarySubtype;
@@ -12,7 +13,7 @@ use serde_json::{json, Map, Value};
 use std::str::FromStr;
 
 /// The first host a connection string points at. A tunnel needs a concrete address to forward
-/// to, and with a URI that address is only knowable after parsing — a `mongodb+srv://` string
+/// to, and with a URI that address is only knowable after parsing â€” a `mongodb+srv://` string
 /// doesn't even contain it literally, it resolves to its hosts over DNS during the parse.
 pub async fn first_endpoint(uri: &str) -> Result<(String, u16), String> {
     let opts = ClientOptions::parse(uri).await.map_err(|e| e.to_string())?;
@@ -30,7 +31,7 @@ pub async fn connect(uri: &str, endpoint: Option<(String, u16)>) -> Result<Clien
     if let Some((host, port)) = endpoint {
         opts.hosts = vec![ServerAddress::Tcp { host, port: Some(port) }];
         // Only that one host is forwarded, so topology discovery would hand back the replica
-        // set's own addresses — unreachable from this machine. Talk to the tunneled node
+        // set's own addresses â€” unreachable from this machine. Talk to the tunneled node
         // directly instead.
         opts.direct_connection = Some(true);
         opts.repl_set_name = None;
@@ -55,7 +56,7 @@ pub struct ServerInfo {
 /// Reads what the header shows about the server. `buildInfo` is used rather than
 /// `hostInfo` because the latter needs a privilege that managed deployments often
 /// withhold, and its `buildEnvironment.target_os` is the same thing MySQL reports
-/// as `version_compile_os` — the OS the server was built for.
+/// as `version_compile_os` â€” the OS the server was built for.
 pub async fn server_info(client: &Client) -> Result<ServerInfo, String> {
     let info = client
         .database("admin")
@@ -122,7 +123,7 @@ pub async fn find(
 
 /// Wraps an ambiguous BSON scalar as `{"$type": tag, "$value": repr}`. Types
 /// with an unambiguous native JSON shape (String/Boolean/Null/Array/Document)
-/// are never wrapped — the frontend tells them apart from typed scalars by
+/// are never wrapped â€” the frontend tells them apart from typed scalars by
 /// checking for this `$type`/`$value` pair, so leaving them bare keeps that
 /// check simple and avoids colliding with a real field literally named
 /// `$type` (astronomically unlikely, same caveat as MongoDB's own Extended
@@ -180,7 +181,7 @@ pub fn bson_to_json(bson: &Bson) -> Value {
         Bson::Undefined => wrap("Undefined", Value::Null),
         Bson::MaxKey => wrap("MaxKey", Value::Null),
         Bson::MinKey => wrap("MinKey", Value::Null),
-        // DbPointer's fields are pub(crate) in the bson crate — there is no
+        // DbPointer's fields are pub(crate) in the bson crate â€” there is no
         // way to reconstruct one from outside the crate, so it is rendered
         // for display only; json_to_bson rejects writing this type back.
         Bson::DbPointer(dbp) => wrap("DbPointer", json!(format!("{dbp:?}"))),
@@ -329,23 +330,246 @@ pub struct CollectionPage {
     pub total: i64,
 }
 
+/// One condition on the documents a page is cut out of â€” the list's filter bar sends a list of
+/// these, and they are ANDed together. `field` is a field path, dotted to reach into a
+/// subdocument, and is spelled `column` on the wire so the bar can send the same shape whichever
+/// database is behind it. `value` carries whatever the user typed, as text: the operator is what
+/// says how to read it (a single value, a comma-separated list, a pair), and operators like
+/// `exists` ignore it entirely.
+#[derive(Debug, Deserialize)]
+pub struct Filter {
+    #[serde(rename = "column")]
+    pub field: String,
+    pub operator: String,
+    #[serde(default)]
+    pub value: Option<String>,
+}
+
+/// Escapes the metacharacters out of text that is about to become part of a regex, so a value
+/// with a `.` or a `*` in it is matched as itself. Only for the operators that build the pattern
+/// (contains/starts with/ends with) â€” `regexp` hands the user's own pattern through untouched.
+fn escape_regex(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if "\\^$.|?*+()[]{}/".contains(ch) {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// Reads the user's own regex out of the text box. `/pattern/flags` is understood â€” it is how a
+/// regex is written everywhere else, and the only way to ask for one of Mongo's flags from a
+/// single box â€” and anything else is taken as a bare pattern. Unknown flags are dropped rather
+/// than passed on, so a `g` carried over from JavaScript habit doesn't have the server reject the
+/// whole query.
+fn parse_regex(raw: &str) -> Regex {
+    if let Some(rest) = raw.strip_prefix('/') {
+        if let Some(end) = rest.rfind('/') {
+            let (pattern, flags) = rest.split_at(end);
+            return Regex {
+                pattern: pattern.to_string(),
+                options: flags[1..].chars().filter(|c| "imsxu".contains(*c)).collect(),
+            };
+        }
+    }
+    Regex {
+        pattern: raw.to_string(),
+        options: String::new(),
+    }
+}
+
+/// Reads a BSON value out of the text a filter row holds.
+///
+/// This is the one thing a Mongo filter has to do that a SQL one doesn't. MySQL takes every value
+/// as a bound string and coerces it against the column's own type; Mongo has no column type to
+/// coerce against, and matches by exact BSON type â€” `{_id: "5"}` finds nothing in a collection
+/// keyed by the number 5, and nothing at all in one keyed by ObjectIds. So the text is read for
+/// what it looks like:
+///
+/// - `null`, `true`, `false` â€” those three values
+/// - a whole number, else a decimal one
+/// - 24 hex characters â€” an ObjectId, which is what `_id` usually holds
+/// - an RFC 3339 timestamp â€” a date
+/// - anything else â€” a string
+///
+/// Wrapping the value in quotes (`'5'`) turns all of that off and takes what is inside them as a
+/// string, which is the way to reach a field that really does hold `"5"` as text.
+fn parse_value(raw: &str) -> Bson {
+    if let Some(text) = unquote(raw) {
+        return Bson::String(text.to_string());
+    }
+    let trimmed = raw.trim();
+    match trimmed {
+        "null" => return Bson::Null,
+        "true" => return Bson::Boolean(true),
+        "false" => return Bson::Boolean(false),
+        _ => {}
+    }
+    // A number has to have a digit in it: `inf` and `NaN` parse as f64, and nobody typing either
+    // one into a filter box means the floating-point value.
+    if trimmed.chars().any(|c| c.is_ascii_digit()) {
+        if let Ok(i) = trimmed.parse::<i64>() {
+            return match i32::try_from(i) {
+                Ok(small) => Bson::Int32(small),
+                Err(_) => Bson::Int64(i),
+            };
+        }
+        if let Ok(f) = trimmed.parse::<f64>() {
+            return Bson::Double(f);
+        }
+    }
+    if trimmed.len() == 24 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+        if let Ok(oid) = ObjectId::from_str(trimmed) {
+            return Bson::ObjectId(oid);
+        }
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(trimmed) {
+        return Bson::DateTime(BsonDateTime::from_millis(dt.timestamp_millis()));
+    }
+    // As typed, not trimmed: a value that reached here is text, and the spaces around text are
+    // part of it. The quoted form is there for when that is not what was meant.
+    Bson::String(raw.to_string())
+}
+
+/// {@link parse_value} for one item of an `IN`/`BETWEEN` list, whose quotes were already taken
+/// off during the split â€” the flag is all that is left of them.
+fn parse_item(item: &ListItem) -> Bson {
+    if item.quoted {
+        Bson::String(item.text.clone())
+    } else {
+        parse_value(&item.text)
+    }
+}
+
+/// Turns the filter rows into the query document the page is read through â€” one clause per row,
+/// gathered under `$and` so that two conditions on the same field both survive (an object can
+/// only hold one entry per key, and `{age: {...}, age: {...}}` would silently be one of them).
+///
+/// A row whose operator wants a value it wasn't given is dropped rather than matched literally:
+/// the bar's opening `_id =` row must not become `{_id: ""}` before anything is typed into it.
+fn build_filter(filters: &[Filter]) -> Result<Document, String> {
+    let mut clauses: Vec<Document> = Vec::new();
+
+    for filter in filters {
+        let field = filter.field.trim();
+        if field.is_empty() {
+            continue;
+        }
+        // A leading `$` would make the field name read as a query operator, which is not a
+        // document this bar has any way to mean.
+        if field.starts_with('$') {
+            return Err(format!("Invalid filter field `{field}`"));
+        }
+        let raw = filter.value.as_deref().unwrap_or("");
+        let operator = filter.operator.as_str();
+
+        let condition: Bson = match operator {
+            "eq" => doc! { "$eq": parse_value(raw) }.into(),
+            "ne" => doc! { "$ne": parse_value(raw) }.into(),
+            "gt" => doc! { "$gt": parse_value(raw) }.into(),
+            "gte" => doc! { "$gte": parse_value(raw) }.into(),
+            "lt" => doc! { "$lt": parse_value(raw) }.into(),
+            "lte" => doc! { "$lte": parse_value(raw) }.into(),
+            // Case-insensitive on purpose, so these read the same way as their SQL counterparts:
+            // MySQL's default collation makes LIKE case-insensitive, and a filter bar that
+            // matched differently depending on the workspace would be a trap. `regexp` below is
+            // exempt â€” the user writing the pattern is the one who decides.
+            "contains" | "notContains" | "startsWith" | "endsWith" => {
+                let escaped = escape_regex(raw);
+                let pattern = match operator {
+                    "startsWith" => format!("^{escaped}"),
+                    "endsWith" => format!("{escaped}$"),
+                    _ => escaped,
+                };
+                let regex = Bson::RegularExpression(Regex {
+                    pattern,
+                    options: "i".to_string(),
+                });
+                if operator == "notContains" {
+                    doc! { "$not": regex }.into()
+                } else {
+                    regex
+                }
+            }
+            "regexp" => Bson::RegularExpression(parse_regex(raw)),
+            "notRegexp" => doc! { "$not": Bson::RegularExpression(parse_regex(raw)) }.into(),
+            "in" | "notIn" => {
+                let items: Vec<Bson> = split_list_parts(raw).iter().map(parse_item).collect();
+                if items.is_empty() {
+                    continue;
+                }
+                let key = if operator == "in" { "$in" } else { "$nin" };
+                doc! { key: items }.into()
+            }
+            "between" | "notBetween" => {
+                let items = split_list_parts(raw);
+                // Two bounds or nothing â€” one of them alone says nothing about a range.
+                if items.len() < 2 {
+                    continue;
+                }
+                let range = doc! { "$gte": parse_item(&items[0]), "$lte": parse_item(&items[1]) };
+                if operator == "between" {
+                    range.into()
+                } else {
+                    doc! { "$not": range }.into()
+                }
+            }
+            // `$type` takes an alias (`string`, `int`, `date`) or the BSON type number; whichever
+            // was typed is passed along, and the server is left to reject a name it doesn't know.
+            "type" => {
+                let alias = raw.trim();
+                let wanted = match alias.parse::<i32>() {
+                    Ok(n) => Bson::Int32(n),
+                    Err(_) => Bson::String(alias.to_string()),
+                };
+                doc! { "$type": wanted }.into()
+            }
+            "exists" => doc! { "$exists": true }.into(),
+            "notExists" => doc! { "$exists": false }.into(),
+            // `{field: null}` would match the documents missing the field as well, which is the
+            // opposite of what a schemaless collection needs to be able to ask.
+            "isNull" => doc! { "$type": "null" }.into(),
+            "isNotNull" => doc! { "$exists": true, "$not": { "$type": "null" } }.into(),
+            "isEmpty" => doc! { "$eq": "" }.into(),
+            "isNotEmpty" => doc! { "$exists": true, "$ne": "" }.into(),
+            other => return Err(format!("Unknown filter operator `{other}`")),
+        };
+
+        let mut clause = Document::new();
+        clause.insert(field, condition);
+        clauses.push(clause);
+    }
+
+    if clauses.is_empty() {
+        return Ok(doc! {});
+    }
+    Ok(doc! { "$and": clauses })
+}
+
+/// Reads one page of a collection. `filters` narrows it down first, ANDed together; `total`
+/// counts what is left after them, so the pager measures the filtered collection rather than the
+/// whole one.
 pub async fn collection_page(
     client: &Client,
     db: &str,
     collection: &str,
     page: i64,
     page_size: i64,
+    filters: &[Filter],
 ) -> Result<CollectionPage, String> {
     let coll = client.database(db).collection::<Document>(collection);
     let page_size = page_size.clamp(1, 1000);
     let skip = (page.max(0) * page_size) as u64;
+    let query = build_filter(filters)?;
 
     let total = coll
-        .count_documents(doc! {})
+        .count_documents(query.clone())
         .await
         .map_err(|e| e.to_string())? as i64;
     let mut cursor = coll
-        .find(doc! {})
+        .find(query)
         .skip(skip)
         .limit(page_size)
         .await
@@ -361,13 +585,13 @@ pub async fn collection_page(
 /// Ids to prefill the `_id` of `count` new documents with.
 ///
 /// Mongo has no auto-increment to read off: the id of a document that does not exist yet is
-/// whatever the writer decides, and what every driver decides — including this one, when an
-/// insert names no `_id` — is a freshly minted ObjectId. So that is the answer here too, and it
+/// whatever the writer decides, and what every driver decides â€” including this one, when an
+/// insert names no `_id` â€” is a freshly minted ObjectId. So that is the answer here too, and it
 /// is a real "next id": an ObjectId leads with its creation timestamp, so the ones handed out
 /// now sort after everything already in the collection.
 ///
 /// The exception worth honouring is a collection keyed by numbers. Those are counted by hand
-/// somewhere, and the only sensible next value is the highest plus one — so the highest `_id`
+/// somewhere, and the only sensible next value is the highest plus one â€” so the highest `_id`
 /// is read first, and its type decides. Anything else (strings, compound keys, an empty
 /// collection) falls back to ObjectIds, since no scheme can be inferred from them.
 pub async fn next_ids(
@@ -406,7 +630,7 @@ pub async fn next_ids(
 ///
 /// Ordered rather than atomic: a transaction needs a replica set, which a standalone server is
 /// not, so a failure partway through leaves the documents before it inserted. The caller is
-/// expected to refetch the page afterwards — on failure as much as on success — so what landed
+/// expected to refetch the page afterwards â€” on failure as much as on success â€” so what landed
 /// is what is on screen.
 pub async fn insert_documents(
     client: &Client,

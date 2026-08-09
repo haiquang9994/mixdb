@@ -42,15 +42,15 @@
   cursor: pointer;
 }
 
-/* Both selects hold their width so the rows stay in columns, but may still be squeezed on a
-   narrow window rather than pushing the row wider than the grid. */
-.column {
+/* The field box and the operator select hold their width so the rows stay in columns, but may
+   still be squeezed on a narrow window rather than pushing the row wider than the grid. */
+.field {
   flex: 0 1 12em;
   width: 12em;
 }
 
 /* Wide enough for the longest operator label spelled out — the Vietnamese ones read as a phrase
-   plus the SQL it stands for — so the selected operator never has to be ellipsised away. */
+   plus the query syntax it stands for — so the selected operator never has to be ellipsised away. */
 .operator {
   flex: 0 1 17em;
   width: 17em;

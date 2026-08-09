@@ -1,3 +1,4 @@
+use super::filters::split_list;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlRow, MySqlSslMode};
@@ -195,50 +196,6 @@ pub struct Filter {
     pub operator: String,
     #[serde(default)]
     pub value: Option<String>,
-}
-
-/// Splits an `IN`/`BETWEEN` value into its items: comma-separated, with each item trimmed.
-///
-/// An item may be wrapped in single or double quotes, which is how a value that itself contains a
-/// comma (or leading/trailing spaces that matter) gets through: the quotes are stripped and the
-/// text inside them is taken as-is. Empty items are dropped, so `1,2,` is two items — but a
-/// quoted `''` is kept, as that is the only way to ask for an empty string in a list.
-///
-/// The frontend mirrors this in `src/mysql/filters.ts` to decide whether a row has enough to be
-/// worth sending; the two must agree on how many items a value holds.
-fn split_list(raw: &str) -> Vec<String> {
-    let mut items = Vec::new();
-    let mut current = String::new();
-    let mut quote: Option<char> = None;
-    let mut quoted = false;
-
-    let mut flush = |current: &mut String, quoted: &mut bool| {
-        let item = if *quoted {
-            std::mem::take(current)
-        } else {
-            current.trim().to_string()
-        };
-        if *quoted || !item.is_empty() {
-            items.push(item);
-        }
-        current.clear();
-        *quoted = false;
-    };
-
-    for ch in raw.chars() {
-        match quote {
-            Some(q) if ch == q => quote = None,
-            Some(_) => current.push(ch),
-            None if ch == '\'' || ch == '"' => {
-                quote = Some(ch);
-                quoted = true;
-            }
-            None if ch == ',' => flush(&mut current, &mut quoted),
-            None => current.push(ch),
-        }
-    }
-    flush(&mut current, &mut quoted);
-    items
 }
 
 /// Escapes the wildcards out of text that is about to be pasted into a LIKE pattern, so a value

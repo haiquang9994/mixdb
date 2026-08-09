@@ -8,13 +8,22 @@ import {
   type DocUpdateOps,
 } from "../../mongo/api";
 import type { TypedDocument, TypedValue } from "../../mongo/bsonTypes";
+import {
+  mergeDocumentFields,
+  MONGO_FILTER_OPERATORS,
+  mongoOperatorArity,
+  type MongoFilter,
+  type MongoFilterOperator,
+} from "../../mongo/filters";
 import ActionBar from "../ActionBar";
 import Document from "../Document";
+import FilterBar from "../FilterBar";
 import InsertDocumentsDialog from "../InsertDocumentsDialog";
 import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
 import { PlusIcon, ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import { initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
 import styles from "./NoSqlTable.module.css";
 
 interface Props {
@@ -35,6 +44,10 @@ interface Target {
 }
 
 const DOC_PAGE_SIZES = [20, 50, 100, 200];
+
+/** The only field every document is guaranteed to carry, and so the one the bar can offer before
+ * a page has been loaded to read any others off. */
+const ID_FIELD = ["_id"];
 
 /** A page of a collection, one Document card per row.
  *
@@ -60,6 +73,16 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
   // What the insert form opens on: an empty array for a blank document, or the documents a
   // clone starts from. `null` is the form being closed.
   const [insertSeeds, setInsertSeeds] = useState<TypedDocument[] | null>(null);
+  // The filter bar edits `filterRows` freely; only Apply copies them into `appliedFilters`, which
+  // is what the fetch below reads. Keeping the two apart is what stops a half-typed condition
+  // from reloading the list on every keystroke.
+  const [filterRows, setFilterRows] = useState<FilterRow<MongoFilterOperator>[]>(() =>
+    initialFilterRows(ID_FIELD, "eq"),
+  );
+  const [appliedFilters, setAppliedFilters] = useState<MongoFilter[]>([]);
+  // What the field select offers: seeded from the collection's first page and added to by every
+  // page after it, never narrowed — see `mergeDocumentFields`.
+  const [fields, setFields] = useState<string[]>(ID_FIELD);
 
   const flushersRef = useRef<Set<() => Promise<void>>>(new Set());
 
@@ -77,12 +100,19 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
 
   useEffect(() => {
     setPage(0);
+    // A filter names a field, and the next collection's documents need not carry one by that
+    // name — the bar starts over on an empty `_id =` row, the way it opened.
+    setAppliedFilters([]);
+    setFilterRows(initialFilterRows(ID_FIELD, "eq"));
+    // The fields build up per collection: the next one's documents are the only thing that says
+    // anything about what it can be filtered on.
+    setFields(ID_FIELD);
   }, [selectedDb, selectedCollection]);
 
   const loadPage = useCallback(() => {
     let cancelled = false;
     setLoading(true);
-    mongoCollectionPage(connectionId, selectedDb, selectedCollection, page, pageSize)
+    mongoCollectionPage(connectionId, selectedDb, selectedCollection, page, pageSize, appliedFilters)
       .then((result) => {
         if (cancelled) return;
         if (result.documents.length === 0 && page > 0 && result.total > 0) {
@@ -95,6 +125,8 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
         setTarget({ connectionId, database: selectedDb, collection: selectedCollection });
         setTotal(result.total);
         setLoadId((n) => n + 1);
+        // Whatever these documents carry that the bar didn't know about yet is now filterable.
+        setFields((known) => mergeDocumentFields(known, result.documents));
       })
       .catch((e) => onError(String(e)))
       .finally(() => {
@@ -103,7 +135,7 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
     return () => {
       cancelled = true;
     };
-  }, [connectionId, selectedDb, selectedCollection, page, pageSize, onError]);
+  }, [connectionId, selectedDb, selectedCollection, page, pageSize, appliedFilters, onError]);
 
   useEffect(() => loadPage(), [loadPage]);
 
@@ -160,6 +192,20 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
     [flushAll, onError],
   );
 
+  /** Runs the filter bar's rows against the collection. Like a reload, whatever the cards have
+   * staged is written out first: the documents come back filtered, and a card holding unsaved
+   * edits is about to be replaced. The result is a different set of documents, so the list goes
+   * back to the first page — the page the user was on need not even exist under the new
+   * conditions. */
+  const applyFilters = useCallback(() => {
+    // A new array every time on purpose: pressing Apply twice on the same conditions is a
+    // request to refetch, and an equal-but-identical array would be a no-op.
+    flushThen(() => {
+      setAppliedFilters(toQueryFilters(filterRows, mongoOperatorArity));
+      setPage(0);
+    });
+  }, [flushThen, filterRows]);
+
   /** Opens the insert form on `seeds` — an empty array for a blank document. Whatever the cards
    * have staged is written out first: the form is modal, so nothing would flush it while it is
    * up, and a clone seeded from a card should be inserted alongside the edits it was copied
@@ -196,6 +242,16 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
 
   return (
     <div className={styles.noSqlTable}>
+      <FilterBar
+        fields={fields}
+        operators={MONGO_FILTER_OPERATORS}
+        defaultOperator="eq"
+        operatorLabel={(op) => t(`noSqlTable.op.${op}`)}
+        rows={filterRows}
+        onChange={setFilterRows}
+        onApply={applyFilters}
+        applyDisabled={busy}
+      />
       <div className={styles.scrollWrap}>
         <div className={styles.scroll}>
           {documents.length === 0 && !loading && <p className="muted">{t("noSqlTable.noDocuments")}</p>}

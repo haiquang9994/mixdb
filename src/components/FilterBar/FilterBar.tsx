@@ -1,69 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "../Button";
 import Input from "../Input";
 import Select from "../Select";
 import { MinusIcon, PlusIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import {
-  FILTER_OPERATORS,
-  isFilterComplete,
-  operatorArity,
-  type FilterOperator,
-  type MysqlFilter,
-} from "../../mysql/filters";
+  arityLookup,
+  createFilterRow,
+  type FilterOperatorSpec,
+  type FilterRow,
+} from "../../filters";
 import styles from "./FilterBar.module.css";
 
-/** One row of the bar while it is being edited — a condition plus the two things only the UI
- * cares about: whether it is switched on, and what tells it apart from an identical row. */
-export interface FilterRow {
-  /** Identity for React and for the edit handlers, since two rows may otherwise be equal and a
-   * row's position changes as the ones above it are removed. */
-  id: number;
-  /** The checkbox at the head of the row: off leaves the condition written down but unapplied. */
-  enabled: boolean;
-  column: string;
-  operator: FilterOperator;
-  value: string;
-}
-
-let nextRowId = 1;
-
-/** The column a row starts on: `id` when the table has one — it is what a lookup is nearly
- * always by — and otherwise the first column, so the row is never left pointing at nothing. */
-function startingColumn(columns: string[]): string {
-  return columns.find((c) => c.toLowerCase() === "id") ?? columns[0] ?? "";
-}
-
-export function createFilterRow(columns: string[]): FilterRow {
-  return {
-    id: nextRowId++,
-    enabled: true,
-    column: startingColumn(columns),
-    operator: "eq",
-    value: "",
-  };
-}
-
-/** What the bar holds when a table is first opened: an empty `id =` row, ready for the lookup
- * that is about to be typed into it. A table with no id column starts with no rows at all —
- * there is no column to guess at, and an arbitrary one would only be in the way. */
-export function initialFilterRows(columns: string[]): FilterRow[] {
-  return columns.some((c) => c.toLowerCase() === "id") ? [createFilterRow(columns)] : [];
-}
-
-/** The conditions that actually reach the query: the rows that are switched on and filled in.
- * A row whose operator still wants a value is dropped rather than sent — see
- * {@link isFilterComplete}. */
-export function toQueryFilters(rows: FilterRow[]): MysqlFilter[] {
-  return rows
-    .filter((row) => row.enabled && row.column !== "" && isFilterComplete(row.operator, row.value))
-    .map(({ column, operator, value }) => ({ column, operator, value }));
-}
-
-interface Props {
-  columns: string[];
-  rows: FilterRow[];
-  onChange: (rows: FilterRow[]) => void;
+interface Props<Op extends string> {
+  /** The fields a row may point at — a SQL table's columns, or the properties the documents on a
+   * Mongo collection's first page were found to carry. */
+  fields: string[];
+  operators: readonly FilterOperatorSpec[];
+  /** The operator a new row starts on. */
+  defaultOperator: Op;
+  /** Names an operator in the current language. Kept a callback rather than a key prefix so each
+   * database can label the same id after its own query language. */
+  operatorLabel: (operator: Op) => string;
+  rows: FilterRow<Op>[];
+  onChange: (rows: FilterRow<Op>[]) => void;
   /** Runs the rows against the table. The bar edits freely until this is called. */
   onApply: () => void;
   /** Blocks applying while the grid is busy with something else; the rows stay editable. */
@@ -73,7 +33,16 @@ interface Props {
 /** The row of conditions above the grid. Every row is ANDed with the others, and none of them
  * touch the query until Apply (or Enter in a value box) is pressed — so a half-typed condition
  * never costs a round trip. */
-function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
+function FilterBar<Op extends string>({
+  fields,
+  operators,
+  defaultOperator,
+  operatorLabel,
+  rows,
+  onChange,
+  onApply,
+  applyDisabled,
+}: Props<Op>) {
   const { t } = useTranslation();
   const valueRefs = useRef(new Map<number, HTMLInputElement>());
   /** The row whose value box is owed the focus, cleared as soon as it has been given it. */
@@ -88,17 +57,18 @@ function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
     setPendingFocus(null);
   }, [pendingFocus]);
 
-  const columnOptions = columns.map((c) => ({ value: c, label: c }));
-  const operatorOptions = FILTER_OPERATORS.map((op) => ({
-    value: op.id,
-    label: t(`sqlTable.op.${op.id}`),
+  const operatorArity = useMemo(() => arityLookup<Op>(operators), [operators]);
+  const fieldOptions = fields.map((c) => ({ value: c, label: c }));
+  const operatorOptions = operators.map((op) => ({
+    value: op.id as Op,
+    label: operatorLabel(op.id as Op),
   }));
 
-  function updateRow(id: number, patch: Partial<FilterRow>) {
+  function updateRow(id: number, patch: Partial<FilterRow<Op>>) {
     onChange(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   }
 
-  function changeOperator(row: FilterRow, operator: FilterOperator) {
+  function changeOperator(row: FilterRow<Op>, operator: Op) {
     // An operator that takes no value leaves the box disabled, and text left sitting in a
     // disabled box reads as if it were still part of the condition.
     const clears = operatorArity(operator) === "none";
@@ -108,16 +78,16 @@ function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
     if (!clears) setPendingFocus(row.id);
   }
 
-  function valuePlaceholder(operator: FilterOperator): string {
+  function valuePlaceholder(operator: Op): string {
     switch (operatorArity(operator)) {
       case "none":
         return "";
       case "list":
-        return t("sqlTable.filterListPlaceholder");
+        return t("filterBar.listPlaceholder");
       case "pair":
-        return t("sqlTable.filterPairPlaceholder");
+        return t("filterBar.pairPlaceholder");
       default:
-        return t("sqlTable.filterValuePlaceholder");
+        return t("filterBar.valuePlaceholder");
     }
   }
 
@@ -133,18 +103,18 @@ function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
                   type="checkbox"
                   className={styles.toggle}
                   checked={row.enabled}
-                  aria-label={t("sqlTable.enableFilter")}
-                  title={t("sqlTable.enableFilter")}
+                  aria-label={t("filterBar.enableFilter")}
+                  title={t("filterBar.enableFilter")}
                   onChange={(e) => updateRow(row.id, { enabled: e.target.checked })}
                 />
                 <Select
                   size="small"
-                  className={styles.column}
+                  className={styles.field}
                   value={row.column}
-                  options={columnOptions}
-                  ariaLabel={t("sqlTable.filterColumn")}
+                  options={fieldOptions}
+                  ariaLabel={t("filterBar.field")}
                   searchable
-                  searchPlaceholder={t("sqlTable.filterColumnSearch")}
+                  searchPlaceholder={t("filterBar.fieldSearch")}
                   onChange={(column) => updateRow(row.id, { column })}
                 />
                 <Select
@@ -152,9 +122,9 @@ function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
                   className={styles.operator}
                   value={row.operator}
                   options={operatorOptions}
-                  ariaLabel={t("sqlTable.filterOperator")}
+                  ariaLabel={t("filterBar.operator")}
                   searchable
-                  searchPlaceholder={t("sqlTable.filterOperatorSearch")}
+                  searchPlaceholder={t("filterBar.operatorSearch")}
                   onChange={(operator) => changeOperator(row, operator)}
                 />
                 <Input
@@ -167,7 +137,7 @@ function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
                   value={row.value}
                   disabled={!takesValue}
                   placeholder={valuePlaceholder(row.operator)}
-                  aria-label={t("sqlTable.filterValue")}
+                  aria-label={t("filterBar.value")}
                   onChange={(e) => updateRow(row.id, { value: e.target.value })}
                   // Enter is the shortcut for the Apply button beneath — a filter is typed and
                   // run far more often than it is typed and left.
@@ -180,8 +150,8 @@ function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
                 <button
                   type="button"
                   className={styles.iconButton}
-                  aria-label={t("sqlTable.removeFilter")}
-                  title={t("sqlTable.removeFilter")}
+                  aria-label={t("filterBar.removeFilter")}
+                  title={t("filterBar.removeFilter")}
                   onClick={() => onChange(rows.filter((r) => r.id !== row.id))}
                 >
                   <MinusIcon size={14} />
@@ -195,15 +165,15 @@ function FilterBar({ columns, rows, onChange, onApply, applyDisabled }: Props) {
         <button
           type="button"
           className={styles.iconButton}
-          aria-label={t("sqlTable.addFilter")}
-          title={t("sqlTable.addFilter")}
-          disabled={columns.length === 0}
-          onClick={() => onChange([...rows, createFilterRow(columns)])}
+          aria-label={t("filterBar.addFilter")}
+          title={t("filterBar.addFilter")}
+          disabled={fields.length === 0}
+          onClick={() => onChange([...rows, createFilterRow(fields, defaultOperator)])}
         >
           <PlusIcon size={14} />
         </button>
         <Button size="small" disabled={applyDisabled} onClick={onApply}>
-          {t("sqlTable.applyFilters")}
+          {t("filterBar.apply")}
         </Button>
       </div>
     </div>
