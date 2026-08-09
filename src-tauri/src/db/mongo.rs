@@ -53,26 +53,61 @@ pub struct ServerInfo {
     pub os: String,
 }
 
-/// Reads what the header shows about the server. `buildInfo` is used rather than
-/// `hostInfo` because the latter needs a privilege that managed deployments often
-/// withhold, and its `buildEnvironment.target_os` is the same thing MySQL reports
-/// as `version_compile_os` â€” the OS the server was built for.
+/// Reads what the header shows about the server. `hostInfo` describes the machine the
+/// server actually runs on â€” distribution, release and architecture, the same detail Redis
+/// reports â€” but it needs a privilege managed deployments often withhold, so a server that
+/// refuses it falls back to `buildInfo`, which only knows what the server was built for.
 pub async fn server_info(client: &Client) -> Result<ServerInfo, String> {
-    let info = client
-        .database("admin")
+    let admin = client.database("admin");
+    let build = admin
         .run_command(doc! { "buildInfo": 1 })
         .await
         .map_err(|e| e.to_string())?;
 
-    let version = info.get_str("version").unwrap_or_default().to_string();
-    let os = info
-        .get_document("buildEnvironment")
+    let version = build.get_str("version").unwrap_or_default().to_string();
+    let os = admin
+        .run_command(doc! { "hostInfo": 1 })
+        .await
         .ok()
-        .and_then(|env| env.get_str("target_os").ok())
-        .unwrap_or_default()
-        .to_string();
+        .and_then(|host| host_os(&host))
+        .unwrap_or_else(|| build_os(&build));
 
     Ok(ServerInfo { version, os })
+}
+
+/// "Ubuntu 22.04 x86_64" out of `hostInfo`. Every part is optional, and a reply naming none
+/// of them counts as no answer at all so the build environment can still fill the gap.
+fn host_os(info: &Document) -> Option<String> {
+    let os = info.get_document("os").ok();
+    let parts: Vec<&str> = [
+        os.and_then(|os| os.get_str("name").ok()),
+        os.and_then(|os| os.get_str("version").ok()),
+        info.get_document("system")
+            .ok()
+            .and_then(|system| system.get_str("cpuArch").ok()),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|part| !part.is_empty())
+    .collect();
+
+    (!parts.is_empty()).then(|| parts.join(" "))
+}
+
+/// The OS the server was built for, out of `buildInfo` â€” "linux x86_64". The same pair MySQL
+/// reports as `version_compile_os` and `version_compile_machine`.
+fn build_os(info: &Document) -> String {
+    let env = info.get_document("buildEnvironment").ok();
+    let parts: Vec<&str> = [
+        env.and_then(|env| env.get_str("target_os").ok()),
+        env.and_then(|env| env.get_str("target_arch").ok()),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|part| !part.is_empty())
+    .collect();
+
+    parts.join(" ")
 }
 
 pub async fn list_databases(client: &Client) -> Result<Vec<String>, String> {

@@ -80,26 +80,40 @@ pub struct ServerInfo {
     pub os: String,
 }
 
+/// Reads what the header shows about the server. The compile variables are the only place a
+/// MySQL connection names its machine: the platform it was built for, and the architecture it
+/// was built for — "Linux x86_64".
 pub async fn server_info(pool: &MySqlPool) -> Result<ServerInfo, String> {
     let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
     let rows = sqlx::query(
-        "SHOW VARIABLES WHERE Variable_name IN ('version', 'version_compile_os')",
+        "SHOW VARIABLES WHERE Variable_name IN \
+         ('version', 'version_compile_os', 'version_compile_machine')",
     )
     .fetch_all(&mut *conn)
     .await
     .map_err(|e| e.to_string())?;
 
     let mut version = String::new();
-    let mut os = String::new();
+    let mut platform = String::new();
+    let mut machine = String::new();
     for row in &rows {
         let name: String = row.get("Variable_name");
         let value: String = row.get("Value");
         match name.as_str() {
             "version" => version = value,
-            "version_compile_os" => os = value,
+            "version_compile_os" => platform = value,
+            "version_compile_machine" => machine = value,
             _ => {}
         }
     }
+
+    // Either half can be missing — an older server has no `version_compile_machine` — and
+    // whichever is left should still reach the header on its own.
+    let os = [platform.trim(), machine.trim()]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
     Ok(ServerInfo { version, os })
 }
 
