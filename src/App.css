@@ -551,51 +551,12 @@ textarea {
   margin-bottom: 0.4rem;
 }
 
+/* Only where the bar sits: the buttons themselves are the shared ActionBar's. */
 .mysql-sidebar-actions {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
   padding-top: 0.35rem;
   margin-top: 0.35rem;
   border-top: 1px solid rgba(128, 128, 128, 0.2);
-}
-
-.mysql-sidebar-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  box-shadow: none;
-  background: transparent;
-  border-radius: 6px;
-  color: inherit;
-}
-
-.mysql-sidebar-action:hover:not(:disabled) {
-  background: rgba(128, 128, 128, 0.15);
-  border-color: transparent;
-}
-
-.mysql-sidebar-action:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.mysql-sidebar-action-icon-spinning {
-  animation: mysql-sidebar-spin 0.8s linear infinite;
-}
-
-@keyframes mysql-sidebar-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .mysql-content {
@@ -701,40 +662,9 @@ textarea {
 
 .mongo-sidebar-actions {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
   padding-top: 0.35rem;
   margin-top: 0.35rem;
   border-top: 1px solid rgba(128, 128, 128, 0.2);
-}
-
-.mongo-sidebar-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  box-shadow: none;
-  background: transparent;
-  border-radius: 6px;
-  color: inherit;
-}
-
-.mongo-sidebar-action:hover:not(:disabled) {
-  background: rgba(128, 128, 128, 0.15);
-  border-color: transparent;
-}
-
-.mongo-sidebar-action:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.mongo-sidebar-action-icon-spinning {
-  animation: mysql-sidebar-spin 0.8s linear infinite;
 }
 
 .mongo-content {

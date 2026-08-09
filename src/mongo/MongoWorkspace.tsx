@@ -4,6 +4,7 @@ import Select from "../components/Select";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import NoSqlTable from "../components/NoSqlTable";
+import ActionBar from "../components/ActionBar";
 import ItemList from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
 import { ReloadIcon } from "../icons";
@@ -235,21 +236,19 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             onSelect={setSelectedCollection}
             emptyMessage={collectionsEmptyMessage}
           />
-          <div className="mongo-sidebar-actions">
-            <button
-              type="button"
-              className="mongo-sidebar-action"
-              aria-label={t("mongo.reloadCollections")}
-              title={t("mongo.reloadCollections")}
-              disabled={!selectedDb || collectionsLoading}
-              onClick={reloadCollections}
-            >
-              <ReloadIcon
-                size={14}
-                className={`mongo-sidebar-action-icon${collectionsLoading ? " mongo-sidebar-action-icon-spinning" : ""}`}
-              />
-            </button>
-          </div>
+          <ActionBar
+            className="mongo-sidebar-actions"
+            actions={[
+              {
+                key: "reload",
+                icon: ReloadIcon,
+                label: t("mongo.reloadCollections"),
+                disabled: !selectedDb || collectionsLoading,
+                busy: collectionsLoading,
+                onClick: reloadCollections,
+              },
+            ]}
+          />
         </aside>
 
         <div

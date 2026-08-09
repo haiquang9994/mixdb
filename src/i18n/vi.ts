@@ -90,6 +90,7 @@ const vi: TranslationDict = {
     null: "NULL",
     loading: "Đang tải...",
     noRows: "Không có dòng nào.",
+    reloadRows: "Tải lại dữ liệu",
   },
   mongo: {
     noCollections: "Không có collection nào",
@@ -108,6 +109,7 @@ const vi: TranslationDict = {
     loading: "Đang tải...",
     saving: "Đang lưu...",
     noDocuments: "Không có document nào.",
+    reloadDocuments: "Tải lại document",
     idReadOnlyTooltip: "_id không thể sửa sau khi document đã tồn tại",
     addProperty: "Thêm property",
     addItem: "Thêm item",

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mongoCollectionPage, mongoDeleteDocument, mongoUpdateDocument, type DocUpdateOps } from "../../mongo/api";
 import type { TypedDocument, TypedValue } from "../../mongo/bsonTypes";
+import ActionBar from "../ActionBar";
 import Document from "../Document";
 import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
+import { ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import styles from "./NoSqlTable.module.css";
 
@@ -169,6 +171,20 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
         {busy && <LoadingOverlay label={loading ? t("noSqlTable.loading") : t("noSqlTable.saving")} />}
       </div>
       <div className={styles.footer}>
+        <ActionBar
+          actions={[
+            {
+              key: "reload",
+              icon: ReloadIcon,
+              label: t("noSqlTable.reloadDocuments"),
+              disabled: busy,
+              busy,
+              // Same as changing page: whatever the cards have staged is written out before the
+              // refetch replaces them.
+              onClick: () => flushThen(loadPage),
+            },
+          ]}
+        />
         <Pagination
           page={page}
           pageCount={pageCount}

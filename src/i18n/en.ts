@@ -88,6 +88,7 @@ const en = {
     null: "NULL",
     loading: "Loading...",
     noRows: "No rows.",
+    reloadRows: "Reload rows",
   },
   mongo: {
     noCollections: "No collections",
@@ -106,6 +107,7 @@ const en = {
     loading: "Loading...",
     saving: "Saving...",
     noDocuments: "No documents.",
+    reloadDocuments: "Reload documents",
     idReadOnlyTooltip: "_id cannot be changed after a document exists",
     addProperty: "Add property",
     addItem: "Add item",

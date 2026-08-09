@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
+import ActionBar from "../ActionBar";
 import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
+import { ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import styles from "./SqlTable.module.css";
 
@@ -55,6 +57,8 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   const [primaryKey, setPrimaryKey] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  // Bumped by the reload action to re-run the fetch below with the page/size unchanged.
+  const [reloadToken, setReloadToken] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [editingCell, setEditingCellState] = useState<EditingCell | null>(null);
@@ -168,7 +172,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     return () => {
       cancelled = true;
     };
-  }, [connectionId, selectedDb, selectedTable, page, pageSize]);
+  }, [connectionId, selectedDb, selectedTable, page, pageSize, reloadToken]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -229,6 +233,13 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     commitEditingCell();
     setEditingCell(null);
     await flushPendingRow();
+  }
+
+  /** Refetches the current page. Waits for a staged edit to be written first, so the rows
+   * that come back include it rather than overwriting it with the pre-edit values. */
+  async function reload() {
+    await commitAndExit();
+    setReloadToken((n) => n + 1);
   }
 
   async function moveEditTo(rowIndex: number, col: string) {
@@ -417,6 +428,18 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
         {loading && <LoadingOverlay label={t("sqlTable.loading")} />}
       </div>
       <div className={styles.footer}>
+        <ActionBar
+          actions={[
+            {
+              key: "reload",
+              icon: ReloadIcon,
+              label: t("sqlTable.reloadRows"),
+              disabled: loading,
+              busy: loading,
+              onClick: () => void reload(),
+            },
+          ]}
+        />
         <Pagination
           page={page}
           pageCount={pageCount}

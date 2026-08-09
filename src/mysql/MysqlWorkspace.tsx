@@ -4,6 +4,7 @@ import Select from "../components/Select";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import SqlTable from "../components/SqlTable";
+import ActionBar from "../components/ActionBar";
 import ItemList from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
 import { ReloadIcon } from "../icons";
@@ -232,21 +233,19 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             onSelect={selectTable}
             emptyMessage={tablesEmptyMessage}
           />
-          <div className="mysql-sidebar-actions">
-            <button
-              type="button"
-              className="mysql-sidebar-action"
-              aria-label={t("mysql.reloadTables")}
-              title={t("mysql.reloadTables")}
-              disabled={!selectedDb || tablesLoading}
-              onClick={reloadTables}
-            >
-              <ReloadIcon
-                size={14}
-                className={`mysql-sidebar-action-icon${tablesLoading ? " mysql-sidebar-action-icon-spinning" : ""}`}
-              />
-            </button>
-          </div>
+          <ActionBar
+            className="mysql-sidebar-actions"
+            actions={[
+              {
+                key: "reload",
+                icon: ReloadIcon,
+                label: t("mysql.reloadTables"),
+                disabled: !selectedDb || tablesLoading,
+                busy: tablesLoading,
+                onClick: reloadTables,
+              },
+            ]}
+          />
         </aside>
 
         <div
