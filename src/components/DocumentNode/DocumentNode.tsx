@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import Select from "../Select";
-import Input from "../Input";
+import Input, { Textarea } from "../Input";
 import { useTranslation, type TranslationKey } from "../../i18n";
 import {
   CREATABLE_TYPES,
@@ -336,14 +336,23 @@ export function ValueEditor({ initialValue, onCommit, onCancel, propertyName }: 
         }}
         options={typeOptions.map((opt) => ({ value: opt, label: t(TYPE_LABEL_KEY[opt as BsonKind]) }))}
       />
-      {(draft.type === "String" ||
-        draft.type === "Int32" ||
+      {/* Free text: a string or a snippet of code can run to any length, and both are routinely
+          written across several lines, so it gets a box that grows with what's in it. Enter still
+          commits the draft (as everywhere else in a document); Shift+Enter breaks the line. */}
+      {(draft.type === "String" || draft.type === "JavaScript" || draft.type === "Symbol") && (
+        <Textarea
+          size="small"
+          autoFocus={autoFocusValue}
+          value={draft.text}
+          onChange={(e) => setDraft({ ...draft, text: e.target.value })}
+          className={styles.editorText}
+        />
+      )}
+      {(draft.type === "Int32" ||
         draft.type === "Int64" ||
         draft.type === "Double" ||
         draft.type === "Decimal128" ||
-        draft.type === "ObjectId" ||
-        draft.type === "JavaScript" ||
-        draft.type === "Symbol") && (
+        draft.type === "ObjectId") && (
         <Input
           size="small"
           autoFocus={autoFocusValue}
@@ -369,13 +378,15 @@ export function ValueEditor({ initialValue, onCommit, onCancel, propertyName }: 
       )}
       {draft.type === "Binary" && (
         <>
-          <Input
+          {/* Base64 has no line breaks of its own, but it does get long: let it wrap rather
+              than scroll a one-line box sideways. */}
+          <Textarea
             size="small"
             placeholder="base64"
             autoFocus={autoFocusValue}
             value={draft.base64}
             onChange={(e) => setDraft({ ...draft, base64: e.target.value })}
-            className={styles.editorInput}
+            className={styles.editorText}
           />
           <Input
             size="small"
@@ -396,7 +407,7 @@ export function ValueEditor({ initialValue, onCommit, onCancel, propertyName }: 
             autoFocus={autoFocusValue}
             value={draft.pattern}
             onChange={(e) => setDraft({ ...draft, pattern: e.target.value })}
-            className={styles.editorInput}
+            className={styles.editorText}
           />
           <Input
             size="small"

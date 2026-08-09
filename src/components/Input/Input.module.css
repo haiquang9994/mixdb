@@ -23,6 +23,17 @@
   opacity: 0.5;
 }
 
+/* Height is measured and written per keystroke, so the box must count its own padding and
+   border (there is no global border-box reset here) and must never keep a scrollbar of its
+   own until it has actually hit its maximum height. */
+.textarea {
+  box-sizing: border-box;
+  display: block;
+  overflow-y: hidden;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+
 /* Sizes mirror Button's so an input lines up at equal height with a same-size button. */
 .normal {
   padding: 0.35em 0.7em;

@@ -135,11 +135,14 @@
   padding: 2px 4px;
 }
 
+/* Takes the rest of the row, so the field inside it has a full line to spread over instead of
+   the width of the value it replaced. */
 .editor {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   flex-wrap: wrap;
+  flex: 1;
   min-width: 0;
 }
 
@@ -151,6 +154,13 @@
 
 .editorInput {
   min-width: 140px;
+}
+
+/* Free-form text is the one thing here with no natural width, so it claims whatever the row
+   has left over — and wraps onto a line of its own when the type picker leaves too little. */
+.editorText {
+  composes: editorInput;
+  flex: 1 1 220px;
 }
 
 /* Wide enough for a full ISO timestamp without the text scrolling as it is typed. */
