@@ -35,7 +35,9 @@ live handle up by it in `AppState.connections`.
 3. Every later command takes that `id`, locks the map, matches the handle against the kind it
    expects, and errors with `"Connection is not a … connection"` on a mismatch.
 4. `disconnect_db(id)` removes the entry. `ActiveConnection`'s `Drop` aborts the tunnel task, so
-   dropping the entry is enough to tear the SSH hop down too.
+   dropping the entry is enough to tear the SSH hop down too. `ConnectionTab` calls it both from
+   the Disconnect button and from an unmount cleanup — closing a tab is a disconnect, and the
+   backend hears about it no other way.
 
 ## MongoDB is the odd one
 

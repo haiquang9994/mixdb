@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -131,6 +131,27 @@ function ConnectionTab({ onTitleChange }: Props) {
   useEffect(() => {
     loadSavedConnections().then(setSavedConnections);
   }, []);
+
+  // Closing a tab unmounts this component, and the backend has no other way of hearing about it:
+  // without this the pool (and the SSH tunnel behind it) would stay open in `AppState` until the
+  // app itself is quit, one leaked connection per tab ever opened.
+  //
+  // Read through a ref so the effect can depend on nothing and therefore only ever run its cleanup
+  // on a real unmount — depending on `connectionId` would disconnect on every change of it, which
+  // includes the moment a connection is established.
+  const connectionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    connectionIdRef.current = connectionId;
+  }, [connectionId]);
+  useEffect(
+    () => () => {
+      const id = connectionIdRef.current;
+      // Nothing is left to show an error to, and a connection the backend has already forgotten is
+      // not a failure worth reporting anywhere.
+      if (id) invoke("disconnect_db", { id }).catch(() => {});
+    },
+    [],
+  );
 
   function changeKind(next: DbKind) {
     setKind(next);
