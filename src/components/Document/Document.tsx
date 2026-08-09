@@ -55,6 +55,42 @@ function comparePathsForDeletion(a: string, b: string): number {
   return bParts.length - aParts.length;
 }
 
+/** Rewrites one staged dotted key across a rename of `oldPath` to `newPath`: that path and
+ * everything beneath it move, everything else stays. Returns null for keys to drop — Mongo's
+ * `$rename` overwrites the field it targets, so ops staged against whatever used to sit at
+ * `newPath` no longer refer to anything. */
+function rewriteStagedPath(key: string, oldPath: string, newPath: string): string | null {
+  if (key === oldPath) return newPath;
+  if (key.startsWith(`${oldPath}.`)) return newPath + key.slice(oldPath.length);
+  if (key === newPath || key.startsWith(`${newPath}.`)) return null;
+  return key;
+}
+
+function remapStagedSet(
+  staged: Record<string, TypedValue>,
+  oldPath: string,
+  newPath: string,
+): Record<string, TypedValue> {
+  const keys = Object.keys(staged);
+  if (keys.length === 0) return staged;
+  const next: Record<string, TypedValue> = {};
+  for (const key of keys) {
+    const moved = rewriteStagedPath(key, oldPath, newPath);
+    if (moved !== null) next[moved] = staged[key];
+  }
+  return next;
+}
+
+function remapStagedPaths(staged: Set<string>, oldPath: string, newPath: string): Set<string> {
+  if (staged.size === 0) return staged;
+  const next = new Set<string>();
+  for (const key of staged) {
+    const moved = rewriteStagedPath(key, oldPath, newPath);
+    if (moved !== null) next.add(moved);
+  }
+  return next.size === 0 ? EMPTY_SET : next;
+}
+
 export interface DocumentProps {
   /** The document as fetched. Read once, to seed this card's working copy — remount the
    * card (via `key`) to adopt a newly fetched version of it. */
@@ -104,11 +140,15 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
   // flush that precedes the delete must not write them back moments before it lands.
   const abandonedRef = useRef(false);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Render-phase mirror of the working copy. The handlers below need to read the current
-  // document but must stay referentially stable, since DocumentNode is memoized and a new
+  // Render-phase mirrors of the editable state. The handlers below need to read the current
+  // values but must stay referentially stable, since DocumentNode is memoized and a new
   // callback identity would re-render every row in the tree.
   const docRef = useRef(doc);
   docRef.current = doc;
+  const pendingSetRef = useRef(pendingSet);
+  pendingSetRef.current = pendingSet;
+  const deletedPathsRef = useRef(deletedPaths);
+  deletedPathsRef.current = deletedPaths;
 
   const pendingCount = Object.keys(pendingSet).length + deletedPaths.size;
   const idValue = (doc._id ?? null) as TypedValue;
@@ -229,14 +269,31 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
 
   const renameProp = useCallback(
     async (path: string[], newKey: string) => {
-      const before = docRef.current;
-      setDoc((prev) => renameKeyAtPath(prev, path, newKey) as TypedDocument);
-      const ops: DocUpdateOps = { set: {}, unset: [], rename: { [path.join(".")]: newKey } };
+      const oldPath = path.join(".");
+      // `$rename` takes a full dotted path on both sides — handing it the bare key would move
+      // a nested property up to the root of the document instead of renaming it in place.
+      const newPath = [...path.slice(0, -1), newKey].join(".");
+      const before = {
+        doc: docRef.current,
+        pendingSet: pendingSetRef.current,
+        deletedPaths: deletedPathsRef.current,
+      };
+
+      // Everything staged is keyed by dotted path, so a rename has to carry the staged ops
+      // across with the data. Leaving them behind would make Save write the edited value to
+      // the old name, recreating the property this rename just moved away from.
+      setDoc(renameKeyAtPath(before.doc, path, newKey) as TypedDocument);
+      setPendingSet(remapStagedSet(before.pendingSet, oldPath, newPath));
+      setDeletedPaths(remapStagedPaths(before.deletedPaths, oldPath, newPath));
+
+      const ops: DocUpdateOps = { set: {}, unset: [], rename: { [oldPath]: newPath } };
       if (await onWrite(idRef.current, ops)) {
         // The server document moved, so the baseline setValue diffs against has to move too.
         originalRef.current = renameKeyAtPath(originalRef.current, path, newKey) as TypedDocument;
       } else {
-        setDoc(before);
+        setDoc(before.doc);
+        setPendingSet(before.pendingSet);
+        setDeletedPaths(before.deletedPaths);
       }
     },
     [onWrite],
