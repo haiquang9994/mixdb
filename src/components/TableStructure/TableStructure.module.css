@@ -102,10 +102,40 @@
   opacity: 0.5;
 }
 
+/* Pinned to the right edge, so a row's own buttons stay where they are however far the grid is
+   scrolled sideways — a wide table would otherwise put them out of reach of the row they act on.
+   Opaque, because the cells it now sits over would show straight through it. */
 .rowActions {
+  position: sticky;
+  right: 0;
+  z-index: 1;
   width: 1%;
   /* The buttons are pinned to their own size; ellipsising them would clip a button in half. */
   overflow: visible;
+  /* The same colour the sticky header takes, which is what the rows themselves show: nothing
+     between the grid and the page paints a background of its own. */
+  background: #f6f6f6;
+  /* Its own left edge, since the border of the cell in front of it passes underneath as soon as
+     the grid is scrolled — the column would otherwise sit on the rows with no edge at all. */
+  border-left: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+/* The cell in front of the pinned column gives up its right border to it: two 1px lines a pixel
+   apart read as one thick one, and only the pinned column's stays put when the grid scrolls. */
+.grid tr > *:nth-last-child(2) {
+  border-right: none;
+}
+
+/* The corner cell is pinned both ways at once, and has to stay above the body cells that are
+   pinned only sideways — they come later in the table and would otherwise paint over it. */
+.grid thead th.rowActions {
+  z-index: 2;
+}
+
+/* The row's tint has to be painted onto the pinned cell as well: it carries a background of its
+   own, which is what the row's would otherwise show through. */
+.grid tbody tr:hover .rowActions {
+  background-image: linear-gradient(rgba(128, 128, 128, 0.12), rgba(128, 128, 128, 0.12));
 }
 
 .rowButtons {
@@ -117,7 +147,9 @@
 /* A fact about the column or index rather than part of its name, so it is set apart from it —
    the same reasoning as the grid's FK marker. */
 .badge {
-  margin-left: 0.4em;
+  /* In rem, not em: the badge sets its own font-size well below the row's, and a gap measured in
+     its em would shrink with it until the badge sat against the name. */
+  margin-left: 0.4rem;
   padding: 0 0.3em;
   border: 1px solid rgba(128, 128, 128, 0.45);
   border-radius: 3px;
@@ -137,8 +169,9 @@
   opacity: 1;
 }
 
-/* The Kind cell's badge names a kind rather than abbreviating one, and is not a tooltip target. */
-.grid td .badge {
+/* The Kind cell's badge names a kind rather than abbreviating one: it stands alone in its cell,
+   with nothing to its left to be spaced from, and is not a tooltip target. */
+.kindBadge {
   margin-left: 0;
   cursor: default;
 }
@@ -173,7 +206,8 @@
   color: #d32f2f;
 }
 
-:root[data-theme="dark"] .grid thead th {
+:root[data-theme="dark"] .grid thead th,
+:root[data-theme="dark"] .rowActions {
   background: #2f2f2f;
 }
 
@@ -185,7 +219,8 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .grid thead th {
+  :root:not([data-theme]) .grid thead th,
+  :root:not([data-theme]) .rowActions {
     background: #2f2f2f;
   }
 

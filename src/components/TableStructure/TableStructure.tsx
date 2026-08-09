@@ -331,9 +331,9 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
                     </td>
                     <td>
                       <span
-                        className={
-                          index.primary ? `${styles.badge} ${styles.badgeKey}` : styles.badge
-                        }
+                        className={`${styles.badge} ${styles.kindBadge}${
+                          index.primary ? ` ${styles.badgeKey}` : ""
+                        }`}
                       >
                         {t(INDEX_KIND_LABEL[indexKind(index)])}
                       </span>
