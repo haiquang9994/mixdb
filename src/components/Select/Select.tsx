@@ -128,17 +128,17 @@ function Select<T extends string | number>({
     };
   }, [open]);
 
-  // Positioned off the full list, not the filtered one, so the menu doesn't hop around the
-  // trigger as the query narrows it.
-  useLayoutEffect(() => {
-    if (!open || !triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
+  /** Measures the trigger and works out where the menu goes. Positioned off the full list, not
+   * the filtered one, so the menu doesn't hop around the trigger as the query narrows it. */
+  function measureMenu(): React.CSSProperties {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return UNMEASURED;
     const rows = options.length + (searchable ? 1 : 0);
     const estimatedHeight = Math.min(rows * ROW_HEIGHT + 8, 256);
     const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_MARGIN;
     const spaceAbove = rect.top - VIEWPORT_MARGIN;
     const openUp = estimatedHeight > spaceBelow && spaceAbove > spaceBelow;
-    setMenuStyle({
+    return {
       position: "fixed",
       left: rect.left,
       minWidth: rect.width,
@@ -146,7 +146,22 @@ function Select<T extends string | number>({
       ...(openUp
         ? { bottom: window.innerHeight - rect.top + MENU_GAP, maxHeight: spaceAbove }
         : { top: rect.bottom + MENU_GAP, maxHeight: spaceBelow }),
-    });
+    };
+  }
+
+  /** Measures before opening rather than after, so the menu is in place on the very first render.
+   * A menu that spends a frame at `UNMEASURED` is hidden, and a hidden search box cannot take
+   * focus — which is why the first open used to leave the keyboard on the trigger. */
+  function openMenu() {
+    setMenuStyle(measureMenu());
+    setOpen(true);
+  }
+
+  // Still measured on open as well: the list can grow while the menu is up, and the estimate the
+  // trigger was measured against goes with it.
+  useLayoutEffect(() => {
+    if (!open) return;
+    setMenuStyle(measureMenu());
   }, [open, options.length, searchable]);
 
   // A query is a fresh start each time the menu opens — reopening on last time's filtered list
@@ -155,7 +170,8 @@ function Select<T extends string | number>({
     if (!open) setQuery("");
   }, [open]);
 
-  useEffect(() => {
+  // Before the paint, so the box is focused by the time the menu is first seen.
+  useLayoutEffect(() => {
     if (!open || !searchable) return;
     // `preventScroll` because the menu is already where it should be — letting the browser
     // scroll to reveal the box it just focused would only move the page under the trigger.
@@ -217,12 +233,12 @@ function Select<T extends string | number>({
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
-        if (!open) setOpen(true);
+        if (!open) openMenu();
         else moveActive(1);
         break;
       case "ArrowUp":
         e.preventDefault();
-        if (!open) setOpen(true);
+        if (!open) openMenu();
         else moveActive(-1);
         break;
       case " ":
@@ -231,7 +247,7 @@ function Select<T extends string | number>({
         // trigger's shortcut for opening and choosing.
         if (e.key === " " && fromSearch && open) break;
         e.preventDefault();
-        if (!open) setOpen(true);
+        if (!open) openMenu();
         else commit(activeIndex);
         break;
       case "Escape":
@@ -259,7 +275,7 @@ function Select<T extends string | number>({
         aria-expanded={open}
         aria-label={ariaLabel}
         disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onKeyDown}
       >
         <span className={styles.value} style={{ textAlign: optionAlign }}>
