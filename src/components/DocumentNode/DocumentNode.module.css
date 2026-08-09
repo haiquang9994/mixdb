@@ -156,24 +156,6 @@
   align-items: center;
 }
 
-.editorConfirm,
-.editorCancel {
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  padding: 0 4px;
-  cursor: pointer;
-  line-height: 1;
-}
-
-.editorConfirm {
-  color: #2e9e4f;
-}
-
-.editorCancel {
-  color: #c94a4a;
-}
-
 .editorError {
   color: #c94a4a;
   font-size: 0.8em;

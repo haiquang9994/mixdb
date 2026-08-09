@@ -3,7 +3,6 @@ import type { DocUpdateOps } from "../../mongo/api";
 import { deleteAtPath, getAtPath, renameKeyAtPath, setAtPath } from "../../mongo/docOps";
 import { isWrapper, type TypedDocument, type TypedValue } from "../../mongo/bsonTypes";
 import DocumentNode, { ValueEditor, type DocumentEditMode } from "../DocumentNode";
-import Input from "../Input";
 import { useTranslation } from "../../i18n";
 import styles from "./Document.module.css";
 
@@ -28,14 +27,60 @@ function idPreviewText(idValue: TypedValue): string {
   return JSON.stringify(idValue);
 }
 
-function collapseOpsUnderPrefix(setOps: Record<string, TypedValue>, unsetOps: Set<string>, prefix: string) {
+/** Everything staged at or under `prefix`, dropped — for when a single op covering the whole
+ * branch replaces them, or the branch itself is gone. */
+function withoutPrefix<T>(staged: Record<string, T>, prefix: string): Record<string, T> {
   const dotted = `${prefix}.`;
-  for (const key of Object.keys(setOps)) {
-    if (key === prefix || key.startsWith(dotted)) delete setOps[key];
+  const next: Record<string, T> = {};
+  for (const key of Object.keys(staged)) {
+    if (key !== prefix && !key.startsWith(dotted)) next[key] = staged[key];
   }
-  for (const key of Array.from(unsetOps)) {
-    if (key === prefix || key.startsWith(dotted)) unsetOps.delete(key);
+  return next;
+}
+
+/** The set-shaped counterpart of {@link withoutPrefix}. Always a fresh set, so callers are
+ * free to keep writing to it. */
+function pathsWithoutPrefix(staged: Set<string>, prefix: string): Set<string> {
+  const dotted = `${prefix}.`;
+  const next = new Set<string>();
+  for (const key of staged) {
+    if (key !== prefix && !key.startsWith(dotted)) next.add(key);
   }
+  return next;
+}
+
+/** The staged op that already carries `pathStr` with it, if there is one. Staging a value
+ * writes the whole subtree at that path, so an op on an ancestor subsumes anything below it —
+ * and Mongo rejects an update naming both a field and a path inside it. */
+function stagedAncestorOf(staged: Record<string, TypedValue>, pathStr: string): string | null {
+  for (const key of Object.keys(staged)) {
+    if (pathStr.startsWith(`${key}.`)) return key;
+  }
+  return null;
+}
+
+/** Re-keys staged ops after an item is spliced out of the array at `arrayPath`: whatever
+ * pointed past the removed index moves down one. Only locally added items are ever spliced,
+ * and those always sit after the ones the server sent, so this can never disturb an op
+ * staged against an original item. */
+function reindexStagedAfterSplice(
+  staged: Record<string, TypedValue>,
+  arrayPath: string,
+  removedIndex: number,
+): Record<string, TypedValue> {
+  const prefix = `${arrayPath}.`;
+  const next: Record<string, TypedValue> = {};
+  for (const key of Object.keys(staged)) {
+    const rest = key.startsWith(prefix) ? key.slice(prefix.length) : null;
+    const dot = rest === null ? -1 : rest.indexOf(".");
+    const index = rest === null ? NaN : Number(dot === -1 ? rest : rest.slice(0, dot));
+    if (!Number.isInteger(index) || index <= removedIndex) {
+      next[key] = staged[key];
+      continue;
+    }
+    next[`${prefix}${index - 1}${dot === -1 ? "" : rest!.slice(dot)}`] = staged[key];
+  }
+  return next;
 }
 
 /** Sorts deletion paths so array elements are removed highest-index-first, keeping lower
@@ -179,8 +224,8 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
     if (abandonedRef.current) return;
     if (Object.keys(pendingSet).length === 0 && deletedPaths.size === 0) return;
 
-    const setOps: Record<string, TypedValue> = { ...pendingSet };
-    const unsetOps = new Set<string>();
+    let setOps: Record<string, TypedValue> = { ...pendingSet };
+    let unsetOps = new Set<string>();
     let workingDoc = doc;
 
     for (const pathStr of Array.from(deletedPaths).sort(comparePathsForDeletion)) {
@@ -192,10 +237,14 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
         // $unset on an array index leaves a null hole, so rewrite the spliced array whole —
         // and drop the staged ops that pointed into the version being replaced.
         const arrayPathStr = parentPath.join(".");
-        collapseOpsUnderPrefix(setOps, unsetOps, arrayPathStr);
+        setOps = withoutPrefix(setOps, arrayPathStr);
+        unsetOps = pathsWithoutPrefix(unsetOps, arrayPathStr);
         setOps[arrayPathStr] = getAtPath(newDoc, parentPath) ?? [];
       } else {
-        delete setOps[pathStr];
+        // Whatever was staged below a field being removed goes with it: an update naming both
+        // the field it unsets and a path inside it is one Mongo refuses.
+        setOps = withoutPrefix(setOps, pathStr);
+        unsetOps = pathsWithoutPrefix(unsetOps, pathStr);
         unsetOps.add(pathStr);
       }
       workingDoc = newDoc;
@@ -234,13 +283,50 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
   const setValue = useCallback((path: string[], value: TypedValue) => {
     const pathStr = path.join(".");
     setPendingSet((prev) => {
-      const next = { ...prev };
+      const ancestor = stagedAncestorOf(prev, pathStr);
+      if (ancestor) {
+        // This write lands inside a branch that is already staged whole — a property added as
+        // an empty object, say, now getting its first child. Update that op in place: staging
+        // the child separately would have the update name both a field and a path inside it,
+        // which Mongo rejects outright.
+        const relative = path.slice(ancestor.split(".").length);
+        return { ...prev, [ancestor]: setAtPath(prev[ancestor], relative, value) };
+      }
+      const next = withoutPrefix(prev, pathStr);
       // Editing a field back to what the server already holds isn't a change worth sending.
-      if (JSON.stringify(getAtPath(originalRef.current, path)) === JSON.stringify(value)) delete next[pathStr];
-      else next[pathStr] = value;
+      if (JSON.stringify(getAtPath(originalRef.current, path)) !== JSON.stringify(value)) next[pathStr] = value;
       return next;
     });
     setDoc((prev) => setAtPath(prev, path, value) as TypedDocument);
+  }, []);
+
+  /** Drops a property or item that only exists here: one added since the last save, which the
+   * server has never seen. Everything it left behind goes with it — the working copy entry and
+   * the staged op that would have created it — so adding and then removing something is not a
+   * change at all, rather than the two it would count as if the removal were staged. */
+  const removeAddedValue = useCallback((path: string[]) => {
+    const pathStr = path.join(".");
+    const parentPath = path.slice(0, -1);
+    const parent = parentPath.length === 0 ? docRef.current : getAtPath(docRef.current, parentPath);
+
+    setPendingSet((prev) => {
+      const ancestor = stagedAncestorOf(prev, pathStr);
+      if (ancestor) {
+        const relative = path.slice(ancestor.split(".").length);
+        return { ...prev, [ancestor]: deleteAtPath(prev[ancestor], relative) };
+      }
+      const next = withoutPrefix(prev, pathStr);
+      if (!Array.isArray(parent)) return next;
+      return reindexStagedAfterSplice(next, parentPath.join("."), Number(path[path.length - 1]));
+    });
+    setDeletedPaths((prev) => {
+      // Nothing inside a locally added branch can carry a delete mark (this path runs instead),
+      // so this only ever matters if that stops being true.
+      const next = pathsWithoutPrefix(prev, pathStr);
+      if (next.size === prev.size) return prev;
+      return next.size === 0 ? EMPTY_SET : next;
+    });
+    setDoc((prev) => deleteAtPath(prev, path) as TypedDocument);
   }, []);
 
   const addChild = useCallback(
@@ -256,16 +342,24 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
     [setValue],
   );
 
-  const toggleDelete = useCallback((path: string[]) => {
-    const pathStr = path.join(".");
-    setDeletedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(pathStr)) next.delete(pathStr);
-      else next.add(pathStr);
-      // Fall back to the shared empty set so an untouched card keeps one stable identity.
-      return next.size === 0 ? EMPTY_SET : next;
-    });
-  }, []);
+  const toggleDelete = useCallback(
+    (path: string[]) => {
+      // A property the server has never seen has nothing to mark: remove it outright.
+      if (getAtPath(originalRef.current, path) === undefined) {
+        removeAddedValue(path);
+        return;
+      }
+      const pathStr = path.join(".");
+      setDeletedPaths((prev) => {
+        const next = new Set(prev);
+        if (next.has(pathStr)) next.delete(pathStr);
+        else next.add(pathStr);
+        // Fall back to the shared empty set so an untouched card keeps one stable identity.
+        return next.size === 0 ? EMPTY_SET : next;
+      });
+    },
+    [removeAddedValue],
+  );
 
   const renameProp = useCallback(
     async (path: string[], newKey: string) => {
@@ -309,6 +403,11 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
     const pathStr = path.join(".");
     setActiveEdit((prev) => (prev && prev.path === pathStr && prev.mode === mode ? null : prev));
   }, []);
+
+  function closeAddRoot() {
+    setAddingRoot(false);
+    setNewRootKey("");
+  }
 
   function discard() {
     setActiveEdit(null);
@@ -409,25 +508,16 @@ function Document({ doc: fetchedDoc, displayNumber, registerFlush, onWrite, onDe
           ))}
           {addingRoot ? (
             <div className={styles.addRootRow}>
-              <Input
-                size="small"
-                autoFocus
-                placeholder={t("noSqlTable.propertyNamePlaceholder")}
-                value={newRootKey}
-                onChange={(e) => setNewRootKey(e.target.value)}
-              />
               <ValueEditor
                 initialValue=""
+                propertyName={{ value: newRootKey, onChange: setNewRootKey }}
                 onCommit={(value) => {
+                  closeAddRoot();
+                  // A property nobody named was never really added: leave the document as it was.
                   if (!newRootKey.trim()) return;
                   addChild([], newRootKey.trim(), value);
-                  setAddingRoot(false);
-                  setNewRootKey("");
                 }}
-                onCancel={() => {
-                  setAddingRoot(false);
-                  setNewRootKey("");
-                }}
+                onCancel={closeAddRoot}
               />
             </div>
           ) : (

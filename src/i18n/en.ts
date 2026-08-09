@@ -100,8 +100,6 @@ const en = {
     addProperty: "Add property",
     addItem: "Add item",
     propertyNamePlaceholder: "Property name",
-    confirmAdd: "Confirm",
-    cancelAdd: "Cancel",
     deleteProperty: "Delete property",
     undoDeleteProperty: "Undo delete",
     deleteItem: "Delete item",

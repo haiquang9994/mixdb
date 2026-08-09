@@ -210,17 +210,25 @@ function draftToValue(draft: Draft): { ok: true; value: TypedValue } | { ok: fal
 
 export interface ValueEditorProps {
   initialValue: TypedValue;
+  /** Fired when the draft is committed: on Enter, or on clicking away from the editor. */
   onCommit: (value: TypedValue) => void;
+  /** Fired on Escape, and when clicking away leaves a draft that can't be turned into a value. */
   onCancel: () => void;
-  /** Hides the confirm/cancel buttons; clicking outside the editor commits the current draft instead. */
-  autoCommit?: boolean;
+  /** Renders a property-name field ahead of the value, for adding a property to an object.
+   * The name itself stays with the caller (it reads it back when the commit arrives); what
+   * matters here is that the field sits *inside* the editor, so clicking away from the name
+   * counts as leaving the whole row rather than as committing it. */
+  propertyName?: { value: string; onChange: (next: string) => void };
 }
 
 /** Type-aware value editor (BSON type selector + matching input) shared by
- * DocumentNode's own scalar/add-child editing and NoSqlTable's root-level
+ * DocumentNode's own scalar/add-child editing and Document's root-level
  * "add property" row — reused rather than re-implemented there, since it's
- * a substantial piece of type-dispatch logic, not a trivial form. */
-export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: ValueEditorProps) {
+ * a substantial piece of type-dispatch logic, not a trivial form.
+ *
+ * There are no confirm/cancel buttons: a draft is committed by pressing Enter or by clicking
+ * away from it, the same gesture that ends every other inline edit in a document. */
+export function ValueEditor({ initialValue, onCommit, onCancel, propertyName }: ValueEditorProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<Draft>(() => draftFromValue(initialValue));
   const [error, setError] = useState<string | null>(null);
@@ -235,9 +243,10 @@ export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: Va
   const typeOptions: EditableType[] = CREATABLE_TYPES.includes(initialKind as CreatableType)
     ? CREATABLE_TYPES
     : [...CREATABLE_TYPES, initialKind as EditableType];
+  // Adding a property starts in its name field; editing a value has nowhere else to start.
+  const autoFocusValue = !propertyName;
 
   useEffect(() => {
-    if (!autoCommit) return;
     function onPointerDown(e: PointerEvent) {
       const target = e.target as Node | null;
       const insideRoot = !!target && !!rootRef.current?.contains(target);
@@ -246,7 +255,7 @@ export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: Va
     }
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
-  }, [autoCommit]);
+  }, []);
 
   function commit() {
     const result = draftToValue(draft);
@@ -268,15 +277,29 @@ export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: Va
   }
 
   function handleBlur(e: React.FocusEvent<HTMLDivElement>) {
-    if (!autoCommit) return;
     const next = e.relatedTarget as Node | null;
     if (next && e.currentTarget.contains(next)) return;
     if (pointerInsideRef.current) return;
-    commit();
+    // Clicking away from a draft that can't become a value (an empty Int32, say) drops it.
+    // There is no confirm button left to correct it with, so keeping the row open would only
+    // trap the pointer in an editor holding nothing worth storing.
+    const result = draftToValue(draft);
+    if (result.ok) onCommit(result.value);
+    else onCancel();
   }
 
   return (
     <div ref={rootRef} className={styles.editor} onKeyDown={handleKeyDown} onBlur={handleBlur}>
+      {propertyName && (
+        <Input
+          size="small"
+          autoFocus
+          placeholder={t("noSqlTable.propertyNamePlaceholder")}
+          value={propertyName.value}
+          onChange={(e) => propertyName.onChange(e.target.value)}
+          className={styles.editorInput}
+        />
+      )}
       <Select
         size="small"
         value={draft.type}
@@ -293,7 +316,7 @@ export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: Va
         draft.type === "Symbol") && (
         <Input
           size="small"
-          autoFocus
+          autoFocus={autoFocusValue}
           value={draft.text}
           onChange={(e) => setDraft({ ...draft, text: e.target.value })}
           className={styles.editorInput}
@@ -309,7 +332,7 @@ export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: Va
           size="small"
           type="datetime-local"
           step={1}
-          autoFocus
+          autoFocus={autoFocusValue}
           value={draft.text}
           onChange={(e) => setDraft({ ...draft, text: e.target.value })}
         />
@@ -319,7 +342,7 @@ export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: Va
           <Input
             size="small"
             placeholder="base64"
-            autoFocus
+            autoFocus={autoFocusValue}
             value={draft.base64}
             onChange={(e) => setDraft({ ...draft, base64: e.target.value })}
             className={styles.editorInput}
@@ -340,7 +363,7 @@ export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: Va
           <Input
             size="small"
             placeholder="pattern"
-            autoFocus
+            autoFocus={autoFocusValue}
             value={draft.pattern}
             onChange={(e) => setDraft({ ...draft, pattern: e.target.value })}
             className={styles.editorInput}
@@ -360,7 +383,7 @@ export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: Va
             size="small"
             type="number"
             placeholder="t"
-            autoFocus
+            autoFocus={autoFocusValue}
             value={draft.t}
             onChange={(e) => setDraft({ ...draft, t: e.target.value })}
             className={styles.editorNarrow}
@@ -373,16 +396,6 @@ export function ValueEditor({ initialValue, onCommit, onCancel, autoCommit }: Va
             onChange={(e) => setDraft({ ...draft, i: e.target.value })}
             className={styles.editorNarrow}
           />
-        </>
-      )}
-      {!autoCommit && (
-        <>
-          <button type="button" className={styles.editorConfirm} onClick={commit} title={t("noSqlTable.confirmAdd")}>
-            ✓
-          </button>
-          <button type="button" className={styles.editorCancel} onClick={onCancel} title={t("noSqlTable.cancelAdd")}>
-            ✕
-          </button>
         </>
       )}
       {error && <span className={styles.editorError}>{error}</span>}
@@ -490,6 +503,11 @@ function DocumentNode({
     onActivateEdit(path, "rename");
   }
 
+  function closeAddChild() {
+    setAddingChild(false);
+    setNewChildKey("");
+  }
+
   function renderChildren() {
     const entries: Array<{ key: string; childPath: string[]; childValue: TypedValue }> = Array.isArray(value)
       ? value.map((v, i) => ({ key: String(i), childPath: [...path, String(i)], childValue: v }))
@@ -543,29 +561,19 @@ function DocumentNode({
           !marked &&
           (addingChild ? (
             <div className={styles.addRow} style={{ paddingLeft: (depth + 1) * INDENT_PX }}>
-              {childParentKind === "object" && (
-                <Input
-                  size="small"
-                  autoFocus
-                  placeholder={t("noSqlTable.propertyNamePlaceholder")}
-                  value={newChildKey}
-                  onChange={(e) => setNewChildKey(e.target.value)}
-                  className={styles.editorInput}
-                />
-              )}
               <ValueEditor
                 initialValue=""
+                propertyName={
+                  childParentKind === "object" ? { value: newChildKey, onChange: setNewChildKey } : undefined
+                }
                 onCommit={(v) => {
+                  closeAddChild();
+                  // A property nobody named was never really added: leave the object as it was.
                   if (childParentKind === "object" && !newChildKey.trim()) return;
                   onAddChild(path, childParentKind === "object" ? newChildKey.trim() : undefined, v);
-                  setAddingChild(false);
-                  setNewChildKey("");
                   setExpanded(true);
                 }}
-                onCancel={() => {
-                  setAddingChild(false);
-                  setNewChildKey("");
-                }}
+                onCancel={closeAddChild}
               />
             </div>
           ) : (
@@ -633,7 +641,6 @@ function DocumentNode({
         {!container && editingValue && !readOnly && isEditableKind(kind) ? (
           <ValueEditor
             initialValue={value}
-            autoCommit
             onCommit={(v) => {
               onSetValue(path, v);
               onFinishEdit(path, "value");
