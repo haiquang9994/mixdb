@@ -1,15 +1,23 @@
 # .agent
 
-Nơi lưu ghi chú, quy ước và quyết định dành cho agent (Claude Code) khi làm việc trên dự án này. Đọc các file liên quan trước khi thực hiện thay đổi thuộc chủ đề tương ứng.
+Notes, conventions and decisions for agents (Claude Code) working on this project. Read the file
+covering a topic before making changes in that area. The root [AGENT.md](../AGENT.md) is the short
+entry point; everything detailed lives here.
 
-## Cấu trúc
+## Structure
 
-- `conventions/` — quy ước code cụ thể, lặp lại (naming, cấu trúc file/thư mục, pattern component...). Mỗi chủ đề một file, đặt tên theo chủ đề (vd: `css-naming.md`).
-- `decisions/` — quyết định kiến trúc/kỹ thuật quan trọng, kèm lý do (vd: chọn thư viện, đổi cấu trúc dữ liệu). Đặt tên theo dạng `YYYY-MM-DD-slug.md`.
-- `notes/` — ghi chú ngắn hạn, bối cảnh công việc đang diễn ra, việc cần theo dõi. Không phải nơi lưu quy ước lâu dài.
+- `architecture/` — how the app is put together: process model, module layout, the paths data takes.
+  Describes what exists, not what to do.
+- `conventions/` — concrete, repeating code rules (naming, file layout, component patterns). One
+  topic per file, named after the topic (e.g. `css-modules.md`).
+- `decisions/` — architectural or technical decisions worth recording, with their reasoning (a
+  library choice, a data-structure change). Named `YYYY-MM-DD-slug.md`.
+- `notes/` — short-lived context: work in progress, things to follow up. Not a home for lasting
+  conventions.
 
-## Khi thêm file mới
+## Adding a file
 
-- Chọn đúng thư mục theo bản chất nội dung (quy ước lâu dài vs quyết định một lần vs ghi chú tạm thời).
-- Tên file ngắn gọn, kebab-case, mô tả đúng nội dung.
-- Nội dung cô đọng: quy tắc + lý do (nếu cần) + ví dụ, tránh lan man.
+- Pick the folder that matches the nature of the content (lasting convention vs. one-off decision
+  vs. temporary note).
+- Short kebab-case filename that says what is inside.
+- Keep it dense: the rule, the reason if it isn't obvious, an example. No filler.
