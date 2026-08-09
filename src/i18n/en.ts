@@ -58,7 +58,6 @@ const en = {
     authPrivateKey: "Private key",
     sshPassword: "SSH password",
     privateKeyFile: "Private key file",
-    privateKeyPlaceholder: "C:\\Users\\you\\.ssh\\id_rsa",
     keyPassphrase: "Key passphrase",
     passphrasePlaceholder: "(leave blank if none)",
     testTunnel: "Test tunnel",

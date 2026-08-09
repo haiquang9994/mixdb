@@ -60,7 +60,6 @@ const vi: TranslationDict = {
     authPrivateKey: "Private key",
     sshPassword: "Mật khẩu SSH",
     privateKeyFile: "File private key",
-    privateKeyPlaceholder: "C:\\Users\\you\\.ssh\\id_rsa",
     keyPassphrase: "Passphrase của key",
     passphrasePlaceholder: "(để trống nếu không có)",
     testTunnel: "Kiểm tra tunnel",

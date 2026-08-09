@@ -94,6 +94,21 @@ function maskMongoUri(uri: string): string {
   return `${scheme}${masked}@${uri.slice(full.length)}`;
 }
 
+/**
+ * An example key path written the way the host OS writes one — a Windows path is no help to
+ * someone looking for `~/.ssh` on a Mac. It stays out of the dictionaries because a path is not
+ * language: it follows the machine the app runs on, not the language it was asked to speak.
+ *
+ * Tauri renders in the platform's own webview, so the user agent names the platform. Linux is the
+ * fallback rather than a third test: WebKitGTK spells its system several ways (`X11`, `Wayland`,
+ * `Linux`), and every remaining desktop puts home directories under `/home`.
+ */
+const PRIVATE_KEY_PLACEHOLDER = navigator.userAgent.includes("Windows")
+  ? "C:\\Users\\you\\.ssh\\id_rsa"
+  : navigator.userAgent.includes("Mac OS X")
+    ? "/Users/you/.ssh/id_rsa"
+    : "/home/you/.ssh/id_rsa";
+
 function ConnectionTab({ onTitleChange }: Props) {
   const { t } = useTranslation();
   const [kind, setKind] = useState<DbKind>("mysql");
@@ -457,43 +472,42 @@ function ConnectionTab({ onTitleChange }: Props) {
             </label>
           </div>
         ) : (
-          <>
-            <div className="row">
-              <label>
-                {t("common.host")}{" "}
-                <Input size="large" value={host} onChange={(e) => setHost(e.target.value)} />
-              </label>
-              <label>
-                {t("common.port")}{" "}
-                <Input
-                  size="large"
-                  type="number"
-                  value={port}
-                  onChange={(e) => setPort(Number(e.target.value))}
-                />
-              </label>
-            </div>
-            <div className="row">
-              <label>
-                {t("common.user")}{" "}
-                <Input size="large" value={username} onChange={(e) => setUsername(e.target.value)} />
-              </label>
-              <label>
-                {t("common.password")}{" "}
-                <Input
-                  size="large"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="new-password"
-                />
-              </label>
-              <label>
-                {kind === "redis" ? t("connection.dbIndexLabel") : t("common.database")}{" "}
-                <Input size="large" value={database} onChange={(e) => setDatabase(e.target.value)} />
-              </label>
-            </div>
-          </>
+          /* One row for the whole endpoint: each field is held to half the width, so they pair
+             themselves off two to a line — host and port, then the credentials, then the
+             database on a line of its own. */
+          <div className="row">
+            <label>
+              {t("common.host")}{" "}
+              <Input size="large" value={host} onChange={(e) => setHost(e.target.value)} />
+            </label>
+            <label>
+              {t("common.port")}{" "}
+              <Input
+                size="large"
+                type="number"
+                value={port}
+                onChange={(e) => setPort(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              {t("common.user")}{" "}
+              <Input size="large" value={username} onChange={(e) => setUsername(e.target.value)} />
+            </label>
+            <label>
+              {t("common.password")}{" "}
+              <Input
+                size="large"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </label>
+            <label>
+              {kind === "redis" ? t("connection.dbIndexLabel") : t("common.database")}{" "}
+              <Input size="large" value={database} onChange={(e) => setDatabase(e.target.value)} />
+            </label>
+          </div>
         )}
 
         {kind === "mysql" && (
@@ -583,7 +597,7 @@ function ConnectionTab({ onTitleChange }: Props) {
                     size="large"
                     value={sshKeyPath}
                     onChange={(e) => setSshKeyPath(e.target.value)}
-                    placeholder={t("connection.privateKeyPlaceholder")}
+                    placeholder={PRIVATE_KEY_PLACEHOLDER}
                   />
                 </label>
                 <Button size="large" onClick={browseForPrivateKey}>

@@ -557,9 +557,11 @@ fieldset {
   text-align: left;
 }
 
+/* Vertical gap matches the margin between rows, so a pair that wraps sits exactly as far apart as
+   two fields that were written on separate rows to begin with. */
 fieldset .row {
   justify-content: flex-start;
-  gap: 1rem;
+  gap: 0.5rem 1rem;
   margin-bottom: 0.5rem;
   flex-wrap: wrap;
 }
@@ -568,16 +570,51 @@ fieldset .row:last-child {
   align-items: center;
 }
 
-/* Wrapping alone doesn't save a row once the form is narrower than one field. A label is a flex
-   item, so `min-width: 0` is what lets it shrink past the natural width of the input it holds,
-   and the ceiling on the input is what makes the input follow instead of spilling out of the
-   form and being clipped. */
+/* Two fields to a row, each taking half of it minus its share of the gap. Fixing the basis is what
+   keeps a field the same width whether it stands beside another or alone on its own row, so the
+   left edges of the inputs line up down the whole form. `min-width: 0` lets a label shrink past
+   the natural width of the input it holds instead of overflowing the form. */
 fieldset .row label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 calc(50% - 0.5rem);
   min-width: 0;
+}
+
+/* The control fills whatever the caption leaves. Buttons sitting inside a label (the connection
+   string's reveal toggle) keep their own width, and a checkbox is not a field to be stretched. */
+fieldset .row label > *:not(button):not(input[type="checkbox"]) {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A checkbox row is a sentence, not a field: it ends where its text ends, and when the sentence is
+   longer than the row it wraps onto a second line rather than running past the edge.
+   `baseline`, not `flex-start`: the top of the box and the top of a line of text are not the same
+   height — the line box is taller than its letters, so aligning the two tops sits the box above the
+   text. Sharing a baseline is how a checkbox and its caption line up when written inline, and a
+   wrapped caption still offers its *first* line's baseline, so the box stays up on line one. */
+fieldset .row label:has(> input[type="checkbox"]) {
+  flex: 0 1 auto;
+  align-items: baseline;
+}
+
+/* The caption is what gives way; a checkbox has one size. */
+fieldset .row label > input[type="checkbox"] {
+  flex: none;
 }
 
 fieldset .row input {
   max-width: 100%;
+}
+
+/* Once the window is this narrow, the saved-connection list has taken its share and half of what
+   is left is narrower than the shortest useful field — so the pairs stack instead of squeezing. */
+@media (max-width: 980px) {
+  fieldset .row label {
+    flex-basis: 100%;
+  }
 }
 
 .method-tabs {
@@ -623,12 +660,13 @@ fieldset .row input {
   flex: 1;
 }
 
-/* One long value standing in for a whole row of fields, so it takes the row's full width. */
-.field-connection-string {
+/* One long value standing in for a whole row of fields, so it takes the row's full width instead
+   of the half every other field is held to. */
+fieldset .row label.field-connection-string {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  width: 100%;
+  flex-basis: 100%;
 }
 
 /* Smaller monospace type, same box: the size class writes its padding and line height in `em`,
