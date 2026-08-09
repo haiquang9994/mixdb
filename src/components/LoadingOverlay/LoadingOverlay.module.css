@@ -1,0 +1,22 @@
+.overlay {
+  position: absolute;
+  inset: 0;
+  /* Above whatever the covered content stacks on top of itself — a sticky table
+     header, for one, which would otherwise paint through the veil. */
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 0.75rem;
+  background: rgba(128, 128, 128, 0.08);
+  backdrop-filter: blur(0.5px);
+}
+
+.label {
+  font-size: 0.85em;
+  opacity: 0.75;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--control-radius, 6px);
+  background: var(--surface-bg, #fff);
+  border: 1px solid rgba(128, 128, 128, 0.3);
+}

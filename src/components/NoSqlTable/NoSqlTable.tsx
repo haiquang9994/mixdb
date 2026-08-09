@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { mongoCollectionPage, mongoDeleteDocument, mongoUpdateDocument, type DocUpdateOps } from "../../mongo/api";
 import type { TypedDocument, TypedValue } from "../../mongo/bsonTypes";
 import Document from "../Document";
+import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
 import { useTranslation } from "../../i18n";
 import styles from "./NoSqlTable.module.css";
@@ -149,10 +150,6 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
   const busy = loading || writeCount > 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
-  if (loading && documents.length === 0) {
-    return <p className="muted">{t("noSqlTable.loading")}</p>;
-  }
-
   return (
     <div className={styles.noSqlTable}>
       <div className={styles.scrollWrap}>
@@ -169,11 +166,7 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
             />
           ))}
         </div>
-        {busy && documents.length > 0 && (
-          <div className={styles.loadingOverlay}>
-            <span>{loading ? t("noSqlTable.loading") : t("noSqlTable.saving")}</span>
-          </div>
-        )}
+        {busy && <LoadingOverlay label={loading ? t("noSqlTable.loading") : t("noSqlTable.saving")} />}
       </div>
       <div className={styles.footer}>
         <Pagination

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
+import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
 import { useTranslation } from "../../i18n";
 import styles from "./SqlTable.module.css";
@@ -317,105 +318,103 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
-  if (columns.length === 0) {
-    return <p className="muted">{t("sqlTable.loading")}</p>;
-  }
-
   return (
     <div className={styles.sqlTable}>
-      <div className={styles.scroll} ref={scrollRef}>
-        <table>
-          <thead>
-            <tr>
-              {columns.map((c) => (
-                <th
-                  key={c}
-                  ref={(el) => {
-                    if (el) thRefs.current.set(c, el);
-                    else thRefs.current.delete(c);
-                  }}
-                >
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={i}>
-                {columns.map((c) => {
-                  const isEditing = editingCell?.rowIndex === i && editingCell.col === c;
-                  if (isEditing) {
-                    const multiline = isMultilineType(columnTypes[c]);
-                    const cellWidth = columnWidths[c];
+      <div className={styles.scrollWrap}>
+        <div className={styles.scroll} ref={scrollRef}>
+          <table>
+            <thead>
+              <tr>
+                {columns.map((c) => (
+                  <th
+                    key={c}
+                    ref={(el) => {
+                      if (el) thRefs.current.set(c, el);
+                      else thRefs.current.delete(c);
+                    }}
+                  >
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr key={i}>
+                  {columns.map((c) => {
+                    const isEditing = editingCell?.rowIndex === i && editingCell.col === c;
+                    if (isEditing) {
+                      const multiline = isMultilineType(columnTypes[c]);
+                      const cellWidth = columnWidths[c];
+                      return (
+                        <td
+                          key={c}
+                          className={styles.cellEditing}
+                          style={cellWidth ? { width: cellWidth } : undefined}
+                        >
+                          {multiline ? (
+                            <textarea
+                              ref={editInputRef as React.RefObject<HTMLTextAreaElement>}
+                              value={editValue}
+                              onChange={handleEditChange}
+                              onKeyDown={handleEditKeyDown}
+                              onBlur={() => handleInputBlur(i, c)}
+                              className={styles.cellTextarea}
+                              rows={1}
+                              autoComplete="off"
+                              autoCorrect="off"
+                              autoCapitalize="off"
+                              spellCheck={false}
+                            />
+                          ) : (
+                            <input
+                              ref={editInputRef as React.RefObject<HTMLInputElement>}
+                              type="text"
+                              value={editValue}
+                              onChange={handleEditChange}
+                              onKeyDown={handleEditKeyDown}
+                              onBlur={() => handleInputBlur(i, c)}
+                              className={styles.cellInput}
+                              autoComplete="off"
+                              autoCorrect="off"
+                              autoCapitalize="off"
+                              spellCheck={false}
+                            />
+                          )}
+                        </td>
+                      );
+                    }
+                    const raw = row[c];
+                    const isNull = raw === null || raw === undefined;
+                    const value = isNull
+                      ? "NULL"
+                      : typeof raw === "object"
+                        ? JSON.stringify(raw)
+                        : String(raw);
+                    const isDirty =
+                      pendingRowRef.current?.rowIndex === i &&
+                      Object.prototype.hasOwnProperty.call(pendingRowRef.current.changes, c);
+                    const cellClassName = [isNull && styles.cellNull, isDirty && styles.cellDirty]
+                      .filter(Boolean)
+                      .join(" ");
                     return (
                       <td
                         key={c}
-                        className={styles.cellEditing}
-                        style={cellWidth ? { width: cellWidth } : undefined}
+                        title={value}
+                        className={cellClassName || undefined}
+                        onMouseDown={(e) => handleCellMouseDown(e, i, c)}
                       >
-                        {multiline ? (
-                          <textarea
-                            ref={editInputRef as React.RefObject<HTMLTextAreaElement>}
-                            value={editValue}
-                            onChange={handleEditChange}
-                            onKeyDown={handleEditKeyDown}
-                            onBlur={() => handleInputBlur(i, c)}
-                            className={styles.cellTextarea}
-                            rows={1}
-                            autoComplete="off"
-                            autoCorrect="off"
-                            autoCapitalize="off"
-                            spellCheck={false}
-                          />
-                        ) : (
-                          <input
-                            ref={editInputRef as React.RefObject<HTMLInputElement>}
-                            type="text"
-                            value={editValue}
-                            onChange={handleEditChange}
-                            onKeyDown={handleEditKeyDown}
-                            onBlur={() => handleInputBlur(i, c)}
-                            className={styles.cellInput}
-                            autoComplete="off"
-                            autoCorrect="off"
-                            autoCapitalize="off"
-                            spellCheck={false}
-                          />
-                        )}
+                        {value}
                       </td>
                     );
-                  }
-                  const raw = row[c];
-                  const isNull = raw === null || raw === undefined;
-                  const value = isNull
-                    ? "NULL"
-                    : typeof raw === "object"
-                      ? JSON.stringify(raw)
-                      : String(raw);
-                  const isDirty =
-                    pendingRowRef.current?.rowIndex === i &&
-                    Object.prototype.hasOwnProperty.call(pendingRowRef.current.changes, c);
-                  const cellClassName = [isNull && styles.cellNull, isDirty && styles.cellDirty]
-                    .filter(Boolean)
-                    .join(" ");
-                  return (
-                    <td
-                      key={c}
-                      title={value}
-                      className={cellClassName || undefined}
-                      onMouseDown={(e) => handleCellMouseDown(e, i, c)}
-                    >
-                      {value}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {loading && <p className="muted">{t("sqlTable.loading")}</p>}
-        {!loading && rows.length === 0 && <p className="muted">{t("sqlTable.noRows")}</p>}
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!loading && rows.length === 0 && <p className="muted">{t("sqlTable.noRows")}</p>}
+        </div>
+        {loading && <LoadingOverlay label={t("sqlTable.loading")} />}
       </div>
       <div className={styles.footer}>
         <Pagination
