@@ -41,6 +41,30 @@ function stableStringify(value: unknown): string {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
 }
 
+// The Mongo form is a single connection string, so the two things the rest of the app used to
+// read off separate fields — the host for a tab title, the database to open first — have to be
+// picked back out of it. Both are cosmetic: an unparseable string yields nothing and the
+// connection itself still reports the real error.
+// Split by hand rather than with `new URL`: a comma-separated seed list —
+// `mongodb://a:27017,b:27017/?replicaSet=rs0` — is a perfectly good Mongo string but not a valid
+// URL, and that shape is exactly the one a replica set is written in.
+const MONGO_URI_RE = /^mongodb(?:\+srv)?:\/\/(?:[^@/]*@)?([^/?]*)(?:\/([^?]*))?/i;
+
+/** Host only — the string itself carries the password, which must never reach a tab title. */
+function mongoUriHost(uri: string): string {
+  return MONGO_URI_RE.exec(uri.trim())?.[1] ?? "";
+}
+
+/** The default database, i.e. the path segment in `mongodb://host/thisOne?options`. */
+function mongoUriDatabase(uri: string): string {
+  const path = MONGO_URI_RE.exec(uri.trim())?.[2] ?? "";
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
 function ConnectionTab({ onTitleChange }: Props) {
   const { t } = useTranslation();
   const [kind, setKind] = useState<DbKind>("mysql");
@@ -49,6 +73,7 @@ function ConnectionTab({ onTitleChange }: Props) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [database, setDatabase] = useState("");
+  const [uri, setUri] = useState("");
   const [useSsl, setUseSsl] = useState(true);
 
   const [tunnelType, setTunnelType] = useState<"direct" | "ssh">("direct");
@@ -120,6 +145,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     setUsername(c.username ?? "");
     setPassword(c.password ?? "");
     setDatabase(c.database ?? "");
+    setUri(c.uri ?? "");
     setUseSsl(c.use_ssl ?? true);
     setTunnelType(c.ssh ? "ssh" : "direct");
     setSshHost("");
@@ -158,6 +184,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     setUsername("");
     setPassword("");
     setDatabase("");
+    setUri("");
     setUseSsl(true);
     setTunnelType("direct");
     setSshHost("");
@@ -172,14 +199,19 @@ function ConnectionTab({ onTitleChange }: Props) {
     onTitleChange(t("app.newConnectionTitle"));
   }
 
+  const isMongo = kind === "mongo";
+
   function buildConnectionConfig(): ConnectionConfig {
     return {
       kind,
       host,
       port,
-      username: username || undefined,
-      password: password || undefined,
-      database: database || undefined,
+      // Mongo takes its endpoint, credentials and default database from the connection string,
+      // so the per-field values are left out entirely rather than saved as dead weight.
+      username: isMongo ? undefined : username || undefined,
+      password: isMongo ? undefined : password || undefined,
+      database: isMongo ? undefined : database || undefined,
+      uri: isMongo ? uri.trim() || undefined : undefined,
       ssh: buildSshConfig(),
       use_ssl: kind === "mysql" ? useSsl : undefined,
     };
@@ -272,8 +304,9 @@ function ConnectionTab({ onTitleChange }: Props) {
       const id = await invoke<string>("connect_db", { config });
       setConnectionId(id);
       setStatus(t("connection.connectedStatus", { id: id.slice(0, 8) }));
+      const titleHost = config.kind === "mongo" ? mongoUriHost(config.uri ?? "") : config.host;
       onTitleChange(
-        title ?? (saveAsName.trim() || t("connection.fallbackTitle", { kind: config.kind, host: config.host })),
+        title ?? (saveAsName.trim() || t("connection.fallbackTitle", { kind: config.kind, host: titleHost })),
       );
     } catch (e) {
       setStatus("");
@@ -345,41 +378,57 @@ function ConnectionTab({ onTitleChange }: Props) {
             </button>
           ))}
         </div>
-        <div className="row">
-          <label>
-            {t("common.host")}{" "}
-            <Input size="large" value={host} onChange={(e) => setHost(e.target.value)} />
-          </label>
-          <label>
-            {t("common.port")}{" "}
-            <Input
-              size="large"
-              type="number"
-              value={port}
-              onChange={(e) => setPort(Number(e.target.value))}
-            />
-          </label>
-        </div>
-        <div className="row">
-          <label>
-            {t("common.user")}{" "}
-            <Input size="large" value={username} onChange={(e) => setUsername(e.target.value)} />
-          </label>
-          <label>
-            {t("common.password")}{" "}
-            <Input
-              size="large"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-            />
-          </label>
-          <label>
-            {kind === "redis" ? t("connection.dbIndexLabel") : t("common.database")}{" "}
-            <Input size="large" value={database} onChange={(e) => setDatabase(e.target.value)} />
-          </label>
-        </div>
+        {isMongo ? (
+          <div className="row">
+            <label className="field-connection-string">
+              {t("connection.connectionStringLabel")}{" "}
+              <Input
+                size="large"
+                value={uri}
+                onChange={(e) => setUri(e.target.value)}
+                placeholder={t("connection.connectionStringPlaceholder")}
+              />
+            </label>
+          </div>
+        ) : (
+          <>
+            <div className="row">
+              <label>
+                {t("common.host")}{" "}
+                <Input size="large" value={host} onChange={(e) => setHost(e.target.value)} />
+              </label>
+              <label>
+                {t("common.port")}{" "}
+                <Input
+                  size="large"
+                  type="number"
+                  value={port}
+                  onChange={(e) => setPort(Number(e.target.value))}
+                />
+              </label>
+            </div>
+            <div className="row">
+              <label>
+                {t("common.user")}{" "}
+                <Input size="large" value={username} onChange={(e) => setUsername(e.target.value)} />
+              </label>
+              <label>
+                {t("common.password")}{" "}
+                <Input
+                  size="large"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </label>
+              <label>
+                {kind === "redis" ? t("connection.dbIndexLabel") : t("common.database")}{" "}
+                <Input size="large" value={database} onChange={(e) => setDatabase(e.target.value)} />
+              </label>
+            </div>
+          </>
+        )}
 
         {kind === "mysql" && (
           <div className="row">
@@ -613,7 +662,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     return (
       <MongoWorkspace
         connectionId={connectionId}
-        initialDatabase={database}
+        initialDatabase={mongoUriDatabase(uri)}
         status={status}
         error={error}
         onDisconnect={disconnect}

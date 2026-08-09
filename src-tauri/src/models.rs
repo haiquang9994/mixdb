@@ -32,6 +32,10 @@ pub struct ConnectionConfig {
     pub password: Option<String>,
     /// Database name (MySQL/Mongo) or numeric DB index as string (Redis).
     pub database: Option<String>,
+    /// MongoDB only, and the only endpoint it uses: a full `mongodb://` / `mongodb+srv://`
+    /// connection string, which carries host, port, credentials and options in one value —
+    /// so `host`/`port`/`username`/`password` are ignored for that kind.
+    pub uri: Option<String>,
     pub ssh: Option<SshConfig>,
     /// MySQL only. `None`/`Some(true)` tries SSL and falls back to plaintext
     /// if the server doesn't advertise it; `Some(false)` skips SSL entirely

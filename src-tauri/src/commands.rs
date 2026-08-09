@@ -40,10 +40,9 @@ async fn resolve_endpoint(config: &ConnectionConfig) -> Result<(String, u16, Opt
 
 #[tauri::command]
 pub async fn connect_db(state: State<'_, AppState>, config: ConnectionConfig) -> Result<String, String> {
-    let (host, port, tunnel) = resolve_endpoint(&config).await?;
-
-    let handle = match config.kind {
+    let (handle, tunnel) = match config.kind {
         DbKind::Mysql => {
+            let (host, port, tunnel) = resolve_endpoint(&config).await?;
             let username = config.username.clone().unwrap_or_default();
             let password = config.password.clone().unwrap_or_default();
             let pool = with_timeout(
@@ -58,21 +57,36 @@ pub async fn connect_db(state: State<'_, AppState>, config: ConnectionConfig) ->
                 "MySQL connection",
             )
             .await?;
-            DbHandle::Mysql(pool)
+            (DbHandle::Mysql(pool), tunnel)
         }
+        // MongoDB is configured as a whole connection string rather than host/port/user/password,
+        // so the endpoint lives inside the URI. Tunneling therefore has to read the host back out
+        // of it and then override it, instead of going through `resolve_endpoint`.
         DbKind::Mongo => {
-            let uri = build_mongo_uri(&config, &host, port);
-            let client = with_timeout(mongo::connect(&uri), "MongoDB connection").await?;
-            DbHandle::Mongo(client)
+            let uri = config.uri.as_deref().unwrap_or_default().trim();
+            if uri.is_empty() {
+                return Err("MongoDB connection string is required".to_string());
+            }
+            let (endpoint, tunnel) = match &config.ssh {
+                Some(ssh) => {
+                    let (host, port) = mongo::first_endpoint(uri).await?;
+                    let (local_port, task) = ssh_tunnel::open_tunnel(ssh, &host, port).await?;
+                    (Some(("127.0.0.1".to_string(), local_port)), Some(task))
+                }
+                None => (None, None),
+            };
+            let client = with_timeout(mongo::connect(uri, endpoint), "MongoDB connection").await?;
+            (DbHandle::Mongo(client), tunnel)
         }
         DbKind::Redis => {
+            let (host, port, tunnel) = resolve_endpoint(&config).await?;
             let db_index = config.database.as_deref().and_then(|d| d.parse().ok()).unwrap_or(0);
             let conn = with_timeout(
                 redis_db::connect(&host, port, config.password.as_deref(), db_index),
                 "Redis connection",
             )
             .await?;
-            DbHandle::Redis(conn)
+            (DbHandle::Redis(conn), tunnel)
         }
     };
 
@@ -83,15 +97,6 @@ pub async fn connect_db(state: State<'_, AppState>, config: ConnectionConfig) ->
         .await
         .insert(id.clone(), ActiveConnection { handle, tunnel });
     Ok(id)
-}
-
-fn build_mongo_uri(config: &ConnectionConfig, host: &str, port: u16) -> String {
-    match (&config.username, &config.password) {
-        (Some(u), Some(p)) if !u.is_empty() => {
-            format!("mongodb://{u}:{p}@{host}:{port}/?directConnection=true")
-        }
-        _ => format!("mongodb://{host}:{port}/?directConnection=true"),
-    }
 }
 
 #[tauri::command]

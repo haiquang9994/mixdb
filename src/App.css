@@ -171,6 +171,7 @@ body {
   align-items: stretch;
   height: 100%;
   min-height: 0;
+  width: 100%;
 }
 
 .saved-list {
@@ -315,9 +316,14 @@ body {
   font-size: 0.9em;
 }
 
+/* Fills whatever the sidebar leaves, up to a ceiling: past ~1020px a form of three side-by-side
+   fields just spreads out, and Mongo's single full-width connection string turns into one
+   absurdly long input. Growing into the space instead of holding a fixed width is what keeps a
+   narrow window from pushing fields out of view. */
 .login-form {
   flex: 1;
   min-width: 0;
+  max-width: 1020px;
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -345,6 +351,18 @@ fieldset .row {
 
 fieldset .row:last-child {
   align-items: center;
+}
+
+/* Wrapping alone doesn't save a row once the form is narrower than one field. A label is a flex
+   item, so `min-width: 0` is what lets it shrink past the natural width of the input it holds,
+   and the ceiling on the input is what makes the input follow instead of spilling out of the
+   form and being clipped. */
+fieldset .row label {
+  min-width: 0;
+}
+
+fieldset .row input {
+  max-width: 100%;
 }
 
 .method-tabs {
@@ -388,6 +406,21 @@ fieldset .row:last-child {
 
 .field-name input {
   flex: 1;
+}
+
+/* One long value standing in for a whole row of fields, so it takes the row's full width. */
+.field-connection-string {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.field-connection-string input {
+  flex: 1;
+  min-width: 0;
+  font-family: "Fira Code", monospace;
+  font-size: 0.9em;
 }
 
 textarea {

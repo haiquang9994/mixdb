@@ -18,6 +18,9 @@ export interface ConnectionConfig {
   username?: string;
   password?: string;
   database?: string;
+  /** MongoDB only: a full `mongodb://` / `mongodb+srv://` connection string. It carries host,
+   *  port, credentials and options in one value, so those fields are ignored for that kind. */
+  uri?: string;
   ssh?: SshConfig;
   use_ssl?: boolean;
 }

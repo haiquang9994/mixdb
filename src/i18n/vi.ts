@@ -39,6 +39,8 @@ const vi: TranslationDict = {
     kindMongo: "MongoDB",
     kindRedis: "Redis",
     dbIndexLabel: "Chỉ mục DB",
+    connectionStringLabel: "Chuỗi kết nối",
+    connectionStringPlaceholder: "mongodb://user:password@host:27017/?authSource=admin&replicaSet=rs0",
     useSslLabel: "Dùng SSL (bỏ chọn nếu server không có SSL hoặc dùng SSL cũ, ví dụ chứng chỉ tự ký cũ)",
     connectionMethodLegend: "Phương thức kết nối",
     methodTcpIp: "TCP/IP",

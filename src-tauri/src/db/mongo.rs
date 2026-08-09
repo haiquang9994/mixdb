@@ -5,15 +5,36 @@ use mongodb::bson::{
     doc, oid::ObjectId, Binary, Bson, DateTime as BsonDateTime, Decimal128, Document, Regex,
     Timestamp,
 };
-use mongodb::options::ClientOptions;
+use mongodb::options::{ClientOptions, ServerAddress};
 use mongodb::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::str::FromStr;
 
-pub async fn connect(uri: &str) -> Result<Client, String> {
+/// The first host a connection string points at. A tunnel needs a concrete address to forward
+/// to, and with a URI that address is only knowable after parsing — a `mongodb+srv://` string
+/// doesn't even contain it literally, it resolves to its hosts over DNS during the parse.
+pub async fn first_endpoint(uri: &str) -> Result<(String, u16), String> {
+    let opts = ClientOptions::parse(uri).await.map_err(|e| e.to_string())?;
+    match opts.hosts.first() {
+        Some(ServerAddress::Tcp { host, port }) => Ok((host.clone(), port.unwrap_or(27017))),
+        _ => Err("Connection string names no TCP host to tunnel to".to_string()),
+    }
+}
+
+/// `endpoint`, when given, replaces the host the URI names: an SSH tunnel listens on a local
+/// port, so the address written in the connection string is no longer the one to dial.
+pub async fn connect(uri: &str, endpoint: Option<(String, u16)>) -> Result<Client, String> {
     let mut opts = ClientOptions::parse(uri).await.map_err(|e| e.to_string())?;
     opts.app_name = Some("MixDB".to_string());
+    if let Some((host, port)) = endpoint {
+        opts.hosts = vec![ServerAddress::Tcp { host, port: Some(port) }];
+        // Only that one host is forwarded, so topology discovery would hand back the replica
+        // set's own addresses — unreachable from this machine. Talk to the tunneled node
+        // directly instead.
+        opts.direct_connection = Some(true);
+        opts.repl_set_name = None;
+    }
     let client = Client::with_options(opts).map_err(|e| e.to_string())?;
     // Fail fast on bad credentials/host instead of only failing on first query.
     client

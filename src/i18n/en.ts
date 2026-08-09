@@ -37,6 +37,8 @@ const en = {
     kindMongo: "MongoDB",
     kindRedis: "Redis",
     dbIndexLabel: "DB index",
+    connectionStringLabel: "Connection string",
+    connectionStringPlaceholder: "mongodb://user:password@host:27017/?authSource=admin&replicaSet=rs0",
     useSslLabel: "Use SSL (uncheck if the server has no/legacy SSL, e.g. old self-signed certs)",
     connectionMethodLegend: "Connection method",
     methodTcpIp: "TCP/IP",
