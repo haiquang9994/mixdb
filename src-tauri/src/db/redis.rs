@@ -1,20 +1,39 @@
 use redis::aio::MultiplexedConnection;
 use redis::Value as RedisValue;
+use redis::{ConnectionAddr, IntoConnectionInfo, RedisConnectionInfo};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
+/// Opens a connection to `host:port`, already switched to database `db`.
+///
+/// The address and credentials are passed as values rather than formatted into a `redis://` URL:
+/// a URL percent-decodes what it carries, so a password holding a `%`, `@`, `/` or `#` — all
+/// perfectly ordinary in a generated password — would arrive at the server as different
+/// characters, or make the URL unparseable outright.
+///
+/// `username` is the Redis 6 ACL user. Left empty it is sent as nothing at all, which is what an
+/// older server (or the default user's `requirepass`) expects.
 pub async fn connect(
     host: &str,
     port: u16,
+    username: Option<&str>,
     password: Option<&str>,
     db: i64,
 ) -> Result<MultiplexedConnection, String> {
-    let url = match password.filter(|p| !p.is_empty()) {
-        Some(pw) => format!("redis://:{pw}@{host}:{port}/{db}"),
-        None => format!("redis://{host}:{port}/{db}"),
-    };
-    let client = redis::Client::open(url).map_err(|e| e.to_string())?;
+    let mut redis_settings = RedisConnectionInfo::default().set_db(db);
+    if let Some(username) = username.filter(|u| !u.is_empty()) {
+        redis_settings = redis_settings.set_username(username);
+    }
+    if let Some(password) = password.filter(|p| !p.is_empty()) {
+        redis_settings = redis_settings.set_password(password);
+    }
+    let info = ConnectionAddr::Tcp(host.to_string(), port)
+        .into_connection_info()
+        .map_err(|e| e.to_string())?
+        .set_redis_settings(redis_settings);
+
+    let client = redis::Client::open(info).map_err(|e| e.to_string())?;
     client
         .get_multiplexed_async_connection()
         .await

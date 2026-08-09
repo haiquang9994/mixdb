@@ -84,7 +84,13 @@ pub async fn connect_db(state: State<'_, AppState>, config: ConnectionConfig) ->
             let (host, port, tunnel) = resolve_endpoint(&config).await?;
             let db_index = config.database.as_deref().and_then(|d| d.parse().ok()).unwrap_or(0);
             let conn = with_timeout(
-                redis_db::connect(&host, port, config.password.as_deref(), db_index),
+                redis_db::connect(
+                    &host,
+                    port,
+                    config.username.as_deref(),
+                    config.password.as_deref(),
+                    db_index,
+                ),
                 "Redis connection",
             )
             .await?;
