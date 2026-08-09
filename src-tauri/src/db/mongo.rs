@@ -79,11 +79,17 @@ pub async fn list_databases(client: &Client) -> Result<Vec<String>, String> {
 }
 
 pub async fn list_collections(client: &Client, db: &str) -> Result<Vec<String>, String> {
-    client
+    let mut names = client
         .database(db)
         .list_collection_names()
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    names.sort_by(|a, b| {
+        a.to_lowercase()
+            .cmp(&b.to_lowercase())
+            .then_with(|| a.cmp(b))
+    });
+    Ok(names)
 }
 
 pub async fn find(
