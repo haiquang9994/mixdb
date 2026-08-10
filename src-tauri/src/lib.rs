@@ -23,7 +23,14 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_process::init())
+        // Only the maximized flag is persisted: leave the window maximized and it comes back
+        // maximized, restore it down and the next launch uses the default size from the config.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(tauri_plugin_window_state::StateFlags::MAXIMIZED)
+                .build(),
+        );
 
     builder
         .manage(AppState::default())
