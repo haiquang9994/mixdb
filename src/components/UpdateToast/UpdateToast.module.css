@@ -1,0 +1,128 @@
+/* Bottom right, clear of the tab bar at the top and of the sidebar's own controls at the left.
+   Below the settings dialog's z-index so opening Settings covers it rather than fighting it. */
+.toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: min(340px, calc(100vw - 2rem));
+  padding: 0.8rem 0.9rem;
+  background: var(--surface-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: update-toast-in 220ms ease-out;
+}
+
+/* From under its own corner, so it reads as arriving rather than as having been missed. */
+@keyframes update-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.title {
+  font-weight: 600;
+  color: var(--accent-text);
+}
+
+.close {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+
+.close:hover {
+  background: var(--hover-bg);
+  border-color: transparent;
+}
+
+.current,
+.summary,
+.hint {
+  margin: 0;
+  font-size: 0.85em;
+  line-height: 1.45;
+}
+
+.current {
+  opacity: 0.6;
+}
+
+.summary {
+  opacity: 0.85;
+}
+
+.hint {
+  opacity: 0.55;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.download {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  justify-content: center;
+  padding: 0.4em 0.7em;
+  border: 1px solid var(--accent);
+  box-shadow: none;
+  background: rgb(var(--accent-rgb) / 0.15);
+  color: var(--accent-text);
+  border-radius: var(--radius-md);
+  font-size: 0.9em;
+  font-weight: 500;
+}
+
+.download:hover {
+  background: rgb(var(--accent-rgb) / 0.25);
+}
+
+.secondary {
+  padding: 0.4em 0.6em;
+  border: 1px solid transparent;
+  box-shadow: none;
+  background: var(--hover-bg);
+  border-radius: var(--radius-md);
+  font-size: 0.85em;
+}
+
+.secondary:hover {
+  border-color: var(--border-strong);
+}

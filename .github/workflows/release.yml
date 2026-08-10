@@ -1,0 +1,127 @@
+# Builds MixDB for Windows, macOS and Linux and attaches the installers to a GitHub release.
+#
+# Push a tag to run it:
+#
+#   npm run set-version 0.2.0
+#   git commit -am "chore(release): 0.2.0" && git push
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# The release is left as a draft. Publishing it is a separate click, which is deliberate: the
+# in-app update check reads `/releases/latest`, and that only starts pointing at this release once
+# it is published — so the notes can be written, and a bad build thrown away, before anyone is told
+# about it.
+#
+# Nothing here is code-signed. See docs/RELEASING.md for what each platform says about that and
+# what the release notes have to tell users to do.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # So a build can be tried out without tagging. Produces a draft against the tag it finds, if any.
+  workflow_dispatch:
+
+# tauri-action creates the release and uploads to it.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      # One platform failing must not throw away the builds that already succeeded — the draft can
+      # be topped up by re-running the failed job.
+      fail-fast: false
+      matrix:
+        include:
+          # A single bundle that runs on both Apple Silicon and Intel. One job instead of two, and
+          # one download that no user can pick wrong.
+          - platform: macos-latest
+            target: universal-apple-darwin
+            args: "--target universal-apple-darwin"
+          # 22.04 rather than latest: the AppImage produced links against the glibc of the machine
+          # that built it, so building on the oldest supported runner is what makes it portable.
+          - platform: ubuntu-22.04
+            target: ""
+            args: ""
+          - platform: windows-latest
+            target: ""
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            curl wget file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # The universal bundle is two builds stitched together, so both halves need their target.
+          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          # Otherwise the three platforms overwrite each other's cache.
+          key: ${{ matrix.platform }}-${{ matrix.target }}
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The AppImage is assembled by linuxdeploy, which is itself an AppImage and wants FUSE
+          # to mount itself. Runners have no FUSE, so it unpacks instead of mounting.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          releaseName: "MixDB __VERSION__"
+          releaseDraft: true
+          prerelease: false
+          releaseBody: |
+            ## Install
+
+            Download the file for your machine below, then see the notes for it.
+
+            | Machine | File |
+            | --- | --- |
+            | Windows | `.exe` (installer) or `.msi` |
+            | macOS (Apple Silicon and Intel) | `.dmg` |
+            | Linux | `.AppImage` or `.deb` |
+
+            **MixDB is not code-signed**, so the first launch needs one extra step:
+
+            - **Windows** — SmartScreen says "Windows protected your PC". Click **More info**, then
+              **Run anyway**.
+            - **macOS** — the first open is refused. Right-click MixDB in Applications and choose
+              **Open**, then **Open** again. If macOS calls the app damaged, run
+              `xattr -cr /Applications/MixDB.app` in Terminal once.
+            - **Linux** — mark the AppImage executable: `chmod +x MixDB_*.AppImage`.
+
+            MixDB does not install its own updates. It checks this page at startup and tells you
+            when a newer version is out; downloading and installing it stays your decision.
+
+            ## Changes
+
+            <!-- Written by hand before publishing. -->
+          args: ${{ matrix.args }}

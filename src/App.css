@@ -267,6 +267,46 @@ body {
   border-color: transparent;
 }
 
+/* An update is out and the user has not dealt with it yet. The name goes to full strength and
+   takes the accent, so the button reads as changed even for someone who cannot see the dot. */
+.brand-update {
+  position: relative;
+  opacity: 1;
+  color: var(--accent-text);
+}
+
+.brand-update::after {
+  content: "";
+  position: absolute;
+  top: 0.15rem;
+  right: 0.35rem;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  /* Three slow pulses, then still: enough to catch the eye on arrival without a corner of the
+     window blinking for the rest of the session. */
+  animation: brand-update-pulse 1.6s ease-out 3;
+}
+
+@keyframes brand-update-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgb(var(--accent-rgb) / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-update::after {
+    animation: none;
+  }
+}
+
 .tab {
   display: flex;
   align-items: center;

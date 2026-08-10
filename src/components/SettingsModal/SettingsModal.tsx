@@ -5,7 +5,9 @@ import { ACCENT_COLORS } from "../../theme";
 import type { Language, TranslationKey } from "../../i18n";
 import { CloseIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import type { UpdateCheck } from "../../update";
 import ToolsSection from "./ToolsSection";
+import UpdateSection from "./UpdateSection";
 import styles from "./SettingsModal.module.css";
 
 interface SettingsModalProps {
@@ -13,6 +15,7 @@ interface SettingsModalProps {
   onThemeChange: (theme: ThemeMode) => void;
   accent: AccentColor;
   onAccentChange: (accent: AccentColor) => void;
+  update: UpdateCheck;
   onClose: () => void;
 }
 
@@ -21,7 +24,7 @@ function accentLabelKey(accent: AccentColor): TranslationKey {
   return `settings.accent${accent.charAt(0).toUpperCase()}${accent.slice(1)}` as TranslationKey;
 }
 
-function SettingsModal({ theme, onThemeChange, accent, onAccentChange, onClose }: SettingsModalProps) {
+function SettingsModal({ theme, onThemeChange, accent, onAccentChange, update, onClose }: SettingsModalProps) {
   const { t, lang, setLang } = useTranslation();
 
   useEffect(() => {
@@ -110,6 +113,8 @@ function SettingsModal({ theme, onThemeChange, accent, onAccentChange, onClose }
         </div>
 
         <ToolsSection />
+
+        <UpdateSection update={update} />
       </div>
     </>
   );

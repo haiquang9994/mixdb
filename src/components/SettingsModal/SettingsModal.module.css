@@ -229,6 +229,46 @@
   text-align: left;
 }
 
+/* The version line and its buttons. Same shape as a tool's row, so the two sections read alike. */
+.updateRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.updateText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.updateVersion {
+  font-size: 0.9em;
+}
+
+.updateStatus {
+  font-size: 0.8em;
+  opacity: 0.6;
+  overflow-wrap: anywhere;
+}
+
+.updateStatusError {
+  color: #c0392b;
+  opacity: 1;
+}
+
+:root[data-theme="dark"] .updateStatusError {
+  color: #ff8a80;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .updateStatusError {
+    color: #ff8a80;
+  }
+}
+
 .toolError {
   margin: 0;
   padding: 0.5rem 0.6rem;

@@ -619,6 +619,26 @@ const vi: TranslationDict = {
     sourceDownloaded: "đã tải",
     sourceSystem: "có sẵn",
   },
+  // Việc kiểm tra bản mới trên GitHub. Ở đây không có gì tự cài: ứng dụng báo là đã có bản mới và
+  // mở trang phát hành, còn tải về và cài đặt là việc của người dùng.
+  update: {
+    title: "Cập nhật",
+    available: "Đã có MixDB {{version}}",
+    runningNow: "Bạn đang dùng bản {{version}}",
+    download: "Tải về",
+    later: "Để sau",
+    skip: "Bỏ qua bản này",
+    skipped: "Đang bỏ qua bản {{version}}.",
+    unskip: "Nhắc lại",
+    checkNow: "Kiểm tra ngay",
+    checking: "Đang kiểm tra...",
+    upToDate: "Đây là bản mới nhất.",
+    notCheckedYet: "Chưa kiểm tra lần nào.",
+    checkFailed: "Kiểm tra thất bại: {{message}}",
+    lastChecked: "Kiểm tra lần cuối {{at}}.",
+    manualHint:
+      "MixDB không tự cài bản mới — trang phát hành có bộ cài cho hệ điều hành của bạn, kèm hướng dẫn xử lý cảnh báo mà hệ điều hành đưa ra với ứng dụng chưa ký số.",
+  },
   // Dump, restore và xóa cả một cơ sở dữ liệu — nhóm nút bên phải của thanh action trong sidebar.
   dump: {
     dump: "Dump cơ sở dữ liệu này",

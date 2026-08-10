@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import ConnectionTab from "./ConnectionTab";
 import SettingsModal from "./components/SettingsModal";
+import UpdateToast from "./components/UpdateToast";
 import { CloseIcon, PlusIcon } from "./icons";
 import { useAccent, useTheme } from "./theme";
+import { useUpdateCheck } from "./update";
 import { useTranslation } from "./i18n";
 import "./App.css";
 
@@ -34,6 +36,7 @@ function App() {
   const [theme, setTheme] = useTheme();
   const [accent, setAccent] = useAccent();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const update = useUpdateCheck();
 
   function openTab() {
     const tab = newTab();
@@ -83,11 +86,13 @@ function App() {
   return (
     <main className="app">
       <div className="tab-bar">
+        {/* Once an update is out, this is the way back to it after the panel in the corner is
+            gone, so it carries a dot until the user downloads or skips that version. */}
         <button
           type="button"
-          className="brand"
+          className={update.pending ? "brand brand-update" : "brand"}
           onClick={() => setSettingsOpen(true)}
-          title={t("app.settings")}
+          title={update.pending && update.release ? t("update.available", { version: update.release.version }) : t("app.settings")}
         >
           MixDB
         </button>
@@ -133,7 +138,22 @@ function App() {
           onThemeChange={setTheme}
           accent={accent}
           onAccentChange={setAccent}
+          update={update}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {/* Settings says the same thing in more detail, so the corner steps out of the way of it. */}
+      {update.announcing && update.release && !settingsOpen && (
+        <UpdateToast
+          release={update.release}
+          current={update.current}
+          onDownload={() => {
+            update.download();
+            update.dismiss();
+          }}
+          onDismiss={update.dismiss}
+          onSkip={update.skip}
         />
       )}
     </main>
