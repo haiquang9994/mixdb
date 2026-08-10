@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { RedisKeyInfo } from "../../redis/api";
 import {
   ancestorPaths,
@@ -8,9 +9,21 @@ import {
   TREE_NAV_KEYS,
   visibleRows,
 } from "../../redis/keyTree";
+import RedisTypeBadge from "../RedisTypeBadge";
 import { ChevronDownIcon, ChevronRightIcon, FolderIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import styles from "./RedisKeyList.module.css";
+
+/** One entry of the menu a group row opens on right-click. */
+export interface RedisGroupAction {
+  /** Distinguishes this entry from the others in the menu. */
+  key: string;
+  label: string;
+  /** Paints the entry as destructive. For actions that lose data, not merely risky ones. */
+  danger?: boolean;
+  /** Given the prefix the menu was opened on — the menu closes first, so this may open a pane. */
+  onSelect: (path: string) => void;
+}
 
 interface Props {
   keys: RedisKeyInfo[];
@@ -31,22 +44,19 @@ interface Props {
   loadedCount: number;
   loadingMore?: boolean;
   onLoadMore: () => void;
+  /** What right-clicking a group row offers. Left out, right-click does what it always does.
+   * Group rows only: an entry here acts on a prefix and everything under it, which is a thing a
+   * single key is not. */
+  groupActions?: RedisGroupAction[];
   className?: string;
 }
 
-/** The types with a colour of their own; anything else falls back to the neutral badge. */
-const KNOWN_TYPES = new Set(["string", "list", "set", "zset", "hash", "stream"]);
-
-/** What the badge says. Three characters, which is what the badge column fits — the colour is
- * what tells the types apart at a glance anyway, the letters only confirm it. */
-const TYPE_ABBREVIATION: Record<string, string> = {
-  string: "STR",
-  list: "LST",
-  set: "SET",
-  zset: "ZST",
-  hash: "HSH",
-  stream: "STM",
-};
+/** Where the group menu was opened, and on which prefix. */
+interface MenuState {
+  path: string;
+  x: number;
+  y: number;
+}
 
 /** How many more rows one press of Show more draws, and how many the list starts with. This is a
  * limit on rows rather than on keys: the whole keyspace is already in hand, and what it holds off
@@ -79,6 +89,7 @@ function RedisKeyList({
   loadedCount,
   loadingMore,
   onLoadMore,
+  groupActions,
   className,
 }: Props) {
   const { t } = useTranslation();
@@ -90,6 +101,7 @@ function RedisKeyList({
   // re-sorts the siblings around it, and an index would then point at a different row than the
   // one the user left the focus on.
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
 
   // A path means something else under a different separator, so what was open under the old one
@@ -126,6 +138,24 @@ function RedisKeyList({
   const hiddenRows = allRows.length - rows.length;
   // Until the sweep has run to the end, a folder's count is only what has been read so far.
   const countsPartial = Boolean(scanning) || hasMore;
+
+  // The tree this menu was opened over can be rebuilt under it — a rescan, another database,
+  // another separator, a folder collapsed — and an entry would then act on a prefix that is no
+  // longer on screen.
+  useEffect(() => {
+    setMenu((open) => (open && rows.some((row) => row.node.path === open.path) ? open : null));
+  }, [rows]);
+
+  useEffect(() => {
+    if (menu === null) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenu(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [menu]);
+
+  const hasGroupMenu = groupActions !== undefined && groupActions.length > 0;
 
   // Where the arrows move from, and the one row in the tab order. Held by path above, but that
   // path may be gone (a rescan) or never set (nothing focused yet) — in which case the selected
@@ -166,14 +196,6 @@ function RedisKeyList({
     else setExpansion(action.path, action.kind === "expand");
   }
 
-  function typeBadge(key: RedisKeyInfo) {
-    return (
-      <span className={`${styles.badge}${KNOWN_TYPES.has(key.type) ? ` ${styles[key.type]}` : ""}`}>
-        {TYPE_ABBREVIATION[key.type] ?? key.type.slice(0, 3).toUpperCase()}
-      </span>
-    );
-  }
-
   return (
     <div className={`${styles.keyList}${className ? ` ${className}` : ""}`}>
       {/* A flattened tree: the nesting lives in `aria-level` rather than in nested lists, which
@@ -207,6 +229,18 @@ function RedisKeyList({
                   if (isFolder) setExpansion(node.path, !open);
                   if (node.key) onSelect(node.key.name);
                 }}
+                // Group rows only. What the menu offers acts on a prefix and everything under it,
+                // which is nothing a leaf row stands for — and opening an empty menu on one would
+                // read as the entries having gone missing.
+                onContextMenu={
+                  hasGroupMenu && isFolder
+                    ? (e) => {
+                        e.preventDefault();
+                        setFocusedPath(node.path);
+                        setMenu({ path: node.path, x: e.clientX, y: e.clientY });
+                      }
+                    : undefined
+                }
                 style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
                 title={node.key ? node.key.name : node.path}
               >
@@ -217,7 +251,7 @@ function RedisKeyList({
                     names up. A prefix has no type to show there — it gets the folder mark
                     instead, which is what the slot used to sit empty for. */}
                 {node.key ? (
-                  typeBadge(node.key)
+                  <RedisTypeBadge type={node.key.type} />
                 ) : (
                   <span className={styles.folderBadge}>
                     <FolderIcon size={16} />
@@ -286,6 +320,37 @@ function RedisKeyList({
           )
         )}
       </div>
+      {/* Out at the body, so the sidebar's own scrolling has nothing to clip it against. */}
+      {menu !== null &&
+        groupActions !== undefined &&
+        createPortal(
+          <>
+            <div
+              className="context-menu-overlay"
+              onClick={() => setMenu(null)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setMenu(null);
+              }}
+            />
+            <div className="context-menu" style={{ top: menu.y, left: menu.x }}>
+              {groupActions.map((action) => (
+                <button
+                  key={action.key}
+                  type="button"
+                  className={action.danger ? "context-menu-delete" : undefined}
+                  onClick={() => {
+                    setMenu(null);
+                    action.onSelect(menu.path);
+                  }}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }

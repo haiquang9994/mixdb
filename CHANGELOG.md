@@ -38,6 +38,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
+- Redis: right-clicking a group in the key sidebar offers "List keys to delete". The keys under
+  that prefix open on the right with a tickbox each, a filter box and a Delete button, so a whole
+  namespace can go in one pass — after seeing exactly which keys it is about to take. Redis cannot
+  drop a prefix in one call, so the list is the names themselves; if the keyspace scan stopped
+  short, the pane says the group may hold more than it is showing.
 - Redis: the key sidebar has a key limit picker beside the grouping character, remembered per
   connection. It says how much of the keyspace to read before the scan stops.
 

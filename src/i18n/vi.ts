@@ -515,6 +515,10 @@ const vi: TranslationDict = {
     searchDatabasesPlaceholder: "Tìm cơ sở dữ liệu...",
     reloadDatabases: "Tải lại danh sách cơ sở dữ liệu",
     dataTab: "Key",
+    groupTab: "Xóa key",
+    // Redis không xóa được cả một tiền tố bằng một lệnh — keyspace vốn phẳng, `user:*` chỉ là một
+    // mẫu khớp trên đó — nên xóa một nhóm nghĩa là phải gọi tên từng key, và đây là danh sách đó.
+    listGroupKeys: "Liệt kê key để xóa",
     keyPatternPlaceholder: "Mẫu key, ví dụ user:*",
     keyPatternTooltip: "Mẫu glob của Redis — * khớp mọi thứ, ? một ký tự, [ab] một tập ký tự. Nhấn Enter để quét.",
     // Keyspace của Redis vốn phẳng; dấu phân cách chỉ là quy ước khi đặt tên key, nên dùng ký tự
@@ -575,6 +579,22 @@ const vi: TranslationDict = {
     deleteKey: "Xóa key",
     deleteKeyTitle: "Xóa key?",
     deleteKeyMessage: "Xóa {{key}} và toàn bộ dữ liệu bên trong? Thao tác này không thể hoàn tác.",
+  },
+  redisGroup: {
+    keyCount: "{{n}} key thuộc tiền tố này",
+    // Danh sách này lấy từ lượt quét của sidebar, nên nếu lượt quét dừng sớm thì nó ít hơn số key
+    // thực có dưới tiền tố — cần nói rõ trước khi xóa bất cứ thứ gì.
+    partialNotice:
+      "Lượt quét keyspace chưa xong, nên đây là những key đã đọc được dưới tiền tố này chứ chưa phải toàn bộ.",
+    selectAll: "Chọn tất cả",
+    filterPlaceholder: "Lọc trong danh sách này...",
+    deleteSelected: "Xóa mục đã chọn ({{n}})",
+    deleting: "Đang xóa... {{done}}/{{total}}",
+    selectedCount: "Đã chọn {{selected}}/{{total}}",
+    noKeys: "Không còn key nào dưới tiền tố này.",
+    noMatches: "Không có key nào khớp bộ lọc.",
+    confirmTitle: "Xóa các key?",
+    confirmMessage: "Xóa {{n}} key thuộc {{prefix}}? Thao tác này không thể hoàn tác.",
   },
   pagination: {
     previousPage: "Trang trước",

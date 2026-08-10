@@ -515,6 +515,10 @@ const en = {
     searchDatabasesPlaceholder: "Search databases...",
     reloadDatabases: "Reload databases",
     dataTab: "Keys",
+    groupTab: "Delete keys",
+    // Redis cannot drop a prefix in one call — the keyspace is flat and `user:*` is a pattern
+    // over it — so removing a group means naming every key in it, which is what this lists.
+    listGroupKeys: "List keys to delete",
     keyPatternPlaceholder: "Key pattern, e.g. user:*",
     keyPatternTooltip: "A Redis glob — * matches anything, ? one character, [ab] a set. Press Enter to scan.",
     // Redis keyspaces are flat; a separator is only a convention in how names are written, so
@@ -575,6 +579,22 @@ const en = {
     deleteKey: "Delete key",
     deleteKeyTitle: "Delete key?",
     deleteKeyMessage: "Delete {{key}} and everything it holds? This cannot be undone.",
+  },
+  redisGroup: {
+    keyCount: "{{n}} keys under this prefix",
+    // The sidebar's scan is what this list is made of, so a scan that stopped short lists less
+    // than the prefix really holds — worth saying before anything is deleted from it.
+    partialNotice:
+      "The keyspace scan has not finished, so this is what has been read under the prefix rather than everything in it.",
+    selectAll: "Select all",
+    filterPlaceholder: "Filter these keys...",
+    deleteSelected: "Delete selected ({{n}})",
+    deleting: "Deleting... {{done}} of {{total}}",
+    selectedCount: "{{selected}} of {{total}} selected",
+    noKeys: "Nothing left under this prefix.",
+    noMatches: "No keys match this filter.",
+    confirmTitle: "Delete keys?",
+    confirmMessage: "Delete {{n}} keys under {{prefix}}? This cannot be undone.",
   },
   pagination: {
     previousPage: "Previous page",

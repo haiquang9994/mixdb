@@ -12,6 +12,7 @@ import Select from "../components/Select";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import ActionBar from "../components/ActionBar";
+import RedisGroupKeys from "../components/RedisGroupKeys";
 import RedisKeyList from "../components/RedisKeyList";
 import RedisValue from "../components/RedisValue";
 import keyListStyles from "../components/RedisKeyList/RedisKeyList.module.css";
@@ -33,10 +34,11 @@ interface Props {
   onScanLimitChange?: (limit: number) => void;
 }
 
-/** The panes the content area can show. Only the key view exists so far, but the header is
- * already a tab strip so a second one (a command console, server info, …) is a case here and a
- * branch below rather than a reshuffle of the layout — same as the other two workspaces. */
-type ContentMode = "data";
+/** The panes the content area can show: the selected key's value, or the keys under one group of
+ * the sidebar with a way to delete them. The header is a tab strip, so a third one (a command
+ * console, server info, …) is a case here and a branch below rather than a reshuffle of the
+ * layout — same as the other two workspaces. */
+type ContentMode = "data" | "group";
 
 const DEFAULT_SIDEBAR_WIDTH = 240;
 const MIN_SIDEBAR_WIDTH = 140;
@@ -115,6 +117,8 @@ function RedisWorkspace({
   const [keysLoading, setKeysLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // The group the delete pane is listing, by its prefix, or null when no group has been opened.
+  const [groupPrefix, setGroupPrefix] = useState<string | null>(null);
   const [contentMode, setContentMode] = useState<ContentMode>("data");
   const [localError, setLocalError] = useState("");
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
@@ -145,6 +149,14 @@ function RedisWorkspace({
   useEffect(() => {
     setKeyLimit(scanLimit ?? DEFAULT_SCAN_LIMIT);
   }, [scanLimit]);
+
+  // A group's prefix is a reading of the key names under one separator, so it names a different
+  // set of keys under another one and nothing at all under none. The pane closes rather than
+  // relisting itself around whatever the new separator makes of the same string.
+  useEffect(() => {
+    setGroupPrefix(null);
+    setContentMode("data");
+  }, [separator]);
 
   /** Sets the ceiling and remembers it. The scan effect takes `keyLimit` as an input, so this
    * also starts the keyspace over — raising the ceiling has to go back past where the last
@@ -336,8 +348,11 @@ function RedisWorkspace({
     try {
       await redisSelectDb(connectionId, index);
       // A key name means nothing outside the database it was read from, so the pane is closed
-      // rather than carried over. A rescan on the same database keeps its selection.
+      // rather than carried over — and neither does a group's prefix. A rescan on the same
+      // database keeps both.
       setSelectedKey(null);
+      setGroupPrefix(null);
+      setContentMode("data");
       setSelectedDb(index);
       loadDatabases();
     } catch (e) {
@@ -345,12 +360,27 @@ function RedisWorkspace({
     }
   }
 
-  /** Drops a deleted key from the list without rescanning: the rest of the list is still what
+  /** Drops deleted keys from the list without rescanning: the rest of the list is still what
    * the server holds, and a rescan would lose every page loaded so far. */
-  function handleKeyDeleted(name: string) {
-    setKeys((prev) => prev.filter((k) => k.name !== name));
-    setSelectedKey((prev) => (prev === name ? null : prev));
+  function handleKeysDeleted(names: string[]) {
+    const gone = new Set(names);
+    setKeys((prev) => prev.filter((k) => !gone.has(k.name)));
+    setSelectedKey((prev) => (prev !== null && gone.has(prev) ? null : prev));
     loadDatabases();
+  }
+
+  /** The keys the tree groups under `groupPrefix` — the node's own key, if a key of exactly that
+   * name exists, and everything below it. Read off the names already scanned, the same way the
+   * tree itself is: the grouping is a reading of the keyspace, not something the server knows. */
+  const groupKeys = useMemo(() => {
+    if (groupPrefix === null || !separator) return [];
+    const nested = `${groupPrefix}${separator}`;
+    return keys.filter((k) => k.name === groupPrefix || k.name.startsWith(nested));
+  }, [keys, groupPrefix, separator]);
+
+  function closeGroup() {
+    setGroupPrefix(null);
+    setContentMode("data");
   }
 
   // An empty list is not an empty keyspace while the sweep is still running: SCAN returns a
@@ -433,6 +463,20 @@ function RedisWorkspace({
           >
             {t("redis.dataTab")}
           </button>
+          {/* Only once a group has been opened from the sidebar: an empty delete pane would be a
+              tab with nothing behind it. Closing the pane takes the tab with it. */}
+          {groupPrefix !== null && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={contentMode === "group"}
+              className={`method-tab${contentMode === "group" ? " method-tab-active" : ""}`}
+              title={groupPrefix}
+              onClick={() => setContentMode("group")}
+            >
+              {t("redis.groupTab")}
+            </button>
+          )}
         </div>
       </div>
 
@@ -488,7 +532,12 @@ function RedisWorkspace({
             keys={keys}
             separator={separator}
             selectedKey={selectedKey}
-            onSelect={setSelectedKey}
+            // Picking a key is a request to see its value, so it brings that pane back to the
+            // front — the delete pane stays open behind its tab rather than swallowing the click.
+            onSelect={(name) => {
+              setSelectedKey(name);
+              setContentMode("data");
+            }}
             emptyMessage={keysEmptyMessage}
             scanning={keysLoading}
             hasMore={!scanDone}
@@ -496,6 +545,16 @@ function RedisWorkspace({
             loadedCount={keys.length}
             loadingMore={loadingMore}
             onLoadMore={loadMoreKeys}
+            groupActions={[
+              {
+                key: "list-to-delete",
+                label: t("redis.listGroupKeys"),
+                onSelect: (path) => {
+                  setGroupPrefix(path);
+                  setContentMode("group");
+                },
+              },
+            ]}
           />
           <ActionBar
             className="redis-sidebar-actions"
@@ -532,7 +591,21 @@ function RedisWorkspace({
               connectionId={connectionId}
               keyName={selectedKey}
               onError={setLocalError}
-              onDeleted={handleKeyDeleted}
+              onDeleted={(name) => handleKeysDeleted([name])}
+            />
+          )}
+          {contentMode === "group" && groupPrefix !== null && (
+            <RedisGroupKeys
+              // Same reason as the value pane: a prefix names different keys in another database,
+              // and pointing the pane at another group starts its selection over.
+              key={`${selectedDb}:${groupPrefix}`}
+              connectionId={connectionId}
+              prefix={groupPrefix}
+              keys={groupKeys}
+              partial={keysLoading || !scanDone}
+              onError={setLocalError}
+              onDeleted={handleKeysDeleted}
+              onClose={closeGroup}
             />
           )}
         </section>
