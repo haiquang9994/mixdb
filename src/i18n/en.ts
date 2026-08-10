@@ -15,6 +15,9 @@ const en = {
     browse: "Browse...",
     close: "Close",
     loading: "Loading...",
+    // Why anything that would write is greyed out, wherever in the workspace it is. One sentence
+    // rather than one per panel: it is the same fact, and it names where to undo it.
+    readOnlyConnection: "This connection is marked read-only. Change it from the connection's right-click menu.",
   },
   app: {
     settings: "Settings",
@@ -69,6 +72,10 @@ const en = {
     savedItemTooltip: "Click to edit \u00b7 double-click to connect \u00b7 right-click for options",
     pin: "Pin to top",
     unpin: "Unpin",
+    // Marks the connection as one MixDB will not send a write down. A reminder about which server
+    // this is, not a permission — what the server allows is the credential's business.
+    markReadOnly: "Mark read-only",
+    allowWrites: "Allow writes",
     pinnedTooltip: "Pinned",
   },
   mysql: {
@@ -276,15 +283,27 @@ const en = {
   // it is — a result set, a count of rows changed, or plain confirmation that it ran.
   query: {
     run: "Run",
+    runAll: "Run all",
+    format: "Format",
     running: "Running...",
     cancel: "Cancel",
     cancelling: "Cancelling...",
-    runHint: "Ctrl+Enter to run · with text selected, only the selection runs",
+    // The shortcuts themselves are drawn as keycaps, so only the words around them live here.
+    runShortcutHint: "runs one statement",
+    runAllShortcutHint: "runs the lot",
+    selectionHint: "With text selected, only the selection runs.",
+    editorHeading: "SQL",
     placeholder: "SELECT * FROM ...",
     editorLabel: "SQL editor",
-    targetDatabase: "Running on {{database}}",
-    noDatabase: "No database selected — write db.table, or pick one above",
+    targetLabel: "Running on",
+    // Short enough to stay on one line inside the chip; the rest is its tooltip.
+    noDatabase: "No database selected",
+    noDatabaseHint: "Write db.table in the script, or pick a database in the header.",
     emptyResults: "Nothing has been run yet.",
+    emptyHint: "Write a statement above, then run it — every result lands here.",
+    // A script that ran fine and had nothing in it to run: all comments, or a stray semicolon.
+    noStatements: "There was no statement to run.",
+    noStatementsHint: "What was sent held only comments — nothing the server could be asked to do.",
     resultLabel: "#{{n}} {{verb}}",
     duration: "{{ms}} ms",
     rowCount: "{{n}} rows",
@@ -294,6 +313,74 @@ const en = {
     ok: "OK",
     noRows: "The result set is empty.",
     statementFailed: "This statement failed — nothing after it ran.",
+    // The chip in the toolbar, and what happens when a write is attempted anyway.
+    readOnly: "Read-only",
+    readOnlyBlocked: "Nothing was sent: this connection is marked read-only, and the script holds a {{verb}}.",
+    // The gate in front of an UPDATE, DELETE or TRUNCATE that names no rows.
+    unguardedTitle: "Change every row?",
+    unguardedOne: "{{verb}} on {{table}} says nothing about which rows, so it applies to all of them.",
+    unguardedOneUnnamed: "This {{verb}} says nothing about which rows, so it applies to all of them.",
+    unguardedMany: "{{n}} statements say nothing about which rows they apply to, so each applies to every row of its table: {{list}}.",
+    // And in front of a DROP, or an ALTER that drops something. Rows come back from a backup; a
+    // dropped table's triggers, grants and foreign keys do not, which is why it asks differently.
+    unguardedDropTitle: "Remove it for good?",
+    unguardedDrop: "{{verb}} on {{table}} removes it and everything in it. Nothing here can put it back.",
+    unguardedDropUnnamed: "This {{verb}} removes what it names and everything in it. Nothing here can put it back.",
+    unguardedManyMixed: "{{n}} statements each remove or rewrite the whole of what they name: {{list}}.",
+    unguardedConfirm: "Run it",
+    // Said when the script was sent with a ceiling it was not written with.
+    limitAdded: "A LIMIT of {{limit}} was added to {{n}} of these statements. Write your own LIMIT, or turn this off in Settings.",
+    // Saved queries, offered back by name as the editor is typed in.
+    snippets: "Snippets",
+    snippetHint: "Saved queries. Keep this one under a name, or fetch one back by typing its name.",
+    snippetsTitle: "Saved queries",
+    snippetNamePlaceholder: "Name this query...",
+    saveSnippet: "Save",
+    snippetSaving: "Saving...",
+    snippetNothingToSave: "The editor is empty — there is nothing to save, but what is saved is below.",
+    snippetsEmpty: "Nothing saved yet. Name a query here and typing that name will offer it back.",
+    snippetDelete: "Forget {{name}}",
+    snippetDeleteConfirm: "Forget it?",
+    snippetSaveFailed: "That could not be saved.",
+    snippetDeleteFailed: "That could not be removed.",
+    // Everything that has been run on this connection.
+    history: "History",
+    historyTitle: "Query history",
+    historyFilter: "Search the queries...",
+    historyClear: "Clear",
+    // Only this connection's runs go, which is exactly what the list is showing.
+    historyClearConfirm: "Clear this list?",
+    historyEmpty: "Nothing has been run on this connection yet.",
+    historyNoMatch: "No query here contains that.",
+    historyFailed: "failed",
+    // The tooltip that appears when the pointer rests on a name in the script. The first line is
+    // always the name itself, so these are only what is said around it.
+    hoverTable: "table · {{n}} columns",
+    hoverTableOne: "table · 1 column",
+    hoverMoreColumns: "+{{n}} more",
+    hoverJump: "{{mod}}+Click opens it",
+    hoverFunction: "MySQL function",
+    hoverNullable: "nullable",
+    hoverNotNull: "not null",
+    hoverPrimaryKey: "primary key",
+    hoverUniqueKey: "unique",
+    hoverIndexed: "indexed",
+  },
+  // What the SQL editor underlines, and why. The first six are things the text says outright; the
+  // last three are the editor comparing what was written against the database it can see, which is
+  // why they are worded as observations rather than as verdicts.
+  lint: {
+    openString: "This quote is never closed.",
+    openIdentifier: "This backtick is never closed.",
+    openComment: "This /* comment is never closed.",
+    unclosedBracket: "This bracket is never closed.",
+    strayBracket: "There is no opening bracket for this one.",
+    danglingComma: "Nothing follows this comma.",
+    unknownTable: "This database has no table called {{name}}.",
+    unknownColumn: "{{table}} has no column called {{name}}.",
+    unknownName: "No table in this statement has a column called {{name}}.",
+    // The button on a squiggle's tooltip.
+    replaceWith: "Use {{name}}",
   },
   // The condition bar above a grid. Everything here is the part that reads the same whichever
   // database is underneath — the operator labels themselves are per-workspace, under
@@ -325,7 +412,11 @@ const en = {
     deleteRowsMessage: "Delete the {{n}} selected rows? This cannot be undone.",
     deleteAllRowsOption: "Delete all {{total}} rows in the table, not only the ones selected here",
     resetAutoIncrementOption: "Reset {{column}} so the next row inserted starts at 1",
-    foreignKey: "Foreign key → {{table}}.{{column}}",
+    // `->` for the arrow, as everywhere else in the app — Fira Code's ligature draws the two
+    // characters as one. It only reads that way because this is shown in a `Tooltip` of the app's
+    // own rather than through `title`, which the browser paints outside the page in the system's
+    // font, where no ligature applies.
+    foreignKey: "Foreign key -> {{table}}.{{column}}",
     sortNone: "{{column}} — click to sort descending",
     sortDesc: "{{column}} — sorted descending, click to sort ascending",
     sortAsc: "{{column}} — sorted ascending, click to remove the sort",
@@ -635,6 +726,12 @@ const en = {
     language: "Language",
     languageEnglish: "English",
     languageVietnamese: "Ti\u1ebfng Vi\u1ec7t",
+    // The Query tab's own preference: what it does to a script on its way to the server.
+    queryTitle: "Query editor",
+    autoLimitOff: "No limit",
+    autoLimitRows: "{{n}} rows",
+    autoLimitHint:
+      "A SELECT written without a LIMIT is sent with this one. It is said out loud above the results, and a LIMIT you write yourself is always left alone.",
   },
   // The command-line tools that do the dumping and restoring. MixDB does not ship them: it uses
   // whatever is on the machine, a copy it downloaded, or a path chosen here.

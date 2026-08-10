@@ -17,6 +17,7 @@ const vi: TranslationDict = {
     browse: "Duyệt...",
     close: "Đóng",
     loading: "Đang tải...",
+    readOnlyConnection: "Kết nối này được đánh dấu chỉ đọc. Đổi lại ở menu chuột phải của kết nối.",
   },
   app: {
     settings: "Cài đặt",
@@ -70,6 +71,10 @@ const vi: TranslationDict = {
     newConnection: "Kết nối mới",
     pin: "Ghim lên đầu",
     unpin: "Bỏ ghim",
+    // Đánh dấu kết nối là nơi MixDB sẽ không gửi câu lệnh ghi xuống. Đây là lời nhắc mình đang ở
+    // máy chủ nào, không phải quyền — máy chủ cho phép gì là chuyện của tài khoản đăng nhập.
+    markReadOnly: "Đánh dấu chỉ đọc",
+    allowWrites: "Cho phép ghi",
     pinnedTooltip: "Đã ghim",
     savedItemTooltip: "Bấm để sửa \u00b7 bấm đúp để kết nối \u00b7 chuột phải để xem tùy chọn",
   },
@@ -276,15 +281,27 @@ const vi: TranslationDict = {
   // chất của nó — một bảng kết quả, số dòng đã thay đổi, hoặc chỉ là đã chạy xong.
   query: {
     run: "Chạy",
+    runAll: "Chạy tất cả",
+    format: "Định dạng",
     running: "Đang chạy...",
     cancel: "Dừng",
     cancelling: "Đang dừng...",
-    runHint: "Ctrl+Enter để chạy · nếu đang bôi đen thì chỉ chạy phần được chọn",
+    // Bản thân phím tắt được vẽ thành phím bấm, nên ở đây chỉ còn phần chữ quanh nó.
+    runShortcutHint: "chạy một câu lệnh",
+    runAllShortcutHint: "chạy toàn bộ",
+    selectionHint: "Đang bôi đen thì chỉ chạy phần được chọn.",
+    editorHeading: "SQL",
     placeholder: "SELECT * FROM ...",
     editorLabel: "Trình soạn SQL",
-    targetDatabase: "Đang chạy trên {{database}}",
-    noDatabase: "Chưa chọn cơ sở dữ liệu — hãy viết db.table, hoặc chọn một cái ở trên",
+    targetLabel: "Đang chạy trên",
+    // Đủ ngắn để nằm gọn một dòng trong chip; phần còn lại nằm ở tooltip.
+    noDatabase: "Chưa chọn cơ sở dữ liệu",
+    noDatabaseHint: "Hãy viết db.table trong câu lệnh, hoặc chọn cơ sở dữ liệu ở thanh trên.",
     emptyResults: "Chưa chạy câu lệnh nào.",
+    emptyHint: "Viết câu lệnh ở trên rồi chạy — kết quả sẽ hiện ở đây.",
+    // Script chạy xong nhưng bên trong không có gì để chạy: toàn chú thích, hoặc một dấu chấm phẩy lạc.
+    noStatements: "Không có câu lệnh nào để chạy.",
+    noStatementsHint: "Phần được gửi đi chỉ có chú thích — không có gì để yêu cầu máy chủ làm.",
     resultLabel: "#{{n}} {{verb}}",
     duration: "{{ms}} ms",
     rowCount: "{{n}} dòng",
@@ -294,6 +311,75 @@ const vi: TranslationDict = {
     ok: "OK",
     noRows: "Kết quả không có dòng nào.",
     statementFailed: "Câu lệnh này lỗi — các câu lệnh sau nó không chạy.",
+    // Chip trên thanh công cụ, và điều xảy ra khi vẫn cố ghi.
+    readOnly: "Chỉ đọc",
+    readOnlyBlocked: "Chưa gửi gì cả: kết nối này được đánh dấu chỉ đọc, mà trong script lại có câu lệnh {{verb}}.",
+    // Cửa chặn trước một UPDATE, DELETE hay TRUNCATE không nói rõ dòng nào.
+    unguardedTitle: "Sửa toàn bộ các dòng?",
+    unguardedOne: "{{verb}} trên {{table}} không nói rõ dòng nào, nên nó áp dụng cho tất cả.",
+    unguardedOneUnnamed: "{{verb}} này không nói rõ dòng nào, nên nó áp dụng cho tất cả.",
+    unguardedMany: "{{n}} câu lệnh không nói rõ áp dụng cho dòng nào, nên mỗi câu áp dụng cho mọi dòng của bảng nó nhắm tới: {{list}}.",
+    // Và cửa chặn trước một DROP, hay một ALTER có xoá đi thứ gì đó. Dòng dữ liệu còn lấy lại được
+    // từ bản sao lưu; trigger, phân quyền và khoá ngoại của một bảng đã bị xoá thì không — nên câu
+    // hỏi ở đây phải khác.
+    unguardedDropTitle: "Xoá hẳn nhé?",
+    unguardedDrop: "{{verb}} trên {{table}} xoá luôn nó và mọi thứ bên trong. Ở đây không có gì lấy lại được.",
+    unguardedDropUnnamed: "{{verb}} này xoá luôn thứ nó nhắm tới và mọi thứ bên trong. Ở đây không có gì lấy lại được.",
+    unguardedManyMixed: "{{n}} câu lệnh, mỗi câu xoá hoặc ghi đè trọn vẹn thứ nó nhắm tới: {{list}}.",
+    unguardedConfirm: "Vẫn chạy",
+    // Nói ra khi script được gửi đi kèm một mức trần mà nó không tự viết.
+    limitAdded: "Đã thêm LIMIT {{limit}} vào {{n}} câu lệnh trong số này. Hãy tự viết LIMIT, hoặc tắt tính năng này trong Cài đặt.",
+    // Câu truy vấn đã lưu, gõ tên là gợi ý lại.
+    snippets: "Đã lưu",
+    snippetHint: "Các câu truy vấn đã lưu. Giữ lại câu này dưới một cái tên, hoặc gõ tên để lấy lại một câu cũ.",
+    snippetsTitle: "Câu truy vấn đã lưu",
+    snippetNamePlaceholder: "Đặt tên cho câu này...",
+    saveSnippet: "Lưu",
+    snippetSaving: "Đang lưu...",
+    snippetNothingToSave: "Trình soạn thảo đang trống — chưa có gì để lưu, nhưng những câu đã lưu vẫn nằm bên dưới.",
+    snippetsEmpty: "Chưa lưu câu nào. Đặt tên cho một câu ở đây, rồi gõ tên đó là nó sẽ hiện ra gợi ý lại.",
+    snippetDelete: "Bỏ {{name}}",
+    snippetDeleteConfirm: "Bỏ nhé?",
+    snippetSaveFailed: "Không lưu được.",
+    snippetDeleteFailed: "Không bỏ được.",
+    // Mọi thứ đã chạy trên kết nối này.
+    history: "Lịch sử",
+    historyTitle: "Lịch sử truy vấn",
+    historyFilter: "Tìm trong các câu truy vấn...",
+    historyClear: "Xoá hết",
+    // Chỉ xoá phần của kết nối này, đúng bằng những gì danh sách đang hiện.
+    historyClearConfirm: "Xoá danh sách này?",
+    historyEmpty: "Chưa chạy gì trên kết nối này.",
+    historyNoMatch: "Không câu truy vấn nào ở đây chứa nội dung đó.",
+    historyFailed: "lỗi",
+    // Bảng chú thích hiện ra khi trỏ chuột dừng trên một cái tên trong câu lệnh. Dòng đầu luôn là
+    // chính cái tên đó, nên ở đây chỉ là những gì nói quanh nó.
+    hoverTable: "bảng · {{n}} cột",
+    hoverTableOne: "bảng · 1 cột",
+    hoverMoreColumns: "còn {{n}} cột nữa",
+    hoverJump: "{{mod}}+Click để mở",
+    hoverFunction: "hàm của MySQL",
+    hoverNullable: "cho phép rỗng",
+    hoverNotNull: "không được rỗng",
+    hoverPrimaryKey: "khoá chính",
+    hoverUniqueKey: "duy nhất",
+    hoverIndexed: "có chỉ mục",
+  },
+  // Những gì trình soạn SQL gạch chân, và vì sao. Sáu mục đầu là điều bản thân câu lệnh nói ra;
+  // ba mục cuối là trình soạn đối chiếu với cơ sở dữ liệu nó nhìn thấy được, nên được viết như một
+  // nhận xét chứ không phải một phán quyết.
+  lint: {
+    openString: "Dấu nháy này chưa được đóng.",
+    openIdentifier: "Dấu nháy ngược này chưa được đóng.",
+    openComment: "Chú thích /* này chưa được đóng.",
+    unclosedBracket: "Dấu ngoặc này chưa được đóng.",
+    strayBracket: "Không có dấu ngoặc mở nào cho dấu ngoặc này.",
+    danglingComma: "Sau dấu phẩy này không còn gì.",
+    unknownTable: "Cơ sở dữ liệu này không có bảng nào tên {{name}}.",
+    unknownColumn: "{{table}} không có cột nào tên {{name}}.",
+    unknownName: "Không bảng nào trong câu lệnh này có cột tên {{name}}.",
+    // Nút bấm trên tooltip của chỗ gạch chân.
+    replaceWith: "Dùng {{name}}",
   },
   // Thanh điều kiện phía trên lưới. Mọi chuỗi ở đây đều không phụ thuộc loại cơ sở dữ liệu —
   // riêng nhãn toán tử thì mỗi bên tự đặt, ở `sqlTable.op.*` và `noSqlTable.op.*`.
@@ -324,7 +410,10 @@ const vi: TranslationDict = {
     deleteRowsMessage: "Xóa {{n}} dòng đã chọn? Thao tác này không thể hoàn tác.",
     deleteAllRowsOption: "Xóa toàn bộ {{total}} dòng của bảng, không chỉ các dòng đang chọn",
     resetAutoIncrementOption: "Đặt lại {{column}} để dòng thêm mới bắt đầu từ 1",
-    foreignKey: "Khóa ngoại → {{table}}.{{column}}",
+    // Mũi tên viết là `->`, như mọi chỗ khác trong app — ligature của Fira Code nối hai ký tự
+    // thành một. Nó chỉ hiện ra như vậy vì dòng này được vẽ bằng `Tooltip` của chính app chứ không
+    // qua `title`, thứ do trình duyệt vẽ bên ngoài trang bằng font hệ thống, nơi không có ligature.
+    foreignKey: "Khóa ngoại -> {{table}}.{{column}}",
     sortNone: "{{column}} — nhấn để sắp xếp giảm dần",
     sortDesc: "{{column}} — đang giảm dần, nhấn để sắp xếp tăng dần",
     sortAsc: "{{column}} — đang tăng dần, nhấn để bỏ sắp xếp",
@@ -635,6 +724,12 @@ const vi: TranslationDict = {
     language: "Ngôn ngữ",
     languageEnglish: "English",
     languageVietnamese: "Tiếng Việt",
+    // Tuỳ chọn riêng của tab Query: nó làm gì với script trên đường gửi tới máy chủ.
+    queryTitle: "Trình soạn SQL",
+    autoLimitOff: "Không giới hạn",
+    autoLimitRows: "{{n}} dòng",
+    autoLimitHint:
+      "Câu SELECT viết mà không có LIMIT sẽ được gửi kèm mức trần này. Việc đó được ghi rõ phía trên phần kết quả, còn LIMIT bạn tự viết thì luôn được giữ nguyên.",
   },
   // Các công cụ dòng lệnh lo việc dump/restore. MixDB không đóng gói kèm: nó dùng công cụ có sẵn
   // trên máy, bản tự tải về, hoặc đường dẫn bạn chọn ở đây.

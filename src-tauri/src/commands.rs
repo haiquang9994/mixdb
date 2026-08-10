@@ -283,6 +283,18 @@ pub async fn mysql_table_structure(
     mysql_structure::table_structure(&pool, &database, &table).await
 }
 
+/// Every table and column of one database, for the Query tab's completion. One read covers the
+/// whole database, so the editor never asks per table as the Structure tab does.
+#[tauri::command]
+pub async fn mysql_schema_outline(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+) -> Result<mysql_structure::SchemaOutline, AppError> {
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_structure::schema_outline(&pool, &database).await
+}
+
 /// The collations this server has, for the column editor's picker. A property of the server rather
 /// than of any one table, so the frontend reads it once per connection.
 #[tauri::command]
@@ -701,6 +713,23 @@ pub async fn mysql_run_script(
     // by the time the button was next pressed.
     state.running_queries.lock().unwrap().remove(&id);
     result
+}
+
+/// Asks MySQL to parse one statement without running it, for the editor's error checking.
+///
+/// Read-only in the strongest sense available: the statement is prepared and the plan thrown away,
+/// so not even a `DELETE` handed to this does anything. What comes back is `null` when the server
+/// had nothing to say — see `mysql_script::validate` for why most of what it *does* say is a
+/// warning rather than an error.
+#[tauri::command]
+pub async fn mysql_validate_sql(
+    state: State<'_, AppState>,
+    id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<Option<mysql_script::SqlProblem>, AppError> {
+    let pool = mysql_pool(&state, &id).await?;
+    mysql_script::validate(&pool, &sql, database.as_deref()).await
 }
 
 /// Stops the script this connection is running, if it is running one.

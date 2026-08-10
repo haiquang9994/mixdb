@@ -39,6 +39,14 @@ export interface SavedConnection {
    *  to be found alphabetically among every one they have ever saved. Absent means not pinned, so
    *  a list written before pinning existed reads correctly. */
   pinned?: boolean;
+  /** Marks the connection as one nothing is to be written to. The Query tab refuses to send a
+   *  statement that would change anything — the point being the production server sitting one line
+   *  above the staging one in the sidebar. It is a reminder, not a permission: the credential
+   *  decides what the server actually allows, and this only decides what MixDB will send.
+   *
+   *  MySQL only, because that is where the checks live; the flag is offered and kept for no other
+   *  kind. */
+  readOnly?: boolean;
 }
 
 export const DEFAULT_PORTS: Record<DbKind, number> = {
@@ -172,6 +180,32 @@ export interface MysqlTableStructure {
   indexes: MysqlTableIndex[];
 }
 
+/** One column as the Query tab's completion knows it — the name, and enough beside it to tell two
+ *  similar columns apart in the list. */
+export interface MysqlOutlineColumn {
+  name: string;
+  /** The declared type as MySQL spells it: `varchar(255)`, `int unsigned`. */
+  dataType: string;
+  nullable: boolean;
+  /** `PRI`, `UNI`, `MUL` or empty: which kind of key this column leads. */
+  key: string;
+  /** `table.column` this one points at, when it is a foreign key. */
+  references: string | null;
+}
+
+export interface MysqlOutlineTable {
+  name: string;
+  /** In table order. Views are listed here too — their columns complete like any others'. */
+  columns: MysqlOutlineColumn[];
+}
+
+/** Every table and column of one database. Read once and cached, and only ever as much as the
+ *  connected user has privileges to see. */
+export interface MysqlSchemaOutline {
+  database: string;
+  tables: MysqlOutlineTable[];
+}
+
 /** How a statement's result is to be read: a result set, a count of rows changed, plain success,
  *  or the reason it failed. */
 export type MysqlStatementKind = "rows" | "affected" | "ok" | "error";
@@ -194,6 +228,23 @@ export interface MysqlStatementResult {
   durationMs: number;
   /** Set when the statement failed, in which case nothing after it ran. */
   error: string | null;
+}
+
+/** How much a validation finding is worth trusting. `error` is the server refusing to parse the
+ *  text — certain. `warning` is everything else, which may only be wrong from where the check was
+ *  standing: it runs on its own connection, so a temporary table or a `USE` from earlier in the
+ *  script is invisible to it. */
+export type MysqlProblemSeverity = "error" | "warning";
+
+/** What the server made of a statement it was asked to parse but not to run. */
+export interface MysqlSqlProblem {
+  /** The server's own words, untranslated. */
+  message: string;
+  /** MySQL's error number — 1064 is a syntax error, 1146 an unknown table. Zero when none came. */
+  number: number;
+  /** The 1-based line *within the statement* MySQL pointed at, when it pointed at one. */
+  line: number | null;
+  severity: MysqlProblemSeverity;
 }
 
 export interface MongoCollectionPage {

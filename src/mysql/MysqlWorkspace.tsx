@@ -9,6 +9,7 @@ import {
   mysqlRenameTable,
   mysqlServerInfo,
 } from "./api";
+import { invalidateSchemaOutline } from "./schemaCache";
 import { isMysqlSystemDatabase } from "./system";
 import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -41,6 +42,20 @@ interface Props {
   onDisconnect: () => void;
   sidebarWidth?: number;
   onSidebarWidthChange?: (width: number) => void;
+  /**
+   * The saved connection is marked as one nothing is written to.
+   *
+   * Everything that would change the server is turned off, not merely the Query tab: the tables in
+   * the sidebar cannot be created, renamed or dropped, the database tools are closed, rows in the
+   * Data tab do not open for editing, and the Structure tab sends no `ALTER`. A flag that guarded
+   * only one of the four would be worse than none — it reads as a promise about the connection.
+   *
+   * What still works is everything that reads. That is the point of the flag.
+   */
+  readOnly?: boolean;
+  /** The saved connection's own id, as opposed to the session's. What the Query tab files its
+   *  draft and its history under, so both survive the app closing. */
+  profileId?: string;
 }
 
 /** Which of the header's tabs the content area is showing: the selected table's rows, the same
@@ -71,7 +86,15 @@ const DEFAULT_SIDEBAR_WIDTH = 200;
 const MIN_SIDEBAR_WIDTH = 140;
 const MAX_SIDEBAR_WIDTH = 480;
 
-function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, onSidebarWidthChange }: Props) {
+function MysqlWorkspace({
+  connectionId,
+  initialDatabase,
+  error,
+  sidebarWidth,
+  onSidebarWidthChange,
+  readOnly = false,
+  profileId = "",
+}: Props) {
   const { t } = useTranslation();
   const [databases, setDatabases] = useState<string[]>([]);
   const [databasesLoading, setDatabasesLoading] = useState(false);
@@ -238,9 +261,23 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     setSelectedTable(table);
   }
 
+  /** Opens a table named somewhere other than the sidebar — what `Ctrl+Click` on a table in the
+   * Query tab's script does. The filter is cleared, or the table just selected could be one the
+   * list is not currently showing, and the Data tab is what comes up: someone following a name out
+   * of a script is going to read rows rather than column definitions. */
+  const openTable = useCallback((table: string) => {
+    setTableFilter("");
+    setSelectedTable(table);
+    setContentMode("data");
+  }, []);
+
   const reloadTables = useCallback(() => {
     if (!selectedDb) return;
     setTablesLoading(true);
+    // Every path here follows something that changed the database's shape — a table created,
+    // renamed, dropped, or a whole restore. The Query tab completes from a cached copy of that
+    // shape, and this is the one place all of those meet.
+    invalidateSchemaOutline(connectionId, selectedDb);
     mysqlListTables(connectionId, selectedDb)
       .then((t) => setTables(t))
       .catch((e) => setLocalError(errorMessage(t, e)))
@@ -308,20 +345,28 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
    * in it may be created, renamed or dropped, nor anything done to it as a whole. */
   const systemDatabase = selectedDb !== "" && isMysqlSystemDatabase(selectedDb);
 
+  /** The two reasons this workspace refuses to change anything, and the one worth saying first.
+   * Read-only is a decision someone made about the connection; a system database is a fact about
+   * the server, and the one they are more likely to already know. */
+  const noWrites = readOnly || systemDatabase;
+  const noWritesHint = readOnly
+    ? t("common.readOnlyConnection")
+    : t("mysql.systemTable", { database: selectedDb });
+
   const tableActions: ItemAction[] = [
     {
       key: "rename",
       label: t("mysql.renameTable"),
-      disabled: systemDatabase,
-      disabledHint: t("mysql.systemTable", { database: selectedDb }),
+      disabled: noWrites,
+      disabledHint: noWritesHint,
       onSelect: setRenamingTable,
     },
     {
       key: "drop",
       label: t("mysql.dropTable"),
       danger: true,
-      disabled: systemDatabase,
-      disabledHint: t("mysql.systemTable", { database: selectedDb }),
+      disabled: noWrites,
+      disabledHint: noWritesHint,
       onSelect: setDroppingTable,
     },
   ];
@@ -367,6 +412,9 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
               {
                 value: NEW_DATABASE,
                 label: t("mysql.createDatabase"),
+                // Shown rather than hidden, so the picker offers the same thing wherever it is
+                // opened and the missing entry is not read as a bug.
+                disabled: readOnly,
                 optionLabel: <span className="select-new-option">+ {t("mysql.createDatabase")}</span>,
               },
               ...databases.map((db) => ({ value: db, label: db })),
@@ -443,18 +491,24 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                   label: systemDatabase
                     ? t("mysql.addTableSystem", { database: selectedDb })
                     : t("mysql.addTable"),
-                  disabled: !selectedDb || tablesLoading || systemDatabase,
+                  disabled: !selectedDb || tablesLoading || noWrites,
+                  // Only for read-only: the system-database case already says so in its label.
+                  disabledHint: readOnly ? t("common.readOnlyConnection") : undefined,
                   onClick: () => setCreatingTable(true),
                 },
               ]}
             />
             {/* The database as a whole, kept at the far end: these act on everything the list
                 above is showing rather than on anything in it. */}
+            {/* Dump, restore and drop. A dump only reads, but restore and drop are here too and
+                the component takes one `disabled` for all three — closing the lot is the right way
+                round: a read-only connection losing its dump button is a nuisance, and keeping its
+                restore button is the thing the flag was set to prevent. */}
             <DatabaseActions
               kind="mysql"
               connectionId={connectionId}
               database={selectedDb}
-              disabled={tablesLoading}
+              disabled={tablesLoading || readOnly}
               onError={setLocalError}
               onChanged={databaseChanged}
               onBusyChange={setTransferStatus}
@@ -483,6 +537,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
               selectedTable={selectedTable}
               onError={setLocalError}
               layoutWidth={width}
+              readOnly={readOnly}
             />
           )}
           {contentMode === "structure" && !selectedTable && (
@@ -494,6 +549,7 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
               selectedDb={selectedDb}
               selectedTable={selectedTable}
               onError={setLocalError}
+              readOnly={readOnly}
             />
           )}
           {contentMode === "stats" && !selectedDb && (
@@ -516,7 +572,14 @@ function MysqlWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
               being written and the results it has produced so far must survive a look at the data
               or the structure it is being written against. */}
           <div className={contentMode === "query" ? "mysql-panel" : "mysql-panel-hidden"}>
-            <QueryEditor connectionId={connectionId} database={selectedDb} />
+            <QueryEditor
+              connectionId={connectionId}
+              database={selectedDb}
+              active={contentMode === "query"}
+              readOnly={readOnly}
+              profileId={profileId}
+              onOpenTable={openTable}
+            />
           </div>
         </section>
       </div>

@@ -3,6 +3,7 @@ import ConnectionTab from "./ConnectionTab";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
 import { CloseIcon, PlusIcon } from "./icons";
+import { useScrollAcceleration } from "./scroll";
 import { useAccent, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
 import { useTranslation } from "./i18n";
@@ -37,6 +38,8 @@ function App() {
   const [accent, setAccent] = useAccent();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const update = useUpdateCheck();
+
+  useScrollAcceleration();
 
   function openTab() {
     const tab = newTab();

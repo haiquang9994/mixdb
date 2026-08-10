@@ -201,6 +201,70 @@ export function PinIcon(props: IconProps) {
   );
 }
 
+/** Run what has been written — the SQL editor's Run button. Filled, so it holds its shape at the
+ * button's font size the way an outlined triangle would not. */
+export function PlayIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 5.2v13.6L19 12z" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+/** Run the whole script rather than one statement of it: the same triangle as {@link PlayIcon},
+ * played up against the end. */
+export function RunAllIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 5.2v13.6L16 12z" fill="currentColor" stroke="none" />
+      <path d="M19 5.5v13" />
+    </Icon>
+  );
+}
+
+/** Lay the script out: lines of text, indented as a formatter would indent them. */
+export function FormatIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 6h16" />
+      <path d="M9 11h11" />
+      <path d="M9 16h7" />
+      <path d="M4 21h16" />
+    </Icon>
+  );
+}
+
+/** What has been run before: a clock with its hand wound back. */
+export function HistoryIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" />
+      <path d="M3.5 4.5v4h4" />
+      <path d="M12 7.5V12l3 1.8" />
+    </Icon>
+  );
+}
+
+/** Keep this query under a name: a bookmark. */
+export function BookmarkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6.5 3.5h11a1 1 0 0 1 1 1v16l-6.5-4-6.5 4v-16a1 1 0 0 1 1-1z" />
+    </Icon>
+  );
+}
+
+/** A console waiting for something to be run — the SQL editor's empty results panel. */
+export function TerminalIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M7.5 9.5L10.5 12l-3 2.5" />
+      <path d="M13.5 15h3.5" />
+    </Icon>
+  );
+}
+
 /** A status marker rather than an action — currently the "unsaved changes" bullet. Filled, so
  * it reads as a dot at the small sizes it is used at instead of as a thin ring. */
 export function DotIcon(props: IconProps) {

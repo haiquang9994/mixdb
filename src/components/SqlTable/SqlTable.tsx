@@ -6,6 +6,7 @@ import FilterBar from "../FilterBar";
 import InsertRowsDialog from "../InsertRowsDialog";
 import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
+import Tooltip from "../Tooltip";
 import { ChevronDownIcon, ChevronUpIcon, CopyIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
@@ -76,11 +77,21 @@ interface Props {
   selectedTable: string;
   onError: (message: string) => void;
   layoutWidth?: number;
+  /** The saved connection is marked as one nothing is written to. The grid still reads, sorts,
+   *  filters and pages exactly as it does otherwise — what goes is every door out of read mode. */
+  readOnly?: boolean;
 }
 
 const PAGE_SIZES = [100, 200, 500, 1000];
 
-function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidth }: Props) {
+function SqlTable({
+  connectionId,
+  selectedDb,
+  selectedTable,
+  onError,
+  layoutWidth,
+  readOnly = false,
+}: Props) {
   const { t } = useTranslation();
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(100);
@@ -463,6 +474,11 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
   }
 
   async function moveEditTo(rowIndex: number, col: string) {
+    // The one door into edit mode — a double-click and a Tab both come through here — so this is
+    // the one place a read-only connection has to be turned away. Nothing is said about it: a cell
+    // that simply does not open reads as a grid for looking at, and the reason is on the buttons
+    // below, where someone who wants to change something is already looking.
+    if (readOnly) return;
     const leavingRow = editingCellRef.current?.rowIndex;
     commitEditingCell();
     if (leavingRow !== undefined && leavingRow !== rowIndex) {
@@ -543,7 +559,7 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
     // Delete/Backspace on a selection is the toolbar's delete button, down to the confirmation
     // step — so it is gated on exactly what disables that button.
     if (e.key === "Delete" || e.key === "Backspace") {
-      if (loading || deleting || selectedRows.size === 0) return;
+      if (readOnly || loading || deleting || selectedRows.size === 0) return;
       e.preventDefault();
       void openDeleteConfirm();
     }
@@ -662,25 +678,38 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
                       // `aria-sort` is what tells a screen reader the grid is ordered by this
                       // column; the chevron only says it to the eye.
                       aria-sort={sorted ? (sorted.desc ? "descending" : "ascending") : "none"}
-                      title={t(
-                        sorted ? (sorted.desc ? "sqlTable.sortDesc" : "sqlTable.sortAsc") : "sqlTable.sortNone",
-                        { column: c },
-                      )}
                       onClick={() => void toggleSort(c)}
                     >
-                      {c}
+                      {/* Around the name rather than around the whole cell, and not only because a
+                          hook cannot be called from this loop: the FK chip beside it has a tooltip
+                          of its own, and a cell-wide one would still count as hovered while the
+                          pointer sat on the chip — two bubbles at once. Side by side, entering one
+                          leaves the other. */}
+                      <Tooltip
+                        text={t(
+                          sorted
+                            ? sorted.desc
+                              ? "sqlTable.sortDesc"
+                              : "sqlTable.sortAsc"
+                            : "sqlTable.sortNone",
+                          { column: c },
+                        )}
+                      >
+                        {c}
+                      </Tooltip>
                       {foreignKey && (
-                        <span
-                          className={styles.fkBadge}
-                          // Its own tooltip, so what the column points at is readable without
-                          // having to remember the schema.
-                          title={t("sqlTable.foreignKey", {
+                        // Its own tooltip, so what the column points at is readable without having
+                        // to remember the schema. Drawn by the app rather than by `title`, which
+                        // would have put it in the system's font, where the `->` of the message is
+                        // two characters instead of the arrow Fira Code makes of them.
+                        <Tooltip
+                          text={t("sqlTable.foreignKey", {
                             table: foreignKey.table,
                             column: foreignKey.column,
                           })}
                         >
-                          FK
-                        </span>
+                          <span className={styles.fkBadge}>FK</span>
+                        </Tooltip>
                       )}
                       {/* Always rendered, empty when unsorted: the column is measured for the
                           edit input's width, and an indicator that comes and goes would change
@@ -792,14 +821,16 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
               key: "insert",
               icon: PlusIcon,
               label: t("sqlTable.insertRows"),
-              disabled: loading || deleting || columns.length === 0,
+              disabled: readOnly || loading || deleting || columns.length === 0,
+              disabledHint: readOnly ? t("common.readOnlyConnection") : undefined,
               onClick: () => void openInsert("new"),
             },
             {
               key: "clone",
               icon: CopyIcon,
               label: t("sqlTable.cloneRows"),
-              disabled: loading || deleting || selectedRows.size === 0,
+              disabled: readOnly || loading || deleting || selectedRows.size === 0,
+              disabledHint: readOnly ? t("common.readOnlyConnection") : undefined,
               onClick: () => void openInsert("clone"),
             },
             {
@@ -807,7 +838,8 @@ function SqlTable({ connectionId, selectedDb, selectedTable, onError, layoutWidt
               icon: TrashIcon,
               label: t("sqlTable.deleteRows"),
               danger: true,
-              disabled: loading || deleting || selectedRows.size === 0,
+              disabled: readOnly || loading || deleting || selectedRows.size === 0,
+              disabledHint: readOnly ? t("common.readOnlyConnection") : undefined,
               onClick: () => void openDeleteConfirm(),
             },
           ]}

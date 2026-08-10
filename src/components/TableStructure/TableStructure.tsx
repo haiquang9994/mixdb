@@ -9,6 +9,7 @@ import {
   mysqlModifyIndex,
   mysqlTableStructure,
 } from "../../mysql/api";
+import { invalidateSchemaOutline } from "../../mysql/schemaCache";
 import ActionBar from "../ActionBar";
 import ColumnDialog from "../ColumnDialog";
 import ConfirmDialog from "../ConfirmDialog";
@@ -60,6 +61,9 @@ interface Props {
   selectedDb: string;
   selectedTable: string;
   onError: (message: string) => void;
+  /** The saved connection is marked as one nothing is written to. The columns and indexes are
+   *  still read and shown; every `ALTER TABLE` this panel can send is what goes. */
+  readOnly?: boolean;
 }
 
 /**
@@ -69,7 +73,13 @@ interface Props {
  * of pending edits applied together — a rejected ALTER then names the one thing that was wrong
  * with it, and what the grid shows afterwards is what the server actually has.
  */
-function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Props) {
+function TableStructure({
+  connectionId,
+  selectedDb,
+  selectedTable,
+  onError,
+  readOnly = false,
+}: Props) {
   const { t } = useTranslation();
   const [structure, setStructure] = useState<MysqlTableStructure | null>(null);
   const [loading, setLoading] = useState(false);
@@ -123,8 +133,16 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
   const columns = structure?.columns ?? [];
   const indexes = structure?.indexes ?? [];
   const busy = loading || saving;
+  /** What every button that would send an `ALTER TABLE` is gated on. The reload beside them is
+   *  not: reading is the one thing a read-only connection is for. */
+  const noWrites = busy || readOnly;
+  /** Why they are greyed out, when it is not simply that the panel is mid-request. */
+  const noWritesHint = readOnly ? t("common.readOnlyConnection") : undefined;
 
   function reload() {
+    // A column added, changed or dropped here is a column the Query tab's completion is now wrong
+    // about, and this runs after every one of them.
+    invalidateSchemaOutline(connectionId, selectedDb);
     setReloadToken((n) => n + 1);
   }
 
@@ -194,7 +212,8 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
                 key: "add",
                 icon: PlusIcon,
                 label: t("structure.addColumn"),
-                disabled: busy,
+                disabled: noWrites,
+                disabledHint: noWritesHint,
                 onClick: () => setColumnDialog({}),
               },
             ]}
@@ -264,11 +283,11 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
                         className={styles.iconButton}
                         // A generated column's expression is not read here, so re-issuing its
                         // definition would drop the very thing that defines it.
-                        disabled={busy || column.generated}
+                        disabled={noWrites || column.generated}
                         title={
                           column.generated
                             ? t("structure.generatedTooltip")
-                            : t("structure.editColumn")
+                            : (noWritesHint ?? t("structure.editColumn"))
                         }
                         aria-label={t("structure.editColumn")}
                         onClick={() => setColumnDialog({ column })}
@@ -278,8 +297,8 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
                       <button
                         type="button"
                         className={`${styles.iconButton} ${styles.danger}`}
-                        disabled={busy}
-                        title={t("structure.dropColumn")}
+                        disabled={noWrites}
+                        title={noWritesHint ?? t("structure.dropColumn")}
                         aria-label={t("structure.dropColumn")}
                         onClick={() => setPendingDrop({ kind: "column", name: column.name })}
                       >
@@ -304,7 +323,8 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
                 key: "add",
                 icon: PlusIcon,
                 label: t("structure.addIndex"),
-                disabled: busy || columns.length === 0,
+                disabled: noWrites || columns.length === 0,
+                disabledHint: noWritesHint,
                 onClick: () => setIndexDialog({}),
               },
             ]}
@@ -356,11 +376,11 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
                         <button
                           type="button"
                           className={styles.iconButton}
-                          disabled={busy || functional}
+                          disabled={noWrites || functional}
                           title={
                             functional
                               ? t("structure.functionalIndexTooltip")
-                              : t("structure.editIndex")
+                              : (noWritesHint ?? t("structure.editIndex"))
                           }
                           aria-label={t("structure.editIndex")}
                           onClick={() => setIndexDialog({ index })}
@@ -370,8 +390,8 @@ function TableStructure({ connectionId, selectedDb, selectedTable, onError }: Pr
                         <button
                           type="button"
                           className={`${styles.iconButton} ${styles.danger}`}
-                          disabled={busy}
-                          title={t("structure.dropIndex")}
+                          disabled={noWrites}
+                          title={noWritesHint ?? t("structure.dropIndex")}
                           aria-label={t("structure.dropIndex")}
                           onClick={() => setPendingDrop({ kind: "index", name: index.name })}
                         >

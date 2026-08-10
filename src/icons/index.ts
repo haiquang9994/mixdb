@@ -1,5 +1,6 @@
 export { Icon, type IconProps } from "./Icon";
 export {
+  BookmarkIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
@@ -12,12 +13,17 @@ export {
   EyeIcon,
   EyeOffIcon,
   FolderIcon,
+  FormatIcon,
+  HistoryIcon,
   LockIcon,
   MinusIcon,
   PencilIcon,
   PinIcon,
+  PlayIcon,
   PlusIcon,
   ReloadIcon,
+  RunAllIcon,
+  TerminalIcon,
   TrashIcon,
   UploadIcon,
 } from "./icons";

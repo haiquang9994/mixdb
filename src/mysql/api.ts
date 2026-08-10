@@ -3,6 +3,8 @@ import type {
   MysqlCollation,
   MysqlColumnSpec,
   MysqlIndexSpec,
+  MysqlSchemaOutline,
+  MysqlSqlProblem,
   MysqlStatementResult,
   MysqlTablePage,
   MysqlTableStructure,
@@ -124,6 +126,17 @@ export function mysqlTableStructure(
   table: string
 ): Promise<MysqlTableStructure> {
   return invoke<MysqlTableStructure>("mysql_table_structure", { id, database, table });
+}
+
+/**
+ * Every table and column of one database, for the Query tab's completion.
+ *
+ * One call covers the whole database — unlike {@link mysqlTableStructure}, which answers for a
+ * single table and in the detail the Structure tab needs. Only what the connected user has
+ * privileges to see is in it, so a missing table means "not visible to you", not "not there".
+ */
+export function mysqlSchemaOutline(id: string, database: string): Promise<MysqlSchemaOutline> {
+  return invoke<MysqlSchemaOutline>("mysql_schema_outline", { id, database });
 }
 
 /** Every collation this server supports, ordered by character set. A property of the server and not
@@ -289,4 +302,24 @@ export function mysqlRunScript(
  */
 export function mysqlCancelQuery(id: string): Promise<void> {
   return invoke<void>("mysql_cancel_query", { id });
+}
+
+/**
+ * Asks MySQL what it makes of one statement, without running it.
+ *
+ * The statement is prepared and the plan immediately thrown away, so nothing it says would happen
+ * happens — this is safe to call on a half-typed `DELETE`. `null` means the server had nothing to
+ * say about it.
+ *
+ * The check runs on its own pooled connection, not on the session a script runs on. So anything
+ * the script itself would have set up first — a temporary table, a `USE`, a `SET` — is invisible
+ * here, which is why almost everything that comes back is a `warning`: only the server refusing to
+ * parse the text is certain.
+ */
+export function mysqlValidateSql(
+  id: string,
+  sql: string,
+  database?: string
+): Promise<MysqlSqlProblem | null> {
+  return invoke<MysqlSqlProblem | null>("mysql_validate_sql", { id, sql, database });
 }

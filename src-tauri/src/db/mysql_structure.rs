@@ -10,6 +10,7 @@ use super::mysql::quote_ident;
 use serde::{Deserialize, Serialize};
 use sqlx::mysql::MySqlRow;
 use sqlx::{MySqlPool, Row};
+use std::collections::HashMap;
 
 /// Reads a text column that `information_schema` may hand over as bytes rather than as characters
 /// (`COLUMN_DEFAULT` is a blob-backed column on some servers), and reports an absent value as
@@ -469,6 +470,120 @@ pub async fn table_structure(
     indexes.sort_by_key(|index| !index.primary);
 
     Ok(TableStructure { columns, indexes })
+}
+
+/// One column as completion needs to know it: enough to offer the name and to say what it is,
+/// and nothing of what an editor would need to change it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutlineColumn {
+    pub name: String,
+    /// The declared type as MySQL spells it: `varchar(255)`, `int unsigned`.
+    pub data_type: String,
+    pub nullable: bool,
+    /// `PRI`, `UNI`, `MUL` or empty: which kind of key this column leads.
+    pub key: String,
+    /// `table.column` this one points at, when it is a foreign key. Shown beside the column in the
+    /// completion list, which is where a join is usually being written.
+    pub references: Option<String>,
+}
+
+/// One table, with its columns in table order.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutlineTable {
+    pub name: String,
+    pub columns: Vec<OutlineColumn>,
+}
+
+/// Every table and column of one database in a single payload.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaOutline {
+    /// The database this describes, so a cached outline can be told apart from the one asked for.
+    pub database: String,
+    pub tables: Vec<OutlineTable>,
+}
+
+/// What the Query tab's completion knows about the selected database.
+///
+/// `table_structure` answers the same question for one table and in far more detail. This is the
+/// shape completion needs instead: every table at once, and only what an offered name has to
+/// carry. It is read once per database and kept, so the cost is two reads of `information_schema`
+/// rather than one per table.
+///
+/// A table whose columns the connected user may not see simply is not in the list — the same rule
+/// as everywhere else in this module. Views come back alongside base tables; a view's columns
+/// complete exactly like a table's, so nothing here needs to tell the two apart.
+pub async fn schema_outline(pool: &MySqlPool, database: &str) -> Result<SchemaOutline, AppError> {
+    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
+
+    // The foreign keys first, so that each column can be built already knowing where it points.
+    //
+    // A failure here is not one worth failing the whole outline over. `KEY_COLUMN_USAGE` is the
+    // one read in this function that a server can refuse or be slow about — it is the heaviest of
+    // the `information_schema` views on MySQL 5.7, and a user may hold privileges on the tables
+    // without holding them on the constraints. Completion is for the columns; where a foreign key
+    // points is a line of detail beside them, and going without it costs nothing else.
+    let key_rows = sqlx::query(
+        "SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+         FROM information_schema.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL",
+    )
+    .bind(database)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap_or_default();
+
+    let mut references: HashMap<(String, String), String> = HashMap::new();
+    for row in &key_rows {
+        let target = match (text(row, "REFERENCED_TABLE_NAME"), text(row, "REFERENCED_COLUMN_NAME")) {
+            (Some(table), Some(column)) => format!("{table}.{column}"),
+            _ => continue,
+        };
+        references.insert(
+            (text_or_empty(row, "TABLE_NAME"), text_or_empty(row, "COLUMN_NAME")),
+            target,
+        );
+    }
+
+    let column_rows = sqlx::query(
+        "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = ?
+         ORDER BY TABLE_NAME, ORDINAL_POSITION",
+    )
+    .bind(database)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|e| err!("error.mysql", message = e))?;
+
+    let mut tables: Vec<OutlineTable> = Vec::new();
+    for row in &column_rows {
+        let table = text_or_empty(row, "TABLE_NAME");
+        let name = text_or_empty(row, "COLUMN_NAME");
+        let column = OutlineColumn {
+            references: references.get(&(table.clone(), name.clone())).cloned(),
+            name,
+            data_type: text_or_empty(row, "COLUMN_TYPE"),
+            nullable: text_or_empty(row, "IS_NULLABLE").eq_ignore_ascii_case("YES"),
+            key: text_or_empty(row, "COLUMN_KEY"),
+        };
+        // Ordered by table and then by position within it, so each table's columns arrive together
+        // and the one being built is always the last.
+        match tables.last_mut() {
+            Some(last) if last.name == table => last.columns.push(column),
+            _ => tables.push(OutlineTable {
+                name: table,
+                columns: vec![column],
+            }),
+        }
+    }
+
+    Ok(SchemaOutline {
+        database: database.to_string(),
+        tables,
+    })
 }
 
 /// Every collation the server supports, in character set order. Read once and offered as a list to

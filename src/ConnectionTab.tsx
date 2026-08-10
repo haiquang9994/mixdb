@@ -312,7 +312,17 @@ function ConnectionTab({ onTitleChange }: Props) {
       // width, Redis's scan limit — is kept: saving a connection edits its settings, it doesn't
       // reset the rest of what is remembered about it.
       const existing = savedConnections.find((c) => c.id === editingId);
-      const entry: SavedConnection = { ...existing, id: editingId, name, config: buildConnectionConfig() };
+      const config = buildConnectionConfig();
+      const entry: SavedConnection = {
+        ...existing,
+        id: editingId,
+        name,
+        config,
+        // Read-only is the exception to that: only MySQL enforces it and only MySQL offers the menu
+        // item that clears it, so a connection changed to another kind drops the flag rather than
+        // keeping one nothing acts on and nothing can turn off.
+        readOnly: config.kind === "mysql" ? existing?.readOnly : undefined,
+      };
       await updateConnection(entry);
       setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
     } else {
@@ -364,6 +374,13 @@ function ConnectionTab({ onTitleChange }: Props) {
     // Unpinning drops the flag rather than writing `false`: absent is the default, so a connection
     // that was pinned once doesn't carry a dead `"pinned": false` in the file forever.
     await updateConnection({ ...entry, pinned: entry.pinned ? undefined : true });
+  }
+
+  async function toggleReadOnly(id: string) {
+    const entry = savedConnections.find((c) => c.id === id);
+    if (!entry) return;
+    // Dropped rather than written as `false`, for the same reason `pinned` is.
+    await updateConnection({ ...entry, readOnly: entry.readOnly ? undefined : true });
   }
 
   /**
@@ -766,6 +783,21 @@ function ConnectionTab({ onTitleChange }: Props) {
                   ? t("connection.unpin")
                   : t("connection.pin")}
               </button>
+              {/* MySQL only: the Query tab is the one place that refuses a write, so offering the
+                  flag on a Mongo or Redis connection would promise a protection nothing keeps. */}
+              {savedConnections.find((c) => c.id === contextMenu.id)?.config.kind === "mysql" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleReadOnly(contextMenu.id);
+                    closeContextMenu();
+                  }}
+                >
+                  {savedConnections.find((c) => c.id === contextMenu.id)?.readOnly
+                    ? t("connection.allowWrites")
+                    : t("connection.markReadOnly")}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -803,6 +835,8 @@ function ConnectionTab({ onTitleChange }: Props) {
         onDisconnect={disconnect}
         sidebarWidth={activeSavedConnection?.sidebarWidth}
         onSidebarWidthChange={updateSidebarWidth}
+        readOnly={activeSavedConnection?.readOnly ?? false}
+        profileId={activeSavedConnection?.id ?? ""}
       />
     );
   }

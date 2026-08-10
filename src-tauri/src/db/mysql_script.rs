@@ -179,6 +179,122 @@ fn split_statements(sql: &str) -> Vec<Statement> {
     statements
 }
 
+/// What the server made of a statement it was asked to parse but not to run.
+///
+/// Only ever produced by {@link validate}, which is why there is no "it was fine" variant: a
+/// statement the server accepted comes back as `None`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SqlProblem {
+    /// The server's own words, untranslated — it is MySQL talking, and rewording it would only
+    /// make it harder to search for.
+    pub message: String,
+    /// MySQL's error number, e.g. 1064 for a syntax error. Zero when the failure carried none.
+    pub number: u16,
+    /// The 1-based line *within the statement* the server pointed at, when it pointed at one.
+    pub line: Option<u32>,
+    /// `error` for text the server cannot parse at all; `warning` for everything else, which is
+    /// anything that might only be wrong from where the check is standing — see {@link validate}.
+    pub severity: String,
+}
+
+/// The statement text could not be parsed. The one thing a checker can be sure is wrong.
+const ER_PARSE_ERROR: u16 = 1064;
+/// "This statement kind cannot be prepared" — `USE`, `SHOW BINLOG EVENTS`, and a long tail of
+/// others. It says nothing about whether the statement is valid.
+const ER_UNSUPPORTED_PS: u16 = 1295;
+/// The user may not do this. Also says nothing about the text: the statement is well-formed, this
+/// login simply may not run it, and running it is not what was asked for.
+const ACCESS_DENIED: [u16; 6] = [1044, 1045, 1142, 1143, 1227, 1370];
+
+/// The line MySQL named, out of `... near 'x' at line 3`. Anchoring a diagnostic anywhere else
+/// would put the squiggle under text the server never complained about.
+fn error_line(message: &str) -> Option<u32> {
+    let at = message.rfind("at line ")?;
+    message[at + "at line ".len()..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .ok()
+}
+
+/// Turns a failed `PREPARE` into something worth showing, or into nothing.
+fn problem(error: &sqlx::Error) -> Option<SqlProblem> {
+    let db = error.as_database_error()?;
+    let number = db
+        .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+        .map_or(0, |e| e.number());
+    if number == ER_UNSUPPORTED_PS || ACCESS_DENIED.contains(&number) {
+        return None;
+    }
+    let message = db.message().to_string();
+    Some(SqlProblem {
+        line: error_line(&message),
+        severity: if number == ER_PARSE_ERROR { "error" } else { "warning" }.to_string(),
+        message,
+        number,
+    })
+}
+
+/// Asks MySQL what it makes of one statement, **without running it**.
+///
+/// `PREPARE` parses and plans; `DEALLOCATE` throws the plan away. Nothing in between executes, so
+/// this is safe to fire at a half-typed `DELETE`. `PREPARE` will not take a placeholder for the
+/// text it prepares — its argument has to be a string literal or a user variable — so the text goes
+/// into a user variable first, which *can* be bound, and no user text is ever interpolated into
+/// SQL.
+///
+/// This runs on a pooled connection rather than on the session the script runs on, and that is the
+/// whole reason most of what comes back is a warning rather than an error. A temporary table, a
+/// `USE`, a `SET` from earlier in the script — none of it is visible from here, so "table doesn't
+/// exist" may well mean "not yet". Only the server refusing to parse the text at all is certain.
+pub async fn validate(
+    pool: &MySqlPool,
+    sql: &str,
+    database: Option<&str>,
+) -> Result<Option<SqlProblem>, AppError> {
+    if sql.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
+    if let Some(db) = database.filter(|d| !d.is_empty()) {
+        // Sent as text, since `USE` is one of the statements the prepared protocol refuses. A
+        // database that cannot be entered ends the check rather than failing it: whatever is wrong
+        // is wrong with the header, not with the statement being asked about.
+        if sqlx::raw_sql(sqlx::AssertSqlSafe(format!("USE {}", quote_ident(db))))
+            .execute(&mut *conn)
+            .await
+            .is_err()
+        {
+            return Ok(None);
+        }
+    }
+
+    sqlx::query("SET @mixdb_check = ?")
+        .bind(sql)
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| err!("error.mysql", message = e))?;
+
+    match sqlx::raw_sql("PREPARE mixdb_check FROM @mixdb_check")
+        .execute(&mut *conn)
+        .await
+    {
+        Ok(_) => {
+            // Ignored on purpose: the plan is gone when the connection goes back to the pool
+            // either way, and a failure to tidy up is not something to report as a problem with
+            // the user's statement.
+            let _ = sqlx::raw_sql("DEALLOCATE PREPARE mixdb_check")
+                .execute(&mut *conn)
+                .await;
+            Ok(None)
+        }
+        Err(e) => Ok(problem(&e)),
+    }
+}
+
 /// The statements whose point is the number of rows they changed, so that a count of zero is still
 /// worth reporting as a count — `UPDATE ... 0 rows` says something, `SET @x = 1 ... 0 rows` does
 /// not.
@@ -326,7 +442,21 @@ pub async fn run(
 /// separately is a syntax error at best and half an operation at worst.
 #[cfg(test)]
 mod tests {
-    use super::split_statements;
+    use super::{error_line, split_statements};
+
+    /// Where the diagnostic gets anchored. MySQL puts the line at the end of the sentence, and a
+    /// statement whose text happens to contain those words must not be read as the server's.
+    #[test]
+    fn the_line_is_read_off_the_end_of_the_server_message() {
+        assert_eq!(
+            error_line("You have an error in your SQL syntax; ... near 'x' at line 3"),
+            Some(3)
+        );
+        // The last one wins: the quoted fragment can hold the phrase too.
+        assert_eq!(error_line("... near 'at line 9' at line 2"), Some(2));
+        assert_eq!(error_line("Table 'db.t' doesn't exist"), None);
+        assert_eq!(error_line("at line "), None);
+    }
 
     fn texts(sql: &str) -> Vec<String> {
         split_statements(sql)

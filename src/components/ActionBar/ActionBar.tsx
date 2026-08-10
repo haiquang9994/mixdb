@@ -11,6 +11,9 @@ export interface ActionBarAction {
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  /** Why it is greyed out, replacing the label as the tooltip. An icon-only button with no text
+   *  and no reason is a dead end — the same rule the item menus follow. */
+  disabledHint?: string;
   /** Spins the icon while the action is running. */
   busy?: boolean;
   /** Paints the button as destructive. For actions that lose data, not merely risky ones. */
@@ -27,13 +30,15 @@ interface Props {
 function ActionBar({ actions, className }: Props) {
   return (
     <div className={`${styles.bar}${className ? ` ${className}` : ""}`}>
-      {actions.map(({ key, icon: ActionIcon, label, onClick, disabled, busy, danger }) => (
+      {actions.map(({ key, icon: ActionIcon, label, onClick, disabled, disabledHint, busy, danger }) => (
         <button
           key={key}
           type="button"
           className={danger ? `${styles.action} ${styles.danger}` : styles.action}
+          // The label stays the accessible name whatever the state: it is what the button *is*,
+          // while the hint is only why it cannot be pressed right now.
           aria-label={label}
-          title={label}
+          title={disabled && disabledHint ? disabledHint : label}
           disabled={disabled}
           onClick={onClick}
         >

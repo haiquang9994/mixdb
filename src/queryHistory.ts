@@ -1,0 +1,157 @@
+import { useEffect, useSyncExternalStore } from "react";
+import { Store } from "@tauri-apps/plugin-store";
+
+/**
+ * Every script the Query tab has run, newest first.
+ *
+ * The thing an editor is asked for most often is the query from twenty minutes ago — the one that
+ * was right, before it was edited into something else. Nothing in MixDB used to remember it.
+ *
+ * Shared across tabs the way the connection list is: one list in memory, written through here, so
+ * a query run in one tab is in the history of the next one opened. Entries are stamped with the
+ * saved connection they were run against and the panel shows only that one's, because a query
+ * against `staging` is not an answer to a question about `production`.
+ */
+
+/** One run, as it is remembered. The result is summarised rather than kept: this is a record of
+ *  what was asked, not a cache of what came back. */
+export interface QueryHistoryEntry {
+  sql: string;
+  /** The saved connection it ran against, or the empty string for a connection nobody saved. */
+  profileId: string;
+  database: string;
+  /** Epoch milliseconds. Absolute rather than relative, so a list read tomorrow still reads right. */
+  startedAt: number;
+  durationMs: number;
+  /** Rows in the last result set, or null for a script that produced none. */
+  rowCount: number | null;
+  /** The reason it failed, when it did. A failed query is worth keeping — it is usually the one
+   *  about to be fixed and run again. */
+  error: string | null;
+}
+
+/** How many runs are kept. Enough to cover a day's work several times over; small enough that the
+ *  file stays something the app reads once at startup without thinking about it. */
+const MAX_ENTRIES = 300;
+
+const FILE = "query-history.json";
+const KEY = "entries";
+
+let storePromise: Promise<Store> | null = null;
+
+function getStore(): Promise<Store> {
+  if (!storePromise) storePromise = Store.load(FILE);
+  return storePromise;
+}
+
+let snapshot: QueryHistoryEntry[] = [];
+let loaded = false;
+let inFlight: Promise<void> | null = null;
+const listeners = new Set<() => void>();
+
+/** The list every reader sees from now on. Says nothing about whether the file has been read — only
+ *  {@link publish} may claim that. */
+function remember(list: QueryHistoryEntry[]) {
+  snapshot = list;
+  for (const listener of listeners) listener();
+}
+
+function publish(list: QueryHistoryEntry[]) {
+  loaded = true;
+  remember(list);
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function ensureLoaded(): Promise<void> {
+  if (loaded) return Promise.resolve();
+  if (!inFlight) {
+    inFlight = getStore()
+      .then(async (store) => publish((await store.get<QueryHistoryEntry[]>(KEY)) ?? []))
+      .finally(() => {
+        inFlight = null;
+      });
+  }
+  return inFlight;
+}
+
+/** Writes the list as it now stands. Failures are swallowed: a history that could not be saved is
+ *  not worth interrupting someone's work over, and it is still correct in memory. */
+function persist(list: QueryHistoryEntry[]): void {
+  void getStore()
+    .then(async (store) => {
+      await store.set(KEY, list);
+      await store.save();
+    })
+    .catch(() => {});
+}
+
+/** The whole history, kept in step across every tab. */
+export function useQueryHistory(): QueryHistoryEntry[] {
+  useEffect(() => {
+    ensureLoaded().catch(() => {});
+  }, []);
+  return useSyncExternalStore(subscribe, () => snapshot);
+}
+
+/**
+ * The list with this run at the front of it.
+ *
+ * A script run twice in a row is remembered once: pressing Run again after reading the results is
+ * the commonest thing there is, and a history of the same query forty times is a history of
+ * nothing. Only an immediate repeat is collapsed — the same query run again after something else
+ * is a separate occasion, and its place in the order is what makes it findable.
+ */
+function withEntry(entry: QueryHistoryEntry): QueryHistoryEntry[] {
+  const first = snapshot[0];
+  const repeat =
+    first !== undefined &&
+    first.sql === entry.sql &&
+    first.profileId === entry.profileId &&
+    first.database === entry.database;
+  return [entry, ...(repeat ? snapshot.slice(1) : snapshot)].slice(0, MAX_ENTRIES);
+}
+
+/**
+ * Adds a run to the front of the list.
+ *
+ * **The file is read first, and that is the whole point of the wait.** Nothing else reads it until
+ * the History dialog is opened, which is usually much later in a session than the first query is
+ * run — so a run recorded straight away would be added to an empty list and written as the whole
+ * history, and everything from every earlier session would be gone.
+ */
+export function recordQuery(entry: QueryHistoryEntry): void {
+  void ensureLoaded().then(
+    () => {
+      const list = withEntry(entry);
+      publish(list);
+      persist(list);
+    },
+    // The file could not be read. The run is still worth showing for the rest of the session, but
+    // nothing is written back: what is on disk is unknown, and writing over it would lose it.
+    () => remember(withEntry(entry))
+  );
+}
+
+/**
+ * Forgets this connection's runs, and only this connection's.
+ *
+ * The list this is pressed from shows one connection's history, so that is the whole of what it may
+ * clear — a button that emptied production's history while staging's was on screen would be a
+ * button nobody could trust. There is no undo, which is why it asks first.
+ */
+export function clearQueryHistory(profileId: string): void {
+  void ensureLoaded().then(
+    () => {
+      const list = snapshot.filter((entry) => entry.profileId !== profileId);
+      publish(list);
+      persist(list);
+    },
+    () => {}
+  );
+}

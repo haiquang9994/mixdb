@@ -6,6 +6,7 @@ import type { Language, TranslationKey } from "../../i18n";
 import { CloseIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import type { UpdateCheck } from "../../update";
+import QuerySection from "./QuerySection";
 import ToolsSection from "./ToolsSection";
 import UpdateSection from "./UpdateSection";
 import styles from "./SettingsModal.module.css";
@@ -111,6 +112,8 @@ function SettingsModal({ theme, onThemeChange, accent, onAccentChange, update, o
             ))}
           </div>
         </div>
+
+        <QuerySection />
 
         <ToolsSection />
 
