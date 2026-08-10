@@ -59,6 +59,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - The SSH tunnel test answers in colour — green when the tunnel came up, red with the server's own
   words when it didn't — and its button stays disabled until the host, the user and whichever
   credential the chosen auth method needs have been filled in.
+- Everything that goes through an SSH tunnel moves faster — dumps and restores most visibly, but
+  ordinary queries too. The forward used to carry 8KB at a time, one direction at a time, and left
+  each small write waiting a moment for company; a dump through it ran at about two thirds of the
+  speed the same machine managed with `ssh -L`. It now carries both directions at once, in much
+  larger pieces, and sends each piece the moment it has it.
 - Redis: the key sidebar reads the whole keyspace up front instead of a page per press of Load
   more. The list is sorted by key name, and sorting only settles once every name is in hand — so
   loading more used to drop keys into groups that had already been scrolled past. Now the list

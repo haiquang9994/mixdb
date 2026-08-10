@@ -1,18 +1,32 @@
 use crate::error::AppError;
 use crate::models::{SshAuth, SshConfig};
 use russh::client::{self};
-use russh::ChannelMsg;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const CHANNEL_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How much a channel may have in flight before the peer has to wait for the receiver to catch up.
+///
+/// russh defaults to 2MB, which is less than a distant link holds in flight: at 25MB/s and 100ms
+/// of round trip there is 2.5MB in the air at any moment, so the sender spends part of its time
+/// stopped, waiting for credit that is still travelling back. A dump is the one thing in the app
+/// that runs long enough for that to be worth the memory.
+const WINDOW_SIZE: u32 = 8 * 1024 * 1024;
+
+/// The buffer each direction of a forwarded connection copies through.
+///
+/// 8KB — what this used to read into — is a syscall and a wakeup per 8KB, which caps a forward
+/// well below what the link can carry. The cost of the larger buffer is that every connection held
+/// open through the tunnel keeps two of these, so it is sized to be past the point of diminishing
+/// returns rather than as large as possible.
+const BRIDGE_BUFFER: usize = 128 * 1024;
 
 /// Where the fingerprint of every SSH server MixDB has connected to is remembered, keyed by
 /// `host:port`. Its own file rather than OpenSSH's `~/.ssh/known_hosts`: that file is the user's,
@@ -127,7 +141,14 @@ async fn authenticate_inner(
     ssh: &SshConfig,
     app_data: &Path,
 ) -> Result<client::Handle<TunnelHandler>, AppError> {
-    let config = Arc::new(client::Config::default());
+    let config = Arc::new(client::Config {
+        // Nagle's algorithm holds a small write back waiting for more to go with it, which is
+        // exactly wrong under a forward: what is being delayed is usually a database's reply, and
+        // nothing else is coming until the client has seen it. russh leaves it on by default.
+        nodelay: true,
+        window_size: WINDOW_SIZE,
+        ..client::Config::default()
+    });
     let refused: Arc<Mutex<Option<AppError>>> = Arc::new(Mutex::new(None));
     let handler = TunnelHandler {
         endpoint: format!("{}:{}", ssh.host, ssh.port),
@@ -257,7 +278,7 @@ async fn bridge_connection(
         session.channel_open_direct_tcpip(remote_host.to_string(), remote_port as u32, "127.0.0.1", 0),
     )
     .await;
-    let mut channel = match opened {
+    let channel = match opened {
         Ok(Ok(c)) => c,
         // Either the SSH server rejected/never answered the forward request
         // (e.g. it can't reach remote_host:remote_port itself, or
@@ -267,27 +288,26 @@ async fn bridge_connection(
         Ok(Err(_)) | Err(_) => return,
     };
 
-    let mut buf = [0u8; 8192];
-    loop {
-        tokio::select! {
-            result = local_stream.read(&mut buf) => {
-                match result {
-                    Ok(0) => { let _ = channel.eof().await; break; }
-                    Ok(n) => { if channel.data(&buf[..n]).await.is_err() { break; } }
-                    Err(_) => break,
-                }
-            }
-            msg = channel.wait() => {
-                match msg {
-                    Some(ChannelMsg::Data { data }) => {
-                        if local_stream.write_all(&data).await.is_err() { break; }
-                    }
-                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
-                    _ => {}
-                }
-            }
-        }
-    }
+    // The same reasoning as the SSH socket's `nodelay`, for the hop between the app and whatever
+    // the local end of the forward is: a driver's query has nothing following it, so there is
+    // never anything to be gained by holding it back.
+    let _ = local_stream.set_nodelay(true);
+
+    // Both directions at once, rather than a `select!` that could only ever be carrying one of
+    // them: a dump is one long download whose acknowledgements travel the other way, and a restore
+    // is the same in reverse. Copying them in turn made each wait on the other.
+    //
+    // The copy also ends the way the hand-written loop did — one side reaching EOF shuts the other
+    // side's write half down, which is the SSH channel's EOF, and the transfer in the other
+    // direction is allowed to finish before the channel is dropped.
+    let mut remote_stream = channel.into_stream();
+    let _ = tokio::io::copy_bidirectional_with_sizes(
+        &mut local_stream,
+        &mut remote_stream,
+        BRIDGE_BUFFER,
+        BRIDGE_BUFFER,
+    )
+    .await;
 }
 
 #[cfg(test)]
