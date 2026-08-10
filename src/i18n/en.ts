@@ -527,7 +527,21 @@ const en = {
     noKeysInSlice: "Nothing matched here yet — load more to keep scanning.",
     reloadKeys: "Rescan keys",
     // The keyspace is walked with SCAN, which has no page numbers and no total to divide into
-    // pages — the list grows one slice at a time instead.
+    // pages. The sidebar walks it to the end up front so the list can be sorted by name and stay
+    // that way; these say how far that walk has got.
+    scanningKeys: "Scanning... {{n}} keys",
+    keysLoadedAll: "{{n}} keys",
+    keysLoadedPartial: "{{n}} keys loaded — more in the keyspace",
+    partialCountTooltip: "Keys read under this prefix so far — the scan is not finished, so there may be more.",
+    scanLimitNotice: "Stopped early to keep the list readable. Raise the key limit, or narrow the key pattern, to see the rest in order.",
+    // How far the scan is allowed to walk. Remembered per connection: the right number follows
+    // the server, not the app.
+    scanLimitLabel: "Key limit",
+    scanLimitTooltip: "How many keys to read before the scan stops. The whole keyspace is read up front so the list can stay sorted by name — a higher limit takes longer to open.",
+    scanLimitShort: "{{n}}K",
+    scanLimitOption: "Up to {{n}} keys",
+    // Rows already in hand, held back only so the sidebar isn't laying out thousands at once.
+    showMoreRows: "Show {{n}} more",
     loadMoreKeys: "Load more keys",
     loadingMore: "Loading...",
     resizeSidebar: "Resize sidebar",

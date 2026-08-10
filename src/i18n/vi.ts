@@ -526,8 +526,22 @@ const vi: TranslationDict = {
     noKeys: "Không có key nào",
     noKeysInSlice: "Chưa có key nào khớp ở phần này — tải thêm để quét tiếp.",
     reloadKeys: "Quét lại danh sách key",
-    // Keyspace được duyệt bằng SCAN, không có số trang và cũng không có tổng số để chia trang —
-    // danh sách chỉ dài thêm từng phần một.
+    // Keyspace được duyệt bằng SCAN, không có số trang và cũng không có tổng số để chia trang.
+    // Sidebar quét hết một lượt ngay từ đầu để danh sách sắp xếp được theo tên và giữ nguyên thứ
+    // tự đó; những dòng dưới đây cho biết lượt quét đã đi tới đâu.
+    scanningKeys: "Đang quét... {{n}} key",
+    keysLoadedAll: "{{n}} key",
+    keysLoadedPartial: "Đã tải {{n}} key — keyspace vẫn còn nữa",
+    partialCountTooltip: "Số key đã đọc được dưới nhánh này — quét chưa xong nên có thể còn nữa.",
+    scanLimitNotice: "Đã dừng sớm để danh sách còn đọc được. Nâng trần số key, hoặc thu hẹp mẫu key, để xem phần còn lại theo đúng thứ tự.",
+    // Trần cho lượt quét. Nhớ theo từng kết nối: con số phù hợp phụ thuộc vào server chứ không
+    // phải vào ứng dụng.
+    scanLimitLabel: "Trần số key",
+    scanLimitTooltip: "Đọc tối đa bao nhiêu key rồi dừng quét. Toàn bộ keyspace được đọc ngay từ đầu để danh sách giữ được thứ tự theo tên — trần càng cao thì mở càng lâu.",
+    scanLimitShort: "{{n}}K",
+    scanLimitOption: "Tối đa {{n}} key",
+    // Các hàng đã có sẵn, chỉ giữ lại để sidebar không phải vẽ hàng nghìn hàng cùng lúc.
+    showMoreRows: "Hiện thêm {{n}} mục",
     loadMoreKeys: "Tải thêm key",
     loadingMore: "Đang tải...",
     resizeSidebar: "Thay đổi kích thước sidebar",

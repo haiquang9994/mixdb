@@ -1123,6 +1123,13 @@ textarea {
   width: 3.6rem;
 }
 
+/* Beside it, and for the same reason: wide enough for `200K` and no wider. Both of these say how
+   the keyspace is read, so they sit together at the end of the row. */
+.redis-limit-select {
+  flex: 0 0 auto;
+  width: 4.2rem;
+}
+
 .redis-sidebar-actions {
   flex: 0 0 auto;
   padding-top: 0.35rem;

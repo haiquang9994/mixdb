@@ -19,8 +19,16 @@ interface Props {
   selectedKey?: string | null;
   onSelect: (key: string) => void;
   emptyMessage?: string;
-  /** Whether the keyspace scan has more to hand back. */
+  /** The sweep over the keyspace is still running: more names are on their way, so the tree is
+   * still being re-sorted around what is on screen and the folder counts are not final. */
+  scanning?: boolean;
+  /** Whether the keyspace scan has more to hand back. Only true once the sweep has stopped at
+   * its ceiling — a sweep that ran to the end leaves nothing behind. */
   hasMore: boolean;
+  /** The sweep stopped because it hit its ceiling rather than because the keyspace ran out. */
+  limitReached?: boolean;
+  /** How many keys have been read so far, across every round of the scan. */
+  loadedCount: number;
   loadingMore?: boolean;
   onLoadMore: () => void;
   className?: string;
@@ -40,15 +48,24 @@ const TYPE_ABBREVIATION: Record<string, string> = {
   stream: "STM",
 };
 
+/** How many more rows one press of Show more draws, and how many the list starts with. This is a
+ * limit on rows rather than on keys: the whole keyspace is already in hand, and what it holds off
+ * is the cost of laying out thousands of rows nobody has scrolled to. */
+const ROW_REVEAL_STEP = 200;
+
 /**
- * The key list in the Redis sidebar. Unlike a table or a collection list this one is never
- * complete: `SCAN` walks the keyspace a slice at a time, so the list grows by pressing Load more
- * rather than by moving between numbered pages — there is no total to divide into pages, and the
- * scan has no way to jump to a page in the middle.
+ * The key list in the Redis sidebar, drawn as a tree over the keys' shared prefixes. Nothing in
+ * Redis makes `user:1:name` a child of anything — the keyspace is flat, and the separator is a
+ * convention the caller picks — so the tree is a reading of the names, and switching the
+ * separator re-reads the same keys.
  *
- * Keys are drawn as a tree over their shared prefixes. Nothing in Redis makes `user:1:name` a
- * child of anything — the keyspace is flat, and the separator is a convention the caller picks —
- * so the tree is a reading of the names, and switching the separator re-reads the same keys.
+ * The list grows from the bottom. That takes some doing, because `SCAN` hands the keyspace back
+ * in no order at all and the tree sorts by name: a name arriving late belongs wherever it sorts,
+ * which is usually somewhere above what the user is looking at. So the caller sweeps the whole
+ * keyspace first and this list only ever *reveals* more of an order that is already settled —
+ * Show more appends below and never disturbs a row above it. Only when that sweep stops at its
+ * ceiling ({@link Props.limitReached}) does Load more go back to the server, and then the footer
+ * says as much and the folder counts are marked as not final.
  */
 function RedisKeyList({
   keys,
@@ -56,13 +73,19 @@ function RedisKeyList({
   selectedKey,
   onSelect,
   emptyMessage,
+  scanning,
   hasMore,
+  limitReached,
+  loadedCount,
   loadingMore,
   onLoadMore,
   className,
 }: Props) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState<Set<string>>(() => ancestorPaths(selectedKey, separator));
+  // How far down the row list is drawn. Only ever raised by hand, so nothing the scan or a
+  // delete does to `keys` can pull rows back out from under the user mid-read.
+  const [revealed, setRevealed] = useState(ROW_REVEAL_STEP);
   // Which row the arrow keys move from, held by path rather than by index: loading more keys
   // re-sorts the siblings around it, and an index would then point at a different row than the
   // one the user left the focus on.
@@ -75,15 +98,34 @@ function RedisKeyList({
   // but is deliberately not a dependency: selecting a key must not close the tree around it.
   useEffect(() => {
     setExpanded(ancestorPaths(selectedKey, separator));
+    setRevealed(ROW_REVEAL_STEP);
   }, [separator]);
+
+  // A shorter list than last render is a different list — a rescan, another database, a deleted
+  // key — so the reveal starts over. Growth is left alone: that is the scan filling in, and
+  // collapsing the list back under someone reading it would be the whole complaint again.
+  const previousKeyCount = useRef(keys.length);
+  useEffect(() => {
+    if (keys.length < previousKeyCount.current) setRevealed(ROW_REVEAL_STEP);
+    previousKeyCount.current = keys.length;
+  }, [keys.length]);
 
   const tree = useMemo(() => buildKeyTree(keys, separator), [keys, separator]);
   // One list of rows either way — grouped by prefix, or every key at depth 0 — so the rendering
   // below and the keyboard handling have a single shape to work on.
-  const rows = useMemo(
+  const allRows = useMemo(
     () => (separator ? visibleRows(tree, expanded) : flatRows(keys)),
     [separator, tree, expanded, keys],
   );
+  // Sliced before anything else reads it, so the keyboard walks exactly the rows on screen —
+  // an index into a longer list would step the focus onto a row that was never drawn.
+  const rows = useMemo(
+    () => (allRows.length > revealed ? allRows.slice(0, revealed) : allRows),
+    [allRows, revealed],
+  );
+  const hiddenRows = allRows.length - rows.length;
+  // Until the sweep has run to the end, a folder's count is only what has been read so far.
+  const countsPartial = Boolean(scanning) || hasMore;
 
   // Where the arrows move from, and the one row in the tab order. Held by path above, but that
   // path may be gone (a rescan) or never set (nothing focused yet) — in which case the selected
@@ -136,7 +178,7 @@ function RedisKeyList({
     <div className={`${styles.keyList}${className ? ` ${className}` : ""}`}>
       {/* A flattened tree: the nesting lives in `aria-level` rather than in nested lists, which
           is what lets one row list serve both the grouped and the ungrouped view. */}
-      <ul role="tree" aria-label={t("redis.keyTreeLabel")} onKeyDown={onKeyDown}>
+      <ul className={styles.rows} role="tree" aria-label={t("redis.keyTreeLabel")} onKeyDown={onKeyDown}>
         {rows.map(({ node, depth, open }, index) => {
           const isFolder = node.children.length > 0;
           const selected = node.key !== undefined && node.key.name === selectedKey;
@@ -182,7 +224,17 @@ function RedisKeyList({
                   </span>
                 )}
                 <span className={styles.name}>{node.label}</span>
-                {isFolder && <span className={styles.count}>{node.count}</span>}
+                {isFolder && (
+                  // Marked while the keyspace is still being read: the number is how many keys
+                  // under this prefix have arrived, not how many the server holds.
+                  <span
+                    className={styles.count}
+                    title={countsPartial ? t("redis.partialCountTooltip") : undefined}
+                  >
+                    {node.count}
+                    {countsPartial ? "+" : ""}
+                  </span>
+                )}
               </button>
             </li>
           );
@@ -193,11 +245,47 @@ function RedisKeyList({
           </li>
         )}
       </ul>
-      {hasMore && (
-        <button type="button" className={styles.loadMore} disabled={loadingMore} onClick={onLoadMore}>
-          {loadingMore ? t("redis.loadingMore") : t("redis.loadMoreKeys")}
-        </button>
-      )}
+      {/* Outside the scrolling rows, so what the list is still holding back is readable without
+          scrolling to the end of it — the button at the far bottom of a long list is what made
+          the old one look like a complete list with a stray button under it. */}
+      <div className={styles.footer}>
+        {(scanning || loadedCount > 0) && (
+          <span className={`muted ${styles.status}`}>
+            {scanning
+              ? t("redis.scanningKeys", { n: loadedCount.toLocaleString() })
+              : hasMore
+                ? t("redis.keysLoadedPartial", { n: loadedCount.toLocaleString() })
+                : t("redis.keysLoadedAll", { n: loadedCount.toLocaleString() })}
+          </span>
+        )}
+        {limitReached && !scanning && (
+          <span className={styles.notice}>{t("redis.scanLimitNotice")}</span>
+        )}
+        {/* Two different buttons, never both. Showing more rows is free and settles nothing —
+            the names are already here, in order. Loading more keys goes back to the server, and
+            only exists at all once the sweep has given up at its ceiling. */}
+        {hiddenRows > 0 ? (
+          <button
+            type="button"
+            className={styles.loadMore}
+            onClick={() => setRevealed((n) => n + ROW_REVEAL_STEP)}
+          >
+            {t("redis.showMoreRows", { n: Math.min(hiddenRows, ROW_REVEAL_STEP) })}
+          </button>
+        ) : (
+          hasMore &&
+          !scanning && (
+            <button
+              type="button"
+              className={styles.loadMore}
+              disabled={loadingMore}
+              onClick={onLoadMore}
+            >
+              {loadingMore ? t("redis.loadingMore") : t("redis.loadMoreKeys")}
+            </button>
+          )
+        )}
+      </div>
     </div>
   );
 }

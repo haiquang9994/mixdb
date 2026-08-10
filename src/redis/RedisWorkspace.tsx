@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   redisListDatabases,
   redisScanKeys,
@@ -28,6 +28,9 @@ interface Props {
   onDisconnect: () => void;
   sidebarWidth?: number;
   onSidebarWidthChange?: (width: number) => void;
+  /** The remembered key ceiling for this connection, or undefined for {@link DEFAULT_SCAN_LIMIT}. */
+  scanLimit?: number;
+  onScanLimitChange?: (limit: number) => void;
 }
 
 /** The panes the content area can show. Only the key view exists so far, but the header is
@@ -39,9 +42,34 @@ const DEFAULT_SIDEBAR_WIDTH = 240;
 const MIN_SIDEBAR_WIDTH = 140;
 const MAX_SIDEBAR_WIDTH = 520;
 
-/** How many keys one press of Load more asks for. A hint: `SCAN` may hand back fewer, or a few
+/** How many keys one round of the scan asks for. A hint: `SCAN` may hand back fewer, or a few
  * more, and the cursor is what says whether anything is left. */
-const KEY_PAGE_SIZE = 200;
+const KEY_PAGE_SIZE = 500;
+
+/**
+ * How many keys the sidebar reads before it stops walking the keyspace on its own.
+ *
+ * The list is sorted by key name, and a sort needs everything it sorts — a name that arrives
+ * after the tree is drawn belongs wherever it sorts, which is usually above whatever the user is
+ * reading. So the scan runs to the end of the keyspace up front, and only then is the order it
+ * shows the final one. That is affordable because a Redis keyspace someone browses is small; a
+ * keyspace of millions is not, and this is where the walk gives up and says so instead of
+ * hanging on for a list nobody can read anyway.
+ *
+ * Which of these is right is a property of the server, not of the app, so the picker in the
+ * sidebar chooses and the connection remembers. Every one of them is finite on purpose: the
+ * ceiling exists so a keyspace can't hang the sidebar, and an unlimited entry would be a way to
+ * ask for exactly that. Past the largest, the pattern box is the way through.
+ */
+const SCAN_LIMITS = [5000, 20000, 50000, 200000];
+
+/** The ceiling a connection is read with until told otherwise. */
+const DEFAULT_SCAN_LIMIT = 20000;
+
+/** How often a sweep in progress hands what it has to the sidebar. Every round would be the
+ * obvious thing, but each one rebuilds and re-sorts the whole tree — on a keyspace near the
+ * ceiling that is dozens of rebuilds nobody reads. The first round still lands immediately. */
+const SCAN_PUBLISH_INTERVAL_MS = 400;
 
 /** What can split a key name into tree levels. Redis has no namespaces — `user:1:name` is one
  * flat key like any other — so this is purely a convention in how names are written, and which
@@ -65,7 +93,15 @@ const RELOAD_DATABASES = -1;
  * ordering to page through nor a key count to divide into pages. The value pane loads the same
  * way, for the same reason on the scanned types.
  */
-function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, onSidebarWidthChange }: Props) {
+function RedisWorkspace({
+  connectionId,
+  initialDatabase,
+  error,
+  sidebarWidth,
+  onSidebarWidthChange,
+  scanLimit,
+  onScanLimitChange,
+}: Props) {
   const { t } = useTranslation();
   const [databases, setDatabases] = useState<RedisDbInfo[]>([]);
   const [databasesLoading, setDatabasesLoading] = useState(false);
@@ -91,6 +127,10 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   // Reading the same keys, not fetching different ones: the tree is built client-side out of the
   // names already loaded, so changing this costs nothing and needs no rescan.
   const [separator, setSeparator] = useState(DEFAULT_SEPARATOR);
+  // Held here rather than read straight off the prop: an unsaved connection has nowhere to
+  // remember it, and even a saved one only sees the new value once the store has written it
+  // back. The picker has to take effect on the press either way.
+  const [keyLimit, setKeyLimit] = useState(scanLimit ?? DEFAULT_SCAN_LIMIT);
   // Bumped to rescan on the same pattern: pressing reload twice is a request to look again, and
   // an unchanged pattern alone would be a no-op.
   const [scanId, setScanId] = useState(0);
@@ -101,6 +141,18 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
   useEffect(() => {
     setWidth(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    setKeyLimit(scanLimit ?? DEFAULT_SCAN_LIMIT);
+  }, [scanLimit]);
+
+  /** Sets the ceiling and remembers it. The scan effect takes `keyLimit` as an input, so this
+   * also starts the keyspace over — raising the ceiling has to go back past where the last
+   * sweep stopped, and lowering it has to drop what is already past the new one. */
+  function changeKeyLimit(limit: number) {
+    setKeyLimit(limit);
+    onScanLimitChange?.(limit);
+  }
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -197,31 +249,60 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
 
   useEffect(() => loadDatabases(), [loadDatabases]);
 
-  // The first page of the keyspace, for the current database and pattern. Every later page is
-  // appended by `loadMoreKeys` from the cursor this one hands back.
+  // The keyspace for the current database and pattern, walked to its end in one sweep rather
+  // than a page per press. The sidebar sorts by name, and sorting is only meaningful over the
+  // whole set: reading it a page at a time meant every press dropped keys into groups the user
+  // had already scrolled past. Rounds are published as they land, so a long sweep fills the list
+  // in rather than staring at a spinner; `loadedCount` in the footer says it is still going.
   useEffect(() => {
     let cancelled = false;
+    setKeys([]);
+    setCursor(REDIS_FIRST_CURSOR);
+    setScanDone(false);
     setKeysLoading(true);
-    redisScanKeys(connectionId, appliedPattern, REDIS_FIRST_CURSOR, KEY_PAGE_SIZE)
-      .then((page) => {
-        if (cancelled) return;
-        setKeys(page.keys);
-        setCursor(page.cursor);
-        setScanDone(page.done);
-      })
-      .catch((e) => {
+
+    void (async () => {
+      const collected: RedisKeyInfo[] = [];
+      // `SCAN` can hand the same key back on two rounds, so names are merged rather than
+      // concatenated — across rounds as much as within one.
+      const seen = new Set<string>();
+      let next = REDIS_FIRST_CURSOR;
+      let lastPublished = 0;
+      try {
+        for (;;) {
+          const page = await redisScanKeys(connectionId, appliedPattern, next, KEY_PAGE_SIZE);
+          if (cancelled) return;
+          for (const key of page.keys) {
+            if (seen.has(key.name)) continue;
+            seen.add(key.name);
+            collected.push(key);
+          }
+          next = page.cursor;
+          const finished = page.done || collected.length >= keyLimit;
+          const now = Date.now();
+          if (finished || now - lastPublished >= SCAN_PUBLISH_INTERVAL_MS) {
+            lastPublished = now;
+            setKeys(collected.slice());
+            setCursor(page.cursor);
+            setScanDone(page.done);
+          }
+          if (finished) break;
+        }
+      } catch (e) {
         if (!cancelled) setLocalError(errorMessage(t, e));
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setKeysLoading(false);
-      });
+      }
+    })();
+
     return () => {
       cancelled = true;
     };
-  }, [connectionId, appliedPattern, selectedDb, scanId]);
+  }, [connectionId, appliedPattern, selectedDb, scanId, keyLimit]);
 
-  /** Appends the next slice of the keyspace. `SCAN` can return a key it has already returned, so
-   * what comes back is merged by name rather than concatenated. */
+  /** Appends one more slice of a keyspace the sweep gave up on at its ceiling. The
+   * order is not settled at that point and cannot be, so this is the one path where new names
+   * still land above what is on screen — which is why the list says so while it applies. */
   function loadMoreKeys() {
     if (scanDone || loadingMore || keysLoading) return;
     setLoadingMore(true);
@@ -272,14 +353,32 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
     loadDatabases();
   }
 
-  // An empty page is not an empty keyspace: SCAN returns a slice at a time, and a selective
-  // pattern can match nothing in the first several of them. Only an exhausted cursor says there
-  // is really nothing there.
+  // An empty list is not an empty keyspace while the sweep is still running: SCAN returns a
+  // slice at a time, and a selective pattern can match nothing in the first several of them.
+  // Only an exhausted cursor says there is really nothing there.
   const keysEmptyMessage = keysLoading
     ? undefined
     : scanDone
       ? t("redis.noKeys")
       : t("redis.noKeysInSlice");
+
+  // The sweep stopped short of the end of the keyspace — at its ceiling, not because it ran out.
+  const scanLimitReached = !scanDone && keys.length >= keyLimit;
+
+  // `connections.json` is meant to be readable and editable by hand, so a remembered ceiling may
+  // be a number this build never offers. It is still what the keyspace is being read with, so it
+  // joins the list rather than leaving the picker showing nothing.
+  const limitOptions = useMemo(() => {
+    const values = SCAN_LIMITS.includes(keyLimit)
+      ? SCAN_LIMITS
+      : [...SCAN_LIMITS, keyLimit].sort((a, b) => a - b);
+    return values.map((limit) => ({
+      value: limit,
+      label: t("redis.scanLimitShort", { n: limit / 1000 }),
+      optionLabel: t("redis.scanLimitOption", { n: limit.toLocaleString() }),
+      searchText: String(limit),
+    }));
+  }, [keyLimit, t]);
 
   return (
     <div className="redis-workspace">
@@ -371,6 +470,19 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                 { value: "", label: t("redis.separatorFlatShort"), optionLabel: t("redis.separatorFlat") },
               ]}
             />
+            {/* Next to the separator because both say how the keyspace is to be read, and this
+                one is what the footer's notice sends the user to. Written short — 20K — since
+                the row's width belongs to the pattern box; the menu spells each one out. */}
+            <Select
+              value={keyLimit}
+              onChange={changeKeyLimit}
+              size="normal"
+              className="redis-limit-select"
+              optionAlign="center"
+              ariaLabel={t("redis.scanLimitLabel")}
+              title={t("redis.scanLimitTooltip")}
+              options={limitOptions}
+            />
           </div>
           <RedisKeyList
             keys={keys}
@@ -378,8 +490,11 @@ function RedisWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
             selectedKey={selectedKey}
             onSelect={setSelectedKey}
             emptyMessage={keysEmptyMessage}
+            scanning={keysLoading}
             hasMore={!scanDone}
-            loadingMore={loadingMore || keysLoading}
+            limitReached={scanLimitReached}
+            loadedCount={keys.length}
+            loadingMore={loadingMore}
             onLoadMore={loadMoreKeys}
           />
           <ActionBar

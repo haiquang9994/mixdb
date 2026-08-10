@@ -409,6 +409,14 @@ function ConnectionTab({ onTitleChange }: Props) {
     setSavedConnections(next);
   }
 
+  async function updateRedisScanLimit(limit: number) {
+    if (!editingId) return;
+    const entry = savedConnections.find((c) => c.id === editingId);
+    if (!entry || entry.redisScanLimit === limit) return;
+    const next = await updateSavedConnection({ ...entry, redisScanLimit: limit });
+    setSavedConnections(next);
+  }
+
   async function disconnect() {
     if (!connectionId) return;
     await invoke("disconnect_db", { id: connectionId });
@@ -775,6 +783,8 @@ function ConnectionTab({ onTitleChange }: Props) {
       onDisconnect={disconnect}
       sidebarWidth={activeSavedConnection?.sidebarWidth}
       onSidebarWidthChange={updateSidebarWidth}
+      scanLimit={activeSavedConnection?.redisScanLimit}
+      onScanLimitChange={updateRedisScanLimit}
     />
   );
 }

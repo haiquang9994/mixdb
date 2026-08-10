@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "dev:app": "tauri dev",
     "build:app": "tauri build",
-    "set-version": "node scripts/set-version.mjs"
+    "set-version": "node scripts/set-version.mjs",
+    "notes": "node scripts/release-notes.mjs"
   },
   "dependencies": {
     "@fontsource/fira-code": "^5.3.0",

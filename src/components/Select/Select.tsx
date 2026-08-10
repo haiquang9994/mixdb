@@ -31,6 +31,9 @@ interface SelectProps<T extends string | number> {
   className?: string;
   triggerClassName?: string;
   ariaLabel?: string;
+  /** Hover text for the control. Worth it where the trigger is too narrow to say what it picks —
+   * the menu spells its options out, but only once it is open. */
+  title?: string;
   optionAlign?: "left" | "right" | "center";
   /** Puts a search box at the head of the open dropdown and narrows the list to what it matches.
    * Worth it for lists long enough to scroll — databases, columns, operators. */
@@ -72,6 +75,7 @@ function Select<T extends string | number>({
   className,
   triggerClassName,
   ariaLabel,
+  title,
   optionAlign = "left",
   searchable = false,
   searchPlaceholder,
@@ -270,6 +274,7 @@ function Select<T extends string | number>({
     <div
       ref={rootRef}
       className={`${styles.select}${disabled ? ` ${styles.disabled}` : ""}${className ? ` ${className}` : ""}`}
+      title={title}
     >
       <button
         ref={triggerRef}

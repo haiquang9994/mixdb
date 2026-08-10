@@ -7,17 +7,55 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  /* A column of two: the rows scroll, the footer does not. What is left to load belongs where it
+     can be read without scrolling to the bottom to find it. */
+  display: flex;
+  flex-direction: column;
 }
 
-.keyList ul {
+/* The only part that scrolls. */
+.rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+}
+
+/* Pinned under the rows: how much of the keyspace is in hand, and what will bring in more. */
+.footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.35rem 0.1rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.footer:empty {
+  border-top: none;
+  padding: 0;
+}
+
+.status {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0 0.4rem;
+}
+
+/* The one thing here that is a warning rather than a status: the list is short of the keyspace
+   because the sweep gave up, and only a narrower pattern will finish it. */
+.notice {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  padding: 0 0.4rem;
+  /* The palette's own orange, which the theme already casts for the dark half. */
+  color: var(--c-orange-text);
 }
 
 .empty {
@@ -151,7 +189,6 @@
 
 .loadMore {
   width: 100%;
-  margin-top: 0.35rem;
   padding: 0.35rem 0.5rem;
   border: 1px dashed rgba(128, 128, 128, 0.4);
   border-radius: var(--radius-sm);

@@ -4,26 +4,87 @@ MixDB is published as GitHub releases, and installed copies update themselves fr
 checks a manifest on the newest release, downloads the bundle for its platform, verifies the
 signature and — once the user says so — installs it and restarts.
 
-## Cutting a release
+## The steps
+
+The whole thing, for when the rest of this page is more than you need. `0.2.0` stands in for the
+version being cut.
 
 ```bash
-npm run set-version 0.2.0          # package.json, tauri.conf.json, Cargo.toml, Cargo.lock
+# 1. The notes. Ideally already written, in which case read them over and move on.
+npm run notes                        # the commits since the last tag, as a draft to edit down
+#    -> edit them into ## [Unreleased] in CHANGELOG.md
+
+# 2. The check. There is no test suite; this is it.
+npm run build                        # tsc + vite build
+
+# 3. The bump. Five files, and it refuses if ## [Unreleased] is empty.
+npm run set-version 0.2.0
+
+# 4. The push, then the tag. The tag is what starts the build.
 git commit -am "chore(release): 0.2.0"
 git push
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
+Then wait 15–25 minutes for the three build jobs, and **on GitHub**:
+
+5. Open the draft release. Its `## Changes` is already filled in from `CHANGELOG.md` — read it over.
+6. Click **Publish release**.
+
+Nothing reaches a single installed copy of MixDB until that click. Publishing is also what starts
+[`update-notes.yml`](../.github/workflows/update-notes.yml), which copies those notes into
+`latest.json` so the update panel in the app shows them.
+
+If the build fails or the bundle turns out bad, delete the draft, fix it, and tag again — a draft
+is invisible to the updater.
+
+## Writing the notes
+
+Not a release step — a *working* step. What changed goes into `## [Unreleased]` in
+[CHANGELOG.md](../CHANGELOG.md) as the work is finished, because by the time a version is cut
+nobody remembers what went into it, and notes reconstructed from memory at that point are always
+thinner than the work deserved.
+
+```bash
+npm run notes    # the commits since the last tag, grouped, as a draft to edit down
+```
+
+That prints a starting point, not the notes: it knows what was done, not which of it a user would
+notice. Edit it into plain sentences under `## [Unreleased]` — `feat`, `fix`, `perf`, `refactor`
+and `style` commits are listed, the rest are dropped as things nobody outside the repository cares
+about.
+
+## Cutting a release
+
+```bash
+npm run set-version 0.2.0          # package.json, tauri.conf.json, Cargo.toml, Cargo.lock, CHANGELOG.md
+git commit -am "chore(release): 0.2.0"
+git push
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+`set-version` also cuts `## [Unreleased]` into `## [0.2.0] - <today>` and opens a fresh empty one
+above it. It **refuses to bump** when `## [Unreleased]` is empty, before it has touched any of the
+other four files — a release whose notes nobody wrote is the thing this is all for. A version that
+genuinely has nothing to tell users passes `--no-notes`.
+
 The tag starts [`.github/workflows/release.yml`](../.github/workflows/release.yml), which builds on
 three runners in parallel — roughly 15–25 minutes for a cold cache — and attaches every installer,
 every `.sig`, and a merged `latest.json` to a **draft** release.
 
-Then, on GitHub: open the draft, write the `## Changes` section, and click **Publish release**.
+The draft's `## Changes` section is **already filled in**: the build reads the section for the
+version it is tagging out of `CHANGELOG.md`
+([`.github/scripts/changelog-section.mjs`](../.github/scripts/changelog-section.mjs)). A version
+with no section there leaves it empty, which is still fixable by hand on the draft.
+
+Then, on GitHub: open the draft, read the notes over, and click **Publish release**.
 
 Nothing is announced until that click. `/releases/latest/download/latest.json` — the URL the
 updater reads — skips drafts, so a build that turns out bad can simply be deleted and re-cut.
 
 **The `## Changes` section becomes the update notes.** It is what the panel in the corner of the
-app shows the first line of, so put the headline change at the top of it.
+app shows the first line of, so put the headline change at the top of it — in the changelog, where
+it starts.
 
 The manifest the updater reads carries those notes, and `tauri-action` writes it *during the build*
 — when `## Changes` is still the empty placeholder. So

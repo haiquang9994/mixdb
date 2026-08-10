@@ -88,6 +88,32 @@ jobs:
 
       - run: npm ci
 
+      # The notes for this version, written into CHANGELOG.md as the work was done rather than
+      # reconstructed from memory at release time. `set-version` cut them into a section named
+      # after the version being built, which is what this reads back out.
+      #
+      # A version with no section prints nothing, and the draft's `## Changes` comes out empty —
+      # the same state this step replaced, still fixable by hand on the draft before publishing.
+      - name: Read the changelog section for this version
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          echo "Release notes for $version:"
+          node .github/scripts/changelog-section.mjs CHANGELOG.md "$version" | tee section.md
+          # A random delimiter: the notes are arbitrary markdown, and a fixed one appearing inside
+          # them would end the value early and let the rest of it be read as workflow commands.
+          # Generated with node rather than openssl, which is the one of the two that all three
+          # runners are certain to have.
+          delimiter="EOF_$(node -e "console.log(require('crypto').randomBytes(12).toString('hex'))")"
+          {
+            echo "changes<<$delimiter"
+            cat section.md
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+          rm section.md
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -103,9 +129,9 @@ jobs:
           # `latest.json` — the manifest the updater reads. Each platform's job merges its own
           # entry into the copy already on the release, so all three end up in one file.
           #
-          # Its `notes` field is a copy of the `releaseBody` below, frozen at build time with the
-          # `## Changes` section still empty. update-notes.yml rewrites it from the finished body
-          # once the release is published.
+          # Its `notes` field is a copy of the `releaseBody` below, frozen at build time — so it
+          # carries whatever the changelog said, but not any edit made to the draft afterwards.
+          # update-notes.yml rewrites it from the finished body once the release is published.
           includeUpdaterJson: true
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseName: "MixDB __VERSION__"
@@ -142,5 +168,5 @@ jobs:
 
             ## Changes
 
-            <!-- Written by hand before publishing. -->
+            ${{ steps.notes.outputs.changes }}
           args: ${{ matrix.args }}

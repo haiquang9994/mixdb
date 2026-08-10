@@ -30,6 +30,11 @@ export interface SavedConnection {
   name: string;
   config: ConnectionConfig;
   sidebarWidth?: number;
+  /** Redis only: how many keys the sidebar reads before it stops walking the keyspace. The right
+   *  number is a property of the server rather than of the app — a cache with millions of keys
+   *  and a small working set want different ceilings — so it is remembered per connection.
+   *  Unset falls back to the workspace's own default. */
+  redisScanLimit?: number;
 }
 
 export const DEFAULT_PORTS: Record<DbKind, number> = {

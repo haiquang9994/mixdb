@@ -18,6 +18,10 @@ tunnel, and remembers saved connections.
 | `npm run dev` | Frontend only in a browser; every `invoke` fails, UI-only work |
 | `npm run build` | Typecheck + build frontend (`tsc && vite build`) — the fastest check |
 | `npm run build:app` | Full production bundle into `src-tauri/target/release/bundle/` |
+| `npm run notes` | Commits since the last tag, grouped — a draft for `## [Unreleased]` |
+| `npm run set-version <v>` | Bump the five files that carry the version and cut the changelog |
+
+Releasing is [docs/RELEASING.md](docs/RELEASING.md); the steps are the first section of it.
 
 There is no test suite and no linter config. `npm run build` is the verification step; TypeScript
 runs `strict`, `noUnusedLocals` and `noUnusedParameters`, so it catches most mistakes.
@@ -49,6 +53,9 @@ src-tauri/src/       Rust backend
 - **A new backend command touches five places.** Follow
   [.agent/conventions/adding-a-command.md](.agent/conventions/adding-a-command.md).
 - Commit messages need a `type(scope): message` prefix (see the global rules).
+- **A change a user would notice gets a line in `## [Unreleased]`** in
+  [CHANGELOG.md](CHANGELOG.md), written as part of the work rather than at release time. That
+  section becomes the release notes — see [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Where to read more
 
