@@ -102,6 +102,10 @@ jobs:
         with:
           # `latest.json` — the manifest the updater reads. Each platform's job merges its own
           # entry into the copy already on the release, so all three end up in one file.
+          #
+          # Its `notes` field is a copy of the `releaseBody` below, frozen at build time with the
+          # `## Changes` section still empty. update-notes.yml rewrites it from the finished body
+          # once the release is published.
           includeUpdaterJson: true
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseName: "MixDB __VERSION__"

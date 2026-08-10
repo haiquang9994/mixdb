@@ -22,8 +22,19 @@ Then, on GitHub: open the draft, write the `## Changes` section, and click **Pub
 Nothing is announced until that click. `/releases/latest/download/latest.json` — the URL the
 updater reads — skips drafts, so a build that turns out bad can simply be deleted and re-cut.
 
-**The release body becomes the update notes.** It is what the panel in the corner of the app shows
-its first line of, so put the headline change at the top of `## Changes`.
+**The `## Changes` section becomes the update notes.** It is what the panel in the corner of the
+app shows the first line of, so put the headline change at the top of it.
+
+The manifest the updater reads carries those notes, and `tauri-action` writes it *during the build*
+— when `## Changes` is still the empty placeholder. So
+[`.github/workflows/update-notes.yml`](../.github/workflows/update-notes.yml) runs on **publish**
+and on every later **edit** of the body, cuts the `## Changes` section out of it and rewrites the
+`notes` field of `latest.json` on the release. It leaves the asset alone when the notes already
+match, which is what keeps its own upload from setting it off again.
+
+Nothing else in the manifest is touched — versions, URLs and signatures stay exactly as the build
+left them. A release whose notes were fixed while that workflow was broken can be brought up to
+date by running it by hand from the Actions tab with the tag as its input.
 
 ## What gets built
 
