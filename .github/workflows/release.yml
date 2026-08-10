@@ -7,12 +7,13 @@
 #   git tag v0.2.0 && git push origin v0.2.0
 #
 # The release is left as a draft. Publishing it is a separate click, which is deliberate: the
-# in-app update check reads `/releases/latest`, and that only starts pointing at this release once
-# it is published — so the notes can be written, and a bad build thrown away, before anyone is told
-# about it.
+# in-app updater reads `/releases/latest/download/latest.json`, and that only starts pointing at
+# this release once it is published — so the notes can be written, and a bad build thrown away,
+# before a single installed copy of MixDB hears about it.
 #
-# Nothing here is code-signed. See docs/RELEASING.md for what each platform says about that and
-# what the release notes have to tell users to do.
+# Every bundle is signed with the project's minisign key, which is what installed copies verify
+# before they run an update. That key is not a code-signing certificate: nothing here is signed for
+# Windows or macOS, and the first install still raises their warnings. See docs/RELEASING.md.
 
 name: Release
 
@@ -93,7 +94,15 @@ jobs:
           # The AppImage is assembled by linuxdeploy, which is itself an AppImage and wants FUSE
           # to mount itself. Runners have no FUSE, so it unpacks instead of mounting.
           APPIMAGE_EXTRACT_AND_RUN: 1
+          # Signs the update bundles. Without these the build still succeeds, but produces
+          # unsigned artifacts that no installed copy of MixDB will accept — so if the updater ever
+          # goes quiet after a release, check these two secrets first.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          # `latest.json` — the manifest the updater reads. Each platform's job merges its own
+          # entry into the copy already on the release, so all three end up in one file.
+          includeUpdaterJson: true
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseName: "MixDB __VERSION__"
           releaseDraft: true
@@ -105,7 +114,7 @@ jobs:
 
             | Machine | File |
             | --- | --- |
-            | Windows | `.exe` (installer) or `.msi` |
+            | Windows | `.exe` (installer) |
             | macOS (Apple Silicon and Intel) | `.dmg` |
             | Linux | `.AppImage` or `.deb` |
 
@@ -118,8 +127,14 @@ jobs:
               `xattr -cr /Applications/MixDB.app` in Terminal once.
             - **Linux** — mark the AppImage executable: `chmod +x MixDB_*.AppImage`.
 
-            MixDB does not install its own updates. It checks this page at startup and tells you
-            when a newer version is out; downloading and installing it stays your decision.
+            ## Updates
+
+            You only have to do that once. From here on MixDB checks for new versions itself,
+            downloads them in the background and asks before it installs and restarts. Every update
+            is verified against MixDB's signing key first.
+
+            Linux `.deb` is the exception — it does not self-update, so come back here for the next
+            version.
 
             ## Changes
 

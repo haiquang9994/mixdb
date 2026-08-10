@@ -1,7 +1,8 @@
 # Releasing MixDB
 
-MixDB is published as GitHub releases. The app checks that page at startup and says when a newer
-version is out; it never installs anything itself.
+MixDB is published as GitHub releases, and installed copies update themselves from them: the app
+checks a manifest on the newest release, downloads the bundle for its platform, verifies the
+signature and — once the user says so — installs it and restarts.
 
 ## Cutting a release
 
@@ -13,28 +14,61 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 
 The tag starts [`.github/workflows/release.yml`](../.github/workflows/release.yml), which builds on
-three runners in parallel — roughly 15–25 minutes for a cold cache — and attaches every installer to
-a **draft** release.
+three runners in parallel — roughly 15–25 minutes for a cold cache — and attaches every installer,
+every `.sig`, and a merged `latest.json` to a **draft** release.
 
 Then, on GitHub: open the draft, write the `## Changes` section, and click **Publish release**.
 
-Nothing is announced until that click. `/releases/latest` — the endpoint the in-app check reads —
-skips drafts, so a build that turns out bad can simply be deleted and re-cut.
+Nothing is announced until that click. `/releases/latest/download/latest.json` — the URL the
+updater reads — skips drafts, so a build that turns out bad can simply be deleted and re-cut.
+
+**The release body becomes the update notes.** It is what the panel in the corner of the app shows
+its first line of, so put the headline change at the top of `## Changes`.
 
 ## What gets built
 
-| Runner | Bundle | Runs on |
-| --- | --- | --- |
-| `macos-latest` | `.dmg`, `.app` (universal) | Apple Silicon and Intel, macOS 10.13+ |
-| `windows-latest` | `.exe` (NSIS), `.msi` | Windows 10 and 11, x64 |
-| `ubuntu-22.04` | `.AppImage`, `.deb` | glibc 2.35+ distributions |
+| Runner | Bundle | Runs on | Self-updates |
+| --- | --- | --- | --- |
+| `macos-latest` | `.dmg`, `.app` (universal) | Apple Silicon and Intel, macOS 10.13+ | yes |
+| `windows-latest` | `.exe` (NSIS) | Windows 10 and 11, x64 | yes |
+| `ubuntu-22.04` | `.AppImage`, `.deb` | glibc 2.35+ distributions | AppImage only |
 
 No Mac is needed to build the macOS bundle: GitHub's macOS runners do it, and they are free for
 public repositories.
 
-## Code signing — what is not done, and what it costs users
+The `.msi` was dropped when self-updating went in. It installs per-machine, the NSIS installer the
+updater uses installs per-user, and shipping both would have left some users with two MixDBs in two
+places, only one of which ever updated.
 
-MixDB ships unsigned. That is a choice with a price, and the price falls on the first launch:
+## Signing
+
+Two different things are called signing here, and only one of them is done.
+
+### The update key — done
+
+A [minisign](https://jedisct1.github.io/minisign/) key pair, generated once with
+`npm run tauri signer generate`. Every bundle the workflow builds is signed with the private half;
+every installed copy of MixDB checks that signature against the public half before it runs a single
+byte of an update.
+
+| Half | Lives in |
+| --- | --- |
+| Public | `plugins.updater.pubkey` in [`tauri.conf.json`](../src-tauri/tauri.conf.json) — public by design, committed |
+| Private | The `TAURI_SIGNING_PRIVATE_KEY` repository secret, and a backup off this machine |
+| Its password | The `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secret |
+
+**Losing the private key strands every copy already installed.** They will keep checking, keep
+finding releases, and reject every one of them, because a new key means a new `pubkey` and the copy
+in their hands has the old one. The only way back is asking every user to download and install by
+hand. Back it up.
+
+A build without those secrets still succeeds — it just produces artifacts nobody can install. If
+the updater goes quiet after a release, look at the secrets first.
+
+### Code signing — not done
+
+MixDB ships without an Authenticode certificate or an Apple Developer ID, and the price of that
+falls entirely on the **first** install:
 
 - **Windows.** SmartScreen shows "Windows protected your PC" over a blue panel. The **Run anyway**
   button is behind **More info**, which is easy to miss. Nothing is blocked outright.
@@ -48,28 +82,54 @@ MixDB ships unsigned. That is a choice with a price, and the price falls on the 
   notarization as part of the build.
 - **Linux.** Nothing to do beyond `chmod +x` on the AppImage.
 
-Until certificates exist, the release notes carry those steps — the template in the workflow already
-does. **The notes are the mitigation**: a user who hits an unexplained "damaged app" dialog with no
-instructions in front of them concludes the download failed and does not come back.
+Updates raise none of that again, which is the point of having them:
 
-If certificates are bought later, they go into the workflow as secrets and neither the update check
-nor anything else in the app has to change.
+- Windows' SmartScreen prompt is triggered by the mark-of-the-web a **browser** attaches to a
+  download. The updater fetches the installer itself, so the file carries no such mark. The NSIS
+  installer runs per-user, so there is no UAC prompt either.
+- macOS' Gatekeeper prompt is triggered by the quarantine attribute, which the updater does not
+  set. It replaces the `.app` in place and the next launch is silent.
 
-## The update check
+So the release notes still have to carry the first-launch instructions — the template in the
+workflow does — but a user only reads them once.
 
-Implemented in [`src/update.ts`](../src/update.ts). It:
+If code-signing certificates are bought later, they go into the workflow as further secrets and
+nothing in the app has to change.
+
+## How updating works
+
+Implemented in [`src/update.ts`](../src/update.ts), on top of Tauri's updater plugin. It:
 
 - waits 6 seconds after launch so it does not land on top of the connection form;
-- GETs `https://api.github.com/repos/haiquang9994/mixdb/releases/latest` — unauthenticated, which is
-  60 requests an hour per address and never close to a limit at one check per launch;
-- compares the tag against the running version with a semver comparison, pre-release tags included;
-- shows a panel in the corner offering **Download** (opens the release page), **Later** (comes back
-  next launch) and **Skip this one** (silences that version only, and can be undone in Settings);
+- GETs `https://github.com/haiquang9994/mixdb/releases/latest/download/latest.json` and compares
+  its version against the running one;
+- shows a panel in the corner offering **Update now**, **Later** (comes back next launch) and
+  **Skip this one** (silences that version only, and can be undone in Settings);
+- on **Update now**, downloads the bundle with a progress bar while the app carries on running;
+- when it is on disk, asks again before **Install and restart** — installing closes MixDB, and a
+  user with a half-written query should be the one choosing when that happens;
 - lights the **MixDB** button in the tab bar for as long as an unhandled update exists, so the
-  corner panel can be dismissed without the news being lost.
+  corner panel can be dismissed without the news being lost. A download waved away mid-flight
+  carries on behind it.
 
-Two things must hold for it to work:
+On Windows the installer is what closes and reopens the app; on macOS and Linux the files are
+swapped underneath the running process, which then calls `relaunch()` itself.
 
-- `https://api.github.com` stays in the `connect-src` of both CSPs in `tauri.conf.json`;
+Three things must hold for it to work:
+
 - the version in `tauri.conf.json` is the real one — the app reports that, not `package.json`.
-  This is why `npm run set-version` exists rather than editing files by hand.
+  This is why `npm run set-version` exists rather than editing files by hand;
+- `bundle.createUpdaterArtifacts` stays `true`, and `includeUpdaterJson` stays on in the workflow;
+- the two signing secrets are set on the repository.
+
+Nothing about it needs the webview's CSP: the request, the signature check and the install all
+happen in Rust.
+
+## Testing an update before publishing
+
+The updater only ever looks at the published latest release, so the honest way to test is to have
+one. Publish a release one version ahead of an old build kept for the purpose, or point
+`plugins.updater.endpoints` at a local file server during development.
+
+Do not test by publishing to the real repository and deleting it afterwards — anyone who launched
+MixDB in that window has already downloaded it.

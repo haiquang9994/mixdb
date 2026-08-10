@@ -13,19 +13,32 @@ function formatChecked(at: number): string {
 }
 
 /**
- * What version is running, whether a newer one is out, and the button that asks GitHub again.
+ * What version is running, whether a newer one is out, and the buttons that fetch and install it.
  *
- * The check itself lives in App so the panel in the corner and this section agree about what was
- * found; this only shows it and offers the three things the user can do with it.
+ * The update itself lives in App so the panel in the corner and this section agree about what was
+ * found and how far it has got; this only shows it. A download started here goes on showing its
+ * progress in the corner, and vice versa — there is one download, not one per place it is offered.
  */
 function UpdateSection({ update }: Props) {
   const { t } = useTranslation();
-  const { status, release, error, lastChecked, current, skipped } = update;
+  const { status, release, error, lastChecked, current, skipped, progress } = update;
   const busy = status === "checking";
+  /* No second check while the first update is being fetched or put in place: the handle the
+     download is using would be replaced underneath it. */
+  const working = status === "downloading" || status === "installing";
 
   function statusLine(): string {
     if (busy) return t("update.checking");
-    if (status === "error") return t("update.checkFailed", { message: error });
+    if (status === "error") return release === null
+      ? t("update.checkFailed", { message: error })
+      : t("update.failed", { message: error });
+    if (status === "downloading") {
+      return progress < 0
+        ? t("update.downloadingUnknown")
+        : t("update.downloading", { percent: Math.round(progress * 100) });
+    }
+    if (status === "installing") return t("update.installing");
+    if (status === "downloaded" && release) return t("update.downloaded", { version: release.version });
     if (status === "available" && release) return t("update.available", { version: release.version });
     if (status === "upToDate") return t("update.upToDate");
     return t("update.notCheckedYet");
@@ -51,10 +64,20 @@ function UpdateSection({ update }: Props) {
         <div className={styles.toolSuiteActions}>
           {status === "available" && (
             <button type="button" className={styles.toolButton} onClick={update.download}>
-              {t("update.download")}
+              {t("update.updateNow")}
             </button>
           )}
-          <button type="button" className={styles.toolButton} disabled={busy} onClick={update.check}>
+          {status === "downloaded" && (
+            <button type="button" className={styles.toolButton} onClick={update.install}>
+              {t("update.restartNow")}
+            </button>
+          )}
+          {status === "error" && (
+            <button type="button" className={styles.toolButton} onClick={update.openPage}>
+              {t("update.openPage")}
+            </button>
+          )}
+          <button type="button" className={styles.toolButton} disabled={busy || working} onClick={update.check}>
             {busy ? t("update.checking") : t("update.checkNow")}
           </button>
         </div>
@@ -72,7 +95,7 @@ function UpdateSection({ update }: Props) {
       {lastChecked !== null && (
         <p className={styles.hint}>{t("update.lastChecked", { at: formatChecked(lastChecked) })}</p>
       )}
-      <p className={styles.hint}>{t("update.manualHint")}</p>
+      <p className={styles.hint}>{status === "downloaded" ? t("update.restartHint") : t("update.autoHint")}</p>
     </div>
   );
 }

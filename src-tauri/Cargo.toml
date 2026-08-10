@@ -38,3 +38,9 @@ chrono = "0.4.45"
 tauri-plugin-dialog = "2.7.2"
 keyring = { version = "3.6", features = ["windows-native", "apple-native", "sync-secret-service"] }
 
+# The updater downloads and runs an installer, and restarting means replacing the running process —
+# neither exists on mobile, so both plugins are desktop-only and `lib.rs` guards them with `cfg`.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+

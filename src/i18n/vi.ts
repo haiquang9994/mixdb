@@ -619,13 +619,19 @@ const vi: TranslationDict = {
     sourceDownloaded: "đã tải",
     sourceSystem: "có sẵn",
   },
-  // Việc kiểm tra bản mới trên GitHub. Ở đây không có gì tự cài: ứng dụng báo là đã có bản mới và
-  // mở trang phát hành, còn tải về và cài đặt là việc của người dùng.
+  // Tìm, tải và cài bản MixDB mới. Việc tải chạy ngầm; việc cài thì đóng ứng dụng, nên nó chỉ xảy
+  // ra khi người dùng tự bấm nút.
   update: {
     title: "Cập nhật",
     available: "Đã có MixDB {{version}}",
     runningNow: "Bạn đang dùng bản {{version}}",
-    download: "Tải về",
+    updateNow: "Cập nhật ngay",
+    downloading: "Đang tải… {{percent}}%",
+    downloadingUnknown: "Đang tải…",
+    downloaded: "Bản MixDB {{version}} đã sẵn sàng để cài.",
+    restartNow: "Cài và khởi động lại",
+    installing: "Đang cài đặt…",
+    restartHint: "MixDB sẽ đóng lại trong chốc lát rồi tự mở lên bản mới.",
     later: "Để sau",
     skip: "Bỏ qua bản này",
     skipped: "Đang bỏ qua bản {{version}}.",
@@ -635,9 +641,11 @@ const vi: TranslationDict = {
     upToDate: "Đây là bản mới nhất.",
     notCheckedYet: "Chưa kiểm tra lần nào.",
     checkFailed: "Kiểm tra thất bại: {{message}}",
+    failed: "Cập nhật thất bại: {{message}}",
     lastChecked: "Kiểm tra lần cuối {{at}}.",
-    manualHint:
-      "MixDB không tự cài bản mới — trang phát hành có bộ cài cho hệ điều hành của bạn, kèm hướng dẫn xử lý cảnh báo mà hệ điều hành đưa ra với ứng dụng chưa ký số.",
+    openPage: "Mở trang tải về",
+    autoHint:
+      "MixDB tự cập nhật. Mỗi bản cập nhật đều được đối chiếu với khóa ký của MixDB trước khi cài, nên không thứ gì không do dự án này ký có thể đến với bạn bằng đường này.",
   },
   // Dump, restore và xóa cả một cơ sở dữ liệu — nhóm nút bên phải của thanh action trong sidebar.
   dump: {

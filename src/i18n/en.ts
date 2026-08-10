@@ -619,13 +619,19 @@ const en = {
     sourceDownloaded: "downloaded",
     sourceSystem: "installed",
   },
-  // The check against GitHub for a newer MixDB. Nothing here installs anything: the app says a
-  // release is out and opens its page, and the user downloads and installs it themselves.
+  // Finding, fetching and installing a newer MixDB. The download runs in the background; the
+  // install closes the app, so it never happens without the user pressing the button for it.
   update: {
     title: "Updates",
     available: "MixDB {{version}} is out",
     runningNow: "You are running {{version}}",
-    download: "Download",
+    updateNow: "Update now",
+    downloading: "Downloading\u2026 {{percent}}%",
+    downloadingUnknown: "Downloading\u2026",
+    downloaded: "MixDB {{version}} is ready to install.",
+    restartNow: "Install and restart",
+    installing: "Installing\u2026",
+    restartHint: "MixDB will close for a moment and reopen on the new version.",
     later: "Later",
     skip: "Skip this one",
     skipped: "{{version}} is being skipped.",
@@ -635,9 +641,11 @@ const en = {
     upToDate: "This is the newest version.",
     notCheckedYet: "Not checked yet.",
     checkFailed: "The check failed: {{message}}",
+    failed: "The update failed: {{message}}",
     lastChecked: "Last checked {{at}}.",
-    manualHint:
-      "MixDB does not install updates itself \u2014 the release page has the installer for your platform, and says what to do about the warning an unsigned app raises.",
+    openPage: "Open the download page",
+    autoHint:
+      "MixDB updates itself. Each update is checked against MixDB's signing key before it is installed, so nothing unsigned by this project can reach you this way.",
   },
   // Dumping, restoring and dropping a whole database \u2014 the right-hand end of the sidebar's bar.
   dump: {

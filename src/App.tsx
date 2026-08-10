@@ -87,7 +87,8 @@ function App() {
     <main className="app">
       <div className="tab-bar">
         {/* Once an update is out, this is the way back to it after the panel in the corner is
-            gone, so it carries a dot until the user downloads or skips that version. */}
+            gone, so it carries a dot until the user installs or skips that version. A download
+            waved away mid-flight goes on, and finishes behind this dot. */}
         <button
           type="button"
           className={update.pending ? "brand brand-update" : "brand"}
@@ -144,18 +145,7 @@ function App() {
       )}
 
       {/* Settings says the same thing in more detail, so the corner steps out of the way of it. */}
-      {update.announcing && update.release && !settingsOpen && (
-        <UpdateToast
-          release={update.release}
-          current={update.current}
-          onDownload={() => {
-            update.download();
-            update.dismiss();
-          }}
-          onDismiss={update.dismiss}
-          onSkip={update.skip}
-        />
-      )}
+      {update.announcing && !settingsOpen && <UpdateToast update={update} />}
     </main>
   );
 }
