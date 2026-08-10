@@ -67,6 +67,9 @@ const en = {
     connections: "Connections",
     newConnection: "New connection",
     savedItemTooltip: "Click to edit \u00b7 double-click to connect \u00b7 right-click for options",
+    pin: "Pin to top",
+    unpin: "Unpin",
+    pinnedTooltip: "Pinned",
   },
   mysql: {
     noTables: "No tables",

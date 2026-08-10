@@ -35,6 +35,10 @@ export interface SavedConnection {
    *  and a small working set want different ceilings — so it is remembered per connection.
    *  Unset falls back to the workspace's own default. */
   redisScanLimit?: number;
+  /** Kept at the head of the connection list. The few servers someone opens daily shouldn't have
+   *  to be found alphabetically among every one they have ever saved. Absent means not pinned, so
+   *  a list written before pinning existed reads correctly. */
+  pinned?: boolean;
 }
 
 export const DEFAULT_PORTS: Record<DbKind, number> = {

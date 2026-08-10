@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
-  addSavedConnection,
-  loadSavedConnections,
-  removeSavedConnection,
-  updateSavedConnection,
-} from "./savedConnections";
+  addConnection,
+  removeConnection,
+  updateConnection,
+  useSavedConnections,
+} from "./savedConnectionsStore";
 import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
 import MysqlWorkspace from "./mysql/MysqlWorkspace";
 import MongoWorkspace from "./mongo/MongoWorkspace";
@@ -16,7 +16,7 @@ import ErrorBanner from "./components/ErrorBanner";
 import ConfirmDialog from "./components/ConfirmDialog";
 import Button from "./components/Button";
 import Input from "./components/Input";
-import { EyeIcon, EyeOffIcon } from "./icons";
+import { EyeIcon, EyeOffIcon, PinIcon } from "./icons";
 import { useTranslation } from "./i18n";
 import { errorMessage } from "./errors";
 
@@ -109,8 +109,17 @@ const PRIVATE_KEY_PLACEHOLDER = navigator.userAgent.includes("Windows")
     ? "/Users/you/.ssh/id_rsa"
     : "/home/you/.ssh/id_rsa";
 
+/**
+ * What the tunnel test is currently saying. The tone travels beside the sentence rather than being
+ * read back out of it: the three messages are translated, so the text itself can't be matched on.
+ */
+interface TunnelStatus {
+  tone: "pending" | "ok" | "error";
+  message: string;
+}
+
 function ConnectionTab({ onTitleChange }: Props) {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const [kind, setKind] = useState<DbKind>("mysql");
   const [host, setHost] = useState("127.0.0.1");
   const [port, setPort] = useState(DEFAULT_PORTS.mysql);
@@ -136,7 +145,7 @@ function ConnectionTab({ onTitleChange }: Props) {
   const [sshKeyPath, setSshKeyPath] = useState("");
   const [sshPassphrase, setSshPassphrase] = useState("");
 
-  const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
+  const savedConnections = useSavedConnections();
   const [saveAsName, setSaveAsName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
@@ -145,11 +154,7 @@ function ConnectionTab({ onTitleChange }: Props) {
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-  const [tunnelStatus, setTunnelStatus] = useState("");
-
-  useEffect(() => {
-    loadSavedConnections().then(setSavedConnections);
-  }, []);
+  const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus | null>(null);
 
   // Closing a tab unmounts this component, and the backend has no other way of hearing about it:
   // without this the pool (and the SSH tunnel behind it) would stay open in `AppState` until the
@@ -213,7 +218,7 @@ function ConnectionTab({ onTitleChange }: Props) {
   function clearFeedback() {
     setError("");
     setStatus("");
-    setTunnelStatus("");
+    setTunnelStatus(null);
   }
 
   function applySavedConnection(entry: SavedConnection) {
@@ -303,9 +308,12 @@ function ConnectionTab({ onTitleChange }: Props) {
     const name = saveAsName.trim();
     if (!name) return;
     if (editingId) {
-      const entry: SavedConnection = { id: editingId, name, config: buildConnectionConfig() };
-      const next = await updateSavedConnection(entry);
-      setSavedConnections(next);
+      // Everything the entry carries that the form doesn't — whether it is pinned, the sidebar
+      // width, Redis's scan limit — is kept: saving a connection edits its settings, it doesn't
+      // reset the rest of what is remembered about it.
+      const existing = savedConnections.find((c) => c.id === editingId);
+      const entry: SavedConnection = { ...existing, id: editingId, name, config: buildConnectionConfig() };
+      await updateConnection(entry);
       setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
     } else {
       const entry: SavedConnection = {
@@ -313,8 +321,7 @@ function ConnectionTab({ onTitleChange }: Props) {
         name,
         config: buildConnectionConfig(),
       };
-      const next = await addSavedConnection(entry);
-      setSavedConnections(next);
+      await addConnection(entry);
       setEditingId(entry.id);
       setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
     }
@@ -328,15 +335,13 @@ function ConnectionTab({ onTitleChange }: Props) {
       name,
       config: buildConnectionConfig(),
     };
-    const next = await addSavedConnection(entry);
-    setSavedConnections(next);
+    await addConnection(entry);
     setEditingId(entry.id);
     setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
   }
 
   async function deleteSavedConnection(id: string) {
-    const next = await removeSavedConnection(id);
-    setSavedConnections(next);
+    await removeConnection(id);
     if (editingId === id) {
       newConnectionForm();
     }
@@ -350,9 +355,32 @@ function ConnectionTab({ onTitleChange }: Props) {
       name: `${source.name} (copy)`,
       config: source.config,
     };
-    const next = await addSavedConnection(entry);
-    setSavedConnections(next);
+    await addConnection(entry);
   }
+
+  async function togglePinned(id: string) {
+    const entry = savedConnections.find((c) => c.id === id);
+    if (!entry) return;
+    // Unpinning drops the flag rather than writing `false`: absent is the default, so a connection
+    // that was pinned once doesn't carry a dead `"pinned": false` in the file forever.
+    await updateConnection({ ...entry, pinned: entry.pinned ? undefined : true });
+  }
+
+  /**
+   * The list as the sidebar shows it: pinned first, alphabetical within each half.
+   *
+   * Sorted for display only — what is on disk keeps the order it was written in, so renaming a
+   * connection doesn't rewrite the file's shape. `Intl.Collator` rather than comparing strings
+   * with `<`: it files accented names beside their plain spelling instead of after every
+   * unaccented one, orders `db2` before `db10`, and follows the language the app is set to.
+   */
+  const orderedConnections = useMemo(() => {
+    const collator = new Intl.Collator(lang, { sensitivity: "base", numeric: true });
+    return [...savedConnections].sort((a, b) => {
+      if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+      return collator.compare(a.name, b.name);
+    });
+  }, [savedConnections, lang]);
 
   function openContextMenu(e: React.MouseEvent, id: string) {
     e.preventDefault();
@@ -363,18 +391,30 @@ function ConnectionTab({ onTitleChange }: Props) {
     setContextMenu(null);
   }
 
+  /**
+   * Whether the SSH fields hold enough for a test to mean anything. Everything the chosen auth
+   * method needs and nothing it doesn't: a passphrase belongs to a key that was encrypted, and an
+   * unencrypted one has none, so it is never required. A test without these would only come back
+   * with the server's own complaint about a missing host or user, one round trip later.
+   */
+  const sshInputsComplete =
+    sshHost.trim() !== "" &&
+    sshUser.trim() !== "" &&
+    sshPort > 0 &&
+    (sshAuthType === "password" ? sshPassword !== "" : sshKeyPath.trim() !== "");
+
   async function testTunnel() {
-    setTunnelStatus(t("connection.testingTunnel"));
+    setTunnelStatus({ tone: "pending", message: t("connection.testingTunnel") });
     const ssh = buildSshConfig();
     if (!ssh) {
-      setTunnelStatus("");
+      setTunnelStatus(null);
       return;
     }
     try {
       await invoke("test_ssh_tunnel", { ssh });
-      setTunnelStatus(t("connection.tunnelOk"));
+      setTunnelStatus({ tone: "ok", message: t("connection.tunnelOk") });
     } catch (e) {
-      setTunnelStatus(t("connection.tunnelFailed", { error: errorMessage(t, e) }));
+      setTunnelStatus({ tone: "error", message: t("connection.tunnelFailed", { error: errorMessage(t, e) }) });
     }
   }
 
@@ -405,16 +445,14 @@ function ConnectionTab({ onTitleChange }: Props) {
     if (!editingId) return;
     const entry = savedConnections.find((c) => c.id === editingId);
     if (!entry || entry.sidebarWidth === width) return;
-    const next = await updateSavedConnection({ ...entry, sidebarWidth: width });
-    setSavedConnections(next);
+    await updateConnection({ ...entry, sidebarWidth: width });
   }
 
   async function updateRedisScanLimit(limit: number) {
     if (!editingId) return;
     const entry = savedConnections.find((c) => c.id === editingId);
     if (!entry || entry.redisScanLimit === limit) return;
-    const next = await updateSavedConnection({ ...entry, redisScanLimit: limit });
-    setSavedConnections(next);
+    await updateConnection({ ...entry, redisScanLimit: limit });
   }
 
   async function disconnect() {
@@ -431,7 +469,6 @@ function ConnectionTab({ onTitleChange }: Props) {
         <label className="field-name">
           {editingId ? t("connection.nameLabel") : t("connection.saveAsLabel")}{" "}
           <Input
-            size="large"
             value={saveAsName}
             onChange={(e) => setSaveAsName(e.target.value)}
             placeholder={t("connection.connectionNamePlaceholder")}
@@ -460,14 +497,12 @@ function ConnectionTab({ onTitleChange }: Props) {
             <label className="field-connection-string">
               {t("connection.connectionStringLabel")}{" "}
               <Input
-                size="large"
                 value={uriRevealed ? uri : maskMongoUri(uri)}
                 onChange={(e) => setUri(e.target.value)}
                 placeholder={t("connection.connectionStringPlaceholder")}
                 readOnly={!uriRevealed}
               />
               <Button
-                size="large"
                 className="reveal-toggle"
                 aria-pressed={uriRevealed}
                 title={uriRevealed ? t("connection.hideConnectionString") : t("connection.revealConnectionString")}
@@ -486,12 +521,11 @@ function ConnectionTab({ onTitleChange }: Props) {
           <div className="row">
             <label>
               {t("common.host")}{" "}
-              <Input size="large" value={host} onChange={(e) => setHost(e.target.value)} />
+              <Input value={host} onChange={(e) => setHost(e.target.value)} />
             </label>
             <label>
               {t("common.port")}{" "}
               <Input
-                size="large"
                 type="number"
                 value={port}
                 onChange={(e) => setPort(Number(e.target.value))}
@@ -499,12 +533,11 @@ function ConnectionTab({ onTitleChange }: Props) {
             </label>
             <label>
               {t("common.user")}{" "}
-              <Input size="large" value={username} onChange={(e) => setUsername(e.target.value)} />
+              <Input value={username} onChange={(e) => setUsername(e.target.value)} />
             </label>
             <label>
               {t("common.password")}{" "}
               <Input
-                size="large"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -513,7 +546,7 @@ function ConnectionTab({ onTitleChange }: Props) {
             </label>
             <label>
               {kind === "redis" ? t("connection.dbIndexLabel") : t("common.database")}{" "}
-              <Input size="large" value={database} onChange={(e) => setDatabase(e.target.value)} />
+              <Input value={database} onChange={(e) => setDatabase(e.target.value)} />
             </label>
           </div>
         )}
@@ -555,12 +588,11 @@ function ConnectionTab({ onTitleChange }: Props) {
             <div className="row">
               <label>
                 {t("connection.sshHost")}{" "}
-                <Input size="large" value={sshHost} onChange={(e) => setSshHost(e.target.value)} />
+                <Input value={sshHost} onChange={(e) => setSshHost(e.target.value)} />
               </label>
               <label>
                 {t("connection.sshPort")}{" "}
                 <Input
-                  size="large"
                   type="number"
                   value={sshPort}
                   onChange={(e) => setSshPort(Number(e.target.value))}
@@ -568,14 +600,13 @@ function ConnectionTab({ onTitleChange }: Props) {
               </label>
               <label>
                 {t("connection.sshUser")}{" "}
-                <Input size="large" value={sshUser} onChange={(e) => setSshUser(e.target.value)} />
+                <Input value={sshUser} onChange={(e) => setSshUser(e.target.value)} />
               </label>
               <label>
                 {t("connection.auth")}{" "}
                 <Select
                   value={sshAuthType}
                   onChange={(v) => setSshAuthType(v)}
-                  size="large"
                   options={[
                     { value: "password", label: t("connection.authPassword") },
                     { value: "privatekey", label: t("connection.authPrivateKey") },
@@ -588,7 +619,6 @@ function ConnectionTab({ onTitleChange }: Props) {
                 <label>
                   {t("connection.sshPassword")}{" "}
                   <Input
-                    size="large"
                     type="password"
                     value={sshPassword}
                     onChange={(e) => setSshPassword(e.target.value)}
@@ -602,19 +632,17 @@ function ConnectionTab({ onTitleChange }: Props) {
                 <label>
                   {t("connection.privateKeyFile")}{" "}
                   <Input
-                    size="large"
                     value={sshKeyPath}
                     onChange={(e) => setSshKeyPath(e.target.value)}
                     placeholder={PRIVATE_KEY_PLACEHOLDER}
                   />
                 </label>
-                <Button size="large" onClick={browseForPrivateKey}>
+                <Button onClick={browseForPrivateKey}>
                   {t("common.browse")}
                 </Button>
                 <label>
                   {t("connection.keyPassphrase")}{" "}
                   <Input
-                    size="large"
                     type="password"
                     value={sshPassphrase}
                     onChange={(e) => setSshPassphrase(e.target.value)}
@@ -625,10 +653,12 @@ function ConnectionTab({ onTitleChange }: Props) {
               </div>
             )}
             <div className="row">
-              <Button size="large" onClick={testTunnel}>
+              <Button onClick={testTunnel} disabled={!sshInputsComplete}>
                 {t("connection.testTunnel")}
               </Button>
-              <span>{tunnelStatus}</span>
+              {tunnelStatus && (
+                <span className={`tunnel-status tunnel-status-${tunnelStatus.tone}`}>{tunnelStatus.message}</span>
+              )}
             </div>
           </>
         )}
@@ -637,7 +667,6 @@ function ConnectionTab({ onTitleChange }: Props) {
       <div className="row row-actions">
         <div className="row-actions-left">
           <Button
-            size="large"
             onClick={saveConnection}
             disabled={
               !saveAsName.trim() ||
@@ -648,14 +677,14 @@ function ConnectionTab({ onTitleChange }: Props) {
             {editingId ? t("connection.updateConnection") : t("connection.saveConnection")}
           </Button>
           {editingId && (
-            <Button size="large" onClick={saveConnectionAsNew} disabled={!saveAsName.trim()}>
+            <Button onClick={saveConnectionAsNew} disabled={!saveAsName.trim()}>
               {t("connection.saveAsNew")}
             </Button>
           )}
         </div>
         <div className="row-actions-right">
           <span>{status}</span>
-          <Button size="large" variant="primary" onClick={() => connect()}>
+          <Button variant="primary" onClick={() => connect()}>
             {t("common.connect")}
           </Button>
         </div>
@@ -690,7 +719,7 @@ function ConnectionTab({ onTitleChange }: Props) {
                 <strong>{t("connection.newConnection")}</strong>
               </button>
             </li>
-            {savedConnections.map((c) => (
+            {orderedConnections.map((c) => (
               <li key={c.id}>
                 <button
                   type="button"
@@ -704,6 +733,15 @@ function ConnectionTab({ onTitleChange }: Props) {
                     {KIND_BADGE[c.config.kind]}
                   </span>
                   <strong>{c.name}</strong>
+                  {/* Says why this one sits above the alphabet. The button's own `title` describes
+                      the row, so the mark carries its word in a `<span>` for screen readers
+                      rather than in a second tooltip that would replace it. */}
+                  {c.pinned && (
+                    <span className="saved-item-pin">
+                      <PinIcon size={14} />
+                      <span className="visually-hidden">{t("connection.pinnedTooltip")}</span>
+                    </span>
+                  )}
                 </button>
               </li>
             ))}
@@ -717,6 +755,17 @@ function ConnectionTab({ onTitleChange }: Props) {
           <>
             <div className="context-menu-overlay" onClick={closeContextMenu} onContextMenu={(e) => e.preventDefault()} />
             <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
+              <button
+                type="button"
+                onClick={() => {
+                  togglePinned(contextMenu.id);
+                  closeContextMenu();
+                }}
+              >
+                {savedConnections.find((c) => c.id === contextMenu.id)?.pinned
+                  ? t("connection.unpin")
+                  : t("connection.pin")}
+              </button>
               <button
                 type="button"
                 onClick={() => {

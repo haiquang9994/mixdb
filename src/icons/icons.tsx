@@ -189,6 +189,18 @@ export function FolderIcon(props: IconProps) {
   );
 }
 
+/** Held at the top of a list. A pushpin seen head-on rather than at the usual angle: at 14px the
+ * tilted one is a smudge, while the symmetrical shape keeps its cap, shoulders and needle. */
+export function PinIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8.5 3h7" />
+      <path d="M10 3v6.5L7 13h10l-3-3.5V3" />
+      <path d="M12 13v8" />
+    </Icon>
+  );
+}
+
 /** A status marker rather than an action — currently the "unsaved changes" bullet. Filled, so
  * it reads as a dot at the small sizes it is used at instead of as a thin ring. */
 export function DotIcon(props: IconProps) {

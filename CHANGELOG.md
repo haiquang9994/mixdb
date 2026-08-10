@@ -45,9 +45,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   short, the pane says the group may hold more than it is showing.
 - Redis: the key sidebar has a key limit picker beside the grouping character, remembered per
   connection. It says how much of the keyspace to read before the scan stops.
+- A saved connection can be pinned from the sidebar's right-click menu. Pinned connections are held
+  at the top of the list, marked with a pin.
 
 ### Changed
 
+- The connection list is ordered by name rather than by when each entry was saved, pinned ones
+  first. Accented names file beside their plain spelling instead of after every unaccented one, and
+  `db2` comes before `db10`.
+- The connection form is drawn at the same control size as the rest of the app instead of an
+  oversized one, so it takes noticeably less height, and its name field no longer sits flush
+  against the top edge.
+- The SSH tunnel test answers in colour — green when the tunnel came up, red with the server's own
+  words when it didn't — and its button stays disabled until the host, the user and whichever
+  credential the chosen auth method needs have been filled in.
 - Redis: the key sidebar reads the whole keyspace up front instead of a page per press of Load
   more. The list is sorted by key name, and sorting only settles once every name is in hand — so
   loading more used to drop keys into groups that had already been scrolled past. Now the list
@@ -55,6 +66,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - Redis: the key sidebar's footer stays put at the bottom instead of sitting under the end of a
   long list, and says how many keys have been read. While a scan is still running, folder counts
   are marked `12+` rather than passing a partial count off as a total.
+
+### Fixed
+
+- Saving, renaming or deleting a connection in one tab now shows in every other open tab. Each tab
+  used to read the connection list for itself and keep its own copy, so the rest only caught up
+  when the app was restarted.
+- A new connection tab no longer opens with a narrow sidebar that widens a beat later and shoves
+  the form sideways. The list is read once for the whole app rather than once per tab, so a tab
+  opened after the first has nothing left to wait for.
+- Updating a saved connection keeps the rest of what is remembered about it — whether it is pinned,
+  the sidebar width, Redis's key limit. Those were being cleared on every update.
 
 ## [0.0.5] - 2026-08-10
 

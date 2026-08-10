@@ -15,6 +15,7 @@ export {
   LockIcon,
   MinusIcon,
   PencilIcon,
+  PinIcon,
   PlusIcon,
   ReloadIcon,
   TrashIcon,

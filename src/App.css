@@ -440,9 +440,42 @@ body {
   border-color: var(--border);
 }
 
+/* The name takes whatever the badge and the pin leave, and gives way before either of them. */
 .saved-item strong {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Quiet: it explains an order the list already shows, so it shouldn't compete with the name it
+   sits beside. Full strength only on the connection currently open in the form, which is drawn
+   in the accent — the mark follows it rather than staying grey against a coloured row. */
+.saved-item-pin {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.55;
+}
+
+.saved-item:hover .saved-item-pin,
+.saved-item-active .saved-item-pin {
+  opacity: 1;
+}
+
+/* Read aloud, never drawn — a word that a shape is already saying to anyone who can see it.
+   Clipped to nothing rather than `display: none`, which would take it out of the accessibility
+   tree along with the layout. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
@@ -685,7 +718,13 @@ fieldset .row input {
   background: rgb(var(--accent-rgb) / 0.08);
 }
 
+/* The view's own padding is a hairline — enough for the panes below, but this is the first thing
+   in the form and it would otherwise start hard against the top edge. The sidebar beside it opens
+   with a heading, whose line box gives it that breathing room for free; a bare input has none, so
+   it is written here. `.login-form` scrolls, which makes it a block formatting context, so this
+   margin stays inside it rather than collapsing out through the top. */
 .row-name {
+  margin-top: 0.75rem;
   margin-bottom: 1.25rem;
 }
 
@@ -709,17 +748,14 @@ fieldset .row label.field-connection-string {
   flex-basis: 100%;
 }
 
-/* Smaller monospace type, same box: the size class writes its padding and line height in `em`,
-   so they shrink along with the font and leave this field a few pixels shorter than every other
-   large control on the form. Restating both in `rem` pins the box to the large size — `:root`
-   fixes the rem at 16px — while only the text gets smaller. */
+/* Monospace, but the same box as every other field: the size class already writes this font size,
+   so its `em` padding and line height resolve to the same pixels here and only the typeface
+   changes. */
 .field-connection-string input {
   flex: 1;
   min-width: 0;
   font-family: "Fira Code", monospace;
   font-size: 0.9em;
-  line-height: 1.5rem;
-  padding: 0.6rem 1.2rem;
 }
 
 /* Hidden is the field's resting state, so the value is a mask the user can't type over. */
@@ -728,17 +764,54 @@ fieldset .row label.field-connection-string {
   cursor: default;
 }
 
-/* A large Button so it stands exactly as tall as the field it closes, but squared off: the
-   size's horizontal padding is meant for a word, and this one carries a 16px icon, with the
-   wording it would have had in its `title`. Scoped to the field so it outranks the size class
-   regardless of which stylesheet the bundler emits first. */
+/* Squared off: the size's horizontal padding is meant for a word, and this one carries a 16px
+   icon, with the wording it would have had in its `title`. Scoped to the field so it outranks the
+   size class regardless of which stylesheet the bundler emits first. */
 .field-connection-string .reveal-toggle {
   flex: 0 0 auto;
-  padding: 0.6em;
+  padding: 0.35em;
   /* The size class sizes a button around a line of text; this one holds a 16px icon, which is a
      shorter box, so it would sit lower than the input beside it. Taking the field's own height
      instead of computing one keeps the two aligned however the input is sized. */
   align-self: stretch;
+}
+
+/* The tunnel test answers one of three ways, and which one it is should land before the sentence
+   is read. It shares the row with the button that started it, and a failure carries the server's
+   own words — which can be long — so it takes the rest of the line and wraps inside it rather than
+   pushing the row wider. */
+.tunnel-status {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+/* Nothing has happened yet, so it says so without taking a colour of its own. */
+.tunnel-status-pending {
+  opacity: 0.65;
+}
+
+/* The palette's green rather than a new hue: it already carries a dark cast that clears the page
+   at 4.5:1, which a hard-coded green would have to restate. */
+.tunnel-status-ok {
+  color: var(--c-green-text);
+}
+
+/* The same red every other failure in the app is written in — see ErrorBanner, which pairs these
+   two values. */
+.tunnel-status-error {
+  color: #d32f2f;
+}
+
+:root[data-theme="dark"] .tunnel-status-error {
+  color: #ff6b6b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .tunnel-status-error {
+    color: #ff6b6b;
+  }
 }
 
 textarea {

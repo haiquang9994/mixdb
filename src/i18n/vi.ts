@@ -68,6 +68,9 @@ const vi: TranslationDict = {
     saveAsNew: "Lưu thành mới",
     connections: "Kết nối",
     newConnection: "Kết nối mới",
+    pin: "Ghim lên đầu",
+    unpin: "Bỏ ghim",
+    pinnedTooltip: "Đã ghim",
     savedItemTooltip: "Bấm để sửa \u00b7 bấm đúp để kết nối \u00b7 chuột phải để xem tùy chọn",
   },
   mysql: {
