@@ -25,6 +25,15 @@ on:
 permissions:
   contents: write
 
+# Publishing a draft fires `published` and `edited` within the same second, so two jobs went for the
+# same asset at once and the loser got `422 ReleaseAsset.name already exists` — `--clobber` deletes
+# before it uploads, and the deleted name was already taken again by then. Queued rather than
+# cancelled: whichever runs second reads the body afresh, finds the notes already match and stops,
+# whereas cancelling mid-upload could leave the release with no manifest at all.
+concurrency:
+  group: sync-notes-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
