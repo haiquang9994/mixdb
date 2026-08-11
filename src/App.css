@@ -254,26 +254,68 @@ body {
   overscroll-behavior: contain;
 }
 
+/* The name of the app, and the only way into its settings. It used to be flat text at 70% opacity,
+   which is how a label looks, not how a button looks — nobody had a reason to click it. It now
+   carries its own surface, a hairline and a gear, so what it is stays legible from across the
+   window and what it does is legible from a foot away. */
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
   font-family: inherit;
-  font-size: inherit;
+  font-size: 0.9em;
   font-weight: 700;
-  padding: 0 0.75rem 0 0.25rem;
-  margin: 0;
+  letter-spacing: 0.01em;
+  /* Sits a little off the bottom of the bar: the tabs beside it run down to the edge, and the
+     button is not one of them. */
+  margin: 0 0.5rem 0.3rem 0.1rem;
+  padding: 0.3rem 0.5rem;
   border: none;
-  box-shadow: none;
-  background: transparent;
+  background: var(--hover-bg);
+  box-shadow: inset 0 0 0 1px var(--border);
   color: inherit;
-  opacity: 0.7;
+  opacity: 0.9;
   white-space: nowrap;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
+  transition: background-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
 }
 
 .brand:hover {
   opacity: 1;
-  background: var(--hover-bg);
-  border-color: transparent;
+  background: rgb(var(--accent-rgb) / 0.12);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.45);
+  color: var(--accent-text);
+}
+
+/* The press itself, since the button has no travel of its own. */
+.brand:active {
+  background: rgb(var(--accent-rgb) / 0.2);
+}
+
+.brand-gear {
+  flex: none;
+  opacity: 0.7;
+  transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1), opacity 120ms ease;
+}
+
+/* An eighth of a turn on hover: the gear is eight-toothed, so it lands where it started and the
+   movement reads as the thing turning rather than as the icon being swapped. */
+.brand:hover .brand-gear {
+  opacity: 1;
+  transform: rotate(45deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand,
+  .brand-gear {
+    transition: none;
+  }
+
+  .brand:hover .brand-gear {
+    transform: none;
+  }
 }
 
 /* An update is out and the user has not dealt with it yet. The name goes to full strength and
@@ -282,13 +324,16 @@ body {
   position: relative;
   opacity: 1;
   color: var(--accent-text);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.5);
 }
 
+/* Outside the chip's corner rather than inside it, which is where a notification dot goes and
+   which keeps it off the gear it would otherwise sit on top of. */
 .brand-update::after {
   content: "";
   position: absolute;
-  top: 0.15rem;
-  right: 0.35rem;
+  top: -3px;
+  right: -3px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -430,12 +475,39 @@ body {
   overscroll-behavior: contain;
 }
 
+/* The list scrolls inside the sidebar, so the title pins to the top of it and the
+   items pass underneath instead of pushing it out of view. */
 .saved-list-header {
-  margin-bottom: 0.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-bg);
+  /* Flush with the cards below on both sides, so the title starts on their left edge and the add
+     button ends on their right. The top padding keeps the title off the edge of the scroll box
+     and stays part of the sticky band. */
+  padding: 0.35rem 0 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.saved-list-new {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.saved-list-new:hover {
+  opacity: 1;
 }
 
 .saved-list-header h3 {
-  margin: 0;
+  /* Nudged in from the cards' edge: the title is a label for the list, not another row in it. */
+  margin: 0 0 0 0.25rem;
 }
 
 .saved-list ul {
@@ -603,15 +675,6 @@ body {
 .saved-item-active {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent) inset;
-}
-
-.saved-item-new {
-  border-style: dashed;
-  opacity: 0.85;
-}
-
-.saved-item-new:hover {
-  opacity: 1;
 }
 
 .context-menu-overlay {

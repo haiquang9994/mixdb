@@ -45,9 +45,8 @@ function UpdateSection({ update }: Props) {
   }
 
   return (
+    /* No heading of its own: the pane is reached by a list that already names it. */
     <div className={styles.section}>
-      <span className={styles.sectionLabel}>{t("update.title")}</span>
-
       <div className={styles.updateRow}>
         <div className={styles.updateText}>
           <span className={styles.updateVersion}>

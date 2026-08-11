@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -14,6 +14,10 @@ use crate::ssh_tunnel;
 use crate::state::{ActiveConnection, AppState, DbHandle};
 
 const DB_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Where the settings screen listens for how far a tool download has got. Named here and in
+/// `src/tools.ts`, which are the only two places that need to agree on it.
+const TOOLS_PROGRESS_EVENT: &str = "tools://progress";
 
 async fn with_timeout<T>(
     fut: impl std::future::Future<Output = Result<T, AppError>>,
@@ -434,12 +438,24 @@ pub async fn tools_uninstall(app: AppHandle, suite: String) -> Result<(), AppErr
     tools::uninstall(suite, &tools_dir(&app)?)
 }
 
-/// Downloads one suite of tools. Long-running and quiet: the frontend shows that it is happening.
+/// Downloads one suite of tools.
+///
+/// Minutes long on an ordinary connection, so it reports as it goes: every stage, and a running
+/// byte count while the archive comes down, on `tools://progress`. The command returning is what
+/// says it is finished — the events only say how far along it is.
 #[tauri::command]
 pub async fn tools_install(app: AppHandle, suite: String) -> Result<(), AppError> {
     let suite = tools::Suite::parse(&suite)?;
     let dir = tools_dir(&app)?;
-    in_background(move || tools::install(suite, &dir)).await
+    let reporter = app.clone();
+    in_background(move || {
+        tools::install(suite, &dir, &|progress| {
+            // A dropped progress event is not worth failing an install over: the next one is a
+            // quarter of a second away, and the last word comes from the command's own result.
+            let _ = reporter.emit(TOOLS_PROGRESS_EVENT, progress);
+        })
+    })
+    .await
 }
 
 /// Writes a database out as SQL. `mode` is `structure`, `data` or `all`.

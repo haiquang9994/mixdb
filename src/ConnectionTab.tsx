@@ -749,14 +749,19 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
         <aside className="saved-list">
           <div className="saved-list-header">
             <h3>{t("connection.connections")}</h3>
+            {/* Creating a connection is an action on the list, not one of its rows, so it sits in
+                the header where it stays reachable however far the names scroll. */}
+            <button
+              type="button"
+              className="saved-list-new"
+              onClick={newConnectionForm}
+              title={t("connection.newConnection")}
+            >
+              <span className="saved-item-icon kind-new">+</span>
+              <span className="visually-hidden">{t("connection.newConnection")}</span>
+            </button>
           </div>
           <ul>
-            <li>
-              <button type="button" className="saved-item saved-item-new" onClick={newConnectionForm}>
-                <span className="saved-item-icon kind-new">+</span>
-                <strong>{t("connection.newConnection")}</strong>
-              </button>
-            </li>
             {orderedConnections.map((c) => (
               <li key={c.id}>
                 <button

@@ -12,7 +12,8 @@ use crate::error::AppError;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
 /// One program this module knows how to find.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -387,23 +388,49 @@ fn verify_sha256(path: &Path, expected: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Runs a helper program, with its output thrown away and its complaints kept for the error.
-fn run(program: &str, args: &[&str], what: &'static str) -> Result<(), AppError> {
+/// How far an install has got, for the settings screen to show. Emitted often enough during the
+/// download that a 60MB fetch looks like it is moving, and once at every change of stage — a
+/// download that has finished is not an install that has finished, and the difference is minutes
+/// of unpacking on a slow disk.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    /// Which suite this is about, so a screen showing both can tell the two apart.
+    pub suite: &'static str,
+    /// `downloading`, `verifying`, `unpacking` or `installing`. There is no `done`: the install
+    /// command returning is what says it finished, and one fact should have one teller.
+    pub stage: &'static str,
+    /// Bytes fetched so far, and how many there are in all. A `total` of `0` means the server
+    /// never said — the bar shows movement without a percentage rather than a wrong one.
+    pub done: u64,
+    pub total: u64,
+}
+
+impl Progress {
+    fn stage(suite: Suite, stage: &'static str) -> Self {
+        Self { suite: suite.slug(), stage, done: 0, total: 0 }
+    }
+}
+
+/// A helper program, set up the way this module always wants one: nothing on stdin, output thrown
+/// away, complaints kept back for the error message, and — on Windows — no console window flashing
+/// up in the user's face.
+fn helper(program: &str) -> Command {
     let mut command = Command::new(program);
-    command
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+    command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    let output = command
-        .spawn()
-        .map_err(|e| err!("error.helperMissing", program = program, message = e))?
+    command
+}
+
+/// Waits for a helper to finish and turns a non-zero exit into `what`, carrying the tail of what
+/// it printed — the part of a curl or tar failure that says which thing went wrong.
+fn finish(child: Child, what: &'static str) -> Result<(), AppError> {
+    let output = child
         .wait_with_output()
         .map_err(|e| AppError::new(what).with("message", e))?;
     if output.status.success() {
@@ -412,6 +439,80 @@ fn run(program: &str, args: &[&str], what: &'static str) -> Result<(), AppError>
     let stderr = String::from_utf8_lossy(&output.stderr);
     let tail = stderr.lines().rev().take(4).collect::<Vec<_>>().join(" ");
     Err(AppError::new(what).with("message", tail))
+}
+
+/// Runs a helper program, with its output thrown away and its complaints kept for the error.
+fn run(program: &str, args: &[&str], what: &'static str) -> Result<(), AppError> {
+    let child = helper(program)
+        .args(args)
+        .spawn()
+        .map_err(|e| err!("error.helperMissing", program = program, message = e))?;
+    finish(child, what)
+}
+
+/// How big the archive is going to be, asked of the server before fetching it.
+///
+/// Only to fill in a progress bar, so every way of failing — a HEAD the CDN refuses, a redirect
+/// chain that drops the header, a body sent chunked — answers `0` and leaves the bar indeterminate
+/// rather than stopping the install.
+fn content_length(url: &str) -> u64 {
+    let output = helper("curl")
+        .args(["--head", "--location", "--silent", "--fail", url])
+        .stdout(Stdio::piped())
+        .output();
+    let Ok(output) = output else { return 0 };
+    if !output.status.success() {
+        return 0;
+    }
+    // The last one wins: after a redirect the headers of every hop are printed in turn, and it is
+    // the final response that describes the file actually being sent.
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+        .filter_map(|(_, value)| value.trim().parse::<u64>().ok())
+        .next_back()
+        .unwrap_or(0)
+}
+
+/// Fetches the archive, reporting how far it has got as it goes.
+///
+/// The count comes from the size of the file being written rather than from curl's own progress
+/// meter: curl draws that for a terminal, redrawing one line with carriage returns, and reading a
+/// number back out of it is a great deal more fragile than asking the filesystem.
+fn download(url: &str, archive: &Path, suite: Suite, report: &dyn Fn(Progress)) -> Result<(), AppError> {
+    let total = content_length(url);
+    report(Progress { suite: suite.slug(), stage: "downloading", done: 0, total });
+
+    let mut child = helper("curl")
+        .args([
+            "--fail",
+            "--location",
+            "--silent",
+            "--show-error",
+            "--retry",
+            "2",
+            "--output",
+            &archive.to_string_lossy(),
+            url,
+        ])
+        .spawn()
+        .map_err(|e| err!("error.helperMissing", program = "curl", message = e))?;
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                let done = std::fs::metadata(archive).map(|meta| meta.len()).unwrap_or(0);
+                report(Progress { suite: suite.slug(), stage: "downloading", done, total });
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            Err(e) => return Err(AppError::new("error.downloadFailed").with("message", e)),
+        }
+    }
+    // `wait_with_output` after the process has already been reaped returns the status it kept, so
+    // the exit code and stderr are still the ones curl left behind.
+    finish(child, "error.downloadFailed")
 }
 
 /// Copies out of `dir`, recursively, every file the suite needs: the tools themselves, and — on
@@ -458,7 +559,11 @@ fn collect(dir: &Path, suite: Suite, tools_dir: &Path) -> Result<usize, AppError
 ///
 /// The archive holds an entire server distribution in MySQL's case, so it is unpacked to a
 /// temporary directory, the few files that matter are taken out of it, and the rest is deleted.
-pub fn install(suite: Suite, tools_dir: &Path) -> Result<(), AppError> {
+///
+/// `report` is called as each stage begins and, while the archive is coming down, every quarter
+/// second — this takes minutes on an ordinary connection, and the one question the user has all
+/// the way through is whether it is still going.
+pub fn install(suite: Suite, tools_dir: &Path, report: &dyn Fn(Progress)) -> Result<(), AppError> {
     let (url, sha256) = archive_source(suite).ok_or_else(|| err!("error.noMysqlArchive"))?;
 
     let target = suite.dir(tools_dir);
@@ -474,23 +579,11 @@ pub fn install(suite: Suite, tools_dir: &Path) -> Result<(), AppError> {
 
     let archive = staging.join("tools-archive");
     let result = (|| {
-        run(
-            "curl",
-            &[
-                "--fail",
-                "--location",
-                "--silent",
-                "--show-error",
-                "--retry",
-                "2",
-                "--output",
-                &archive.to_string_lossy(),
-                &url,
-            ],
-            "error.downloadFailed",
-        )?;
+        download(&url, &archive, suite, report)?;
         // Before anything is unpacked, let alone run.
+        report(Progress::stage(suite, "verifying"));
         verify_sha256(&archive, sha256)?;
+        report(Progress::stage(suite, "unpacking"));
         let unpacked = staging.join("unpacked");
         std::fs::create_dir_all(&unpacked)
             .map_err(|e| err!("error.cannotCreateDirectory", path = unpacked.display(), message = e))?;
@@ -504,6 +597,7 @@ pub fn install(suite: Suite, tools_dir: &Path) -> Result<(), AppError> {
             ],
             "error.unpackFailed",
         )?;
+        report(Progress::stage(suite, "installing"));
         let found = collect(&unpacked, suite, &target)?;
         if found < suite.tools().len() {
             return Err(err!("error.downloadIncomplete"));

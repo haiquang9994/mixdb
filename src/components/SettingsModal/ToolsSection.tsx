@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "../../i18n";
+import type { TranslationKey } from "../../i18n";
+import { CheckIcon } from "../../icons";
 import { errorMessage } from "../../errors";
-import { toolsInstall, toolsSetPath, toolsStatus, toolsUninstall } from "../../tools";
-import type { ToolStatus, ToolSuite } from "../../tools";
+import {
+  subscribeToolInstall,
+  toolInstallState,
+  toolsInstall,
+  toolsSetPath,
+  toolsStatus,
+  toolsUninstall,
+} from "../../tools";
+import type { ToolStage, ToolStatus, ToolSuite } from "../../tools";
 import styles from "./SettingsModal.module.css";
 
 /** The two suites, and what each one is called where it is downloaded from. */
@@ -20,16 +29,42 @@ const SOURCE_LABEL = {
   system: "tools.sourceSystem",
 } as const;
 
+/** What each stage of an install is called while it is happening. */
+const STAGE_LABEL: Record<ToolStage, TranslationKey> = {
+  downloading: "tools.stageDownloading",
+  verifying: "tools.stageVerifying",
+  unpacking: "tools.stageUnpacking",
+  installing: "tools.stageInstalling",
+};
+
+/** How long the "it worked" line stays up. Long enough to be read on the way back from somewhere
+ *  else, short enough that it is gone before it stops meaning "just now". */
+const DONE_VISIBLE_MS = 8000;
+
+function megabytes(bytes: number): string {
+  return (bytes / 1024 / 1024).toFixed(1);
+}
+
 /**
  * The dump and restore tools: where each one was found, and what can be done about it — download
  * MixDB's own copy, delete that copy again, or point the app at one already on this machine.
+ *
+ * A download is tens of megabytes and takes minutes, so it is not left to a button that says
+ * "working": the bar below the suite carries the stage it is in, the megabytes so far, and — once
+ * it is over — a line saying so, since the badges changing from "missing" to "downloaded" is a
+ * quiet thing to have waited that long for.
  */
 function ToolsSection() {
   const { t } = useTranslation();
   const [tools, setTools] = useState<ToolStatus[]>([]);
-  /** The suite being downloaded or removed, so only its own buttons go quiet. */
-  const [working, setWorking] = useState<ToolSuite | null>(null);
+  /** The install, wherever it was started from — this screen may have been closed and reopened
+   *  since, and the download went on without it. */
+  const install = useSyncExternalStore(subscribeToolInstall, toolInstallState);
+  /** Removing is quick and needs nothing following it, so it stays a local flag. */
+  const [removing, setRemoving] = useState<ToolSuite | null>(null);
   const [error, setError] = useState("");
+  /** Beats once each time a confirmation below has been up long enough to come down. */
+  const [beat, tick] = useState(0);
 
   const onError = useCallback((message: string) => setError(message), []);
 
@@ -39,19 +74,48 @@ function ToolsSection() {
       .catch((e) => onError(errorMessage(t, e)));
   }, [onError]);
 
-  useEffect(refresh, [refresh]);
+  // On the way in, and whenever an install starts or ends — including one this screen was closed
+  // for and knows nothing about. Keyed by which suites are running rather than by the map itself,
+  // which is replaced with every progress reading and would ask the backend four times a second.
+  const runningKey = [...install.running.keys()].sort().join(",");
+  useEffect(() => {
+    refresh();
+  }, [runningKey, refresh]);
 
-  async function act(suite: ToolSuite, work: () => Promise<void>) {
-    setWorking(suite);
+  const finished = install.finished;
+  /** Whether a suite's "it worked" line is still within its few seconds. */
+  function justInstalled(suite: ToolSuite): boolean {
+    const at = finished.get(suite);
+    return at !== undefined && Date.now() - at < DONE_VISIBLE_MS;
+  }
+
+  // One timer for whichever confirmation runs out first; the beat brings the effect back for the
+  // next one, so two downloads finishing minutes apart each get their own few seconds.
+  useEffect(() => {
+    const now = Date.now();
+    const remaining = [...finished.values()]
+      .map((at) => DONE_VISIBLE_MS - (now - at))
+      .filter((left) => left > 0);
+    if (remaining.length === 0) return;
+    const timer = window.setTimeout(() => tick((n) => n + 1), Math.min(...remaining));
+    return () => window.clearTimeout(timer);
+  }, [finished, beat]);
+
+  /** Runs one of the buttons' errands, with whatever it goes wrong with put on screen. */
+  async function act(work: () => Promise<void>) {
     setError("");
     try {
       await work();
     } catch (e) {
       onError(errorMessage(t, e));
-    } finally {
-      setWorking(null);
-      refresh();
     }
+  }
+
+  async function remove(suite: ToolSuite) {
+    setRemoving(suite);
+    await act(() => toolsUninstall(suite));
+    setRemoving(null);
+    refresh();
   }
 
   async function choose(tool: ToolStatus) {
@@ -74,9 +138,54 @@ function ToolsSection() {
     refresh();
   }
 
+  /** The bar under a suite that is being fetched: what it is doing, and how far in it is. */
+  function installProgress(suite: ToolSuite) {
+    const live = install.running.get(suite) ?? null;
+    // Until the first event lands there is no stage to name, and no download has begun either —
+    // "downloading" is the honest guess for that gap.
+    const stage: ToolStage = live?.stage ?? "downloading";
+    const measured = live !== null && stage === "downloading" && live.total > 0;
+    const percent = measured ? Math.min(100, Math.round((live.done / live.total) * 100)) : 0;
+
+    return (
+      /* Deliberately not a live region: it changes four times a second, and the bar below already
+         carries the number for anything reading it. What is worth announcing is the end, which the
+         line under this one does. */
+      <div className={styles.progress}>
+        <div className={styles.progressHead}>
+          <span>{t(STAGE_LABEL[stage])}</span>
+          {live !== null && stage === "downloading" && live.done > 0 && (
+            <span className={styles.progressCount}>
+              {measured
+                ? t("tools.sizeKnown", {
+                    done: megabytes(live.done),
+                    total: megabytes(live.total),
+                    percent,
+                  })
+                : t("tools.sizeUnknown", { done: megabytes(live.done) })}
+            </span>
+          )}
+        </div>
+        <div
+          className={styles.progressTrack}
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={measured ? percent : undefined}
+        >
+          {/* Without a total from the server there is no honest percentage, so the bar sweeps
+              instead of filling: movement says "still going" without claiming to know how far. */}
+          <div
+            className={measured ? styles.progressFill : `${styles.progressFill} ${styles.progressSweep}`}
+            style={measured ? { width: `${percent}%` } : undefined}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.section}>
-      <span className={styles.sectionLabel}>{t("tools.title")}</span>
       <p className={styles.hint}>{t("tools.intro")}</p>
       {error !== "" && (
         <p className={styles.toolError} role="alert">
@@ -89,7 +198,10 @@ function ToolsSection() {
         // Only a copy MixDB downloaded can be removed; what was already on the machine is not
         // MixDB's to delete.
         const downloaded = members.some((tool) => tool.source === "downloaded");
-        const busy = working === suite;
+        // Only this suite's own errand quiets this suite's buttons: the other one downloads to a
+        // staging directory and unpacks to an install directory of its own, so the two never meet.
+        const fetching = install.running.has(suite);
+        const busy = fetching || removing === suite;
         return (
           <div key={suite} className={styles.toolSuite}>
             <div className={styles.toolSuiteHeader}>
@@ -99,7 +211,7 @@ function ToolsSection() {
                   type="button"
                   className={styles.toolButton}
                   disabled={busy}
-                  onClick={() => void act(suite, () => toolsInstall(suite))}
+                  onClick={() => void act(() => toolsInstall(suite))}
                 >
                   {busy ? t("tools.working") : t(downloaded ? "tools.redownload" : "tools.download")}
                 </button>
@@ -108,13 +220,22 @@ function ToolsSection() {
                     type="button"
                     className={`${styles.toolButton} ${styles.toolButtonDanger}`}
                     disabled={busy}
-                    onClick={() => void act(suite, () => toolsUninstall(suite))}
+                    onClick={() => void remove(suite)}
                   >
                     {t("tools.remove")}
                   </button>
                 )}
               </div>
             </div>
+
+            {fetching && installProgress(suite)}
+
+            {justInstalled(suite) && (
+              <p className={styles.toolDone} role="status">
+                <CheckIcon size={14} />
+                {t("tools.installed")}
+              </p>
+            )}
 
             {members.map((tool) => (
               <div key={tool.name} className={styles.tool}>

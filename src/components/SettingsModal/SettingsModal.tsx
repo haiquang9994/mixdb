@@ -1,12 +1,13 @@
-import { useEffect } from "react";
-import type { CSSProperties } from "react";
+import { useEffect, useState } from "react";
+import type { ComponentType } from "react";
 import type { AccentColor, ThemeMode } from "../../theme";
-import { ACCENT_COLORS } from "../../theme";
-import type { Language, TranslationKey } from "../../i18n";
-import { CloseIcon } from "../../icons";
+import type { TranslationKey } from "../../i18n";
+import type { IconProps } from "../../icons";
+import { CloseIcon, DownloadIcon, PaletteIcon, WrenchIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import type { UpdateCheck } from "../../update";
 import { useDialogExit } from "../dialogMotion";
+import AppearanceSection from "./AppearanceSection";
 import ToolsSection from "./ToolsSection";
 import UpdateSection from "./UpdateSection";
 import styles from "./SettingsModal.module.css";
@@ -20,14 +21,31 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-/** `blue` -> `settings.accentBlue`, the label beside each swatch. */
-function accentLabelKey(accent: AccentColor): TranslationKey {
-  return `settings.accent${accent.charAt(0).toUpperCase()}${accent.slice(1)}` as TranslationKey;
-}
+type SectionId = "appearance" | "tools" | "update";
 
+/** The panes, in the order they are listed: the one a user changes often first, the errands after
+ *  it. Each names itself with the heading its own content used to carry, so nothing is said twice
+ *  once the list is on screen. */
+const SECTIONS: { id: SectionId; labelKey: TranslationKey; icon: ComponentType<IconProps> }[] = [
+  { id: "appearance", labelKey: "settings.appearance", icon: PaletteIcon },
+  { id: "tools", labelKey: "tools.title", icon: WrenchIcon },
+  { id: "update", labelKey: "update.title", icon: DownloadIcon },
+];
+
+/**
+ * Everything about the app rather than about a connection.
+ *
+ * It is a list of panes rather than one long scroll: theme, accent and language are settings, the
+ * dump tools are a downloader, and the updater is a downloader of another kind — three things that
+ * happen to live behind the same door, and reading as one column made the door look busier than
+ * what is behind it.
+ */
 function SettingsModal({ theme, onThemeChange, accent, onAccentChange, update, onClose }: SettingsModalProps) {
-  const { t, lang, setLang } = useTranslation();
+  const { t } = useTranslation();
   const { close, cls } = useDialogExit();
+  /* Opened while an update is waiting, this dialog is almost always being opened *for* the update —
+     the brand button's dot is what the user just clicked. */
+  const [section, setSection] = useState<SectionId>(update.pending ? "update" : "appearance");
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -36,17 +54,6 @@ function SettingsModal({ theme, onThemeChange, accent, onAccentChange, update, o
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [close, onClose]);
-
-  const themeOptions: { value: ThemeMode; label: string }[] = [
-    { value: "light", label: t("settings.themeLight") },
-    { value: "dark", label: t("settings.themeDark") },
-    { value: "system", label: t("settings.themeSystem") },
-  ];
-
-  const languageOptions: { value: Language; label: string }[] = [
-    { value: "en", label: t("settings.languageEnglish") },
-    { value: "vi", label: t("settings.languageVietnamese") },
-  ];
 
   return (
     <>
@@ -59,64 +66,69 @@ function SettingsModal({ theme, onThemeChange, accent, onAccentChange, update, o
           </button>
         </div>
 
-        <div className={styles.section}>
-          <span className={styles.sectionLabel}>{t("settings.appearance")}</span>
-          <div className={styles.themeOptions}>
-            {themeOptions.map((opt) => (
+        <div className={styles.body}>
+          <div className={styles.nav} role="tablist" aria-orientation="vertical">
+            {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
               <button
-                key={opt.value}
+                key={id}
                 type="button"
-                className={opt.value === theme ? `${styles.themeOption} ${styles.themeOptionActive}` : styles.themeOption}
-                onClick={() => onThemeChange(opt.value)}
+                role="tab"
+                id={`settings-tab-${id}`}
+                aria-selected={id === section}
+                aria-controls={`settings-panel-${id}`}
+                className={id === section ? `${styles.navItem} ${styles.navItemActive}` : styles.navItem}
+                onClick={() => setSection(id)}
               >
-                {opt.label}
+                <Icon size={15} />
+                <span className={styles.navLabel}>{t(labelKey)}</span>
+                {/* The same dot the brand button carries, so whichever of the two brought the user
+                    here, the thing waiting for them is marked the same way. */}
+                {id === "update" && update.pending && (
+                  <span
+                    className={styles.navDot}
+                    title={update.release ? t("update.available", { version: update.release.version }) : undefined}
+                  />
+                )}
               </button>
             ))}
           </div>
-        </div>
 
-        <div className={styles.section}>
-          <span className={styles.sectionLabel}>{t("settings.accent")}</span>
-          <div className={styles.accentOptions}>
-            {ACCENT_COLORS.map((opt) => {
-              const label = t(accentLabelKey(opt));
-              return (
-                <button
-                  key={opt}
-                  type="button"
-                  className={opt === accent ? `${styles.accentOption} ${styles.accentOptionActive}` : styles.accentOption}
-                  /* The palette lives in App.css; the swatch only names which of the ten it is,
-                     so it picks up that colour's light and dark cast on its own. */
-                  style={{ "--accent-swatch": `var(--c-${opt})` } as CSSProperties}
-                  onClick={() => onAccentChange(opt)}
-                  title={label}
-                  aria-label={label}
-                  aria-pressed={opt === accent}
-                />
-              );
-            })}
+          {/* Hidden rather than unmounted: a download started under Tools carries on when the user
+              goes to look at something else, and it has to still be there — with its bar where it
+              left it — when they come back. */}
+          <div
+            className={styles.panel}
+            role="tabpanel"
+            id="settings-panel-appearance"
+            aria-labelledby="settings-tab-appearance"
+            hidden={section !== "appearance"}
+          >
+            <AppearanceSection
+              theme={theme}
+              onThemeChange={onThemeChange}
+              accent={accent}
+              onAccentChange={onAccentChange}
+            />
+          </div>
+          <div
+            className={styles.panel}
+            role="tabpanel"
+            id="settings-panel-tools"
+            aria-labelledby="settings-tab-tools"
+            hidden={section !== "tools"}
+          >
+            <ToolsSection />
+          </div>
+          <div
+            className={styles.panel}
+            role="tabpanel"
+            id="settings-panel-update"
+            aria-labelledby="settings-tab-update"
+            hidden={section !== "update"}
+          >
+            <UpdateSection update={update} />
           </div>
         </div>
-
-        <div className={styles.section}>
-          <span className={styles.sectionLabel}>{t("settings.language")}</span>
-          <div className={styles.themeOptions}>
-            {languageOptions.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={opt.value === lang ? `${styles.themeOption} ${styles.themeOptionActive}` : styles.themeOption}
-                onClick={() => setLang(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <ToolsSection />
-
-        <UpdateSection update={update} />
       </div>
     </>
   );

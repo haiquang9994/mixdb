@@ -268,6 +268,38 @@ export function ExpandIcon(props: IconProps) {
   );
 }
 
+/** Settings. A gear rather than sliders: it is the shape every desktop app puts on this door, and
+ * the tab bar has room for one glyph only, so it has to be the one nobody has to learn. */
+export function SettingsIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M19.5 13.9a7.9 7.9 0 0 0 0-3.8l2-1.5-2-3.4-2.4 1a7.8 7.8 0 0 0-3.3-1.9L13.3 2h-2.6l-.5 2.3a7.8 7.8 0 0 0-3.3 1.9l-2.4-1-2 3.4 2 1.5a7.9 7.9 0 0 0 0 3.8l-2 1.5 2 3.4 2.4-1a7.8 7.8 0 0 0 3.3 1.9l.5 2.3h2.6l.5-2.3a7.8 7.8 0 0 0 3.3-1.9l2.4 1 2-3.4z" />
+    </Icon>
+  );
+}
+
+/** Colours to choose from — the look of the app, in settings. */
+export function PaletteIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3a9 9 0 0 0 0 18 1.9 1.9 0 0 0 1.5-3.1 1.9 1.9 0 0 1 1.5-3.1h2A3.9 3.9 0 0 0 21 10.6C20.4 6.3 16.6 3 12 3z" />
+      <circle cx="7.6" cy="12.4" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="9.8" cy="8.2" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="14.4" cy="7.8" r="1.1" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+/** The outside programs MixDB leans on for dumping and restoring. */
+export function WrenchIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M15.6 3.5a5.2 5.2 0 0 0-4.8 7.2l-6.5 6.5a2.1 2.1 0 0 0 3 3l6.5-6.5a5.2 5.2 0 0 0 6.4-6.6l-2.8 2.8-2.7-.7-.7-2.7 2.8-2.8a5.3 5.3 0 0 0-1.2-.2z" />
+    </Icon>
+  );
+}
+
 /** A status marker rather than an action — currently the "unsaved changes" bullet. Filled, so
  * it reads as a dot at the small sizes it is used at instead of as a thin ring. */
 export function DotIcon(props: IconProps) {

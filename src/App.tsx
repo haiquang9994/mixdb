@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import ConnectionTab from "./ConnectionTab";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
-import { CloseIcon, LockIcon, PlusIcon } from "./icons";
+import { CloseIcon, LockIcon, PlusIcon, SettingsIcon } from "./icons";
 import { isBlockedReload } from "./reload";
 import { useScrollAcceleration } from "./scroll";
 import { useAccent, useTheme } from "./theme";
@@ -104,7 +104,11 @@ function App() {
   return (
     <main className="app">
       <div className="tab-bar">
-        {/* Once an update is out, this is the way back to it after the panel in the corner is
+        {/* The app's name is also its settings button, which nothing about a bare word at 70%
+            opacity said — so it wears a surface, a border and a gear, and reads as something to
+            press before it is hovered.
+
+            Once an update is out, this is also the way back to it after the panel in the corner is
             gone, so it carries a dot until the user installs or skips that version. A download
             waved away mid-flight goes on, and finishes behind this dot. */}
         <button
@@ -112,8 +116,10 @@ function App() {
           className={update.pending ? "brand brand-update" : "brand"}
           onClick={() => setSettingsOpen(true)}
           title={update.pending && update.release ? t("update.available", { version: update.release.version }) : t("app.settings")}
+          aria-label={t("app.settings")}
         >
           MixDB
+          <SettingsIcon className="brand-gear" size={14} />
         </button>
         {tabs.map((tab) => (
           <div
