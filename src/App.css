@@ -939,10 +939,11 @@ textarea {
   flex-direction: column;
 }
 
-/* A tab panel that stays mounted while another tab is up: the Query editor, whose script and
-   results have to outlive a look at the data, and the Statistics grid, whose figures do. Taking
-   one out of the flow rather than unmounting it is what keeps that state; it costs the layout
-   nothing while hidden. */
+/* A tab panel that stays mounted while another tab is up — all four of them are: the script and
+   results in the Query editor, the figures in Statistics, the page of rows the Data grid has read
+   and the shape Structure has, none of which should have to be fetched again for a look at one of
+   the others. Taking one out of the flow rather than unmounting it is what keeps that state; it
+   costs the layout nothing while hidden. */
 .mysql-panel {
   flex: 1;
   min-width: 0;

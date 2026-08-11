@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ROW_HEIGHT, rowWindow, widestValues } from "./ResultGrid";
+import { rowWindow, widestValues } from "./virtualRows";
 
 /** The grid's own constants, repeated rather than imported: a test that reads the number it is
  *  checking against cannot notice that number changing. */
@@ -11,6 +11,15 @@ const BLIND_ROWS = 48;
  *  400px pane is sixteen rows on screen. */
 const ROW = 25;
 const PANE = 400;
+
+/** The height the two real grids pin their rows to, near enough — 31px in the results grid, 33px in
+ *  the data grid. The sweeps below run at this rather than at the round number above, so they are
+ *  answering the question at the sizes the app actually uses. */
+const ROW_HEIGHT = 31;
+
+/** How the sweeps read a cell out of a row. Both grids hand `widestValues` an accessor, since one
+ *  of them holds positional rows and the other holds rows keyed by column name. */
+const cell = (row: unknown[], column: number) => row[column];
 
 describe("rowWindow", () => {
   it("opens on a block of rows at the top of the set", () => {
@@ -166,14 +175,14 @@ describe("widestValues", () => {
     // five digits at the very end. A column sized from anything less than all of them is a column
     // one digit too narrow for its last nine thousand rows.
     const rows = Array.from({ length: 10_000 }, (_, i) => [i + 1]);
-    expect(longest(widestValues(rows, 1), 0)).toBe("10000");
+    expect(longest(widestValues(rows, 1, cell), 0)).toBe("10000");
   });
 
   it("keeps a shortlist rather than a single winner", () => {
     // Length is only an approximation of width, so the widest of the longest few is what wins —
     // which means there have to be a few.
     const rows = [["aaaa"], ["bbb"], ["cc"], ["d"]];
-    expect(widestValues(rows, 1)[0]).toEqual(["aaaa", "bbb", "cc"]);
+    expect(widestValues(rows, 1, cell)[0]).toEqual(["aaaa", "bbb", "cc"]);
   });
 
   it("measures each column against its own values", () => {
@@ -181,14 +190,14 @@ describe("widestValues", () => {
       ["a", "xxxxx"],
       ["bbbb", "y"],
     ];
-    const picks = widestValues(rows, 2);
+    const picks = widestValues(rows, 2, cell);
     expect(longest(picks, 0)).toBe("bbbb");
     expect(longest(picks, 1)).toBe("xxxxx");
   });
 
   it("renders a value the way the cell will", () => {
     const rows = [[null, { a: 1 }, 12345]];
-    const picks = widestValues(rows, 3);
+    const picks = widestValues(rows, 3, cell);
     expect(longest(picks, 0)).toBe("NULL");
     expect(longest(picks, 1)).toBe('{"a":1}');
     expect(longest(picks, 2)).toBe("12345");
@@ -204,12 +213,12 @@ describe("widestValues", () => {
       [`${long}${long}`, "22"],
       [`${long}${long}${long}`, "333"],
     ];
-    const picks = widestValues(rows, 2);
+    const picks = widestValues(rows, 2, cell);
     expect(longest(picks, 0)).toBe(long);
     expect(longest(picks, 1)).toBe("333");
   });
 
   it("copes with a result of no rows at all", () => {
-    expect(widestValues([], 2)).toEqual([[], []]);
+    expect(widestValues([], 2, cell)).toEqual([[], []]);
   });
 });

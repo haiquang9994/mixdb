@@ -44,16 +44,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 ### Changed
 
 - A `SELECT` written without a `LIMIT` of its own is now sent with a ceiling of ten thousand rows
-  rather than five hundred, and that ceiling is no longer a setting — write your own `LIMIT` to ask
-  for something else.
+  rather than five hundred, and that ceiling is no longer a setting.
+- Moving between a connection's tabs no longer re-reads anything: Data comes back to the page,
+  filters and selection it was left on, and Structure to the columns and indexes it had.
 
 ### Fixed
 
-- A large result no longer slows the Query tab down. A few hundred rows were enough to make leaving
-  the tab, coming back to it and scrolling the results stutter; the grid now builds only the rows on
-  screen, so ten thousand rows cost what a screenful costs.
-- Small interface fixes in the Query tab's results: the column no longer shows a scrollbar when the
-  one result in it already fits.
+- A grid of more than a few dozen rows no longer slows the app down — the Query tab's results, the
+  Data tab, Structure and Statistics each build only the rows on screen, so ten thousand rows cost
+  what a screenful costs. Selecting, sorting and editing in place work exactly as before.
+- The Query tab's results no longer show a scrollbar when the one result in the column already
+  fits.
 
 ## [0.0.7] - 2026-08-11
 

@@ -30,8 +30,62 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  /* Off, and not as a nicety. Scroll anchoring shifts the scroll offset when content above the
+     viewport changes height — which is exactly what the spacer above a window of rows does every
+     time the window moves, so the browser's correction and the grid's own fight each other. */
+  overflow-anchor: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+
+/* Past a few dozen tables the grid holds only the rows on screen, and these are the two things
+   that has to be true for (see `src/virtualRows.ts`).
+
+   Rows first, and this one has to be exact: the rows outside the window are stood in for by a
+   spacer of `count × --row-h`, so a drawn row that is a fraction taller or shorter makes the
+   table's height depend on where it is scrolled, and then the end of the list drifts away as you
+   scroll towards it. The height is stated by the component and pinned here rather than measured:
+   `height` sets the row, `line-height` stops a fallback font's taller metrics from growing one row
+   of it, and the vertical padding goes because the line box now fills the row. */
+.gridRows tbody tr:not(.spacer):not(.sizerRow) > td {
+  box-sizing: border-box;
+  height: var(--row-h);
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: calc(var(--row-h) - 1px);
+  overflow: hidden;
+}
+
+/* Columns second, and this grid asks the browser rather than measuring: one row of no height,
+   always present, holding the widest value of every column. The table then sizes itself as it
+   always did — around a row that cannot scroll out of it. Its cells keep their horizontal padding
+   and right-hand rule, since those are part of what a column has to hold; everything that would
+   give it height goes. */
+.sizerRow > td {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* The values themselves: clipped to nothing so the row is invisible, while still counting for how
+   wide its column has to be. One per line, so the column comes out as wide as the widest of them
+   rather than as wide as all of them laid end to end. */
+.sizer {
+  height: 0;
+  overflow: hidden;
+}
+
+/* The two boxes standing in for the rows outside the window: exactly as tall as the rows they
+   replace, so the scrollbar is the length it would have been, and nothing else at all. */
+.grid tbody tr.spacer,
+.grid tbody tr.spacer:hover {
+  background: none;
+}
+
+.grid tbody tr.spacer > td {
+  padding: 0;
+  border: 0;
 }
 
 .grid {

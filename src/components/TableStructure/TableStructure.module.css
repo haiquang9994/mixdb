@@ -39,6 +39,10 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  /* Off, and not as a nicety. Scroll anchoring shifts the scroll offset when content above the
+     viewport changes height — exactly what the spacer above a window of rows does whenever the
+     window moves, so the browser's correction and the grid's own end up fighting. */
+  overflow-anchor: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -76,6 +80,58 @@
   top: 0;
   z-index: 1;
   background: var(--page-bg);
+}
+
+/* Past a few dozen rows each grid holds only the rows on screen, and these are the two things that
+   has to be true for (see `src/virtualRows.ts`).
+
+   Rows first, and this one has to be exact: the rows outside the window are stood in for by a
+   spacer of `count × --row-h`, so a drawn row that is a fraction taller or shorter would make the
+   table's height depend on where it is scrolled, and the end of the list would drift away as you
+   scrolled towards it. The height is stated by the component and pinned here rather than measured;
+   `line-height` is part of pinning it, since a fallback font's taller metrics would otherwise grow
+   the one row that needed one. The row buttons are 24px in a 32px line, so they fit as they were.
+
+   `overflow` is deliberately not touched: the pinned actions column sets its own to `visible` so a
+   button is never ellipsised in half, and that has to keep winning. */
+.gridRows tbody tr:not(.spacer):not(.sizerRow) > td {
+  box-sizing: border-box;
+  height: var(--row-h);
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: calc(var(--row-h) - 1px);
+}
+
+/* Columns second, and these grids ask the browser rather than measuring: one row of no height,
+   always present, holding the widest cell of every column — badges, buttons and all, drawn exactly
+   as a real row draws them. The table then sizes itself as it always did, around a row that cannot
+   scroll out of it. Describing a badge to a canvas is how a measured column gets it wrong; the
+   browser already knows. */
+.sizerRow > td {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* Clipped to nothing, so the row is invisible while still counting for how wide its column has to
+   be. Each candidate on its own line, so the column comes out as wide as the widest rather than as
+   wide as all of them end to end. */
+.sizer {
+  height: 0;
+  overflow: hidden;
+}
+
+/* The two boxes standing in for the rows outside the window: exactly as tall as the rows they
+   replace, so the scrollbar is the length it would have been, and nothing else. */
+.grid tbody tr.spacer,
+.grid tbody tr.spacer:hover {
+  background: none;
+}
+
+.grid tbody tr.spacer > td {
+  padding: 0;
+  border: 0;
 }
 
 .grid tbody tr:hover {

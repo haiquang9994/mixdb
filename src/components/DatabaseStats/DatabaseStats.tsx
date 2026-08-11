@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { gridStyle, useVirtualRows, widestValues } from "../../virtualRows";
 import ActionBar from "../ActionBar";
 import LoadingOverlay from "../LoadingOverlay";
 import { ChevronDownIcon, ChevronUpIcon, ReloadIcon } from "../../icons";
@@ -40,6 +41,36 @@ function formatSize(bytes: number): string {
 /** A count with its thousands separated, which is what makes two of them comparable at a glance. */
 function formatCount(value: number): string {
   return value.toLocaleString();
+}
+
+/** Where holding every row in the DOM stops being the cheap thing to do. A database of a few dozen
+ *  tables is nothing; one of a few thousand is the whole grid laid out again every time the tab is
+ *  shown, since a tab behind another one keeps no layout. */
+const VIRTUAL_FROM = 60;
+
+/** How tall a row of this grid is — stated, never measured; see `virtualRows.ts` for why that
+ *  distinction is what makes a window of rows sound. 33px is what a row here has always come to: a
+ *  24px line, 4px of padding above and below, and the 1px rule underneath. */
+const ROW_HEIGHT = 33;
+
+/** How one row reads, column by column, for the sizer row that gives each column its width. The
+ *  same strings the cells below are drawn from, so the column is sized by what is actually in it. */
+function cellText(row: TableStats, column: number): string {
+  switch (column) {
+    case 1:
+      return row.name;
+    case 2:
+      return formatCount(row.rows);
+    case 3:
+      return formatSize(row.dataSize);
+    case 4:
+      return formatSize(row.indexSize);
+    case 5:
+      return formatSize(row.avgRecordSize);
+    // The row number, which the sizer fills with the largest one rather than reading it off a row.
+    default:
+      return "";
+  }
 }
 
 /** The figures on screen and the database they were read from, held together: a database changed
@@ -153,6 +184,21 @@ function DatabaseStats({ kind, connectionId, database, active, onError }: Props)
     return { ...sum, avgRecordSize: sum.rows > 0 ? sum.dataSize / sum.rows : 0 };
   }, [sorted]);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Only the rows on screen are built into the DOM past a certain size. Sorting, the totals in the
+  // footer and the reload all work off `sorted` rather than off what is drawn, so none of them
+  // notices.
+  const virtual = sorted.length >= VIRTUAL_FROM;
+  const view = useVirtualRows(scrollRef, {
+    total: sorted.length,
+    rowHeight: ROW_HEIGHT,
+    enabled: virtual,
+  });
+
+  /** The widest few values of each column, for the sizer row below. Three rather than one because
+   *  length is only an approximation of width — all three go in, and the browser picks. */
+  const widest = useMemo(() => widestValues(sorted, 6, cellText), [sorted]);
+
   /** Moves the clicked column to its next sort state: a new column opens on the order that reads
    *  it best — biggest first for a number, A to Z for a name — and clicking it again reverses. */
   function toggleSort(column: SortColumn) {
@@ -211,8 +257,15 @@ function DatabaseStats({ kind, connectionId, database, active, onError }: Props)
         />
       </header>
 
-      <div className={styles.gridWrap}>
-        <table className={styles.grid}>
+      <div
+        className={styles.gridWrap}
+        ref={scrollRef}
+        onScroll={virtual ? view.onScroll : undefined}
+      >
+        <table
+          className={virtual ? `${styles.grid} ${styles.gridRows}` : styles.grid}
+          style={virtual ? gridStyle(ROW_HEIGHT, null) : undefined}
+        >
           <thead>
             <tr>
               <th className={styles.rowNumber}>#</th>
@@ -224,26 +277,70 @@ function DatabaseStats({ kind, connectionId, database, active, onError }: Props)
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row, i) => (
-              <tr key={row.name}>
-                <td className={styles.rowNumber}>{i + 1}</td>
+            {/* What gives every column its width while only a few dozen rows are in the table: a
+                row of no height holding the widest value of each column, which the browser's own
+                layout finds exactly as it would find a real row. Without it the columns would be
+                sized by whichever rows happen to be on screen and would shift on every scroll. */}
+            {virtual && (
+              <tr className={styles.sizerRow} aria-hidden="true">
+                <td className={styles.rowNumber}>
+                  <div className={styles.sizer}>{sorted.length}</div>
+                </td>
                 <td>
-                  <span className={styles.name}>{row.name}</span>
+                  <div className={styles.sizer}>
+                    {widest[1].map((value) => (
+                      <div key={value} className={styles.name}>
+                        {value}
+                      </div>
+                    ))}
+                  </div>
                 </td>
-                <td className={styles.numeric}>{formatCount(row.rows)}</td>
-                {/* The exact byte count is in the tooltip: what the cell shows is rounded to a
-                    unit, and two tables can read the same while differing by megabytes. */}
-                <td className={styles.numeric} title={t("dbStats.bytes", { bytes: formatCount(row.dataSize) })}>
-                  {formatSize(row.dataSize)}
-                </td>
-                <td className={styles.numeric} title={t("dbStats.bytes", { bytes: formatCount(row.indexSize) })}>
-                  {formatSize(row.indexSize)}
-                </td>
-                <td className={styles.numeric} title={t("dbStats.bytes", { bytes: formatCount(row.avgRecordSize) })}>
-                  {formatSize(row.avgRecordSize)}
-                </td>
+                {[2, 3, 4, 5].map((column) => (
+                  <td key={column} className={styles.numeric}>
+                    <div className={styles.sizer}>
+                      {widest[column].map((value) => (
+                        <div key={value}>{value}</div>
+                      ))}
+                    </div>
+                  </td>
+                ))}
               </tr>
-            ))}
+            )}
+            {virtual && (
+              <tr className={styles.spacer} style={{ height: view.padTop }} aria-hidden="true">
+                <td colSpan={6} />
+              </tr>
+            )}
+            {sorted.slice(view.first, view.last).map((row, offset) => {
+              // The index into the whole list, not into what is drawn: it is what the `#` column
+              // counts, and it has to go on counting from one.
+              const i = view.first + offset;
+              return (
+                <tr key={row.name}>
+                  <td className={styles.rowNumber}>{i + 1}</td>
+                  <td>
+                    <span className={styles.name}>{row.name}</span>
+                  </td>
+                  <td className={styles.numeric}>{formatCount(row.rows)}</td>
+                  {/* The exact byte count is in the tooltip: what the cell shows is rounded to a
+                      unit, and two tables can read the same while differing by megabytes. */}
+                  <td className={styles.numeric} title={t("dbStats.bytes", { bytes: formatCount(row.dataSize) })}>
+                    {formatSize(row.dataSize)}
+                  </td>
+                  <td className={styles.numeric} title={t("dbStats.bytes", { bytes: formatCount(row.indexSize) })}>
+                    {formatSize(row.indexSize)}
+                  </td>
+                  <td className={styles.numeric} title={t("dbStats.bytes", { bytes: formatCount(row.avgRecordSize) })}>
+                    {formatSize(row.avgRecordSize)}
+                  </td>
+                </tr>
+              );
+            })}
+            {virtual && (
+              <tr className={styles.spacer} style={{ height: view.padBottom }} aria-hidden="true">
+                <td colSpan={6} />
+              </tr>
+            )}
           </tbody>
           {sorted.length > 0 && (
             <tfoot>

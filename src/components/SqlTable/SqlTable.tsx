@@ -18,8 +18,45 @@ import {
   type FilterOperator,
   type MysqlFilter,
 } from "../../mysql/filters";
+import {
+  gridStyle,
+  measureColumns,
+  useVirtualRows,
+  widestValues,
+} from "../../virtualRows";
 import type { MysqlColumnMeta } from "../../types";
 import styles from "./SqlTable.module.css";
+
+/** Where handing the browser the whole page stops being the cheap thing to do. Below this the rows
+ *  are rendered as they always were, and the table sizes its own columns. */
+const VIRTUAL_FROM = 60;
+
+/** How tall a row of this grid is — stated, never measured; see `virtualRows.ts` for why that
+ *  distinction is what makes a window of rows sound. 33px is what a row here has always come to: a
+ *  24px line, 4px of padding above and below, and the 1px rule underneath. The stylesheet pins the
+ *  rows to it, so changing the grid's font or padding means changing this with them. */
+const ROW_HEIGHT = 33;
+
+/** What a cell spends on itself before any text goes in it: 8px of padding either side and the 1px
+ *  rule down its right edge. */
+const CELL_CHROME = 17;
+
+/** The band a measured column is kept inside, chrome included. The ceiling is the width at which a
+ *  cell stops being worth widening — past it the value is cut off with an ellipsis either way. */
+const MIN_COLUMN = 48;
+const MAX_COLUMN = 320;
+
+/** How wide the column being edited opens to, when it is narrower than this.
+ *
+ * A cell wide enough to read a value in is not wide enough to edit one in, which is why the input
+ * has always had a floor of its own. It used to reach that floor by pushing its column open — the
+ * table sized itself around whatever was in it — and a pinned column cannot be pushed: the input
+ * simply overhung its cell and read as something floating loose over the row. So the column itself
+ * opens for as long as the edit lasts, which is what the pushing looked like from the outside.
+ *
+ * Kept the same as the `min-width` the stylesheet gives the input, which is still what does the job
+ * in a grid too small to be windowed. */
+const EDIT_COLUMN = 240;
 
 interface EditingCell {
   rowIndex: number;
@@ -79,8 +116,10 @@ interface TableColumnsInfo {
 }
 
 interface Props {
-  /** Whether the connection tab this grid sits in is the one on show. Only the grid the user is
-   *  looking at answers `Ctrl+R` — the others stay mounted behind their tabs. */
+  /** Whether this is what the user is actually looking at — the Data tab, in the connection tab the
+   *  tab bar is showing. This stays mounted behind both, so it is what says when a page of rows is
+   *  worth reading, when a read the user cannot see would be wasted, and which of the panes mounted
+   *  at once `Ctrl+R` belongs to. */
   active: boolean;
   connectionId: string;
   selectedDb: string;
@@ -121,9 +160,10 @@ function SqlTable({
   // is what the fetch below reads. Keeping the two apart is what stops a half-typed condition
   // from reloading the grid on every keystroke.
   //
-  // Both start from whatever this table's bar was left carrying: the grid is mounted afresh every
-  // time the header comes back to the Data tab, and a bar restored only on the way to another
-  // table would come back empty from a trip to Structure or Query.
+  // Both start from whatever this table's bar was left carrying, so a grid mounted afresh — the
+  // connection reopened, or a table picked after none was — opens on the conditions it closed on.
+  // A trip to Structure or Query no longer comes through here at all: the grid stays mounted
+  // behind those tabs, bar and all.
   const [filterRows, setFilterRows] = useState<FilterRow<FilterOperator>[]>(
     () => filterCache.get(tableKey)?.rows ?? []
   );
@@ -159,8 +199,9 @@ function SqlTable({
     filterStateRef.current = { key: viewTableKey, rows: filterRows, applied: appliedFilters };
   });
 
-  // Leaving the Data tab unmounts the grid just as thoroughly as closing it would, so the bar is
-  // also put away on the way out — coming back to the tab finds the conditions where they were.
+  // The bar is put away on the way out as well as on the way to another table: the grid is
+  // unmounted when the connection tab closes, and what it was carrying should be there again if
+  // the same table is opened later.
   useEffect(() => {
     return () => {
       const { key, rows, applied } = filterStateRef.current;
@@ -190,6 +231,25 @@ function SqlTable({
   const columnsCacheRef = useRef<Map<string, TableColumnsInfo>>(new Map());
   const thRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const tableRef = useRef<HTMLTableElement>(null);
+  /** The widths every column is pinned to once the page is big enough to be windowed, and what they
+   *  add up to — a fixed layout only obeys its columns when the table has a width of its own to
+   *  divide between them. Null while the table is sizing itself, which is a small page or the first
+   *  frame of a large one. */
+  const [gridColumns, setGridColumns] = useState<{ widths: number[]; total: number } | null>(null);
+
+  // Only the rows on screen are built into the DOM past a certain size. Everything the grid does —
+  // selecting, editing, sorting, deleting — is indexed against `rows` rather than against what is
+  // rendered, so all of it goes on meaning the same thing; the row being edited is held in the
+  // window by name, since unmounting the input under the caret would lose the edit in progress.
+  const virtual = rows.length >= VIRTUAL_FROM;
+  // Named `view` rather than `window`, which this file needs for the browser's own.
+  const view = useVirtualRows(scrollRef, {
+    total: rows.length,
+    rowHeight: ROW_HEIGHT,
+    enabled: virtual,
+    pinned: editingCell?.rowIndex ?? null,
+  });
 
   // Selected rows are held as indices into the current page: selection is a
   // property of what is on screen, and every path that replaces the rows
@@ -224,6 +284,10 @@ function SqlTable({
   }
 
   function measureColumnWidths() {
+    // A tab that is up but not on show has no layout at all, so every header comes back 0 wide.
+    // Recording that would leave the edit input pinned to nothing; what was measured while the tab
+    // was last looked at stays until it can be measured again.
+    if (!tableRef.current?.offsetWidth) return;
     const widths: Record<string, number> = {};
     for (const c of columns) {
       const el = thRefs.current.get(c);
@@ -250,13 +314,64 @@ function SqlTable({
     el.style.height = `${el.scrollHeight}px`;
   }, [editValue, editingCell]);
 
+  /**
+   * What a header carries besides its own name: the sort chevron every column has, and the FK badge
+   * a foreign key column has as well.
+   *
+   * Measured from the DOM rather than worked out from the stylesheet, because the stylesheet says
+   * it in `em` of a font this file does not know the size of, and a badge's width is its text plus
+   * its padding plus its border. Reading it costs one pass over the header row, which is a few
+   * dozen elements — and it is stable however narrow the column gets, since both of these are
+   * inline boxes with widths of their own rather than things that shrink to fit.
+   */
+  function headerExtras(): number[] {
+    return columns.map((c) => {
+      const th = thRefs.current.get(c);
+      if (!th) return 0;
+      let width = 0;
+      const parts = th.querySelectorAll<HTMLElement>(`.${styles.sortIcon}, .${styles.fkBadge}`);
+      for (const part of parts) {
+        const style = getComputedStyle(part);
+        width +=
+          part.offsetWidth +
+          (parseFloat(style.marginLeft) || 0) +
+          (parseFloat(style.marginRight) || 0);
+      }
+      return Math.ceil(width);
+    });
+  }
+
+  // What every column is pinned to while the page is windowed, measured over the whole page against
+  // a canvas rather than by laying the rows out — see `virtualRows.ts`. Before paint, so the first
+  // frame shown is already the pinned layout rather than a frame of self-sized columns followed by
+  // one of pinned ones.
+  useLayoutEffect(() => {
+    const table = tableRef.current;
+    if (!virtual || !table || columns.length === 0) {
+      setGridColumns(null);
+      return;
+    }
+    // Not through a hidden tab: the header extras below are read off the DOM and come back 0 there,
+    // which is a header measured without the chevron and badge it has to hold. `active` is in the
+    // deps so this runs again the moment the tab is looked at.
+    if (!table.offsetWidth) return;
+    const widths = measureColumns(
+      table,
+      columns,
+      widestValues(rows, columns.length, (row, c) => row[columns[c]]),
+      { chrome: CELL_CHROME, min: MIN_COLUMN, max: MAX_COLUMN },
+      headerExtras()
+    );
+    setGridColumns(widths && { widths, total: widths.reduce((sum, w) => sum + w, 0) });
+  }, [virtual, columns, rows, columnMeta, active]);
+
   // Re-measure each column's rendered width whenever the data or layout that
   // could affect it changes, so the edit input/textarea can be pinned to it
   // (auto table-layout would otherwise resize the column around the input's
   // own intrinsic size, causing a visible jump when entering edit mode).
   useLayoutEffect(() => {
     measureColumnWidths();
-  }, [columns, rows, layoutWidth]);
+  }, [columns, rows, layoutWidth, gridColumns, active]);
 
   useEffect(() => {
     function onResize() {
@@ -308,7 +423,30 @@ function SqlTable({
     clearSelection();
   }, [selectedDb, selectedTable, page, pageSize, sort, appliedFilters, reloadToken]);
 
+  // Everything the fetch below is about. Held from one render to the next so that coming back to
+  // the Data tab can tell "nothing has changed since these rows were read" — which is free — from
+  // "the table, the page, the order or the conditions moved while the tab was hidden", which is a
+  // read owed. Identity, not value: a fresh `appliedFilters` array is a fresh request even when it
+  // says the same thing, which is what makes Apply re-read.
+  const requestRef = useRef<unknown[] | null>(null);
+
   useEffect(() => {
+    // Nothing is read for a tab nobody is looking at: the sidebar walked while the Structure tab is
+    // up would otherwise send a page of rows and a count per table passed over.
+    if (!active) return;
+    const request = [
+      connectionId,
+      selectedDb,
+      selectedTable,
+      page,
+      pageSize,
+      sort,
+      appliedFilters,
+      reloadToken,
+    ];
+    const loaded = requestRef.current;
+    if (loaded && loaded.every((value, i) => value === request[i])) return;
+
     const db = selectedDb;
     const table = selectedTable;
     let cancelled = false;
@@ -341,6 +479,9 @@ function SqlTable({
         setPrimaryKey(result.primaryKey);
         setAutoIncrementColumn(result.autoIncrementColumn);
         setTotal(result.total);
+        // Only a read that landed counts: a request that failed leaves nothing marked, so coming
+        // back to the tab tries again rather than settling on an empty grid.
+        requestRef.current = request;
       })
       .catch((e) => onError(errorMessage(t, e)))
       .finally(() => {
@@ -349,7 +490,17 @@ function SqlTable({
     return () => {
       cancelled = true;
     };
-  }, [connectionId, selectedDb, selectedTable, page, pageSize, sort, appliedFilters, reloadToken]);
+  }, [
+    connectionId,
+    selectedDb,
+    selectedTable,
+    page,
+    pageSize,
+    sort,
+    appliedFilters,
+    reloadToken,
+    active,
+  ]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -670,6 +821,15 @@ function SqlTable({
     }
   }
 
+  /** How much wider the table is while a narrow column is open for editing — see
+   *  {@link EDIT_COLUMN}. Zero the rest of the time, and zero for a column already wide enough. */
+  const editingColumnExtra = (() => {
+    if (!gridColumns || !editingCell) return 0;
+    const index = columns.indexOf(editingCell.col);
+    if (index < 0) return 0;
+    return Math.max(0, EDIT_COLUMN - gridColumns.widths[index]);
+  })();
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const allPageRowsSelected = rows.length > 0 && selectedRows.size === rows.length;
   // Under a filter, `total` counts the matching rows rather than the table's — and a whole-table
@@ -706,8 +866,43 @@ function SqlTable({
           ref={scrollRef}
           tabIndex={-1}
           onKeyDown={handleGridKeyDown}
+          onScroll={virtual ? view.onScroll : undefined}
         >
-          <table>
+          <table
+            ref={tableRef}
+            // Rows pinned whenever they are windowed; columns pinned once they have been measured.
+            // Two classes because they answer to different conditions — the measuring can fail in a
+            // way the windowing cannot, and a windowed grid whose rows were left to size themselves
+            // is the one state that must not exist.
+            className={
+              [virtual && styles.gridRows, gridColumns && styles.gridFixed]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
+            style={
+              virtual
+                ? gridStyle(
+                    ROW_HEIGHT,
+                    gridColumns === null ? null : gridColumns.total + editingColumnExtra
+                  )
+                : undefined
+            }
+          >
+            {gridColumns && (
+              <colgroup>
+                {gridColumns.widths.map((width, c) => (
+                  // The column being edited opens to hold the input, and every other column stays
+                  // exactly where it was — the table is widened by the difference rather than
+                  // taking it out of its neighbours.
+                  <col
+                    key={columns[c]}
+                    style={{
+                      width: columns[c] === editingCell?.col ? Math.max(width, EDIT_COLUMN) : width,
+                    }}
+                  />
+                ))}
+              </colgroup>
+            )}
             <thead>
               <tr>
                 {columns.map((c) => {
@@ -769,81 +964,102 @@ function SqlTable({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, i) => (
-                <tr
-                  key={i}
-                  className={selectedRows.has(i) ? styles.rowSelected : undefined}
-                  aria-selected={selectedRows.has(i)}
-                >
-                  {columns.map((c) => {
-                    const isEditing = editingCell?.rowIndex === i && editingCell.col === c;
-                    if (isEditing) {
-                      const multiline = isMultilineType(columnMeta[c]?.dataType);
-                      const cellWidth = columnWidths[c];
+              {/* The rows outside the window, as the height they would have taken. Two elements
+                  instead of hundreds, and the scrollbar is the length it would have been. Always
+                  both, even at zero height: a spacer that disappeared at the end of the page would
+                  hand `tr:last-child` to a real row and change the table's height at exactly the
+                  point a scroll is trying to settle. */}
+              {virtual && (
+                <tr className={styles.spacer} style={{ height: view.padTop }} aria-hidden="true">
+                  <td colSpan={columns.length} />
+                </tr>
+              )}
+              {rows.slice(view.first, view.last).map((row, offset) => {
+                // The index into the page, not into what is drawn. Every other part of this
+                // component — the selection, the staged edit, the delete keys — is indexed the same
+                // way, so windowing the rows changes none of it.
+                const i = view.first + offset;
+                return (
+                  <tr
+                    key={i}
+                    className={selectedRows.has(i) ? styles.rowSelected : undefined}
+                    aria-selected={selectedRows.has(i)}
+                  >
+                    {columns.map((c) => {
+                      const isEditing = editingCell?.rowIndex === i && editingCell.col === c;
+                      if (isEditing) {
+                        const multiline = isMultilineType(columnMeta[c]?.dataType);
+                        const cellWidth = columnWidths[c];
+                        return (
+                          <td
+                            key={c}
+                            className={styles.cellEditing}
+                            style={cellWidth ? { width: cellWidth } : undefined}
+                          >
+                            {multiline ? (
+                              <textarea
+                                ref={editInputRef as React.RefObject<HTMLTextAreaElement>}
+                                value={editValue}
+                                onChange={handleEditChange}
+                                onKeyDown={handleEditKeyDown}
+                                onBlur={() => handleInputBlur(i, c)}
+                                className={styles.cellTextarea}
+                                rows={1}
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
+                              />
+                            ) : (
+                              <input
+                                ref={editInputRef as React.RefObject<HTMLInputElement>}
+                                type="text"
+                                value={editValue}
+                                onChange={handleEditChange}
+                                onKeyDown={handleEditKeyDown}
+                                onBlur={() => handleInputBlur(i, c)}
+                                className={styles.cellInput}
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
+                              />
+                            )}
+                          </td>
+                        );
+                      }
+                      const raw = row[c];
+                      const isNull = raw === null || raw === undefined;
+                      const value = isNull
+                        ? "NULL"
+                        : typeof raw === "object"
+                          ? JSON.stringify(raw)
+                          : String(raw);
+                      const isDirty =
+                        pendingRowRef.current?.rowIndex === i &&
+                        Object.prototype.hasOwnProperty.call(pendingRowRef.current.changes, c);
+                      const cellClassName = [isNull && styles.cellNull, isDirty && styles.cellDirty]
+                        .filter(Boolean)
+                        .join(" ");
                       return (
                         <td
                           key={c}
-                          className={styles.cellEditing}
-                          style={cellWidth ? { width: cellWidth } : undefined}
+                          title={value}
+                          className={cellClassName || undefined}
+                          onMouseDown={(e) => handleCellMouseDown(e, i, c)}
                         >
-                          {multiline ? (
-                            <textarea
-                              ref={editInputRef as React.RefObject<HTMLTextAreaElement>}
-                              value={editValue}
-                              onChange={handleEditChange}
-                              onKeyDown={handleEditKeyDown}
-                              onBlur={() => handleInputBlur(i, c)}
-                              className={styles.cellTextarea}
-                              rows={1}
-                              autoComplete="off"
-                              autoCorrect="off"
-                              autoCapitalize="off"
-                              spellCheck={false}
-                            />
-                          ) : (
-                            <input
-                              ref={editInputRef as React.RefObject<HTMLInputElement>}
-                              type="text"
-                              value={editValue}
-                              onChange={handleEditChange}
-                              onKeyDown={handleEditKeyDown}
-                              onBlur={() => handleInputBlur(i, c)}
-                              className={styles.cellInput}
-                              autoComplete="off"
-                              autoCorrect="off"
-                              autoCapitalize="off"
-                              spellCheck={false}
-                            />
-                          )}
+                          {value}
                         </td>
                       );
-                    }
-                    const raw = row[c];
-                    const isNull = raw === null || raw === undefined;
-                    const value = isNull
-                      ? "NULL"
-                      : typeof raw === "object"
-                        ? JSON.stringify(raw)
-                        : String(raw);
-                    const isDirty =
-                      pendingRowRef.current?.rowIndex === i &&
-                      Object.prototype.hasOwnProperty.call(pendingRowRef.current.changes, c);
-                    const cellClassName = [isNull && styles.cellNull, isDirty && styles.cellDirty]
-                      .filter(Boolean)
-                      .join(" ");
-                    return (
-                      <td
-                        key={c}
-                        title={value}
-                        className={cellClassName || undefined}
-                        onMouseDown={(e) => handleCellMouseDown(e, i, c)}
-                      >
-                        {value}
-                      </td>
-                    );
-                  })}
+                    })}
+                  </tr>
+                );
+              })}
+              {virtual && (
+                <tr className={styles.spacer} style={{ height: view.padBottom }} aria-hidden="true">
+                  <td colSpan={columns.length} />
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
           {!loading && rows.length === 0 && <p className="muted">{t("sqlTable.noRows")}</p>}

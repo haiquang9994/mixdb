@@ -541,30 +541,40 @@ function MysqlWorkspace({
           {contentMode === "data" && !selectedTable && (
             <p className="muted">{t("mysql.selectTablePrompt")}</p>
           )}
-          {contentMode === "data" && selectedDb && selectedTable && (
-            <SqlTable
-              active={active}
-              connectionId={connectionId}
-              selectedDb={selectedDb}
-              selectedTable={selectedTable}
-              onError={setLocalError}
-              layoutWidth={width}
-              filterCache={filterCache}
-              readOnly={readOnly}
-            />
+          {/* Kept mounted while the other tabs are up, the same as the two below: the page of rows
+              read, what is selected in it and the conditions in the filter bar all outlive a look
+              at the structure or a query written against it. A table picked while this is hidden
+              costs nothing until the tab is looked at again. */}
+          {selectedDb && selectedTable && (
+            <div className={contentMode === "data" ? "mysql-panel" : "mysql-panel-hidden"}>
+              <SqlTable
+                active={active && contentMode === "data"}
+                connectionId={connectionId}
+                selectedDb={selectedDb}
+                selectedTable={selectedTable}
+                onError={setLocalError}
+                layoutWidth={width}
+                filterCache={filterCache}
+                readOnly={readOnly}
+              />
+            </div>
           )}
           {contentMode === "structure" && !selectedTable && (
             <p className="muted">{t("mysql.selectTableStructurePrompt")}</p>
           )}
-          {contentMode === "structure" && selectedDb && selectedTable && (
-            <TableStructure
-              active={active}
-              connectionId={connectionId}
-              selectedDb={selectedDb}
-              selectedTable={selectedTable}
-              onError={setLocalError}
-              readOnly={readOnly}
-            />
+          {/* Kept mounted for the same reason: the columns and indexes already read are still there
+              on the way back, rather than being asked for again. */}
+          {selectedDb && selectedTable && (
+            <div className={contentMode === "structure" ? "mysql-panel" : "mysql-panel-hidden"}>
+              <TableStructure
+                active={active && contentMode === "structure"}
+                connectionId={connectionId}
+                selectedDb={selectedDb}
+                selectedTable={selectedTable}
+                onError={setLocalError}
+                readOnly={readOnly}
+              />
+            </div>
           )}
           {contentMode === "stats" && !selectedDb && (
             <p className="muted">{t("mysql.selectDatabaseStatsPrompt")}</p>

@@ -70,6 +70,60 @@
   cursor: help;
 }
 
+/* The grid holds only the rows on screen once there are enough of them to be worth it, and these
+   are the two things that has to be true for (see `src/virtualRows.ts`).
+
+   Columns first: a table left to size itself would size itself around whichever few dozen rows are
+   in the DOM, so every scroll would find new widest values and shuffle the columns sideways. The
+   widths are measured over the whole page instead and set on a colgroup, which only a fixed layout
+   obeys. `border-box` is what makes those widths mean what they say — a width on a `<col>` sizes
+   the whole column, so the measuring adds the cell's padding and rule to the text and the cell has
+   to agree that its width includes them. The `max-width` goes for the same reason: the widths are
+   already capped. */
+.gridFixed {
+  table-layout: fixed;
+}
+
+.gridFixed th,
+.gridFixed td {
+  box-sizing: border-box;
+  max-width: none;
+}
+
+/* Rows second, and this is the one that has to be exact. The rows above and below the window are
+   stood in for by a spacer of `count × --row-h`, so a drawn row that is even a fraction taller or
+   shorter makes the table's height depend on where it is scrolled — and then the end of the page
+   drifts away as you scroll towards it. The height is therefore stated by the component and pinned
+   here rather than measured: `height` sets the row, `line-height` stops a fallback font's taller
+   metrics from growing one row of it, and the vertical padding goes because the line box now fills
+   the row and centres the text in it.
+
+   Two kinds of cell are left out. The spacers, whose height is the whole point of them. And the
+   cell being edited, which is a textarea that grows with its content — the one row that is meant
+   to change height, and one row's worth of difference is not what this rule is guarding against. */
+.gridRows tbody tr:not(.spacer) > td:not(.cellEditing) {
+  box-sizing: border-box;
+  height: var(--row-h);
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: calc(var(--row-h) - 1px);
+  overflow: hidden;
+}
+
+/* The two boxes standing in for the rows outside the window. They are there to be exactly as tall
+   as the rows they replace, so the scrollbar is the length it would have been — which means no
+   padding, no rules, and nothing to light up under the pointer: a spacer that highlighted itself
+   would read as a row hundreds of rows tall. */
+.sqlTable tbody tr.spacer,
+.sqlTable tbody tr.spacer:hover {
+  background: none;
+}
+
+.sqlTable tbody tr.spacer > td {
+  padding: 0;
+  border: 0;
+}
+
 /* Painted on the row, not on its cells: a `td` with a background of its own — a NULL or a
    staged edit — then still shows through, which is the point of those markers. */
 .sqlTable tbody tr:hover {
@@ -156,6 +210,11 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  /* Off, and not as a nicety. Scroll anchoring watches for content above the viewport changing
+     height and shifts the scroll offset to keep what you are looking at still — which is exactly
+     what the spacer above a window of rows does every time the window moves. Left on, the browser's
+     correction and the grid's own repositioning fight for the length of the scroll. */
+  overflow-anchor: none;
 }
 
 .footer {
