@@ -56,9 +56,11 @@ patch("src-tauri/tauri.conf.json", /("version"\s*:\s*)"[^"]*"/, `$1"${version}"`
 patch("src-tauri/Cargo.toml", /(\[package\][\s\S]*?\nversion\s*=\s*)"[^"]*"/, `$1"${version}"`);
 
 // The lock file's own entry for this crate, found by name so the dependencies are left alone.
+// `\r?` because cargo writes this file with LF and git hands it back with CRLF on a Windows
+// checkout, so the same file has either ending depending on which of them touched it last.
 patch(
   "src-tauri/Cargo.lock",
-  /(name = "mixdb"\nversion = )"[^"]*"/,
+  /(name = "mixdb"\r?\nversion = )"[^"]*"/,
   `$1"${version}"`,
 );
 

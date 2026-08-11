@@ -36,6 +36,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-08-11
+
 ### Added
 
 - The Query tab is a real SQL editor: MySQL syntax coloured as it is typed, matched brackets and
