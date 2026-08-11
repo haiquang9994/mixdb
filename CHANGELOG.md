@@ -51,6 +51,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - A connection marked read-only now says so before you touch anything: its row in the connection
   list carries a Read-only badge, and once it is open, its tab shows a lock and an amber bar along
   the top in place of the usual accent.
+- The wait shown over a panel that is loading is now a larger pill with a turning ring, rather than
+  a small grey line easily taken for part of the table under it.
 
 ### Fixed
 

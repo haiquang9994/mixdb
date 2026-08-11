@@ -18,7 +18,12 @@ function LoadingOverlay({ label }: Props) {
 
   return (
     <div className={styles.overlay}>
-      <span className={styles.label}>{label ?? t("common.loading")}</span>
+      <span className={styles.label}>
+        {/* Decoration on a line that already says what is happening, so it is hidden rather than
+            described a second time. */}
+        <span className={styles.spinner} aria-hidden="true" />
+        {label ?? t("common.loading")}
+      </span>
     </div>
   );
 }

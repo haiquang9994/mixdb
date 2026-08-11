@@ -7,7 +7,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 0.75rem;
+  padding-top: 1rem;
   background: rgba(128, 128, 128, 0.08);
   backdrop-filter: blur(0.5px);
   /* Held invisible for the first tenth of a second, then faded up. A refetch off a warm connection
@@ -28,11 +28,45 @@
   }
 }
 
+/* A pill that floats over the content, so it takes the radius and the shadow everything else
+   floating does. Sized in `rem` rather than `em`: the panels it covers set their own font sizes,
+   and the same wait should look the same everywhere it is shown. It used to be 0.85em at 75%
+   opacity — small, grey, and easy to take for a piece of the table underneath. */
 .label {
-  font-size: 0.85em;
-  opacity: 0.75;
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--control-radius, 6px);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 0.6rem 1.15rem;
+  border-radius: var(--radius-lg, 12px);
   background: var(--surface-bg, #fff);
   border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+}
+
+/* Turning, because a wait with no moving part in it reads as a screen that has stopped rather than
+   one that is working. Drawn in the accent against a ring of itself at a quarter strength. */
+.spinner {
+  flex: none;
+  width: 0.95em;
+  height: 0.95em;
+  border-radius: 50%;
+  border: 2px solid rgb(var(--accent-rgb) / 0.25);
+  border-top-color: var(--accent);
+  animation: loading-spin 700ms linear infinite;
+}
+
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The ring stays — it is part of the shape of the pill — but it stops turning. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }
