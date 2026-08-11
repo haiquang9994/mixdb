@@ -48,6 +48,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - Moving between a connection's tabs no longer re-reads anything: Data comes back to the page,
   filters and selection it was left on, and Structure to the columns and indexes it had.
 - Dialogs, menus and tooltips now fade in and out instead of appearing and vanishing outright.
+- A connection marked read-only now says so before you touch anything: its row in the connection
+  list carries a Read-only badge, and once it is open, its tab shows a lock and an amber bar along
+  the top in place of the usual accent.
 
 ### Fixed
 

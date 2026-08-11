@@ -18,6 +18,9 @@ const en = {
     // Why anything that would write is greyed out, wherever in the workspace it is. One sentence
     // rather than one per panel: it is the same fact, and it names where to undo it.
     readOnlyConnection: "This connection is marked read-only. Change it from the connection's right-click menu.",
+    // The same fact in the space a badge has: beside the name in the sidebar, and in the tab of a
+    // connection that is already open.
+    readOnly: "Read-only",
   },
   app: {
     settings: "Settings",

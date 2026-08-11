@@ -124,6 +124,15 @@
   --c-slate: #5a6b7c;
   --c-slate-text: #4a5866;
   --c-slate-rgb: 90 107 124;
+
+  /* The mark on a connection MixDB will not write to. The one colour besides the destructive red
+     that the accent may not decide: the accent is the user's choice of decoration and can be
+     changed at will, and this states a fact about the connection that has to keep meaning the same
+     thing afterwards. Amber because caution is what it means — and borrowed from the palette's own
+     amber, so it follows the theme without a second pair of values to keep in step. (An accent of
+     amber puts the two hues side by side; the badge is still the only worded mark in the row.) */
+  --readonly: var(--c-amber-text);
+  --readonly-rgb: var(--c-amber-rgb);
 }
 
 /* Which of the ten the accent points at. Blue is the default and is set on `:root` above, so it
@@ -331,6 +340,22 @@ body {
   white-space: nowrap;
 }
 
+/* A tab is too small for the badge the sidebar row carries, so only the lock travels here — and it
+   keeps the same colour, which is what makes the two read as one mark rather than two marks. */
+.tab-lock {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--readonly);
+}
+
+/* The bar along the top of the open tab is the app's largest single piece of colour. On a
+   read-only connection it goes amber: the one thing on screen that says so no matter which pane
+   of the workspace is showing. */
+.tab-readonly.tab-active {
+  box-shadow: inset 0 2px 0 var(--readonly);
+}
+
 /* The one piece of chrome that says which connection you are looking at, so it is where the accent
    belongs most. It lifts to the surface colour and takes a bar of accent along its top edge —
    `inset` so the bar sits inside the tab's own rounded corners.
@@ -462,6 +487,41 @@ body {
 .saved-item:hover .saved-item-pin,
 .saved-item-active .saved-item-pin {
   opacity: 1;
+}
+
+/* The row's own edge, warmed. Enough to pick the connection out of the list before reading a
+   single name, and no more — the edge is all it takes, so the row keeps the same shape and
+   weight as every other one. `--accent` still wins on the open connection: that mark is about
+   where you are, and it is drawn further down the file. */
+.saved-item-readonly {
+  border-color: rgb(var(--readonly-rgb) / 0.45);
+  background: rgb(var(--readonly-rgb) / 0.06);
+}
+
+/* Worded, where the pin beside it is only a shape: a pin explains an order the list is already
+   showing, and this changes what the connection will let you do. Aligned by flex rather than by
+   the baseline, which would hang the lock below the word it sits with. */
+.saved-item-readonly-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid rgb(var(--readonly-rgb) / 0.4);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--readonly-rgb) / 0.14);
+  color: var(--readonly);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* The lock is centred in its box already, but reads low beside the word: its ink is the solid body
+   at the bottom, while the shackle above it is a thin arc that weighs almost nothing. A pixel up
+   puts its mass level with the middle of the text — the same nudge the tab's lock takes. */
+.saved-item-readonly-badge svg,
+.tab-lock svg {
+  transform: translateY(-1px);
 }
 
 /* Read aloud, never drawn — a word that a shape is already saying to anyone who can see it.

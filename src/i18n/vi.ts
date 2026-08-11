@@ -18,6 +18,7 @@ const vi: TranslationDict = {
     close: "Đóng",
     loading: "Đang tải...",
     readOnlyConnection: "Kết nối này được đánh dấu chỉ đọc. Đổi lại ở menu chuột phải của kết nối.",
+    readOnly: "Chỉ đọc",
   },
   app: {
     settings: "Cài đặt",

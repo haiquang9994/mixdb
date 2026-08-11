@@ -17,7 +17,7 @@ import ConfirmDialog from "./components/ConfirmDialog";
 import ContextMenu from "./components/ContextMenu";
 import Button from "./components/Button";
 import Input from "./components/Input";
-import { EyeIcon, EyeOffIcon, PinIcon } from "./icons";
+import { EyeIcon, EyeOffIcon, LockIcon, PinIcon } from "./icons";
 import { useTranslation } from "./i18n";
 import { errorMessage } from "./errors";
 
@@ -26,6 +26,9 @@ interface Props {
    *  the panes below need telling which of them a keyboard shortcut is meant for. */
   active: boolean;
   onTitleChange: (title: string) => void;
+  /** Whether the tab bar should mark this tab read-only. Reported rather than worked out up there:
+   *  only this tab knows which saved connection it was opened from. */
+  onReadOnlyChange: (readOnly: boolean) => void;
 }
 
 const KIND_BADGE: Record<DbKind, string> = {
@@ -122,7 +125,7 @@ interface TunnelStatus {
   message: string;
 }
 
-function ConnectionTab({ active, onTitleChange }: Props) {
+function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
   const { t, lang } = useTranslation();
   const [kind, setKind] = useState<DbKind>("mysql");
   const [host, setHost] = useState("127.0.0.1");
@@ -180,6 +183,20 @@ function ConnectionTab({ active, onTitleChange }: Props) {
     },
     [],
   );
+
+  /**
+   * Whether the tab bar should be showing a lock for this tab.
+   *
+   * Only once connected: before that the mark belongs to the row in the sidebar, and the form on
+   * screen may be for another connection entirely. Read off the store rather than remembered from
+   * the click, so clearing the flag in one tab takes the lock off this one too.
+   */
+  const activeReadOnly = Boolean(
+    connectionId && savedConnections.find((c) => c.id === editingId)?.readOnly,
+  );
+  useEffect(() => {
+    onReadOnlyChange(activeReadOnly);
+  }, [activeReadOnly]);
 
   function changeKind(next: DbKind) {
     setKind(next);
@@ -744,7 +761,9 @@ function ConnectionTab({ active, onTitleChange }: Props) {
               <li key={c.id}>
                 <button
                   type="button"
-                  className={`saved-item${c.id === editingId ? " saved-item-active" : ""}`}
+                  className={`saved-item${c.id === editingId ? " saved-item-active" : ""}${
+                    c.readOnly ? " saved-item-readonly" : ""
+                  }`}
                   onClick={() => applySavedConnection(c)}
                   onDoubleClick={() => openAndConnect(c)}
                   onContextMenu={(e) => openContextMenu(e, c.id)}
@@ -754,6 +773,16 @@ function ConnectionTab({ active, onTitleChange }: Props) {
                     {KIND_BADGE[c.config.kind]}
                   </span>
                   <strong>{c.name}</strong>
+                  {/* Read-only is about what the row will let you do, so it says the word rather
+                      than only drawing a lock — a shape alone would be one more badge to learn.
+                      The row carries the mark's colour too, so a production server is recognisable
+                      before the eye reaches the end of its name. */}
+                  {c.readOnly && (
+                    <span className="saved-item-readonly-badge">
+                      <LockIcon size={12} />
+                      {t("common.readOnly")}
+                    </span>
+                  )}
                   {/* Says why this one sits above the alphabet. The button's own `title` describes
                       the row, so the mark carries its word in a `<span>` for screen readers
                       rather than in a second tooltip that would replace it. */}

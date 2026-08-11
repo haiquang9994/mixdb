@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import ConnectionTab from "./ConnectionTab";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
-import { CloseIcon, PlusIcon } from "./icons";
+import { CloseIcon, LockIcon, PlusIcon } from "./icons";
 import { isBlockedReload } from "./reload";
 import { useScrollAcceleration } from "./scroll";
 import { useAccent, useTheme } from "./theme";
@@ -13,6 +13,9 @@ import "./App.css";
 interface TabInfo {
   id: string;
   title: string;
+  /** Set while this tab holds a connection saved as read-only, so the tab bar can say so — the
+   *  sidebar that carried the mark is gone once you are connected. */
+  readOnly?: boolean;
 }
 
 /** Whether a keyboard event landed somewhere the user is typing, where the browser's own
@@ -57,6 +60,12 @@ function App() {
 
   function renameTab(id: string, title: string) {
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
+  }
+
+  function markTabReadOnly(id: string, readOnly: boolean) {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, readOnly: readOnly || undefined } : t)),
+    );
   }
 
   // Keeps activeId pointing at a real tab whenever the active one disappears
@@ -109,9 +118,21 @@ function App() {
         {tabs.map((tab) => (
           <div
             key={tab.id}
-            className={tab.id === activeId ? "tab tab-active" : "tab"}
+            className={`${tab.id === activeId ? "tab tab-active" : "tab"}${
+              tab.readOnly ? " tab-readonly" : ""
+            }`}
             onClick={() => setActiveId(tab.id)}
           >
+            {/* Ahead of the name, where the eye lands first: the point of it is to be seen before
+                a statement is typed, not after the connection has been identified. The tab is not
+                a control with a name of its own, so the word travels with the lock for anyone
+                who can't see it. */}
+            {tab.readOnly && (
+              <span className="tab-lock" title={t("common.readOnlyConnection")}>
+                <LockIcon size={12} />
+                <span className="visually-hidden">{t("common.readOnly")}</span>
+              </span>
+            )}
             <span className="tab-title">{tab.title}</span>
             <button
               className="tab-close"
@@ -140,6 +161,7 @@ function App() {
             <ConnectionTab
               active={tab.id === activeId}
               onTitleChange={(title) => renameTab(tab.id, title)}
+              onReadOnlyChange={(readOnly) => markTabReadOnly(tab.id, readOnly)}
             />
           </div>
         ))}
