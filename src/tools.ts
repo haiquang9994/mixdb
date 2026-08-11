@@ -15,6 +15,10 @@ export interface ToolStatus {
   /** Where it is, or null when it is nowhere to be found. */
   path: string | null;
   source: ToolSource | null;
+  /** Whether MixDB can fetch this tool for itself here. The same answer for every tool of a
+   *  suite — MySQL publishes a plain archive for Windows only, so on macOS and Linux its tools
+   *  have to come from the machine. */
+  downloadable: boolean;
 }
 
 export function toolsStatus(): Promise<ToolStatus[]> {
@@ -24,6 +28,12 @@ export function toolsStatus(): Promise<ToolStatus[]> {
 /** Whether both of a suite's tools can be found — what the dump and restore buttons ask first. */
 export function toolsReady(suite: ToolSuite): Promise<boolean> {
   return invoke<boolean>("tools_ready", { suite });
+}
+
+/** Whether there is anywhere to download this suite from on this platform — asked before a button
+ *  offers to, since a suite with no archive can only be answered with an error. */
+export function toolsDownloadable(suite: ToolSuite): Promise<boolean> {
+  return invoke<boolean>("tools_downloadable", { suite });
 }
 
 /** The stages an install goes through, in the order they happen. */

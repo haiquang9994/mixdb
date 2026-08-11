@@ -420,6 +420,13 @@ pub async fn tools_ready(app: AppHandle, suite: String) -> Result<bool, AppError
     Ok(tools::installed(suite, &tools_dir(&app)?))
 }
 
+/// Whether MixDB can fetch this suite for itself on this platform — MySQL publishes a plain
+/// archive for Windows only, so everywhere else its tools have to come from the machine.
+#[tauri::command]
+pub async fn tools_downloadable(suite: String) -> Result<bool, AppError> {
+    Ok(tools::downloadable(tools::Suite::parse(&suite)?))
+}
+
 /// Points a tool at a copy the user picked themselves, or forgets that choice when given no path.
 #[tauri::command]
 pub async fn tools_set_path(

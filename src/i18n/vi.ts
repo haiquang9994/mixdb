@@ -763,6 +763,9 @@ const vi: TranslationDict = {
     sourceCustom: "tự chọn",
     sourceDownloaded: "đã tải",
     sourceSystem: "có sẵn",
+    // Hiện thay cho nút tải, ở máy nào mà nhà cung cấp không phát hành bản tải được.
+    noDownload:
+      "Không có bản tải nào cho máy này. Hãy cài bằng trình quản lý gói — mysql-client hoặc mariadb-client — hoặc chỉ cho MixDB một bản có sẵn ở dưới.",
   },
   // Tìm, tải và cài bản MixDB mới. Việc tải chạy ngầm; việc cài thì đóng ứng dụng, nên nó chỉ xảy
   // ra khi người dùng tự bấm nút.
@@ -816,7 +819,9 @@ const vi: TranslationDict = {
     transferHint: "Cơ sở dữ liệu lớn có thể mất vài phút. Hãy để MixDB mở cho tới khi xong.",
     installTitle: "Tải công cụ về?",
     installMysql:
-      "Dump cần mysqldump, máy này chưa có. MixDB có thể tải bộ MySQL client tools từ dev.mysql.com — bản tải khoảng 240MB, nhưng chỉ giữ lại vài file cần thiết. Chỉ tải một lần.",
+      "Dump cần mysqldump, máy này chưa có. MixDB có thể tải bộ MySQL client tools từ dev.mysql.com — bản tải nặng từ vài chục tới vài trăm MB, nhưng chỉ giữ lại vài file cần thiết. Chỉ tải một lần.",
+    noDownload:
+      "Dump cần bộ MySQL client tools, máy này chưa có mà nhà cung cấp chỉ phát hành dạng gói cài đặt cho nền tảng này. Hãy cài mysql-client hoặc mariadb-client bằng trình quản lý gói, hoặc chỉ cho MixDB một bản có sẵn trong phần Cài đặt.",
     installMongo:
       "Dump cần mongodump, máy này chưa có. MixDB có thể tải bộ MongoDB Database Tools từ mongodb.com — khoảng 60MB, chỉ một lần.",
     installConfirm: "Tải về",
@@ -927,11 +932,14 @@ const vi: TranslationDict = {
     unknownToolSuite: "Bộ công cụ {{suite}} không hợp lệ.",
     mysqlToolNotFound:
       "Không tìm thấy {{tool}}. Hãy cài MySQL client tools, trỏ MixDB tới một bản có sẵn trong Cài đặt, hoặc để MixDB tự tải về.",
+    // Dùng thay ở nơi MixDB không có gì để tải, nên mời tải là vô ích.
+    mysqlToolNotInstalled:
+      "Không tìm thấy {{tool}}. Hãy cài MySQL client tools bằng trình quản lý gói (mysql-client hoặc mariadb-client), hoặc trỏ MixDB tới một bản có sẵn trong Cài đặt.",
     mongoToolNotFound:
       "Không tìm thấy {{tool}}. Hãy cài MongoDB Database Tools, trỏ MixDB tới một bản có sẵn trong Cài đặt, hoặc để MixDB tự tải về.",
     noFileAt: "Không có file nào ở {{path}}.",
     noMysqlArchive:
-      "MySQL không phát hành bản nén thuần của client tools cho nền tảng này — hãy cài qua trình quản lý gói (mysql-client / mariadb-client), MixDB sẽ tự tìm thấy trên PATH.",
+      "MySQL không phát hành bản nén nào của client tools cho nền tảng này — hãy cài qua trình quản lý gói (mysql-client / mariadb-client), MixDB sẽ tự tìm thấy trên PATH.",
     downloadFailed: "Tải về thất bại: {{message}}",
     unpackFailed: "Giải nén bản tải về thất bại: {{message}}",
     downloadIncomplete:

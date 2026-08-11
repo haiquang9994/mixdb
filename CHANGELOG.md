@@ -41,6 +41,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- The MySQL dump tools can now be downloaded on macOS and on Linux x86-64, not only on Windows.
+
+### Changed
+
+- Where there is no download to be had — Linux on ARM — the Download button is replaced by a line
+  saying to install mysql-client from the package manager, rather than failing when pressed.
+
 ## [0.0.8] - 2026-08-12
 
 ### Changed

@@ -6,7 +6,7 @@ import DumpDialog from "../DumpDialog";
 import { DownloadIcon, TrashIcon, UploadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
-import { toolsInstall, toolsReady } from "../../tools";
+import { toolsDownloadable, toolsInstall, toolsReady } from "../../tools";
 import { mongoDropDatabase, mongoDump, mongoRestore } from "../../mongo/api";
 import { isMongoSystemDatabase } from "../../mongo/system";
 import { mysqlDropDatabase, mysqlDump, mysqlRestore } from "../../mysql/api";
@@ -85,10 +85,16 @@ function DatabaseActions({
   }
 
   /** Whether the tools are there. When they are not, asks about downloading them and remembers
-   * what the user was trying to do, so the answer can carry it on. */
+   * what the user was trying to do, so the answer can carry it on — unless this platform has
+   * nothing to download, in which case it says where the tools have to come from instead of
+   * offering a button that could only fail. */
   async function toolsPresent(pending: Pending): Promise<boolean> {
     try {
       if (await toolsReady(suite)) return true;
+      if (!(await toolsDownloadable(suite))) {
+        onError(t("dump.noDownload"));
+        return false;
+      }
     } catch (e) {
       onError(errorMessage(t, e));
       return false;

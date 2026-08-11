@@ -52,6 +52,7 @@ pub fn run() {
             commands::mysql_collations,
             commands::tools_status,
             commands::tools_ready,
+            commands::tools_downloadable,
             commands::tools_install,
             commands::tools_uninstall,
             commands::tools_set_path,

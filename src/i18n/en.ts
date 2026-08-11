@@ -767,6 +767,9 @@ const en = {
     sourceCustom: "chosen",
     sourceDownloaded: "downloaded",
     sourceSystem: "installed",
+    // Shown in place of the download button where the vendor publishes nothing for this machine.
+    noDownload:
+      "There is no download of these tools for this machine. Install them with your package manager — mysql-client or mariadb-client — or point MixDB at a copy below.",
   },
   // Finding, fetching and installing a newer MixDB. The download runs in the background; the
   // install closes the app, so it never happens without the user pressing the button for it.
@@ -820,7 +823,9 @@ const en = {
     transferHint: "A large database can take several minutes. Leave MixDB open until it finishes.",
     installTitle: "Download the tools?",
     installMysql:
-      "Dumping needs mysqldump, which is not on this machine. MixDB can download the MySQL client tools from dev.mysql.com \u2014 the download is about 240MB, of which only a few files are kept. It happens once.",
+      "Dumping needs mysqldump, which is not on this machine. MixDB can download the MySQL client tools from dev.mysql.com \u2014 a distribution of some tens to a couple of hundred megabytes, of which only a few files are kept. It happens once.",
+    noDownload:
+      "Dumping needs the MySQL client tools, which are not on this machine and are published for it only as a distribution package. Install mysql-client or mariadb-client with your package manager, or point MixDB at a copy in Settings.",
     installMongo:
       "Dumping needs mongodump, which is not on this machine. MixDB can download the MongoDB Database Tools from mongodb.com \u2014 about 60MB, once.",
     installConfirm: "Download",
@@ -931,11 +936,14 @@ const en = {
     unknownToolSuite: "Unknown tool suite {{suite}}.",
     mysqlToolNotFound:
       "{{tool}} was not found. Install the MySQL client tools, point MixDB at a copy in Settings, or let it download one.",
+    // Said instead wherever MixDB has nothing to download, so that offering to is no help.
+    mysqlToolNotInstalled:
+      "{{tool}} was not found. Install the MySQL client tools with your package manager (mysql-client or mariadb-client), or point MixDB at a copy in Settings.",
     mongoToolNotFound:
       "{{tool}} was not found. Install the MongoDB Database Tools, point MixDB at a copy in Settings, or let it download one.",
     noFileAt: "There is no file at {{path}}.",
     noMysqlArchive:
-      "MySQL publishes no plain archive of its client tools for this platform \u2014 install them through your package manager (mysql-client / mariadb-client) and MixDB will find them on PATH.",
+      "MySQL publishes no archive of its client tools for this platform \u2014 install them through your package manager (mysql-client / mariadb-client) and MixDB will find them on PATH.",
     downloadFailed: "The download failed: {{message}}",
     unpackFailed: "Unpacking the download failed: {{message}}",
     downloadIncomplete:

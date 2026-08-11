@@ -126,6 +126,10 @@ pub struct ToolStatus {
     /// Where the tool is, or `None` when it is nowhere to be found.
     pub path: Option<String>,
     pub source: Option<Source>,
+    /// Whether MixDB can fetch this tool for itself on this platform. An answer about the suite
+    /// rather than the tool, repeated on each of its members so the settings screen — which reads
+    /// tools, not suites — has it without asking a second question.
+    pub downloadable: bool,
 }
 
 /// The file the user's own choices of tool are remembered in.
@@ -166,6 +170,12 @@ pub fn set_path(tool: Tool, path: Option<&str>, tools_dir: &Path) -> Result<(), 
 /// every server the app is likely to meet — what a 5.x server needs beyond that is
 /// `--column-statistics=0`, which the dump adds when it sees one.
 const MYSQL_VERSION: &str = "8.0.40";
+
+/// Linux takes 8.4 instead, and not for its own sake: every 8.0 build published as a Linux tarball
+/// is linked against `libncurses.so.5`, which the distributions this app runs on stopped shipping
+/// years ago, so the client would not start. The 8.4 build is linked against ncurses 6 and reaches
+/// back to 5.7 all the same.
+const MYSQL_LINUX_VERSION: &str = "8.4.6";
 const MONGO_TOOLS_VERSION: &str = "100.17.0";
 
 /// Directories searched beyond `PATH`, since a database installed from an installer rather than a
@@ -241,9 +251,14 @@ pub fn locate(tool: Tool, tools_dir: &Path) -> Option<(PathBuf, Source)> {
     }
 
     let name = tool.file_name();
-    let downloaded = tool.suite().dir(tools_dir).join(&name);
-    if downloaded.is_file() {
-        return Some((downloaded, Source::Downloaded));
+    let suite_dir = tool.suite().dir(tools_dir);
+    // `bin` is where a download puts them; the directory itself is where downloads before the
+    // macOS build did, and a copy already on disk should not stop working over a change of layout.
+    let downloaded = [suite_dir.join("bin").join(&name), suite_dir.join(&name)]
+        .into_iter()
+        .find(|path| path.is_file());
+    if let Some(path) = downloaded {
+        return Some((path, Source::Downloaded));
     }
 
     let path_dirs = std::env::var_os("PATH")
@@ -274,6 +289,7 @@ pub fn status(tools_dir: &Path) -> Vec<ToolStatus> {
                     .as_ref()
                     .map(|(path, _)| path.display().to_string()),
                 source: found.map(|(_, source)| source),
+                downloadable: downloadable(tool.suite()),
             }
         })
         .collect()
@@ -292,10 +308,14 @@ pub fn uninstall(suite: Suite, tools_dir: &Path) -> Result<(), AppError> {
 
 /// Where `tool` is, or the error the caller shows: the frontend asks whether a suite is present
 /// before running anything, so reaching this message means it went missing in between.
+///
+/// What the message offers depends on what this platform can actually do: telling someone on macOS
+/// to let MixDB download the MySQL tools is telling them to press a button that fails.
 pub fn require(tool: Tool, tools_dir: &Path) -> Result<PathBuf, AppError> {
-    find(tool, tools_dir).ok_or_else(|| match tool.suite() {
-        Suite::Mysql => err!("error.mysqlToolNotFound", tool = tool.stem()),
-        Suite::Mongo => err!("error.mongoToolNotFound", tool = tool.stem()),
+    find(tool, tools_dir).ok_or_else(|| match (tool.suite(), downloadable(tool.suite())) {
+        (Suite::Mysql, true) => err!("error.mysqlToolNotFound", tool = tool.stem()),
+        (Suite::Mysql, false) => err!("error.mysqlToolNotInstalled", tool = tool.stem()),
+        (Suite::Mongo, _) => err!("error.mongoToolNotFound", tool = tool.stem()),
     })
 }
 
@@ -308,8 +328,8 @@ pub fn installed(suite: Suite, tools_dir: &Path) -> bool {
 }
 
 /// Where the suite's archive is downloaded from for this platform, and the SHA-256 it has to hash
-/// to. `None` for a platform whose vendor publishes nothing that can be unpacked without an
-/// installer — the tools are still used there, they just have to come from the package manager.
+/// to. `None` where the vendor publishes nothing worth fetching — the tools are still used there,
+/// they just have to come from the package manager.
 ///
 /// The checksums are pinned rather than fetched alongside the download: one taken from the same
 /// server as the file it describes only says that the two arrived together, which is no answer to
@@ -322,11 +342,34 @@ fn archive_source(suite: Suite) -> Option<(String, &'static str)> {
     let macos = cfg!(target_os = "macos");
     let arm = cfg!(target_arch = "aarch64");
     match suite {
-        // Only the Windows build is published as a plain archive; the macOS one is a .dmg and the
-        // Linux ones are distribution packages, both of which want an installer to open them.
         Suite::Mysql if windows => Some((
             format!("https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-{MYSQL_VERSION}-winx64.zip"),
             "7c3f1c09ba1b4a82df32a8d889533fceaf2692383e386a04ee708a12de66f129",
+        )),
+        // macOS is published as a .dmg *and* as a plain tarball; it is the tarball that is taken,
+        // since a .dmg has to be mounted before anything can be read out of it.
+        Suite::Mysql if macos => {
+            let (arch, sha256) = if arm {
+                ("arm64", "a0b8449c19ef59ca688c93ffd89d42f5d78abe6cc136c0d754c6ccb3b202fb9a")
+            } else {
+                ("x86_64", "a416ee86e72f22089c41911bfee08be0d4dab3b816923be7b465f65df555b36d")
+            };
+            Some((
+                format!(
+                    "https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-{MYSQL_VERSION}-macos14-{arch}.tar.gz"
+                ),
+                sha256,
+            ))
+        }
+        // Linux takes the "minimal" tarball — the same programs as the full one, without the debug
+        // symbols and test suite that make it close to a gigabyte. It is published for x86-64 only,
+        // so that is what is asked for by name rather than by "not ARM": every other architecture
+        // this could be built for takes its tools from the package manager, which has them.
+        Suite::Mysql if cfg!(target_arch = "x86_64") => Some((
+            format!(
+                "https://dev.mysql.com/get/Downloads/MySQL-8.4/mysql-{MYSQL_LINUX_VERSION}-linux-glibc2.28-x86_64-minimal.tar.xz"
+            ),
+            "f284b17b9e038adbe77f0dd5fb11ed30262286b23a390b8b4e367abc3574c42e",
         )),
         Suite::Mysql => None,
         Suite::Mongo => {
@@ -365,6 +408,13 @@ fn archive_source(suite: Suite) -> Option<(String, &'static str)> {
             ))
         }
     }
+}
+
+/// Whether MixDB has anywhere to download this suite from on this platform. `false` means the
+/// tools have to come from the machine — from a package manager, or from a path chosen in
+/// Settings — and no button should offer otherwise.
+pub fn downloadable(suite: Suite) -> bool {
+    archive_source(suite).is_some()
 }
 
 /// Checks a downloaded archive against the checksum pinned for it.
@@ -515,9 +565,37 @@ fn download(url: &str, archive: &Path, suite: Suite, report: &dyn Fn(Progress)) 
     finish(child, "error.downloadFailed")
 }
 
-/// Copies out of `dir`, recursively, every file the suite needs: the tools themselves, and — on
-/// Windows — the libraries sitting beside them, which they will not start without.
-fn collect(dir: &Path, suite: Suite, tools_dir: &Path) -> Result<usize, AppError> {
+/// Where a library the tools need has to be put, relative to the suite's own directory, or `None`
+/// for a file that is not one of them. `parent` is the directory it was found in, inside the
+/// unpacked archive.
+///
+/// Only OpenSSL is taken: it is all the MySQL clients are linked against beyond what the operating
+/// system itself provides, and each platform looks for it in a fixed place relative to the program
+/// — beside it on Windows, `@loader_path/../lib` on macOS, `$ORIGIN/../lib/private` on Linux. Put
+/// anywhere else it might as well not have been downloaded.
+fn library_dir(name: &str, parent: &Path) -> Option<PathBuf> {
+    let in_dir = |dir: &str| parent.file_name().is_some_and(|found| found == dir);
+    if cfg!(windows) {
+        // Windows loads from the executable's own directory, and the archive keeps the DLLs there.
+        return (in_dir("bin") && name.to_lowercase().ends_with(".dll")).then(|| PathBuf::from("bin"));
+    }
+    if !name.starts_with("libssl") && !name.starts_with("libcrypto") {
+        return None;
+    }
+    if cfg!(target_os = "macos") {
+        (in_dir("lib") && name.ends_with(".dylib")).then(|| PathBuf::from("lib"))
+    } else {
+        (in_dir("private") && name.contains(".so.")).then(|| PathBuf::from("lib").join("private"))
+    }
+}
+
+/// Copies out of `dir`, recursively, every file the suite needs, into the layout its tools expect
+/// to be run from: the programs in `bin`, and with them, where {@link library_dir} says each one
+/// belongs, the libraries they will not start without.
+///
+/// Symbolic links are passed over: the archives carry a versioned library and unversioned links to
+/// it, and copying a link here would copy the whole library a second time under another name.
+fn collect(dir: &Path, suite: Suite, target: &Path) -> Result<usize, AppError> {
     let wanted: Vec<String> = suite.tools().iter().map(|tool| tool.file_name()).collect();
     let mut found = 0;
     let mut stack = vec![dir.to_path_buf()];
@@ -531,18 +609,23 @@ fn collect(dir: &Path, suite: Suite, tools_dir: &Path) -> Result<usize, AppError
                 stack.push(path);
                 continue;
             }
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let is_tool = wanted.iter().any(|want| want == &name);
-            // A tool's own directory is the only place worth taking libraries from, and on
-            // Windows those are what the client links against for TLS.
-            let is_library = cfg!(windows)
-                && name.to_lowercase().ends_with(".dll")
-                && current.file_name().is_some_and(|dir| dir == "bin");
-            if !is_tool && !is_library {
+            if entry.file_type().is_ok_and(|kind| kind.is_symlink()) {
                 continue;
             }
-            std::fs::copy(&path, tools_dir.join(&name))
-                .map_err(|e| err!("error.cannotCopyTool", tool = name, path = tools_dir.display(), message = e))?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let is_tool = wanted.iter().any(|want| want == &name);
+            let Some(relative) = (if is_tool {
+                Some(PathBuf::from("bin"))
+            } else {
+                library_dir(&name, &current)
+            }) else {
+                continue;
+            };
+            let into = target.join(relative);
+            std::fs::create_dir_all(&into)
+                .map_err(|e| err!("error.cannotCreateDirectory", path = into.display(), message = e))?;
+            std::fs::copy(&path, into.join(&name))
+                .map_err(|e| err!("error.cannotCopyTool", tool = name, path = into.display(), message = e))?;
             if is_tool {
                 found += 1;
             }
@@ -606,7 +689,7 @@ pub fn install(suite: Suite, tools_dir: &Path, report: &dyn Fn(Progress)) -> Res
         {
             use std::os::unix::fs::PermissionsExt;
             for tool in suite.tools() {
-                let path = target.join(tool.file_name());
+                let path = target.join("bin").join(tool.file_name());
                 let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
             }
         }
@@ -619,7 +702,7 @@ pub fn install(suite: Suite, tools_dir: &Path, report: &dyn Fn(Progress)) -> Res
 
 #[cfg(test)]
 mod tests {
-    use super::{expand_dir, verify_sha256};
+    use super::{collect, expand_dir, locate, verify_sha256, Source, Suite, Tool};
     use std::path::{Path, PathBuf};
 
     /// The empty file's SHA-256, which is a fine stand-in for a real archive: what is under test is
@@ -665,6 +748,46 @@ mod tests {
 
         assert_eq!(whole_segment.len(), 2);
         assert_eq!(partial_segment, vec![root.join("MariaDB 11.4").join("bin")]);
+    }
+
+    /// The programs go where the tools are looked for, and the library they are linked against
+    /// goes where they will look for it — which is a different place on each platform, and the
+    /// whole reason a download is unpacked rather than copied out flat.
+    #[test]
+    fn a_download_is_laid_out_the_way_the_tools_are_run_from() {
+        let root = std::env::temp_dir().join(format!("mixdb-test-{}", uuid::Uuid::new_v4()));
+        let unpacked = root.join("unpacked").join("mysql-8.0.40");
+        // Where each platform's archive keeps its OpenSSL, and where the clients then look for it.
+        let (from, into, library) = if cfg!(windows) {
+            ("bin", "bin", "libssl-3-x64.dll")
+        } else if cfg!(target_os = "macos") {
+            ("lib", "lib", "libssl.3.dylib")
+        } else {
+            ("lib/private", "lib/private", "libssl.so.3")
+        };
+        std::fs::create_dir_all(unpacked.join("bin")).unwrap();
+        std::fs::create_dir_all(unpacked.join(from)).unwrap();
+        for tool in Suite::Mysql.tools() {
+            std::fs::write(unpacked.join("bin").join(tool.file_name()), b"").unwrap();
+        }
+        std::fs::write(unpacked.join(from).join(library), b"").unwrap();
+        // Something the tools have no use for, which should be left in the archive.
+        std::fs::write(unpacked.join("bin").join("mysqladmin"), b"").unwrap();
+
+        let tools_dir = root.join("tools");
+        let found = collect(&root.join("unpacked"), Suite::Mysql, &tools_dir.join("mysql")).unwrap();
+        let placed = tools_dir.join("mysql").join(into).join(library).is_file();
+        let spare = tools_dir.join("mysql").join("bin").join("mysqladmin").exists();
+        // The layout is only worth anything if it is also the one the tools are then found in.
+        let located = locate(Tool::MysqlDump, &tools_dir);
+        std::fs::remove_dir_all(&root).unwrap();
+
+        assert_eq!(found, 2);
+        assert!(placed, "the library the clients load was not put where they look for it");
+        assert!(!spare, "a program the suite does not use was copied out");
+        let (path, source) = located.expect("the downloaded copy was not found again");
+        assert!(matches!(source, Source::Downloaded));
+        assert_eq!(path.parent().and_then(Path::file_name).unwrap(), "bin");
     }
 
     #[test]

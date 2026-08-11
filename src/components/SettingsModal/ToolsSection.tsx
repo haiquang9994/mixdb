@@ -202,19 +202,29 @@ function ToolsSection() {
         // staging directory and unpacks to an install directory of its own, so the two never meet.
         const fetching = install.running.has(suite);
         const busy = fetching || removing === suite;
+        // Every tool of a suite carries the same answer, and an empty list — the moment before the
+        // first status lands — leaves the button where it is rather than having it appear late.
+        const downloadable = members.every((tool) => tool.downloadable);
         return (
           <div key={suite} className={styles.toolSuite}>
             <div className={styles.toolSuiteHeader}>
               <span className={styles.toolSuiteName}>{t(labelKey)}</span>
               <div className={styles.toolSuiteActions}>
-                <button
-                  type="button"
-                  className={styles.toolButton}
-                  disabled={busy}
-                  onClick={() => void act(() => toolsInstall(suite))}
-                >
-                  {busy ? t("tools.working") : t(downloaded ? "tools.redownload" : "tools.download")}
-                </button>
+                {/* No archive for this platform means no download to offer: a button here could
+                    only ever answer with an error, so the line below says where the tools come
+                    from instead. */}
+                {downloadable && (
+                  <button
+                    type="button"
+                    className={styles.toolButton}
+                    disabled={busy}
+                    onClick={() => void act(() => toolsInstall(suite))}
+                  >
+                    {busy
+                      ? t("tools.working")
+                      : t(downloaded ? "tools.redownload" : "tools.download")}
+                  </button>
+                )}
                 {downloaded && (
                   <button
                     type="button"
@@ -227,6 +237,8 @@ function ToolsSection() {
                 )}
               </div>
             </div>
+
+            {!downloadable && <p className={styles.hint}>{t("tools.noDownload")}</p>}
 
             {fetching && installProgress(suite)}
 
