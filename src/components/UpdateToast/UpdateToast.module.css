@@ -83,6 +83,27 @@
   opacity: 0.85;
 }
 
+/* What the release changed, straight from its notes. Indented just enough for the markers to sit
+   inside the panel rather than under the text above them. */
+.changes {
+  margin: 0;
+  padding-left: 1.1em;
+  font-size: 0.85em;
+  line-height: 1.45;
+  opacity: 0.85;
+}
+
+.changes li + li {
+  margin-top: 0.25rem;
+}
+
+/* The count of what did not fit is not itself a change, so it loses the marker and sits back. */
+.more {
+  list-style: none;
+  margin-left: -1.1em;
+  opacity: 0.7;
+}
+
 .hint {
   opacity: 0.55;
 }

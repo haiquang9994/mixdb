@@ -779,6 +779,7 @@ const vi: TranslationDict = {
     failed: "Cập nhật thất bại: {{message}}",
     lastChecked: "Kiểm tra lần cuối {{at}}.",
     openPage: "Mở trang tải về",
+    moreChanges: "và {{count}} thay đổi khác",
     autoHint:
       "MixDB tự cập nhật. Mỗi bản cập nhật đều được đối chiếu với khóa ký của MixDB trước khi cài, nên không thứ gì không do dự án này ký có thể đến với bạn bằng đường này.",
   },

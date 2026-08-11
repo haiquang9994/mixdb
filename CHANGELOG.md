@@ -55,6 +55,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   what a screenful costs. Selecting, sorting and editing in place work exactly as before.
 - The Query tab's results no longer show a scrollbar when the one result in the column already
   fits.
+- The update panel now lists what a new version changed, instead of showing the word "Added".
 
 ## [0.0.7] - 2026-08-11
 

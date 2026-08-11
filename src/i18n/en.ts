@@ -781,6 +781,7 @@ const en = {
     failed: "The update failed: {{message}}",
     lastChecked: "Last checked {{at}}.",
     openPage: "Open the download page",
+    moreChanges: "and {{count}} more",
     autoHint:
       "MixDB updates itself. Each update is checked against MixDB's signing key before it is installed, so nothing unsigned by this project can reach you this way.",
   },
