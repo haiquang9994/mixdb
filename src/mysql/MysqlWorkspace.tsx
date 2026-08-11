@@ -22,6 +22,7 @@ import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import NameDialog from "../components/NameDialog";
 import SqlTable from "../components/SqlTable";
+import type { FilterCache } from "../components/SqlTable";
 import QueryEditor from "../components/QueryEditor";
 import TableDialog from "../components/TableDialog";
 import TableStructure from "../components/TableStructure";
@@ -114,6 +115,12 @@ function MysqlWorkspace({
   const [droppingTable, setDroppingTable] = useState<string | null>(null);
   /** What the dump/restore tools are doing, if anything — shown over the whole workspace. */
   const [transferStatus, setTransferStatus] = useState("");
+
+  /** What each table's filter bar was carrying when it was last left — a filter is often typed out
+   * to look something up, and looking it up is exactly what sends the user off to another table or
+   * to the Structure tab. Kept out here because either move unmounts the grid, and kept for as
+   * long as this connection's tab is open. */
+  const filterCache = useRef<FilterCache>(new Map()).current;
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -537,6 +544,7 @@ function MysqlWorkspace({
               selectedTable={selectedTable}
               onError={setLocalError}
               layoutWidth={width}
+              filterCache={filterCache}
               readOnly={readOnly}
             />
           )}

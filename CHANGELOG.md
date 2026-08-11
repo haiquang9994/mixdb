@@ -92,6 +92,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   the form sideways.
 - Updating a saved connection keeps the rest of what is remembered about it — whether it is pinned,
   the sidebar width, Redis's key limit.
+- The filter bar keeps its conditions through a trip to the Structure, Stats or Query tab.
 
 ## [0.0.5] - 2026-08-10
 

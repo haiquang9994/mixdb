@@ -18,6 +18,7 @@ import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import NameDialog from "../components/NameDialog";
 import NoSqlTable from "../components/NoSqlTable";
+import type { FilterCache } from "../components/NoSqlTable";
 import ActionBar from "../components/ActionBar";
 import ItemList from "../components/ItemList";
 import type { ItemAction } from "../components/ItemList";
@@ -86,6 +87,12 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
    * one callback per connection instead of a new one on every change of database. */
   const selectedDbRef = useRef(selectedDb);
   selectedDbRef.current = selectedDb;
+
+  /** What each collection's filter bar was carrying when it was last left — a filter is often
+   * typed out to look something up, and looking it up is exactly what sends the user off to
+   * another collection or to the Stats tab. Kept out here because either move unmounts the
+   * document list, and kept for as long as this connection's tab is open. */
+  const filterCache = useRef<FilterCache>(new Map()).current;
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -473,6 +480,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
               selectedCollection={selectedCollection}
               onError={setLocalError}
               layoutWidth={width}
+              filterCache={filterCache}
             />
           )}
           {contentMode === "stats" && !selectedDb && (

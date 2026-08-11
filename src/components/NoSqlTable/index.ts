@@ -1,1 +1,1 @@
-export { default } from "./NoSqlTable";
+export { default, type FilterCache, type RememberedFilters } from "./NoSqlTable";

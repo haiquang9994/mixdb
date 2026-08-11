@@ -59,10 +59,16 @@ function tableCacheKey(db: string, table: string): string {
 
 /** One table's filter bar as it was left behind: the rows still being edited, and the conditions
  * that were actually running against the grid. */
-interface RememberedFilters {
+export interface RememberedFilters {
   rows: FilterRow<FilterOperator>[];
   applied: MysqlFilter[];
 }
+
+/** Every table's bar, by the table it belongs to. Held by the workspace rather than here: the grid
+ * is unmounted whenever the header leaves the Data tab, and a cache living inside it would go with
+ * it — the conditions have to outlive a trip to Structure or Query, not just a trip to another
+ * table. */
+export type FilterCache = Map<string, RememberedFilters>;
 
 interface TableColumnsInfo {
   columns: string[];
@@ -77,6 +83,8 @@ interface Props {
   selectedTable: string;
   onError: (message: string) => void;
   layoutWidth?: number;
+  /** Where the filter bar is kept between visits — see {@link FilterCache}. */
+  filterCache: FilterCache;
   /** The saved connection is marked as one nothing is written to. The grid still reads, sorts,
    *  filters and pages exactly as it does otherwise — what goes is every door out of read mode. */
   readOnly?: boolean;
@@ -90,9 +98,11 @@ function SqlTable({
   selectedTable,
   onError,
   layoutWidth,
+  filterCache,
   readOnly = false,
 }: Props) {
   const { t } = useTranslation();
+  const tableKey = tableCacheKey(selectedDb, selectedTable);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(100);
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
@@ -105,16 +115,19 @@ function SqlTable({
   // The filter bar edits `filterRows` freely; only Apply copies them into `appliedFilters`, which
   // is what the fetch below reads. Keeping the two apart is what stops a half-typed condition
   // from reloading the grid on every keystroke.
-  const [filterRows, setFilterRows] = useState<FilterRow<FilterOperator>[]>([]);
-  const [appliedFilters, setAppliedFilters] = useState<MysqlFilter[]>([]);
+  //
+  // Both start from whatever this table's bar was left carrying: the grid is mounted afresh every
+  // time the header comes back to the Data tab, and a bar restored only on the way to another
+  // table would come back empty from a trip to Structure or Query.
+  const [filterRows, setFilterRows] = useState<FilterRow<FilterOperator>[]>(
+    () => filterCache.get(tableKey)?.rows ?? []
+  );
+  const [appliedFilters, setAppliedFilters] = useState<MysqlFilter[]>(
+    () => filterCache.get(tableKey)?.applied ?? []
+  );
   // The table whose columns the bar was last seeded from. The seed needs the column list, which
   // is only known once the first fetch lands (or from the cache, when there is one).
   const filtersSeededForRef = useRef<string | null>(null);
-  /** What each table's bar was carrying when it was last left, so stepping away to another table
-   * and back brings the conditions back rather than an empty row — a filter is often typed out to
-   * look something up, and looking it up is exactly what sends the user off to another table.
-   * Keyed like the column cache, and kept for as long as the tab is open. */
-  const filterCacheRef = useRef<Map<string, RememberedFilters>>(new Map());
 
   // What the fetch below reads — the page, the order and the conditions — is about one table, so
   // it is swapped over here, during the render that first sees a new table, rather than from an
@@ -122,18 +135,37 @@ function SqlTable({
   // so the request would already have gone out naming the new table with the previous one's page,
   // sort column and filters — and a condition on a column the new table hasn't got comes back an
   // error rather than an empty result.
-  const tableKey = tableCacheKey(selectedDb, selectedTable);
   const [viewTableKey, setViewTableKey] = useState(tableKey);
   if (viewTableKey !== tableKey) {
     // Put the outgoing table's bar away before its state is replaced. This is where it has to
     // happen: by the time any effect runs, `filterRows` already belongs to the new table.
-    filterCacheRef.current.set(viewTableKey, { rows: filterRows, applied: appliedFilters });
+    filterCache.set(viewTableKey, { rows: filterRows, applied: appliedFilters });
     setViewTableKey(tableKey);
     setPage(0);
     setSort(null);
     // The rows of the bar are put back alongside the columns they name, in the effect below.
-    setAppliedFilters(filterCacheRef.current.get(tableKey)?.applied ?? []);
+    setAppliedFilters(filterCache.get(tableKey)?.applied ?? []);
   }
+
+  /** The bar as it stands, for the write on the way out: a cleanup runs long after the last
+   * render, so it cannot read the state itself. */
+  const filterStateRef = useRef({ key: viewTableKey, rows: filterRows, applied: appliedFilters });
+  useEffect(() => {
+    filterStateRef.current = { key: viewTableKey, rows: filterRows, applied: appliedFilters };
+  });
+
+  // Leaving the Data tab unmounts the grid just as thoroughly as closing it would, so the bar is
+  // also put away on the way out — coming back to the tab finds the conditions where they were.
+  useEffect(() => {
+    return () => {
+      const { key, rows, applied } = filterStateRef.current;
+      // Only a bar that has had its opening row is worth remembering. Before the columns land
+      // there is nothing in it, and filing that away would read on the way back in as a bar
+      // deliberately emptied — leaving the table with no `id =` row to start from, for good.
+      if (filtersSeededForRef.current !== key) return;
+      filterCache.set(key, { rows, applied });
+    };
+  }, [filterCache]);
 
   const [loading, setLoading] = useState(false);
   // Bumped by the reload action to re-run the fetch below with the page/size unchanged.
@@ -245,7 +277,7 @@ function SqlTable({
     const cached = columnsCacheRef.current.get(key);
     // A table that has been here before gets its own bar back; only a first visit is seeded with
     // the opening `id =` row.
-    const remembered = filterCacheRef.current.get(key);
+    const remembered = filterCache.get(key);
     if (cached) {
       setColumns(cached.columns);
       setColumnMeta(cached.columnMeta);

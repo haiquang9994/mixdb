@@ -33,6 +33,8 @@ interface Props {
   selectedCollection: string;
   onError: (message: string) => void;
   layoutWidth?: number;
+  /** Where the filter bar is kept between visits — see {@link FilterCache}. */
+  filterCache: FilterCache;
 }
 
 /** Where a loaded page came from. Held in state rather than read off the props, so the write
@@ -50,11 +52,17 @@ const DOC_PAGE_SIZES = [20, 50, 100, 200];
  * that were actually running against the list, and the fields the bar had learned to offer —
  * those are read off the documents that have been seen, which a restored filter may well have
  * narrowed to none. */
-interface RememberedFilters {
+export interface RememberedFilters {
   rows: FilterRow<MongoFilterOperator>[];
   applied: MongoFilter[];
   fields: string[];
 }
+
+/** Every collection's bar, by the collection it belongs to. Held by the workspace rather than
+ * here: the list is unmounted whenever the header leaves the Data tab, and a cache living inside
+ * it would go with it — the conditions have to outlive a trip to the Stats tab, not just a trip to
+ * another collection. */
+export type FilterCache = Map<string, RememberedFilters>;
 
 /** The only field every document is guaranteed to carry, and so the one the bar can offer before
  * a page has been loaded to read any others off. */
@@ -67,8 +75,9 @@ const ID_FIELD = ["_id"];
  * What a card has changed but not yet written — the working copy, the staged edits, the open
  * inline editor — belongs to Document. Cards only hand back a document id and the ops to
  * apply, plus a "save what you have staged" hook so a refetch can wait for them. */
-function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: Props) {
+function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError, filterCache }: Props) {
   const { t } = useTranslation();
+  const collectionKey = `${selectedDb} :: ${selectedCollection}`;
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
   const [documents, setDocuments] = useState<TypedDocument[]>([]);
@@ -87,18 +96,21 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
   // The filter bar edits `filterRows` freely; only Apply copies them into `appliedFilters`, which
   // is what the fetch below reads. Keeping the two apart is what stops a half-typed condition
   // from reloading the list on every keystroke.
-  const [filterRows, setFilterRows] = useState<FilterRow<MongoFilterOperator>[]>(() =>
-    initialFilterRows(ID_FIELD, "eq"),
+  //
+  // All three start from whatever this collection's bar was left carrying: the list is mounted
+  // afresh every time the header comes back to the Data tab, and a bar restored only on the way to
+  // another collection would come back empty from a trip to the Stats tab.
+  const [filterRows, setFilterRows] = useState<FilterRow<MongoFilterOperator>[]>(
+    () => filterCache.get(collectionKey)?.rows ?? initialFilterRows(ID_FIELD, "eq"),
   );
-  const [appliedFilters, setAppliedFilters] = useState<MongoFilter[]>([]);
+  const [appliedFilters, setAppliedFilters] = useState<MongoFilter[]>(
+    () => filterCache.get(collectionKey)?.applied ?? [],
+  );
   // What the field select offers: seeded from the collection's first page and added to by every
   // page after it, never narrowed — see `mergeDocumentFields`.
-  const [fields, setFields] = useState<string[]>(ID_FIELD);
-
-  /** What each collection's bar was carrying when it was last left, so stepping away to another
-   * collection and back brings the conditions back rather than an empty row. Kept for as long as
-   * the tab is open. */
-  const filterCacheRef = useRef<Map<string, RememberedFilters>>(new Map());
+  const [fields, setFields] = useState<string[]>(
+    () => filterCache.get(collectionKey)?.fields ?? ID_FIELD,
+  );
 
   const flushersRef = useRef<Set<() => Promise<void>>>(new Set());
 
@@ -120,26 +132,47 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError }: P
   // fetch's own, so the request would already have gone out naming the new collection with the
   // previous one's page and conditions — a filter on a field these documents don't carry, which
   // comes back matching nothing.
-  const collectionKey = `${selectedDb} :: ${selectedCollection}`;
   const [viewCollectionKey, setViewCollectionKey] = useState(collectionKey);
   if (viewCollectionKey !== collectionKey) {
     // Put the outgoing collection's bar away before its state is replaced. This is where it has
     // to happen: by the time any effect runs, `filterRows` already belongs to the new collection.
-    filterCacheRef.current.set(viewCollectionKey, {
-      rows: filterRows,
-      applied: appliedFilters,
-      fields,
-    });
+    filterCache.set(viewCollectionKey, { rows: filterRows, applied: appliedFilters, fields });
     // A collection that has been here before gets its own bar back. Only a first visit starts
     // over on an empty `_id =` row and the one field every document is known to carry — a filter
     // names a field, and these documents need not carry one by that name.
-    const remembered = filterCacheRef.current.get(collectionKey);
+    const remembered = filterCache.get(collectionKey);
     setViewCollectionKey(collectionKey);
     setPage(0);
     setAppliedFilters(remembered?.applied ?? []);
     setFilterRows(remembered?.rows ?? initialFilterRows(ID_FIELD, "eq"));
     setFields(remembered?.fields ?? ID_FIELD);
   }
+
+  /** The bar as it stands, for the write on the way out: a cleanup runs long after the last
+   * render, so it cannot read the state itself. */
+  const filterStateRef = useRef({
+    key: viewCollectionKey,
+    rows: filterRows,
+    applied: appliedFilters,
+    fields,
+  });
+  useEffect(() => {
+    filterStateRef.current = {
+      key: viewCollectionKey,
+      rows: filterRows,
+      applied: appliedFilters,
+      fields,
+    };
+  });
+
+  // Leaving the Data tab unmounts the list just as thoroughly as closing it would, so the bar is
+  // also put away on the way out — coming back to the tab finds the conditions where they were.
+  useEffect(() => {
+    return () => {
+      const { key, ...remembered } = filterStateRef.current;
+      filterCache.set(key, remembered);
+    };
+  }, [filterCache]);
 
   const loadPage = useCallback(() => {
     let cancelled = false;

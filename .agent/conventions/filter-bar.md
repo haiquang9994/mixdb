@@ -29,3 +29,13 @@ duty, and adding an operator means touching all three:
 
 An id present in the frontend list but missing from the backend match silently drops the condition;
 missing from the dictionaries it shows as the raw id.
+
+## Where the bar is remembered
+
+What each table (or collection) was left carrying is a `FilterCache` — a `Map` keyed
+`"<db> :: <table>"`, exported by `SqlTable`/`NoSqlTable` and **owned by the workspace**, which
+passes it back down as a prop. It lives up there rather than in a ref inside the grid because
+leaving the Data tab unmounts the grid entirely: a cache inside it would only survive switching
+table, not switching tab. The grid seeds its state from the cache when it mounts, writes the
+outgoing entry during the render that first sees a new table, and writes the current one again on
+unmount. One cache per connection tab, gone when the tab closes.
