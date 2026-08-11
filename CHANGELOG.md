@@ -41,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-08-12
+
 ### Changed
 
 - A `SELECT` written without a `LIMIT` of its own is now sent with a ceiling of ten thousand rows
