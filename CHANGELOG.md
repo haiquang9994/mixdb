@@ -41,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-08-12
+
 ### Added
 
 - The MySQL dump tools can now be downloaded on macOS and on Linux x86-64, not only on Windows.
