@@ -335,7 +335,7 @@ const en = {
     unguardedManyMixed: "{{n}} statements each remove or rewrite the whole of what they name: {{list}}.",
     unguardedConfirm: "Run it",
     // Said when the script was sent with a ceiling it was not written with.
-    limitAdded: "A LIMIT of {{limit}} was added to {{n}} of these statements. Write your own LIMIT, or turn this off in Settings.",
+    limitAdded: "A LIMIT of {{limit}} was added to {{n}} of these statements. Write your own LIMIT to ask for something else.",
     // Saved queries, offered back by name as the editor is typed in.
     snippets: "Snippets",
     snippetHint: "Saved queries. Keep this one under a name, or fetch one back by typing its name.",
@@ -735,12 +735,6 @@ const en = {
     language: "Language",
     languageEnglish: "English",
     languageVietnamese: "Ti\u1ebfng Vi\u1ec7t",
-    // The Query tab's own preference: what it does to a script on its way to the server.
-    queryTitle: "Query editor",
-    autoLimitOff: "No limit",
-    autoLimitRows: "{{n}} rows",
-    autoLimitHint:
-      "A SELECT written without a LIMIT is sent with this one. It is said out loud above the results, and a LIMIT you write yourself is always left alone.",
   },
   // The command-line tools that do the dumping and restoring. MixDB does not ship them: it uses
   // whatever is on the machine, a copy it downloaded, or a path chosen here.

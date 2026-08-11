@@ -504,6 +504,9 @@
    an empty pane read as an unfinished screen. */
 .emptyState {
   flex: 1;
+  /* Same reason as the card below: a floor stated in content-box terms plus a border of its own is
+     a box taller than the floor, and in a short pane that difference is a scrollbar. */
+  box-sizing: border-box;
   min-height: 9rem;
   display: flex;
   flex-direction: column;
@@ -553,6 +556,10 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  /* Without this the cap above is a cap on the card's *content*, and the border below is added to
+     it: a single result then stands two pixels taller than the column holding it, and the column
+     shows a scrollbar for those two pixels however little is in it. */
+  box-sizing: border-box;
   max-height: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -668,6 +675,12 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  /* Off, and this is not a nicety. The browser's scroll anchoring watches for content above the
+     viewport changing height and shifts the scroll offset to keep what you are looking at still —
+     which is exactly what the spacer above a virtualised window does on every block scrolled past.
+     Left on, the browser's correction and the grid's own repositioning fight each other for the
+     length of the scroll, and the pane judders instead of moving. */
+  overflow-anchor: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -713,6 +726,78 @@
 
 .grid tbody tr:hover {
   background: var(--hover-bg);
+}
+
+/* A grid whose columns have been measured and pinned, which is what a virtualised one has to be:
+   only a few dozen rows are in the DOM, and a self-sizing table would re-divide its columns around
+   whichever rows those happen to be.
+
+   `border-box` is what makes the measured widths mean what they say. A width on a `<col>` sizes the
+   whole column, so the measuring adds a cell's padding and rule to every text width — and the cells
+   have to agree that a width includes them, or each one takes its padding on top and the text is
+   given a column's worth of room minus its own chrome. The `max-width` goes for the same reason:
+   the widths are already capped, and a second cap in content-box terms would clip them again. */
+.gridFixed {
+  table-layout: fixed;
+}
+
+.gridFixed th,
+.gridFixed td {
+  box-sizing: border-box;
+  max-width: none;
+}
+
+/* Every row pinned to exactly the height the grid's arithmetic assumes, which is what makes a
+   window of rows possible at all. Its own class rather than part of the fixed-column one above:
+   the columns are pinned because the rows are windowed, but the rows have to be pinned whenever
+   they are windowed, including in the one case where the columns could not be measured.
+
+   The rows on screen are drawn; the ones above and below are stood in for by a spacer of
+   `count × --row-h`. If a drawn row were even a fraction taller or shorter than that, the table's
+   total height would depend on where it was scrolled — the end of the set would drift away as you
+   scrolled towards it, by a little over a hundred rows and by thousands of pixels over ten
+   thousand. Measuring a row cannot fix that, only make the error smaller; pinning it removes the
+   error, at every size of result.
+
+   So the height is stated rather than discovered, and three declarations hold it:
+
+   - `height` with `border-box` sets the row, rule and padding included;
+   - `line-height` caps what the text inside can ask for. Without it a value in a script the body
+     font has no glyphs for — CJK, an emoji — is laid out by a fallback font with taller metrics,
+     and that one row grows. `height` alone would not stop it: on a table cell height is a minimum;
+   - no vertical padding, since the line box now fills the row and centres the text in it.
+
+   The spacers are excluded, and have to be: they are the one kind of row whose height is whatever
+   the rows they stand in for add up to, and a floor of one row's height under an empty spacer would
+   put a phantom row at each end of the set. */
+.gridRows tbody tr:not(.spacer) > td {
+  /* So the stated height covers the rule and the padding, rather than being added to them. */
+  box-sizing: border-box;
+  height: var(--row-h);
+  padding-top: 0;
+  padding-bottom: 0;
+  /* The rule below the row is the pixel the line box does not get. */
+  line-height: calc(var(--row-h) - 1px);
+  overflow: hidden;
+}
+
+/* Sized by the colgroup like every other column here, rather than by squeezing itself. */
+.gridFixed .rowNumber {
+  width: auto;
+}
+
+/* The two boxes standing in for the rows above and below the visible window of a virtualised grid.
+   They exist to be exactly as tall as the rows they replace, so the scrollbar is the length it
+   would have been — which means no padding, no rule and nothing to light up under the pointer: a
+   spacer that highlighted itself would read as a row hundreds of rows tall. */
+.grid tbody tr.spacer,
+.grid tbody tr.spacer:hover {
+  background: none;
+}
+
+.grid tbody tr.spacer > td {
+  padding: 0;
+  border: 0;
 }
 
 .rowNumber {

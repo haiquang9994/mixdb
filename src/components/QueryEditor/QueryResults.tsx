@@ -1,19 +1,9 @@
 import { memo } from "react";
+import ResultGrid from "./ResultGrid";
 import { TerminalIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import type { MysqlStatementResult } from "../../types";
 import styles from "./QueryEditor.module.css";
-
-/** How one value reads in the result grid. The same rendering the data grid uses: an absent value
- * is spelled out as NULL, and a structured one (a JSON column) as the JSON it came from. */
-function displayValue(raw: unknown): string {
-  if (raw === null || raw === undefined) return "NULL";
-  return typeof raw === "object" ? JSON.stringify(raw) : String(raw);
-}
-
-/** How long a cell value has to be before it is worth a tooltip. Cells are cut off at 320px, which
- * no value this short reaches at the grid's font size. */
-const TOOLTIP_FROM = 24;
 
 interface Props {
   /** One result per statement, or null before anything has been run. */
@@ -115,44 +105,14 @@ function QueryResults({ results, error, limitsAdded, limit }: Props) {
               )}
 
               {result.kind === "rows" && result.columns.length > 0 && (
-                <div className={styles.gridWrap}>
-                  <table className={styles.grid}>
-                    <thead>
-                      <tr>
-                        <th className={styles.rowNumber}>#</th>
-                        {result.columns.map((column, c) => (
-                          // Keyed by position: an arbitrary SELECT may well name the same column
-                          // twice, which is also why the rows are positional.
-                          <th key={c}>{column}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {result.rows.map((row, r) => (
-                        <tr key={r}>
-                          <td className={styles.rowNumber}>{r + 1}</td>
-                          {result.columns.map((_, c) => {
-                            const value = displayValue(row[c]);
-                            const isNull = row[c] === null || row[c] === undefined;
-                            return (
-                              <td
-                                key={c}
-                                className={isNull ? styles.cellNull : undefined}
-                                // Only where the cell can actually be cut short. A result of a
-                                // thousand rows is tens of thousands of cells, and a tooltip on
-                                // every one of them is weight the grid carries for nothing.
-                                title={value.length > TOOLTIP_FROM ? value : undefined}
-                              >
-                                {value}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {result.rows.length === 0 && <p className={styles.noRows}>{t("query.noRows")}</p>}
-                </div>
+                // The grid is its own component and its own memo: past a few dozen rows it holds
+                // only the rows on screen, and how it works out which those are is a fair amount of
+                // machinery to keep out of the way of everything else in this file.
+                <ResultGrid
+                  columns={result.columns}
+                  rows={result.rows}
+                  emptyLabel={t("query.noRows")}
+                />
               )}
             </div>
           </section>

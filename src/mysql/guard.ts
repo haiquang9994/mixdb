@@ -171,6 +171,20 @@ export function unguardedWrites(statements: readonly SqlStatement[]): UnguardedW
 }
 
 /**
+ * How many rows a `SELECT` written without a `LIMIT` is sent with.
+ *
+ * Fixed rather than a preference. What the ceiling is there for is to stop an unbounded `SELECT`
+ * against an uncounted table from naming more rows than there is memory for — and that is a
+ * property of the wire, not a matter of taste. It is set to what the backend will decode of one
+ * result set, so the ceiling never cuts a result the backend would have delivered whole: past this
+ * the set comes back truncated either way, and the results say so.
+ *
+ * A `LIMIT` written by hand is always left alone, which is the answer for anyone who wants a
+ * different number.
+ */
+export const AUTO_LIMIT = 10_000;
+
+/**
  * The same `SELECT` with a `LIMIT` on the end, or null when it needs none.
  *
  * Only a statement that reads from somewhere and sets no ceiling of its own is touched: `SELECT 1`

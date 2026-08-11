@@ -334,7 +334,7 @@ const vi: TranslationDict = {
     unguardedManyMixed: "{{n}} câu lệnh, mỗi câu xoá hoặc ghi đè trọn vẹn thứ nó nhắm tới: {{list}}.",
     unguardedConfirm: "Vẫn chạy",
     // Nói ra khi script được gửi đi kèm một mức trần mà nó không tự viết.
-    limitAdded: "Đã thêm LIMIT {{limit}} vào {{n}} câu lệnh trong số này. Hãy tự viết LIMIT, hoặc tắt tính năng này trong Cài đặt.",
+    limitAdded: "Đã thêm LIMIT {{limit}} vào {{n}} câu lệnh trong số này. Hãy tự viết LIMIT nếu muốn mức khác.",
     // Câu truy vấn đã lưu, gõ tên là gợi ý lại.
     snippets: "Đã lưu",
     snippetHint: "Các câu truy vấn đã lưu. Giữ lại câu này dưới một cái tên, hoặc gõ tên để lấy lại một câu cũ.",
@@ -733,12 +733,6 @@ const vi: TranslationDict = {
     language: "Ngôn ngữ",
     languageEnglish: "English",
     languageVietnamese: "Tiếng Việt",
-    // Tuỳ chọn riêng của tab Query: nó làm gì với script trên đường gửi tới máy chủ.
-    queryTitle: "Trình soạn SQL",
-    autoLimitOff: "Không giới hạn",
-    autoLimitRows: "{{n}} dòng",
-    autoLimitHint:
-      "Câu SELECT viết mà không có LIMIT sẽ được gửi kèm mức trần này. Việc đó được ghi rõ phía trên phần kết quả, còn LIMIT bạn tự viết thì luôn được giữ nguyên.",
   },
   // Các công cụ dòng lệnh lo việc dump/restore. MixDB không đóng gói kèm: nó dùng công cụ có sẵn
   // trên máy, bản tự tải về, hoặc đường dẫn bạn chọn ở đây.

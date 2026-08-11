@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { mysqlCancelQuery, mysqlRunScript, mysqlValidateSql } from "../../mysql/api";
 import { columnDetail, completionSchema } from "../../mysql/completion";
 import {
+  AUTO_LIMIT,
   unguardedWrites,
   withAutoLimits,
   writingStatements,
@@ -48,7 +49,6 @@ import { errorMessage } from "../../errors";
 import { MODIFIER_LABEL, RELOAD_SHORTCUT, useReloadShortcut } from "../../reload";
 import { loadDraft, saveDraft, saveDraftNow } from "../../queryDrafts";
 import { recordQuery } from "../../queryHistory";
-import { useAutoLimit } from "../../querySettings";
 import { useQuerySnippets } from "../../querySnippets";
 import type { MysqlStatementResult } from "../../types";
 import styles from "./QueryEditor.module.css";
@@ -108,7 +108,6 @@ function QueryEditor({
   onOpenTable,
 }: Props) {
   const { t } = useTranslation();
-  const autoLimit = useAutoLimit();
   const snippets = useQuerySnippets();
   /** The script, held in a ref rather than in state.
    *
@@ -436,7 +435,7 @@ function QueryEditor({
     setError("");
     // What is sent, which is not always what is on screen: a `SELECT` with no ceiling of its own
     // gets one, and the results say how many statements that happened to.
-    const { sql: sent, added } = withAutoLimits(text, statements, autoLimit);
+    const { sql: sent, added } = withAutoLimits(text, statements, AUTO_LIMIT);
     setLimitsAdded(added);
 
     const startedAt = Date.now();
@@ -739,7 +738,7 @@ function QueryEditor({
               results={results}
               error={error}
               limitsAdded={limitsAdded}
-              limit={autoLimit}
+              limit={AUTO_LIMIT}
             />
             {running && (
               <LoadingOverlay label={cancelling ? t("query.cancelling") : t("query.running")} />

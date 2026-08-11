@@ -13,7 +13,12 @@ use std::time::Instant;
 
 /// How many rows of one result set are read back. A query without a LIMIT can name more rows than
 /// there is memory for, so the client stops here and says that it did.
-const MAX_ROWS: usize = 1000;
+///
+/// Ten thousand rather than the thousand this was: the results grid holds only the rows on screen
+/// now, so the cost of a large set is what it takes to decode and hand over — not what it takes to
+/// draw. This is still a ceiling and not a promise; the auto-LIMIT in the Query tab is what most
+/// scripts actually stop at.
+const MAX_ROWS: usize = 10_000;
 
 /// One statement carved out of the editor's text.
 struct Statement {
