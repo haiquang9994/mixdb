@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Button from "../Button";
+import { useDialogExit } from "../dialogMotion";
 import { useTranslation } from "../../i18n";
 import type { MysqlDumpMode } from "../../mysql/api";
 import styles from "./DumpDialog.module.css";
@@ -25,19 +26,20 @@ interface Props {
 function DumpDialog({ database, onCancel, onSubmit }: Props) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<MysqlDumpMode>("all");
+  const { close, cls } = useDialogExit();
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel]);
+  }, [close, onCancel]);
 
   return createPortal(
     <>
-      <div className={styles.overlay} onClick={onCancel} />
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={database}>
+      <div className={cls(styles.overlay)} onClick={() => close(onCancel)} />
+      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={database}>
         <h3 className={styles.title}>{t("dump.dumpTitle", { database })}</h3>
 
         <div className={styles.modes}>
@@ -58,10 +60,12 @@ function DumpDialog({ database, onCancel, onSubmit }: Props) {
         </div>
 
         <div className={styles.actions}>
-          <Button size="large" onClick={onCancel}>
+          <Button size="large" onClick={() => close(onCancel)}>
             {t("common.cancel")}
           </Button>
-          <Button size="large" variant="primary" onClick={() => onSubmit(mode)}>
+          {/* The file picker this opens is a window of its own, so the dialog gets out of its way
+              first rather than being covered mid-animation. */}
+          <Button size="large" variant="primary" onClick={() => close(() => onSubmit(mode))}>
             {t("dump.chooseFile")}
           </Button>
         </div>

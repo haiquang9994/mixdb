@@ -31,4 +31,21 @@
   /* The pointer must pass straight through: the bubble is drawn a few pixels from the anchor, and
      one that could be hovered would take the pointer off the anchor and close itself. */
   pointer-events: none;
+  /* Its own fade rather than the shared `.pop`: this one is drawn either above or below its
+     anchor, so it has no fixed corner to grow from — and after a third of a second of waiting,
+     what is wanted is the text, not a flourish. */
+  animation: tooltip-in 110ms ease-out both;
+}
+
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble {
+    animation: none;
+  }
 }

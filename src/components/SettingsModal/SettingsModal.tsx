@@ -6,6 +6,7 @@ import type { Language, TranslationKey } from "../../i18n";
 import { CloseIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import type { UpdateCheck } from "../../update";
+import { useDialogExit } from "../dialogMotion";
 import ToolsSection from "./ToolsSection";
 import UpdateSection from "./UpdateSection";
 import styles from "./SettingsModal.module.css";
@@ -26,14 +27,15 @@ function accentLabelKey(accent: AccentColor): TranslationKey {
 
 function SettingsModal({ theme, onThemeChange, accent, onAccentChange, update, onClose }: SettingsModalProps) {
   const { t, lang, setLang } = useTranslation();
+  const { close, cls } = useDialogExit();
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") close(onClose);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [close, onClose]);
 
   const themeOptions: { value: ThemeMode; label: string }[] = [
     { value: "light", label: t("settings.themeLight") },
@@ -48,11 +50,11 @@ function SettingsModal({ theme, onThemeChange, accent, onAccentChange, update, o
 
   return (
     <>
-      <div className={styles.overlay} onClick={onClose} />
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={t("settings.title")}>
+      <div className={cls(styles.overlay)} onClick={() => close(onClose)} />
+      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={t("settings.title")}>
         <div className={styles.header}>
           <h3 className={styles.title}>{t("settings.title")}</h3>
-          <button type="button" className={styles.close} onClick={onClose} title={t("settings.close")}>
+          <button type="button" className={styles.close} onClick={() => close(onClose)} title={t("settings.close")}>
             <CloseIcon />
           </button>
         </div>

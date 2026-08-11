@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import Button from "../Button";
 import Input from "../Input";
 import Select from "../Select";
+import { useDialogExit } from "../dialogMotion";
 import { MinusIcon, PlusIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
@@ -81,6 +82,7 @@ function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
+  const { close, cls } = useDialogExit();
 
   useEffect(() => {
     nameRef.current?.focus();
@@ -91,11 +93,11 @@ function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
     function onKeyDown(e: KeyboardEvent) {
       // Not while the ALTER is in flight: closing then would leave the user with no way to see
       // how it went.
-      if (e.key === "Escape" && !saving) onCancel();
+      if (e.key === "Escape" && !saving) close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel, saving]);
+  }, [close, onCancel, saving]);
 
   function updateColumn(id: number, changes: Partial<DraftColumn>) {
     setDraft((prev) => prev.map((row) => (row.id === id ? { ...row, ...changes } : row)));
@@ -154,8 +156,8 @@ function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
 
   return createPortal(
     <>
-      <div className={styles.overlay} onClick={saving ? undefined : onCancel} />
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={table}>
+      <div className={cls(styles.overlay)} onClick={saving ? undefined : () => close(onCancel)} />
+      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={table}>
         <div className={styles.header}>
           <h3 className={styles.title}>
             {editing
@@ -289,7 +291,7 @@ function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
         )}
 
         <div className={styles.actions}>
-          <Button size="large" onClick={onCancel} disabled={saving}>
+          <Button size="large" onClick={() => close(onCancel)} disabled={saving}>
             {t("common.cancel")}
           </Button>
           <Button size="large" variant="primary" onClick={() => void submit()} disabled={saving}>

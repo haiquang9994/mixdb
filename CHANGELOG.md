@@ -47,6 +47,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   rather than five hundred, and that ceiling is no longer a setting.
 - Moving between a connection's tabs no longer re-reads anything: Data comes back to the page,
   filters and selection it was left on, and Structure to the columns and indexes it had.
+- Dialogs, menus and tooltips now fade in and out instead of appearing and vanishing outright.
 
 ### Fixed
 

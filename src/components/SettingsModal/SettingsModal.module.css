@@ -1,4 +1,5 @@
 .overlay {
+  composes: overlay from "../dialogMotion.module.css";
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -6,6 +7,7 @@
 }
 
 .dialog {
+  composes: dialog from "../dialogMotion.module.css";
   position: fixed;
   z-index: 61;
   top: 50%;

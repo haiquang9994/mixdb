@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Button from "../Button";
+import { useDialogExit } from "../dialogMotion";
 import { PlusIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
@@ -122,6 +123,7 @@ function InsertRowsDialog({ table, columns, columnMeta, seedRows, onCancel, onSu
   const [invalidCells, setInvalidCells] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const firstInputRef = useRef<HTMLInputElement>(null);
+  const { close, cls } = useDialogExit();
   const firstEditableColumn = columns.find((c) => {
     const meta = columnMeta[c];
     return meta !== undefined && !isServerAssigned(meta);
@@ -134,11 +136,11 @@ function InsertRowsDialog({ table, columns, columnMeta, seedRows, onCancel, onSu
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       // Not while the insert is in flight: it would leave the user with no way to see how it went.
-      if (e.key === "Escape" && !saving) onCancel();
+      if (e.key === "Escape" && !saving) close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel, saving]);
+  }, [close, onCancel, saving]);
 
   function updateCell(rowIndex: number, column: string, next: DraftCell) {
     setDraftRows((prev) => prev.map((row, i) => (i === rowIndex ? { ...row, [column]: next } : row)));
@@ -235,8 +237,8 @@ function InsertRowsDialog({ table, columns, columnMeta, seedRows, onCancel, onSu
 
   return createPortal(
     <>
-      <div className={styles.overlay} onClick={saving ? undefined : onCancel} />
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={table}>
+      <div className={cls(styles.overlay)} onClick={saving ? undefined : () => close(onCancel)} />
+      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={table}>
         <div className={styles.header}>
           <h3 className={styles.title}>
             {t(cloning ? "insertRows.cloneTitle" : "insertRows.title", { table })}
@@ -364,7 +366,7 @@ function InsertRowsDialog({ table, columns, columnMeta, seedRows, onCancel, onSu
         )}
 
         <div className={styles.actions}>
-          <Button size="large" onClick={onCancel} disabled={saving}>
+          <Button size="large" onClick={() => close(onCancel)} disabled={saving}>
             {t("common.cancel")}
           </Button>
           <Button size="large" variant="primary" onClick={() => void submit()} disabled={saving}>

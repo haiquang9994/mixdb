@@ -10,6 +10,7 @@ import {
 } from "../../queryHistory";
 import Button from "../Button";
 import Input from "../Input";
+import { useDialogExit } from "../dialogMotion";
 import styles from "./QueryEditor.module.css";
 
 interface Props {
@@ -44,14 +45,15 @@ function QueryHistoryDialog({ profileId, onPick, onClose }: Props) {
    *  list outlive a render, and there is nothing else about a run that is reliably unique. Only ever
    *  one at a time, so the armed button is unmistakable. */
   const [confirmDrop, setConfirmDrop] = useState<QueryHistoryEntry | null>(null);
+  const { close, cls } = useDialogExit();
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") close(onClose);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [close, onClose]);
 
   const mine = useMemo(
     () => history.filter((entry) => entry.profileId === profileId),
@@ -71,16 +73,16 @@ function QueryHistoryDialog({ profileId, onPick, onClose }: Props) {
 
   return createPortal(
     <>
-      <div className={styles.overlay} onClick={onClose} />
+      <div className={cls(styles.overlay)} onClick={() => close(onClose)} />
       <div
-        className={styles.historyDialog}
+        className={cls(styles.historyDialog)}
         role="dialog"
         aria-modal="true"
         aria-label={t("query.historyTitle")}
       >
         <div className={styles.historyHeader}>
           <h3 className={styles.historyTitle}>{t("query.historyTitle")}</h3>
-          <button type="button" className={styles.historyClose} onClick={onClose} title={t("common.close")}>
+          <button type="button" className={styles.historyClose} onClick={() => close(onClose)} title={t("common.close")}>
             <CloseIcon />
           </button>
         </div>
@@ -133,7 +135,7 @@ function QueryHistoryDialog({ profileId, onPick, onClose }: Props) {
                   title={entry.sql}
                   onClick={() => {
                     onPick(entry.sql);
-                    onClose();
+                    close(onClose);
                   }}
                 >
                   <span className={styles.historySql}>{oneLine(entry.sql)}</span>

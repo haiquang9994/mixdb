@@ -14,7 +14,8 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  animation: update-toast-in 220ms ease-out;
+  /* The same curve and the same 12px as the modals arrive on — a different surface, one language. */
+  animation: update-toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* From under its own corner, so it reads as arriving rather than as having been missed. */

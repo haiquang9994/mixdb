@@ -83,6 +83,7 @@
 /* The floating box. It owns the frame and the height budget; the list inside it is what
    scrolls, so a search box stays pinned above the options instead of scrolling away. */
 .menu {
+  composes: pop from "../dialogMotion.module.css";
   z-index: 1000;
   display: flex;
   flex-direction: column;

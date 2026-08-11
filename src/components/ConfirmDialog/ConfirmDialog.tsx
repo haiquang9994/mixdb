@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "../../i18n";
 import Button from "../Button";
+import { useDialogExit } from "../dialogMotion";
 import styles from "./ConfirmDialog.module.css";
 
 interface ConfirmDialogProps {
@@ -22,6 +23,10 @@ interface ConfirmDialogProps {
  * A modal yes/no gate. Rendered into `document.body` rather than in place: the dialog is fixed to
  * the viewport, and a caller deep inside a scrolling panel shouldn't have to care whether some
  * ancestor of theirs establishes a containing block for it.
+ *
+ * Both answers go through `close`, so the dialog is off the screen before the caller acts on what
+ * it said — including the confirm, which is the one place a modal here animates out of a decision
+ * rather than out of a dismissal.
  */
 function ConfirmDialog({
   title,
@@ -34,24 +39,25 @@ function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const { t } = useTranslation();
+  const { close, cls } = useDialogExit();
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel]);
+  }, [close, onCancel]);
 
   return createPortal(
     <>
-      <div className={styles.overlay} onClick={onCancel} />
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={cls(styles.overlay)} onClick={() => close(onCancel)} />
+      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={title}>
         <h3 className={styles.title}>{title}</h3>
         <p className={styles.message}>{message}</p>
         {children}
         <div className={styles.actions}>
-          <Button size="large" onClick={onCancel}>
+          <Button size="large" onClick={() => close(onCancel)}>
             {cancelLabel ?? t("common.cancel")}
           </Button>
           <Button
@@ -60,7 +66,7 @@ function ConfirmDialog({
                accent would dress the dangerous choice as the recommended one. */
             variant={danger ? "default" : "primary"}
             className={danger ? styles.danger : undefined}
-            onClick={onConfirm}
+            onClick={() => close(onConfirm)}
             autoFocus
           >
             {confirmLabel ?? t("common.confirm")}

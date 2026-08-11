@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Button from "../Button";
 import Input from "../Input";
+import { useDialogExit } from "../dialogMotion";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import styles from "./NameDialog.module.css";
@@ -54,6 +55,7 @@ function NameDialog({
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
+  const { close, cls } = useDialogExit();
 
   useEffect(() => {
     nameRef.current?.focus();
@@ -64,11 +66,11 @@ function NameDialog({
     function onKeyDown(e: KeyboardEvent) {
       // Not while the request is in flight: closing then would leave the user with no way to see
       // how it went.
-      if (e.key === "Escape" && !saving) onCancel();
+      if (e.key === "Escape" && !saving) close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel, saving]);
+  }, [close, onCancel, saving]);
 
   async function submit() {
     const trimmed = name.trim();
@@ -89,8 +91,8 @@ function NameDialog({
 
   return createPortal(
     <>
-      <div className={styles.overlay} onClick={saving ? undefined : onCancel} />
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={ariaLabel}>
+      <div className={cls(styles.overlay)} onClick={saving ? undefined : () => close(onCancel)} />
+      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={ariaLabel}>
         <h3 className={styles.title}>{title}</h3>
 
         <div className={styles.form}>
@@ -121,7 +123,7 @@ function NameDialog({
         )}
 
         <div className={styles.actions}>
-          <Button size="large" onClick={onCancel} disabled={saving}>
+          <Button size="large" onClick={() => close(onCancel)} disabled={saving}>
             {t("common.cancel")}
           </Button>
           <Button size="large" variant="primary" onClick={() => void submit()} disabled={saving}>

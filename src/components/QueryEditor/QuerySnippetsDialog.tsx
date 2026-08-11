@@ -5,6 +5,7 @@ import { useTranslation } from "../../i18n";
 import { removeSnippet, saveSnippet, useQuerySnippets } from "../../querySnippets";
 import Button from "../Button";
 import Input from "../Input";
+import { useDialogExit } from "../dialogMotion";
 import styles from "./QueryEditor.module.css";
 
 interface Props {
@@ -38,14 +39,15 @@ function QuerySnippetsDialog({ sql, onPick, onClose }: Props) {
   /** The snippet whose delete button has been pressed once. Two presses rather than a dialog on
    *  top of this one — and only ever one at a time, so the armed button is unmistakable. */
   const [confirmDrop, setConfirmDrop] = useState<string | null>(null);
+  const { close, cls } = useDialogExit();
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && !saving) onClose();
+      if (e.key === "Escape" && !saving) close(onClose);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, saving]);
+  }, [close, onClose, saving]);
 
   const canSave = sql.trim() !== "";
 
@@ -74,16 +76,16 @@ function QuerySnippetsDialog({ sql, onPick, onClose }: Props) {
 
   return createPortal(
     <>
-      <div className={styles.overlay} onClick={saving ? undefined : onClose} />
+      <div className={cls(styles.overlay)} onClick={saving ? undefined : () => close(onClose)} />
       <div
-        className={styles.historyDialog}
+        className={cls(styles.historyDialog)}
         role="dialog"
         aria-modal="true"
         aria-label={t("query.snippetsTitle")}
       >
         <div className={styles.historyHeader}>
           <h3 className={styles.historyTitle}>{t("query.snippetsTitle")}</h3>
-          <button type="button" className={styles.historyClose} onClick={onClose} title={t("common.close")}>
+          <button type="button" className={styles.historyClose} onClick={() => close(onClose)} title={t("common.close")}>
             <CloseIcon />
           </button>
         </div>
@@ -131,7 +133,7 @@ function QuerySnippetsDialog({ sql, onPick, onClose }: Props) {
                   title={snippet.sql}
                   onClick={() => {
                     onPick(snippet.sql);
-                    onClose();
+                    close(onClose);
                   }}
                 >
                   <span className={styles.snippetName}>{snippet.name}</span>

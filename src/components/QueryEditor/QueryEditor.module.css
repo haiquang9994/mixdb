@@ -94,6 +94,7 @@
    the whole point is scanning a page of queries at once. Same z-index band as ConfirmDialog, which
    never appears at the same time as this. */
 .overlay {
+  composes: overlay from "../dialogMotion.module.css";
   position: fixed;
   inset: 0;
   z-index: 80;
@@ -101,6 +102,7 @@
 }
 
 .historyDialog {
+  composes: dialog from "../dialogMotion.module.css";
   position: fixed;
   z-index: 81;
   top: 50%;

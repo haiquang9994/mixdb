@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Button from "../Button";
 import Document from "../Document";
+import { useDialogExit } from "../dialogMotion";
 import { PlusIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
@@ -70,6 +71,7 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
   const [addingDraft, setAddingDraft] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const { close, cls } = useDialogExit();
 
   /** Each card's working copy, as last reported. Held in a ref rather than in state: it changes
    * on every commit inside a card, and nothing in this dialog renders from it — only the submit
@@ -129,11 +131,11 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
       // is not what the user is trying to close.
       const target = e.target as HTMLElement | null;
       if (e.defaultPrevented || target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
-      onCancel();
+      close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel, saving]);
+  }, [close, onCancel, saving]);
 
   async function addDraft() {
     setAddingDraft(true);
@@ -179,8 +181,8 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
 
   return createPortal(
     <>
-      <div className={styles.overlay} onClick={saving ? undefined : onCancel} />
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={collection}>
+      <div className={cls(styles.overlay)} onClick={saving ? undefined : () => close(onCancel)} />
+      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={collection}>
         <div className={styles.header}>
           <h3 className={styles.title}>
             {t(cloning ? "insertDocuments.cloneTitle" : "insertDocuments.title", { collection })}
@@ -220,7 +222,7 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
         )}
 
         <div className={styles.actions}>
-          <Button size="large" onClick={onCancel} disabled={saving}>
+          <Button size="large" onClick={() => close(onCancel)} disabled={saving}>
             {t("common.cancel")}
           </Button>
           <Button size="large" variant="primary" onClick={() => void submit()} disabled={busy || drafts.length === 0}>
