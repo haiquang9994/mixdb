@@ -36,6 +36,9 @@ import { errorMessage } from "../errors";
 import type { MysqlCollation } from "../types";
 
 interface Props {
+  /** Whether this connection's tab is the one on show. Passed straight through to the content
+   *  panes, which take `Ctrl+R` for their own reload only while the user is looking at them. */
+  active: boolean;
   connectionId: string;
   initialDatabase?: string;
   status: string;
@@ -88,6 +91,7 @@ const MIN_SIDEBAR_WIDTH = 140;
 const MAX_SIDEBAR_WIDTH = 480;
 
 function MysqlWorkspace({
+  active,
   connectionId,
   initialDatabase,
   error,
@@ -539,6 +543,7 @@ function MysqlWorkspace({
           )}
           {contentMode === "data" && selectedDb && selectedTable && (
             <SqlTable
+              active={active}
               connectionId={connectionId}
               selectedDb={selectedDb}
               selectedTable={selectedTable}
@@ -553,6 +558,7 @@ function MysqlWorkspace({
           )}
           {contentMode === "structure" && selectedDb && selectedTable && (
             <TableStructure
+              active={active}
               connectionId={connectionId}
               selectedDb={selectedDb}
               selectedTable={selectedTable}
@@ -571,7 +577,7 @@ function MysqlWorkspace({
                 kind="mysql"
                 connectionId={connectionId}
                 database={selectedDb}
-                active={contentMode === "stats"}
+                active={active && contentMode === "stats"}
                 onError={setLocalError}
               />
             </div>
@@ -583,7 +589,7 @@ function MysqlWorkspace({
             <QueryEditor
               connectionId={connectionId}
               database={selectedDb}
-              active={contentMode === "query"}
+              active={active && contentMode === "query"}
               readOnly={readOnly}
               profileId={profileId}
               onOpenTable={openTable}

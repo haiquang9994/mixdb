@@ -41,7 +41,7 @@
   overflow: hidden;
 }
 
-/* The lines the statement under the caret covers — what `Ctrl+Enter` would run. Marked with a bar
+/* The lines the statement under the caret covers, i.e. where the script gets cut. Marked with a bar
    down the left rather than a filled band: it is on screen the whole time the editor is being
    typed in, so it has to be readable as background and never as a selection. */
 .statementLine {

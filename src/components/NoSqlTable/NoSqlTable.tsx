@@ -24,10 +24,14 @@ import Pagination from "../Pagination";
 import { PlusIcon, ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
+import { useReloadShortcut, withReloadShortcut } from "../../reload";
 import { initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
 import styles from "./NoSqlTable.module.css";
 
 interface Props {
+  /** Whether the connection tab this list sits in is the one on show. Only the list the user is
+   *  looking at answers `Ctrl+R` — the others stay mounted behind their tabs. */
+  active: boolean;
   connectionId: string;
   selectedDb: string;
   selectedCollection: string;
@@ -75,7 +79,14 @@ const ID_FIELD = ["_id"];
  * What a card has changed but not yet written — the working copy, the staged edits, the open
  * inline editor — belongs to Document. Cards only hand back a document id and the ops to
  * apply, plus a "save what you have staged" hook so a refetch can wait for them. */
-function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError, filterCache }: Props) {
+function NoSqlTable({
+  active,
+  connectionId,
+  selectedDb,
+  selectedCollection,
+  onError,
+  filterCache,
+}: Props) {
   const { t } = useTranslation();
   const collectionKey = `${selectedDb} :: ${selectedCollection}`;
   const [page, setPage] = useState(0);
@@ -305,6 +316,14 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError, fil
   const busy = loading || writeCount > 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
+  // Gated on the same state the button below is: a refetch asked for while one is already out, or
+  // over a card mid-write, is one the button would refuse. Not from behind the insert form, which
+  // holds documents that have been typed and not yet sent.
+  useReloadShortcut(active && insertSeeds === null, () => {
+    if (busy) return;
+    flushThen(loadPage);
+  });
+
   return (
     <div className={styles.noSqlTable}>
       <FilterBar
@@ -340,7 +359,7 @@ function NoSqlTable({ connectionId, selectedDb, selectedCollection, onError, fil
             {
               key: "reload",
               icon: ReloadIcon,
-              label: t("noSqlTable.reloadDocuments"),
+              label: withReloadShortcut(t("noSqlTable.reloadDocuments")),
               disabled: busy,
               busy,
               // Same as changing page: whatever the cards have staged is written out before the

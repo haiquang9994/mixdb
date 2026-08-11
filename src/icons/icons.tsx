@@ -211,17 +211,6 @@ export function PlayIcon(props: IconProps) {
   );
 }
 
-/** Run the whole script rather than one statement of it: the same triangle as {@link PlayIcon},
- * played up against the end. */
-export function RunAllIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M6 5.2v13.6L16 12z" fill="currentColor" stroke="none" />
-      <path d="M19 5.5v13" />
-    </Icon>
-  );
-}
-
 /** Lay the script out: lines of text, indented as a formatter would indent them. */
 export function FormatIcon(props: IconProps) {
   return (
@@ -261,6 +250,20 @@ export function TerminalIcon(props: IconProps) {
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <path d="M7.5 9.5L10.5 12l-3 2.5" />
       <path d="M13.5 15h3.5" />
+    </Icon>
+  );
+}
+
+/** Open this out over the whole window — the query results' zoom button. Four corners pushed
+ * outwards, the shape a video player uses for full screen, so it reads as "give this the room"
+ * rather than as a disclosure arrow. */
+export function ExpandIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9.5 4H4v5.5" />
+      <path d="M14.5 4H20v5.5" />
+      <path d="M20 14.5V20h-5.5" />
+      <path d="M4 14.5V20h5.5" />
     </Icon>
   );
 }

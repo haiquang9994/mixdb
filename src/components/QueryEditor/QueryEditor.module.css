@@ -31,10 +31,6 @@
   opacity: 0.7;
 }
 
-.runButton {
-  gap: 0.4em;
-}
-
 /* Pushed to the far end: which database the script runs against is the one thing here that
    changes what the SQL means, so it is read where the eye lands last before pressing Run. Drawn
    as a chip rather than as a line of faint text — it names a thing, and reads as one. */
@@ -234,14 +230,15 @@
   white-space: nowrap;
 }
 
-/* A saved query and the button that forgets it, side by side. The entry takes the room so the
-   delete button sits hard against the right edge of every row alike. */
-.snippetRow {
+/* An entry and the button that forgets it, side by side — a saved query in the snippets list, a
+   past run in the history. The entry takes the room so the delete button sits hard against the
+   right edge of every row alike. */
+.entryRow {
   display: flex;
   align-items: stretch;
 }
 
-.snippetRow .historyEntry {
+.entryRow .historyEntry {
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -251,7 +248,7 @@
   font-size: 0.9em;
 }
 
-.snippetDelete {
+.entryDelete {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -266,22 +263,24 @@
   opacity: 0.5;
 }
 
-.snippetRow:hover .snippetDelete {
+.entryRow:hover .entryDelete {
   opacity: 0.85;
 }
 
 /* Armed by the first press. Red and named, so the second press is never a surprise. */
-.snippetDeleteArmed,
-.snippetRow:hover .snippetDeleteArmed {
+.entryDeleteArmed,
+.entryRow:hover .entryDeleteArmed {
   background: rgba(211, 47, 47, 0.12);
   color: #c0392b;
   opacity: 1;
 }
 
-/* One line above the results saying what was done to the script on its way out. */
+/* One line above the results saying what was done to the script on its way out. It sits beside the
+   scrolling column rather than in it — the margin is its own, since it no longer has that column's
+   gap to separate it from the first card. */
 .note {
   flex: 0 0 auto;
-  margin: 0;
+  margin: 0 0 0.5rem;
   padding: 0.35rem 0.6rem;
   border-radius: var(--radius-sm);
   background: rgb(var(--c-amber-rgb) / 0.1);
@@ -292,7 +291,11 @@
 /* The editor and its title strip as one framed surface. The frame is what makes the empty tab
    read as a place to type rather than as a blank area of the page. */
 .editorPane {
-  flex: 0 0 auto;
+  /* Takes whatever the results are not using, which is all of it until something has been run. The
+     divider below sets the results' height; the editor is what is left over, and never less than
+     this. */
+  flex: 1 1 auto;
+  min-height: 6rem;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -343,7 +346,7 @@
   white-space: nowrap;
 }
 
-/* Keycaps rather than the words "Ctrl+Enter" in dimmed text: a drawn key is legible at this size
+/* Keycaps rather than the words "Ctrl+R" in dimmed text: a drawn key is legible at this size
    without leaning on contrast. */
 .key {
   padding: 0.1em 0.4em;
@@ -356,23 +359,123 @@
   white-space: nowrap;
 }
 
-/* What the editor is given to fill. Resizable by hand rather than split with a draggable divider:
-   a script and its results want very different amounts of room depending on which of the two is
-   being worked on.
-
-   The height lives here and not on the editor inside it: CodeMirror scrolls its own content and so
-   needs a definite height to scroll within, and `resize` needs a box that is not `overflow:
-   visible` to put its handle on. Border, background and the focus ring all belong to the pane
-   around this. */
+/* What the editor is given to fill: everything the pane has left after its title strip. The height
+   is definite even so — flexbox resolves it — which is what CodeMirror needs to scroll its own
+   content within. Border, background and the focus ring all belong to the pane around this. */
 .editorHost {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   width: 100%;
-  min-height: 7rem;
-  height: 12rem;
-  max-height: 60vh;
+  min-height: 0;
   box-sizing: border-box;
-  resize: vertical;
   overflow: hidden;
+}
+
+/* The line between the script and its results, and the handle for moving it.
+   A 1px rule is the right thing to look at and an impossible thing to hit, so the rule is drawn by
+   the pseudo-element and the box around it is the grab area. The negative margins pull that box
+   back into the gap the flex column was already leaving, so the divider costs no height at all and
+   appearing does not shift the editor. */
+.divider {
+  flex: 0 0 auto;
+  position: relative;
+  height: 8px;
+  margin: -0.5rem 0;
+  cursor: row-resize;
+  /* The pointer is being captured for a drag, so the browser must not claim it for a scroll. */
+  touch-action: none;
+}
+
+.divider::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 4px;
+  height: 1px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background-color 0.12s ease, height 0.12s ease, top 0.12s ease;
+}
+
+/* Thickened rather than recoloured on the way in, then accented once it is being dragged: hovering
+   is finding out that the line moves, dragging is moving it. */
+.divider:hover::after,
+.divider:focus-visible::after,
+.dividerHeld::after {
+  top: 3px;
+  height: 3px;
+}
+
+.divider:focus-visible::after,
+.dividerHeld::after {
+  background: var(--accent);
+}
+
+.divider:focus-visible {
+  outline: none;
+}
+
+/* How much room the results are given. The one box here whose height changes — see the panel below
+   for why that costs nothing but a clip.
+
+   Bottom-aligned, and that is the whole mechanism: the panel inside keeps its full height the whole
+   way through, this box closes around it, and what is clipped away is the top. The pane is uncovered
+   from the bottom up because it never moved.
+
+   Short and decelerating rather than long and eased-out at both ends. Every frame of this costs a
+   relayout of the editor above — the one thing here that genuinely does resize — so the movement is
+   over in a few frames instead of creeping through the last tenth of the distance, which is the part
+   that reads as lag rather than as motion. */
+.resultsSlot {
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  transition: height 170ms cubic-bezier(0.33, 1, 0.68, 1), margin-top 170ms
+      cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+/* Shut, the slot is not there at all: no height, and its share of the column's gap taken back so
+   the bar below sits against the editor rather than below a strip of nothing. The margin travels
+   with the height, so opening does not start with an 8px jolt. */
+.resultsSlotShut {
+  margin-top: -0.5rem;
+}
+
+/* Under the pointer, the height is the pointer's: a transition here would have the divider lagging
+   behind the hand holding it. */
+.resultsSlotHeld {
+  transition: none;
+}
+
+/* The results, laid out once at their full height and held against the bottom edge of the slot.
+
+   A box of its own and not the results pane itself, because that pane is also what the Expand
+   button fixes to the viewport: a height in pixels set on it here would follow it up there and
+   override the `inset` that sizes it.
+
+   This is what makes the pane rising smooth over a result of a thousand rows. Its height is given in
+   pixels and `flex-shrink` is off, so the slot closing has nothing to say about it: the box is laid
+   out once, at the size it will end at, and every frame after that moves it rather than measuring it
+   again. A panel that simply filled the slot would relayout every grid in it on every frame instead.
+
+   A flex child rather than `position: absolute; bottom: 0`, which is the same picture drawn a
+   cheaper way. Pinned to the bottom of the slot, its offset had to be resolved against a containing
+   block that was a different height on every frame, and a grid of a thousand rows is a thousand rows
+   for the layout engine to walk again when it cannot prove the box came out the same. Bottom-aligned
+   in a flex column, nothing about it changes at all.
+
+   Still nothing here that makes a containing block — no `transform`, no `filter`, no `contain`. The
+   Expand button fixes `.resultsWrap` inside this to the viewport, and any of them would leave it
+   fixed to *this* instead. */
+.resultsPanel {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
 }
 
 /* `position: relative` so the running veil covers the results rather than the whole workspace. */
@@ -634,6 +737,114 @@
   opacity: 0.65;
 }
 
+/* The bar under the results, in the same place and the same shape as the data tab's own — what it
+   acts on is the pane above it, so it reads from the bottom edge of that pane rather than from the
+   top of the tab. */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+/* What the lifted results stand on. The one thing here that is portalled to the body — the results
+   themselves never move in the tree, they are only fixed to the viewport by the class below. Same
+   z-index band as the history dialog, which never shares the screen with this. */
+.zoomVeil {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgb(0 0 0 / 0.45);
+  animation: query-zoom-veil-in 220ms ease-out;
+}
+
+.zoomVeilOut {
+  animation: query-zoom-veil-out 190ms ease-in forwards;
+}
+
+@keyframes query-zoom-veil-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes query-zoom-veil-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/*
+ * The results pane, lifted out of the tab and over the window.
+ *
+ * The same element it was a moment ago — this class is the whole of the difference, so the grids
+ * inside keep their DOM, their scroll position and their React state. `resultsZoom.ts` carries it
+ * between the two rectangles with one transform.
+ *
+ * `transform-origin` is not decoration: the FLIP arithmetic in that file is written for the top
+ * left corner. `will-change` stays on for as long as the box is up rather than only while it moves,
+ * which keeps it on its own compositor layer — the rise, the scrolling in between and the fall are
+ * then all composited rather than repainted.
+ *
+ * Deliberately *not* `overflow: hidden`: a rounded clip around a scrolling grid puts every frame of
+ * that scroll back on the main thread, which is the same reason the result cards round their header
+ * by hand rather than clipping the card.
+ */
+.resultsZoomed {
+  position: fixed;
+  inset: 1.25rem;
+  z-index: 81;
+  padding: 0 0.7rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-bg);
+  box-shadow: var(--shadow-lg);
+  transform-origin: top left;
+  will-change: transform;
+}
+
+/* Pulled out to the panel's edges through its padding, so the strip meets the border on both sides
+   and under the rounded top corners. Dressed as the editor's own title strip: this is the same kind
+   of thing, a name for the surface under it. */
+.zoomBar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 -0.7rem 0.6rem;
+  padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
+  background: var(--qe-strip-bg);
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The strip's own font size is set for its label, and an icon inheriting it would be a speck. */
+.zoomBar .historyClose {
+  font-size: 1.15rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zoomVeil,
+  .zoomVeilOut {
+    animation: none;
+  }
+
+  .resultsSlot {
+    transition: none;
+  }
+}
+
 :root[data-theme="dark"] .queryEditor {
   /* `--surface-bg` is the page colour in the dark theme, so a card painted with it would not be a
      card. A wash of white over the page is what lifts it. */
@@ -643,8 +854,8 @@
 :root[data-theme="dark"] .error,
 :root[data-theme="dark"] .resultError,
 :root[data-theme="dark"] .historyFailed,
-:root[data-theme="dark"] .snippetDeleteArmed,
-:root[data-theme="dark"] .snippetRow:hover .snippetDeleteArmed {
+:root[data-theme="dark"] .entryDeleteArmed,
+:root[data-theme="dark"] .entryRow:hover .entryDeleteArmed {
   color: #ff8a80;
 }
 
@@ -656,8 +867,8 @@
   :root:not([data-theme]) .error,
   :root:not([data-theme]) .resultError,
   :root:not([data-theme]) .historyFailed,
-  :root:not([data-theme]) .snippetDeleteArmed,
-  :root:not([data-theme]) .snippetRow:hover .snippetDeleteArmed {
+  :root:not([data-theme]) .entryDeleteArmed,
+  :root:not([data-theme]) .entryRow:hover .entryDeleteArmed {
     color: #ff8a80;
   }
 }

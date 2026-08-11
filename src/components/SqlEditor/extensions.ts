@@ -119,7 +119,9 @@ function extraCompletions(source: () => readonly EditorCompletion[]): Extension 
 }
 
 /**
- * Marks the lines of the statement the caret is in — the one `Ctrl+Enter` would run.
+ * Marks the lines of the statement the caret is in, so where the server will cut the script is
+ * visible while it is being written. Nothing runs from it — `Ctrl+R` sends the selection, or the
+ * lot — so this says "here is one statement", not "here is what would run".
  *
  * Recomputed on a doc change, and on a selection change only when the caret has actually left the
  * range it was in. Splitting the script is cheap on a script and not on a 10,000-line dump, and
@@ -182,11 +184,8 @@ export interface EditorSetup {
   /** The statement the caret is in, for the highlight. Must be stable — it is read on every
    *  update, and the extension list is built once. */
   statementRange: (doc: string, pos: number) => StatementRange | null;
-  /** `Ctrl+Enter`: the selection, or the statement under the caret. */
-  onRun: () => void;
-  /** `Ctrl+Shift+Enter`: the whole script, whatever is selected. */
-  onRunAll: () => void;
-  /** `Ctrl+Shift+F`. */
+  /** `Ctrl+Shift+F`. Running the script is *not* bound here: `Ctrl+R` does that, and it is claimed
+   *  once for the whole app rather than per focused widget — see `src/reload.ts`. */
   onFormat: () => void;
   /** Where the underlines come from, read fresh on every check so the schema arriving — or the
    *  connection going away — is picked up without the editor being rebuilt. Null turns checking
@@ -202,32 +201,16 @@ export interface EditorSetup {
 /**
  * Everything the editor is made of, built once when it is created.
  *
- * The three commands are given as stable callbacks reading refs, so nothing here has to be rebuilt
- * when the component re-renders — the only part that changes over the editor's life is the schema,
- * which lives in {@link schemaCompartment}.
+ * The callbacks are given as stable functions reading refs, so nothing here has to be rebuilt when
+ * the component re-renders — the only part that changes over the editor's life is the schema, which
+ * lives in {@link schemaCompartment}.
  */
 export function editorSetup(setup: EditorSetup): Extension[] {
   return [
-    // Above everything else: `Mod-Enter` is unbound by the default keymaps, but a binding that
-    // runs the user's script is not one to leave to precedence.
+    // Above everything else: the default keymaps leave this chord alone today, but a binding the
+    // user reaches for by name is not one to leave to precedence.
     Prec.highest(
       keymap.of([
-        {
-          key: "Mod-Enter",
-          preventDefault: true,
-          run: () => {
-            setup.onRun();
-            return true;
-          },
-        },
-        {
-          key: "Mod-Shift-Enter",
-          preventDefault: true,
-          run: () => {
-            setup.onRunAll();
-            return true;
-          },
-        },
         {
           key: "Mod-Shift-f",
           preventDefault: true,

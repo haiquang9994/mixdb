@@ -18,10 +18,8 @@ import styles from "./SqlEditor.module.css";
 /** What the toolbar around the editor can ask it for. The editor owns the caret and the selection,
  *  so only it can say what a Run button would actually run. */
 export interface SqlEditorHandle {
-  /** The selection when there is one, else the statement the caret is in, else the whole script. */
+  /** The selection when there is one, else the whole script. */
   textToRun: () => string;
-  /** Everything in the editor, whatever is selected. */
-  allText: () => string;
   /** Replaces the whole script — a draft being restored, or a query taken out of the history. The
    *  only way in: the editor owns the document while it is mounted.
    *
@@ -46,8 +44,6 @@ interface Props {
   /** Where the statement covering `pos` sits. Supplied by the caller: what splits a script into
    *  statements is a property of the database, not of the editor. */
   statementRange: (doc: string, pos: number) => StatementRange | null;
-  /** Run this text — `Ctrl+Enter` sends one statement, `Ctrl+Shift+Enter` the whole script. */
-  onRun: (text: string) => void;
   /** Where the error underlines come from, or null for an editor that checks nothing. */
   lint: LintSources | null;
   /** What the names in the script mean — the hover tooltip, and where `Ctrl+Click` goes. Null for
@@ -80,7 +76,6 @@ function SqlEditor({
   schema,
   database,
   statementRange,
-  onRun,
   lint,
   lookup,
   completions,
@@ -99,7 +94,6 @@ function SqlEditor({
   const latest = useRef({
     onChange,
     statementRange,
-    onRun,
     schema,
     database,
     lint,
@@ -111,7 +105,6 @@ function SqlEditor({
     latest.current = {
       onChange,
       statementRange,
-      onRun,
       schema,
       database,
       lint,
@@ -120,20 +113,18 @@ function SqlEditor({
     };
   });
 
-  /** The selection, or the statement the caret is in, or everything — in that order. */
+  /** The selection, or the whole script when there is none.
+   *
+   * Selecting is the only way to run part of a script — the caret's own statement is not a third
+   * answer. It was one once, under `Ctrl+Enter`, and it made the same keystroke mean two different
+   * amounts of work depending on where the caret happened to be resting. */
   function textToRun(): string {
     const current = view.current;
     if (!current) return "";
     const selection = current.state.selection.main;
-    if (!selection.empty) return current.state.sliceDoc(selection.from, selection.to);
-    const doc = docText(current.state.doc);
-    const range = latest.current.statementRange(doc, selection.head);
-    return range ? doc.slice(range.from, range.to) : doc;
-  }
-
-  function allText(): string {
-    const current = view.current;
-    return current ? docText(current.state.doc) : "";
+    return selection.empty
+      ? docText(current.state.doc)
+      : current.state.sliceDoc(selection.from, selection.to);
   }
 
   /** Reformats the selection, or the whole script when there is none. Text that cannot be parsed
@@ -181,7 +172,6 @@ function SqlEditor({
 
   useImperativeHandle(ref, () => ({
     textToRun,
-    allText,
     setText,
     format: formatDocument,
     focus: () => view.current?.focus(),
@@ -206,8 +196,6 @@ function SqlEditor({
           schema: latest.current.schema,
           database: latest.current.database,
           statementRange: (doc, pos) => latest.current.statementRange(doc, pos),
-          onRun: () => latest.current.onRun(textToRun()),
-          onRunAll: () => latest.current.onRun(allText()),
           onFormat: formatDocument,
           lint: () => latest.current.lint,
           lookup: () => latest.current.lookup,

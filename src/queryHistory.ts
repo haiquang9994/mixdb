@@ -139,6 +139,30 @@ export function recordQuery(entry: QueryHistoryEntry): void {
 }
 
 /**
+ * Forgets one run.
+ *
+ * Matched on what it was rather than on where it sits: the list is re-published on every run, and an
+ * index read when the dialog rendered would point at a different entry by the time it is pressed.
+ * The three fields together are as good as an id — a run is a query, against a connection, at a
+ * millisecond.
+ */
+export function removeQueryHistoryEntry(entry: QueryHistoryEntry): void {
+  void ensureLoaded().then(
+    () => {
+      const list = snapshot.filter(
+        (kept) =>
+          kept.startedAt !== entry.startedAt ||
+          kept.profileId !== entry.profileId ||
+          kept.sql !== entry.sql
+      );
+      publish(list);
+      persist(list);
+    },
+    () => {}
+  );
+}
+
+/**
  * Forgets this connection's runs, and only this connection's.
  *
  * The list this is pressed from shows one connection's history, so that is the whole of what it may

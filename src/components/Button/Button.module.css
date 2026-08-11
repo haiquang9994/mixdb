@@ -2,6 +2,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* An icon and its label are two flex items with nothing between them, and touching they read as
+     one crooked shape rather than as a labelled icon. Set here rather than at each call site, since
+     a button with a single child — which is most of them — is unaffected by it. */
+  gap: 0.4em;
   border-radius: var(--control-radius);
   border: 1px solid var(--control-border);
   font-weight: 500;
@@ -13,6 +17,18 @@
     filter 0.12s ease;
   cursor: pointer;
   outline: none;
+}
+
+/* Centred on the word beside it rather than on the line box around it. A line box reserves room
+   under the baseline for descenders, and `Clear` has none — so an icon centred in that box sits low
+   against the letters, which is exactly where it looked. A transform rather than a margin: the
+   correction is to what is seen, and nothing about the button's size should move with it.
+
+   Only where there is a word to be centred on. A button that is nothing but an icon — the paging
+   arrows — is already centred by the flexbox above, and lifting it would be putting it off centre
+   to correct for letters that are not there. */
+.button > svg:not(:only-child) {
+  transform: translateY(-0.06em);
 }
 
 /* Weight, not colour — the accent is kept for focus, so a ring means "the keyboard is here". */

@@ -99,9 +99,10 @@ Port `split_statements` from
 - Schema completion: after `FROM`/`JOIN` → tables; in `SELECT`/`WHERE`/`ORDER BY`/`GROUP BY` →
   columns of the tables in scope; after `alias.` → that table's columns. Keywords and MySQL
   built-in functions always. Completion entries carry the column type as detail.
-- `Ctrl+Enter` runs **the statement under the caret** (with a subtle highlight over its range),
-  `Ctrl+Shift+Enter` runs the whole script, a selection still wins over both. The hint strip in
-  `.editorBar` is rewritten to say all three.
+- ~~`Ctrl+Enter` runs the statement under the caret, `Ctrl+Shift+Enter` the whole script.~~
+  **Superseded.** One key runs: `Ctrl+R`, which sends the selection when there is one and the whole
+  script when there is not. The caret's statement is still highlighted, but nothing runs from it.
+  The `Enter` chords and the Run all button are gone; the hint strip says the one shortcut.
 - `Ctrl+Shift+F` formats via `sql-formatter` (`language: "mysql"`), selection-only when there is a
   selection.
 - Editing comforts: `Ctrl+/` comment toggle, multi-cursor, `Ctrl+F` find/replace with regex,
@@ -291,6 +292,22 @@ that from mattering.
   inside a transaction. The script already runs on one connection, so this works as-is.
 - **Multiple query tabs** per connection, each with its own draft and results.
 - Total script time and an "N of M statements" line above the results.
+
+## Known rough edges in the results pane
+
+Found while reviewing the pane rework of 2026-08-11 and left standing — both are reachable only by
+driving a control to its limit, and neither loses any work.
+
+- **The divider can push the footer bar out of view.** `MIN_EDITOR` in
+  [resultsPane.ts](../../src/components/QueryEditor/resultsPane.ts) reserves 150px, but measures it
+  against `tabRef` — the whole tab, toolbar and footer bar included — while `.editorPane` has a
+  `min-height` of `6rem` it will not shrink past and `.queryEditor` has no `overflow: hidden` to
+  clip what overflows. Drag the divider all the way up and the bar goes off the bottom edge. The fix
+  is to measure the room the editor actually has rather than the room the tab has.
+- **Expand and Hide do not exclude each other.** Expand stays enabled while the pane is shut, so
+  results just put away can be lifted over the window; Hide stays enabled while the pane is up
+  there, and closing it then flies the box home to a slot that has since collapsed. Either disable
+  each against the other's state, or have Hide close the zoom on its way.
 
 ## Cross-cutting rules
 

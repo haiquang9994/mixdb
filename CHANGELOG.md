@@ -18,6 +18,11 @@ npm run notes            # list the commits since the last tag, grouped, as a st
 npm run set-version 0.1.0  # cuts ## [Unreleased] into ## [0.1.0] - <today> and opens a fresh one
 ```
 
+Every entry sits under one of three headings — `### Added`, `### Changed`, `### Fixed` — and is one
+short line. `Fixed` is for bugs in a *released* version: repairing something still sitting unreleased
+above it means editing that entry, not adding a new one. The full rules, for whoever is writing:
+[.agent/conventions/changelog.md](.agent/conventions/changelog.md).
+
 From there the release workflow reads this file: the section for the version being tagged becomes
 the `## Changes` part of the draft release body, which in turn becomes the update notes every
 installed copy of MixDB is shown. So what is written here is what users read — see
@@ -35,6 +40,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+
+- The Query tab has a bar along its bottom edge. Expand lifts the whole results pane out over the
+  window — a script of several SELECTs no longer gives each of them a quarter of an already short
+  pane — and Escape, the close button or a click outside puts it back. The button beside it puts the
+  results away to get the window back for the script, and running again brings them up.
+- A single run can be dropped from the Query tab's History, rather than only clearing the lot: the
+  failed attempts a working query leaves behind it can go without taking the query with them.
+
+### Changed
+
+- `Ctrl+R` now acts on the pane you are looking at instead of reloading MixDB and dropping every
+  open connection with it: it reloads MySQL's Data and Structure tabs, MongoDB's documents and the
+  Statistics tab, and runs the script in the Query tab. `Ctrl+Shift+R` and `F5` do nothing.
+- The Query tab has a single Run button. It runs the selected text, or the whole script when
+  nothing is selected — `Ctrl+Enter`, `Ctrl+Shift+Enter` and the Run all button are gone.
+- The Query tab keeps the whole window for the script until a run has something to show, and then
+  the results rise into place under it. The line between the two is dragged to give either one more
+  room, in place of the editor's own resize corner.
+
+### Fixed
+
+- A result shortened by an added `LIMIT` no longer has the bottom of its first table cut off. The
+  line saying the limit was added sat inside the scrolling results and pushed them down past the
+  bottom edge.
+- Spacing and alignment fixes in the buttons that carry an icon beside their label.
 
 ## [0.0.6] - 2026-08-11
 

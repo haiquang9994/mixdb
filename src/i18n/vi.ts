@@ -281,15 +281,13 @@ const vi: TranslationDict = {
   // chất của nó — một bảng kết quả, số dòng đã thay đổi, hoặc chỉ là đã chạy xong.
   query: {
     run: "Chạy",
-    runAll: "Chạy tất cả",
     format: "Định dạng",
     running: "Đang chạy...",
     cancel: "Dừng",
     cancelling: "Đang dừng...",
     // Bản thân phím tắt được vẽ thành phím bấm, nên ở đây chỉ còn phần chữ quanh nó.
-    runShortcutHint: "chạy một câu lệnh",
-    runAllShortcutHint: "chạy toàn bộ",
-    selectionHint: "Đang bôi đen thì chỉ chạy phần được chọn.",
+    runShortcutHint: "chạy phần đang chọn, hoặc toàn bộ script",
+    selectionHint: "Bôi đen một phần script để chỉ chạy phần đó; không bôi đen thì chạy toàn bộ.",
     editorHeading: "SQL",
     placeholder: "SELECT * FROM ...",
     editorLabel: "Trình soạn SQL",
@@ -297,8 +295,7 @@ const vi: TranslationDict = {
     // Đủ ngắn để nằm gọn một dòng trong chip; phần còn lại nằm ở tooltip.
     noDatabase: "Chưa chọn cơ sở dữ liệu",
     noDatabaseHint: "Hãy viết db.table trong câu lệnh, hoặc chọn cơ sở dữ liệu ở thanh trên.",
-    emptyResults: "Chưa chạy câu lệnh nào.",
-    emptyHint: "Viết câu lệnh ở trên rồi chạy — kết quả sẽ hiện ở đây.",
+    resizeResults: "Kéo để đổi chiều cao phần kết quả",
     // Script chạy xong nhưng bên trong không có gì để chạy: toàn chú thích, hoặc một dấu chấm phẩy lạc.
     noStatements: "Không có câu lệnh nào để chạy.",
     noStatementsHint: "Phần được gửi đi chỉ có chú thích — không có gì để yêu cầu máy chủ làm.",
@@ -311,6 +308,15 @@ const vi: TranslationDict = {
     ok: "OK",
     noRows: "Kết quả không có dòng nào.",
     statementFailed: "Câu lệnh này lỗi — các câu lệnh sau nó không chạy.",
+    // Các hành động ở thanh dưới, đều là chuyện khung kết quả chiếm bao nhiêu phần của tab: ẩn đi
+    // để trả cửa sổ lại cho script, hoặc nhấc ra toàn cửa sổ — cách để đọc một lượt nhiều câu
+    // SELECT mà không phải chia nhau một khung vốn đã hẹp.
+    hideResults: "Ẩn phần kết quả",
+    showResults: "Hiện phần kết quả",
+    resultsEmpty: "Chưa chạy gì cả — chưa có kết quả để ẩn.",
+    zoom: "Mở rộng kết quả",
+    zoomEmpty: "Chưa chạy gì cả — chưa có kết quả để mở rộng.",
+    zoomTitle: "Kết quả",
     // Chip trên thanh công cụ, và điều xảy ra khi vẫn cố ghi.
     readOnly: "Chỉ đọc",
     readOnlyBlocked: "Chưa gửi gì cả: kết nối này được đánh dấu chỉ đọc, mà trong script lại có câu lệnh {{verb}}.",
@@ -349,6 +355,9 @@ const vi: TranslationDict = {
     historyClear: "Xoá hết",
     // Chỉ xoá phần của kết nối này, đúng bằng những gì danh sách đang hiện.
     historyClearConfirm: "Xoá danh sách này?",
+    // Xoá từng dòng thay vì xoá hết, để bỏ những lần chạy hỏng còn sót lại quanh câu chạy được.
+    historyDrop: "Xoá dòng này",
+    historyDropConfirm: "Xoá nhé?",
     historyEmpty: "Chưa chạy gì trên kết nối này.",
     historyNoMatch: "Không câu truy vấn nào ở đây chứa nội dung đó.",
     historyFailed: "lỗi",

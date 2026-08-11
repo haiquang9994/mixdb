@@ -28,6 +28,9 @@ import { useTranslation } from "../i18n";
 import { errorMessage } from "../errors";
 
 interface Props {
+  /** Whether this connection's tab is the one on show. Passed straight through to the content
+   *  panes, which take `Ctrl+R` for their own reload only while the user is looking at them. */
+  active: boolean;
   connectionId: string;
   initialDatabase?: string;
   status: string;
@@ -63,7 +66,14 @@ const DEFAULT_SIDEBAR_WIDTH = 200;
 const MIN_SIDEBAR_WIDTH = 140;
 const MAX_SIDEBAR_WIDTH = 480;
 
-function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, onSidebarWidthChange }: Props) {
+function MongoWorkspace({
+  active,
+  connectionId,
+  initialDatabase,
+  error,
+  sidebarWidth,
+  onSidebarWidthChange,
+}: Props) {
   const { t } = useTranslation();
   const [databases, setDatabases] = useState<string[]>([]);
   const [databasesLoading, setDatabasesLoading] = useState(false);
@@ -475,6 +485,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
           )}
           {contentMode === "data" && selectedDb && selectedCollection && (
             <NoSqlTable
+              active={active}
               connectionId={connectionId}
               selectedDb={selectedDb}
               selectedCollection={selectedCollection}
@@ -494,7 +505,7 @@ function MongoWorkspace({ connectionId, initialDatabase, error, sidebarWidth, on
                 kind="mongo"
                 connectionId={connectionId}
                 database={selectedDb}
-                active={contentMode === "stats"}
+                active={active && contentMode === "stats"}
                 onError={setLocalError}
               />
             </div>

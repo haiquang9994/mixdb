@@ -2,7 +2,7 @@
 
 MixDB là ứng dụng desktop (Tauri 2 + React 19 + TypeScript) đóng vai trò client quản lý nhiều loại database. Cả ba loại DB đều đã có workspace riêng ở giao diện:
 
-- **MySQL** — duyệt/sửa dữ liệu, xem và chỉnh cấu trúc bảng, dump/restore, và một trình soạn SQL đầy đủ (tô màu cú pháp, gợi ý tên bảng/cột lấy từ chính database, kiểm lỗi khi gõ, `Ctrl+Enter` chạy câu lệnh tại con trỏ, History và Snippets).
+- **MySQL** — duyệt/sửa dữ liệu, xem và chỉnh cấu trúc bảng, dump/restore, và một trình soạn SQL đầy đủ (tô màu cú pháp, gợi ý tên bảng/cột lấy từ chính database, kiểm lỗi khi gõ, `Ctrl+R` chạy script, History và Snippets).
 - **MongoDB** — duyệt collection, xem/sửa document theo dạng cây hoặc JSON, thêm document, lọc theo điều kiện.
 - **Redis** — cây key theo ký tự phân nhóm, xem/sửa value theo từng kiểu, chọn hàng loạt key theo prefix để xoá, giới hạn số key quét được nhớ theo từng kết nối.
 

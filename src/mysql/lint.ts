@@ -607,7 +607,7 @@ function checkStatement(statement: SqlStatement, index: SchemaIndex | null, out:
  * Everything worth saying about a script, in the order it is written.
  *
  * The script is passed as the statements it was already split into rather than as its text: the
- * editor splits the same text anyway, to know what `Ctrl+Enter` would run, and each statement
+ * editor splits the same text anyway, to mark where one statement ends, and each statement
  * carries where it sits so every finding can point back into the script.
  */
 export function lintScript(

@@ -44,6 +44,31 @@ Roughly grouped:
 - **Editors/dialogs** — `QueryEditor`, `TableStructure`, `ColumnDialog`, `IndexDialog`,
   `InsertRowsDialog`, `InsertDocumentsDialog`, `FilterBar`, `SettingsModal`.
 
+### `Ctrl+R` belongs to the pane, not to the app
+
+[`src/reload.ts`](../../src/reload.ts) takes the key off the webview. Reloading the webview drops
+every open connection, every unsaved draft and every staged edit, so a pane that carries a reload
+button claims the key for that button instead through `useReloadShortcut`.
+
+Two things a new pane has to get right:
+
+- **The gate is "is this the pane in front", and a dialog counts.** Every connection tab stays
+  mounted behind the one on show, so the flag is `active && <this pane's mode is selected>` — and
+  the pane's own dialogs are subtracted from it as well. A reload fired from behind a form throws
+  away what was being typed into it; from behind a confirmation it acts on the thing being asked
+  about. Each call site spells its dialogs out; there is no central modal register to lean on.
+- **Label the button with `withReloadShortcut`.** A shortcut nothing on screen mentions is one
+  nobody has.
+
+What reaches the webview differs by build, on purpose. `isBlockedReload` swallows plain `Ctrl/Cmd+R`
+in both, so what is developed against is what ships; `F5` and the hard reload stay live under
+`npm run dev:app` and are swallowed too in a packaged build.
+
+> **Unverified**, and worth checking the day someone has a packaged build open: the blocking is a
+> DOM `preventDefault` in [`App.tsx`](../../src/App.tsx), and WebView2 handles reload as a browser
+> accelerator. If the key gets through anyway, the fix is Tauri-side rather than more JavaScript.
+> Nothing suppresses the webview's context menu either, so its own Reload item may be a way round.
+
 ## Styling
 
 - `src/App.css` is the only global stylesheet: resets, scrollbars, the tab chrome, and the CSS

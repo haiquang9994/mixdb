@@ -18,6 +18,7 @@ import LoadingOverlay from "../LoadingOverlay";
 import { PencilIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
+import { useReloadShortcut, withReloadShortcut } from "../../reload";
 import type {
   MysqlCollation,
   MysqlColumnSpec,
@@ -57,6 +58,9 @@ type IndexDialogState = { index?: MysqlTableIndex };
 type PendingDrop = { kind: "column"; name: string } | { kind: "index"; name: string };
 
 interface Props {
+  /** Whether the connection tab this panel sits in is the one on show. Only the panel the user is
+   *  looking at answers `Ctrl+R` — the others stay mounted behind their tabs. */
+  active: boolean;
   connectionId: string;
   selectedDb: string;
   selectedTable: string;
@@ -74,6 +78,7 @@ interface Props {
  * with it, and what the grid shows afterwards is what the server actually has.
  */
 function TableStructure({
+  active,
   connectionId,
   selectedDb,
   selectedTable,
@@ -146,6 +151,18 @@ function TableStructure({
     setReloadToken((n) => n + 1);
   }
 
+  // Gated on the same state the button below is: a re-read asked for while one is already out, or
+  // over an `ALTER` still running, is one the button would refuse. Not from behind the column or
+  // index form either — that is a half-filled definition the keyboard belongs to — nor from behind
+  // the drop confirmation, which is a question about the very thing a reload would replace.
+  useReloadShortcut(
+    active && columnDialog === null && indexDialog === null && pendingDrop === null,
+    () => {
+      if (busy) return;
+      reload();
+    }
+  );
+
   /** Runs one change and reloads on success. Errors are left to reject so the dialog that asked
    * for the change can show them and stay open; a drop has no dialog, so it reports its own. */
   async function apply(change: () => Promise<void>) {
@@ -203,7 +220,7 @@ function TableStructure({
               {
                 key: "reload",
                 icon: ReloadIcon,
-                label: t("structure.reload"),
+                label: withReloadShortcut(t("structure.reload")),
                 disabled: busy,
                 busy: loading,
                 onClick: reload,

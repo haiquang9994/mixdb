@@ -10,6 +10,7 @@ import Tooltip from "../Tooltip";
 import { ChevronDownIcon, ChevronUpIcon, CopyIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
+import { useReloadShortcut, withReloadShortcut } from "../../reload";
 import { initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
 import {
   FILTER_OPERATORS,
@@ -78,6 +79,9 @@ interface TableColumnsInfo {
 }
 
 interface Props {
+  /** Whether the connection tab this grid sits in is the one on show. Only the grid the user is
+   *  looking at answers `Ctrl+R` — the others stay mounted behind their tabs. */
+  active: boolean;
   connectionId: string;
   selectedDb: string;
   selectedTable: string;
@@ -93,6 +97,7 @@ interface Props {
 const PAGE_SIZES = [100, 200, 500, 1000];
 
 function SqlTable({
+  active,
   connectionId,
   selectedDb,
   selectedTable,
@@ -413,6 +418,15 @@ function SqlTable({
     await commitAndExit();
     setReloadToken((n) => n + 1);
   }
+
+  // Gated on the same state the button below is: a refetch asked for while one is already out, or
+  // over rows being deleted, is one the button would refuse. Not while the delete confirmation is
+  // up either — it names the selected rows, and a reload underneath it would leave it naming rows
+  // that are no longer the ones selected.
+  useReloadShortcut(active && !confirmingDelete, () => {
+    if (loading || deleting) return;
+    void reload();
+  });
 
   /** Runs the filter bar's rows against the table. Like a reload, a staged edit is written first:
    * the rows come back filtered, and the pending row index would no longer point at the row that
@@ -844,7 +858,7 @@ function SqlTable({
             {
               key: "reload",
               icon: ReloadIcon,
-              label: t("sqlTable.reloadRows"),
+              label: withReloadShortcut(t("sqlTable.reloadRows")),
               disabled: loading || deleting,
               busy: loading,
               onClick: () => void reload(),

@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { CloseIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { clearQueryHistory, useQueryHistory } from "../../queryHistory";
+import {
+  clearQueryHistory,
+  removeQueryHistoryEntry,
+  useQueryHistory,
+  type QueryHistoryEntry,
+} from "../../queryHistory";
 import Button from "../Button";
 import Input from "../Input";
 import styles from "./QueryEditor.module.css";
@@ -35,6 +40,10 @@ function QueryHistoryDialog({ profileId, onPick, onClose }: Props) {
   const history = useQueryHistory();
   const [filter, setFilter] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
+  /** The entry whose delete button has been pressed once, held by identity — the objects in the
+   *  list outlive a render, and there is nothing else about a run that is reliably unique. Only ever
+   *  one at a time, so the armed button is unmistakable. */
+  const [confirmDrop, setConfirmDrop] = useState<QueryHistoryEntry | null>(null);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -86,11 +95,15 @@ function QueryHistoryDialog({ profileId, onPick, onClose }: Props) {
           />
           <Button
             size="small"
-            onClick={() =>
-              confirmClear
-                ? (clearQueryHistory(profileId), setConfirmClear(false))
-                : setConfirmClear(true)
-            }
+            onClick={() => {
+              setConfirmDrop(null);
+              if (confirmClear) {
+                clearQueryHistory(profileId);
+                setConfirmClear(false);
+                return;
+              }
+              setConfirmClear(true);
+            }}
             disabled={mine.length === 0}
           >
             <TrashIcon size="0.9em" />
@@ -105,9 +118,15 @@ function QueryHistoryDialog({ profileId, onPick, onClose }: Props) {
             {mine.length === 0 ? t("query.historyEmpty") : t("query.historyNoMatch")}
           </p>
         ) : (
-          <ul className={styles.historyList} onMouseDown={() => setConfirmClear(false)}>
+          <ul
+            className={styles.historyList}
+            onMouseDown={() => {
+              setConfirmClear(false);
+              setConfirmDrop(null);
+            }}
+          >
             {shown.map((entry) => (
-              <li key={`${entry.startedAt}-${entry.sql.length}`}>
+              <li key={`${entry.startedAt}-${entry.sql.length}`} className={styles.entryRow}>
                 <button
                   type="button"
                   className={styles.historyEntry}
@@ -128,6 +147,36 @@ function QueryHistoryDialog({ profileId, onPick, onClose }: Props) {
                       entry.rowCount !== null && <span>{t("query.rowCount", { n: entry.rowCount })}</span>
                     )}
                   </span>
+                </button>
+                {/* One run forgotten, rather than the whole list. The history fills with attempts
+                    at the same query, and the way to keep it readable is to drop the failures as
+                    they are recognised — not to clear it and lose the one that worked. */}
+                <button
+                  type="button"
+                  className={
+                    confirmDrop === entry
+                      ? `${styles.entryDelete} ${styles.entryDeleteArmed}`
+                      : styles.entryDelete
+                  }
+                  title={
+                    confirmDrop === entry ? t("query.historyDropConfirm") : t("query.historyDrop")
+                  }
+                  aria-label={t("query.historyDrop")}
+                  // The list disarms on mouse-down, which lands before this button's click and
+                  // would clear `confirmDrop` in time for the confirming press to read it as
+                  // unarmed — the second click re-arming for ever instead of deleting.
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => {
+                    if (confirmDrop !== entry) {
+                      setConfirmDrop(entry);
+                      return;
+                    }
+                    setConfirmDrop(null);
+                    removeQueryHistoryEntry(entry);
+                  }}
+                >
+                  <TrashIcon size="0.9em" />
+                  {confirmDrop === entry && <span>{t("query.historyDropConfirm")}</span>}
                 </button>
               </li>
             ))}

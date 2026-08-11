@@ -54,12 +54,15 @@ src-tauri/src/       Rust backend
   [.agent/conventions/adding-a-command.md](.agent/conventions/adding-a-command.md).
 - Commit messages need a `type(scope): message` prefix (see the global rules).
 - **A change a user would notice gets a line in `## [Unreleased]`** in
-  [CHANGELOG.md](CHANGELOG.md), written as part of the work rather than at release time. That
-  section becomes the release notes — see [docs/RELEASING.md](docs/RELEASING.md).
+  [CHANGELOG.md](CHANGELOG.md), under `### Added`, `### Changed` or `### Fixed`, written as part of
+  the work rather than at release time. Follow
+  [.agent/conventions/changelog.md](.agent/conventions/changelog.md) — one short line each, and a
+  fix to something still unreleased is not a `Fixed` entry. That section becomes the release notes,
+  see [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Where to read more
 
 - [.agent/architecture/overview.md](.agent/architecture/overview.md) — process model, connection lifecycle
 - [.agent/architecture/frontend.md](.agent/architecture/frontend.md) — React structure and patterns
 - [.agent/architecture/backend.md](.agent/architecture/backend.md) — Rust structure and patterns
-- [.agent/conventions/](.agent/conventions/) — code conventions
+- [.agent/conventions/](.agent/conventions/) — code conventions, and how changelog entries are written

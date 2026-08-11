@@ -124,7 +124,7 @@ function QuerySnippetsDialog({ sql, onPick, onClose }: Props) {
         ) : (
           <ul className={styles.historyList} onMouseDown={() => setConfirmDrop(null)}>
             {snippets.map((snippet) => (
-              <li key={snippet.name} className={styles.snippetRow}>
+              <li key={snippet.name} className={styles.entryRow}>
                 <button
                   type="button"
                   className={styles.historyEntry}
@@ -141,8 +141,8 @@ function QuerySnippetsDialog({ sql, onPick, onClose }: Props) {
                   type="button"
                   className={
                     confirmDrop === snippet.name
-                      ? `${styles.snippetDelete} ${styles.snippetDeleteArmed}`
-                      : styles.snippetDelete
+                      ? `${styles.entryDelete} ${styles.entryDeleteArmed}`
+                      : styles.entryDelete
                   }
                   title={
                     confirmDrop === snippet.name

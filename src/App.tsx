@@ -3,6 +3,7 @@ import ConnectionTab from "./ConnectionTab";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
 import { CloseIcon, PlusIcon } from "./icons";
+import { isBlockedReload } from "./reload";
 import { useScrollAcceleration } from "./scroll";
 import { useAccent, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
@@ -80,6 +81,11 @@ function App() {
         // something the user wants. Views that have their own notion of "everything" (the SQL
         // grid selecting all of its rows) handle the key before it bubbles up to here.
         e.preventDefault();
+      } else if (isBlockedReload(e)) {
+        // Reloading the webview takes every open connection down with it, so no keystroke is left
+        // able to ask for one. What `Ctrl+R` means instead is decided by the pane on screen, which
+        // claims the key for its own reload button — see `useReloadShortcut`.
+        e.preventDefault();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -131,7 +137,10 @@ function App() {
             className="tab-panel"
             style={{ display: tab.id === activeId ? "flex" : "none" }}
           >
-            <ConnectionTab onTitleChange={(title) => renameTab(tab.id, title)} />
+            <ConnectionTab
+              active={tab.id === activeId}
+              onTitleChange={(title) => renameTab(tab.id, title)}
+            />
           </div>
         ))}
       </div>

@@ -283,15 +283,13 @@ const en = {
   // it is — a result set, a count of rows changed, or plain confirmation that it ran.
   query: {
     run: "Run",
-    runAll: "Run all",
     format: "Format",
     running: "Running...",
     cancel: "Cancel",
     cancelling: "Cancelling...",
-    // The shortcuts themselves are drawn as keycaps, so only the words around them live here.
-    runShortcutHint: "runs one statement",
-    runAllShortcutHint: "runs the lot",
-    selectionHint: "With text selected, only the selection runs.",
+    // The shortcut itself is drawn as keycaps, so only the words around it live here.
+    runShortcutHint: "runs the selection, or the whole script",
+    selectionHint: "Select part of the script to run only that; with nothing selected the whole script runs.",
     editorHeading: "SQL",
     placeholder: "SELECT * FROM ...",
     editorLabel: "SQL editor",
@@ -299,8 +297,7 @@ const en = {
     // Short enough to stay on one line inside the chip; the rest is its tooltip.
     noDatabase: "No database selected",
     noDatabaseHint: "Write db.table in the script, or pick a database in the header.",
-    emptyResults: "Nothing has been run yet.",
-    emptyHint: "Write a statement above, then run it — every result lands here.",
+    resizeResults: "Drag to resize the results",
     // A script that ran fine and had nothing in it to run: all comments, or a stray semicolon.
     noStatements: "There was no statement to run.",
     noStatementsHint: "What was sent held only comments — nothing the server could be asked to do.",
@@ -313,6 +310,15 @@ const en = {
     ok: "OK",
     noRows: "The result set is empty.",
     statementFailed: "This statement failed — nothing after it ran.",
+    // The footer's actions, both about how much of the tab the results are given: put away to get
+    // the window back for the script, or lifted out over the whole of it — which is how a run of
+    // several SELECTs is read without each of them getting a quarter of a short pane.
+    hideResults: "Hide the results",
+    showResults: "Show the results",
+    resultsEmpty: "Nothing has been run yet — there are no results to put away.",
+    zoom: "Expand the results",
+    zoomEmpty: "Nothing has been run yet — there are no results to expand.",
+    zoomTitle: "Results",
     // The chip in the toolbar, and what happens when a write is attempted anyway.
     readOnly: "Read-only",
     readOnlyBlocked: "Nothing was sent: this connection is marked read-only, and the script holds a {{verb}}.",
@@ -350,6 +356,9 @@ const en = {
     historyClear: "Clear",
     // Only this connection's runs go, which is exactly what the list is showing.
     historyClearConfirm: "Clear this list?",
+    // One run dropped rather than the lot, for the failed attempts a good query leaves behind it.
+    historyDrop: "Forget this run",
+    historyDropConfirm: "Forget it?",
     historyEmpty: "Nothing has been run on this connection yet.",
     historyNoMatch: "No query here contains that.",
     historyFailed: "failed",

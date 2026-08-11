@@ -21,6 +21,9 @@ import { useTranslation } from "./i18n";
 import { errorMessage } from "./errors";
 
 interface Props {
+  /** Whether this is the tab the tab bar is showing. Every other one stays mounted behind it, so
+   *  the panes below need telling which of them a keyboard shortcut is meant for. */
+  active: boolean;
   onTitleChange: (title: string) => void;
 }
 
@@ -118,7 +121,7 @@ interface TunnelStatus {
   message: string;
 }
 
-function ConnectionTab({ onTitleChange }: Props) {
+function ConnectionTab({ active, onTitleChange }: Props) {
   const { t, lang } = useTranslation();
   const [kind, setKind] = useState<DbKind>("mysql");
   const [host, setHost] = useState("127.0.0.1");
@@ -828,6 +831,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     const activeSavedConnection = savedConnections.find((c) => c.id === editingId);
     return (
       <MysqlWorkspace
+        active={active}
         connectionId={connectionId}
         initialDatabase={database}
         status={status}
@@ -845,6 +849,7 @@ function ConnectionTab({ onTitleChange }: Props) {
     const activeSavedConnection = savedConnections.find((c) => c.id === editingId);
     return (
       <MongoWorkspace
+        active={active}
         connectionId={connectionId}
         initialDatabase={mongoUriDatabase(uri)}
         status={status}

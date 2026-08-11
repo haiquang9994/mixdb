@@ -61,102 +61,104 @@ function QueryResults({ results, error, limitsAdded, limit }: Props) {
   }
 
   return (
-    <div className={styles.results}>
-      {error !== "" && (
-        <p className={styles.error} role="alert">
-          {error}
-        </p>
-      )}
-      {/* What the tab shows when it is first opened, so it is given a shape of its own rather than
-          left as one faint line in an empty pane. The same frame says so when a run produced no
-          results at all — a script of nothing but comments runs, successfully, and has nothing to
-          report; without this the pane simply went blank. */}
-      {error === "" && (results === null || results.length === 0) && (
-        <div className={styles.emptyState}>
-          <TerminalIcon size={30} className={styles.emptyIcon} />
-          <p className={styles.emptyTitle}>
-            {results === null ? t("query.emptyResults") : t("query.noStatements")}
-          </p>
-          <p className={styles.emptyHint}>
-            {results === null ? t("query.emptyHint") : t("query.noStatementsHint")}
-          </p>
-        </div>
-      )}
+    <>
       {/* Above the results rather than inside one of them: the ceiling was put on the script, and
-          which statements it touched is visible in the statement each result quotes. */}
+          which statements it touched is visible in the statement each result quotes.
+
+          Outside the scrolling column too, and not merely first in it. A result card is capped at
+          the full height of that column so it can never overhang the pane; a line of text sharing
+          the column with it pushed the first card down by its own height, and the bottom of that
+          card — the last rows of the table and the end of its scrollbar — off the bottom edge. */}
       {results !== null && limitsAdded > 0 && (
         <p className={styles.note}>{t("query.limitAdded", { n: limitsAdded, limit })}</p>
       )}
-      {results?.map((result, i) => (
-        <section key={i} className={styles.result}>
-          <header className={styles.resultHeader}>
-            <span className={styles.resultLabel}>
-              {t("query.resultLabel", { n: i + 1, verb: result.verb })}
-            </span>
-            <span className={styles.resultDuration}>
-              {t("query.duration", { ms: result.durationMs })}
-            </span>
-            {/* One line of it: the statement is in the editor above, and this is only here to say
-                which of the statements up there this result belongs to. */}
-            <span className={styles.resultStatement} title={result.statement}>
-              {result.statement}
-            </span>
-          </header>
-
-          <div className={styles.resultBody}>
-            {result.error === null ? (
-              <p className={styles.resultSummary}>{summary(result)}</p>
-            ) : (
-              <div className={styles.resultError} role="alert">
-                <p>{result.error}</p>
-                <p className={styles.resultErrorNote}>{t("query.statementFailed")}</p>
-              </div>
-            )}
-
-            {result.kind === "rows" && result.columns.length > 0 && (
-              <div className={styles.gridWrap}>
-                <table className={styles.grid}>
-                  <thead>
-                    <tr>
-                      <th className={styles.rowNumber}>#</th>
-                      {result.columns.map((column, c) => (
-                        // Keyed by position: an arbitrary SELECT may well name the same column
-                        // twice, which is also why the rows are positional.
-                        <th key={c}>{column}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.rows.map((row, r) => (
-                      <tr key={r}>
-                        <td className={styles.rowNumber}>{r + 1}</td>
-                        {result.columns.map((_, c) => {
-                          const value = displayValue(row[c]);
-                          const isNull = row[c] === null || row[c] === undefined;
-                          return (
-                            <td
-                              key={c}
-                              className={isNull ? styles.cellNull : undefined}
-                              // Only where the cell can actually be cut short. A result of a
-                              // thousand rows is tens of thousands of cells, and a tooltip on
-                              // every one of them is weight the grid carries for nothing.
-                              title={value.length > TOOLTIP_FROM ? value : undefined}
-                            >
-                              {value}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {result.rows.length === 0 && <p className={styles.noRows}>{t("query.noRows")}</p>}
-              </div>
-            )}
+      <div className={styles.results}>
+        {error !== "" && (
+          <p className={styles.error} role="alert">
+            {error}
+          </p>
+        )}
+        {/* A script of nothing but comments runs, successfully, and has nothing to report. Without
+            this the pane would rise and then simply be blank. Nothing is said about a tab that has
+            not been run yet — the pane is not standing up at all until something is. */}
+        {error === "" && results !== null && results.length === 0 && (
+          <div className={styles.emptyState}>
+            <TerminalIcon size={30} className={styles.emptyIcon} />
+            <p className={styles.emptyTitle}>{t("query.noStatements")}</p>
+            <p className={styles.emptyHint}>{t("query.noStatementsHint")}</p>
           </div>
-        </section>
-      ))}
-    </div>
+        )}
+        {results?.map((result, i) => (
+          <section key={i} className={styles.result}>
+            <header className={styles.resultHeader}>
+              <span className={styles.resultLabel}>
+                {t("query.resultLabel", { n: i + 1, verb: result.verb })}
+              </span>
+              <span className={styles.resultDuration}>
+                {t("query.duration", { ms: result.durationMs })}
+              </span>
+              {/* One line of it: the statement is in the editor above, and this is only here to say
+                  which of the statements up there this result belongs to. */}
+              <span className={styles.resultStatement} title={result.statement}>
+                {result.statement}
+              </span>
+            </header>
+
+            <div className={styles.resultBody}>
+              {result.error === null ? (
+                <p className={styles.resultSummary}>{summary(result)}</p>
+              ) : (
+                <div className={styles.resultError} role="alert">
+                  <p>{result.error}</p>
+                  <p className={styles.resultErrorNote}>{t("query.statementFailed")}</p>
+                </div>
+              )}
+
+              {result.kind === "rows" && result.columns.length > 0 && (
+                <div className={styles.gridWrap}>
+                  <table className={styles.grid}>
+                    <thead>
+                      <tr>
+                        <th className={styles.rowNumber}>#</th>
+                        {result.columns.map((column, c) => (
+                          // Keyed by position: an arbitrary SELECT may well name the same column
+                          // twice, which is also why the rows are positional.
+                          <th key={c}>{column}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.rows.map((row, r) => (
+                        <tr key={r}>
+                          <td className={styles.rowNumber}>{r + 1}</td>
+                          {result.columns.map((_, c) => {
+                            const value = displayValue(row[c]);
+                            const isNull = row[c] === null || row[c] === undefined;
+                            return (
+                              <td
+                                key={c}
+                                className={isNull ? styles.cellNull : undefined}
+                                // Only where the cell can actually be cut short. A result of a
+                                // thousand rows is tens of thousands of cells, and a tooltip on
+                                // every one of them is weight the grid carries for nothing.
+                                title={value.length > TOOLTIP_FROM ? value : undefined}
+                              >
+                                {value}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {result.rows.length === 0 && <p className={styles.noRows}>{t("query.noRows")}</p>}
+                </div>
+              )}
+            </div>
+          </section>
+        ))}
+      </div>
+    </>
   );
 }
 

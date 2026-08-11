@@ -5,8 +5,8 @@
  * [`mysql_script.rs`](../../src-tauri/src/db/mysql_script.rs) tests its own splitter with, written
  * out again here in the same order. That is the point: the two are ports of each other, and the
  * whole contract between them is that a script carves up the same way on both sides. A statement
- * the editor highlights and sends has to be the statement the server ends up running, or
- * `Ctrl+Enter` runs something other than what is marked in the margin.
+ * the editor marks in the margin has to be the statement the server ends up running as one, or the
+ * highlight, the error underlines and the write guard are all drawn around the wrong text.
  *
  * The second half covers what this port adds and the Rust one has no need of: where each statement
  * sits in the script, and which one the caret is in.

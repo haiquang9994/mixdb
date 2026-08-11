@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { mysqlCancelQuery, mysqlRunScript, mysqlValidateSql } from "../../mysql/api";
 import { columnDetail, completionSchema } from "../../mysql/completion";
 import {
@@ -16,6 +17,7 @@ import {
   statementAt,
   type SqlStatement,
 } from "../../mysql/statements";
+import ActionBar from "../ActionBar";
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
 import LoadingOverlay from "../LoadingOverlay";
@@ -29,19 +31,27 @@ import SqlEditor, {
 import QueryHistoryDialog from "./QueryHistoryDialog";
 import QueryResults from "./QueryResults";
 import QuerySnippetsDialog from "./QuerySnippetsDialog";
-import { BookmarkIcon, FormatIcon, HistoryIcon, PlayIcon, RunAllIcon } from "../../icons";
+import { useResultsPane } from "./resultsPane";
+import { useResultsZoom } from "./resultsZoom";
+import {
+  BookmarkIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  CloseIcon,
+  ExpandIcon,
+  FormatIcon,
+  HistoryIcon,
+  PlayIcon,
+} from "../../icons";
 import { useTranslation, type TranslationKey } from "../../i18n";
 import { errorMessage } from "../../errors";
+import { MODIFIER_LABEL, RELOAD_SHORTCUT, useReloadShortcut } from "../../reload";
 import { loadDraft, saveDraft, saveDraftNow } from "../../queryDrafts";
 import { recordQuery } from "../../queryHistory";
 import { useAutoLimit } from "../../querySettings";
 import { useQuerySnippets } from "../../querySnippets";
 import type { MysqlStatementResult } from "../../types";
 import styles from "./QueryEditor.module.css";
-
-/** The modifier the shortcuts are drawn with. The editor accepts either of the two, but only one of
- * them is written on the keyboard in front of the user. */
-const RUN_MODIFIER = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
 /** How many of a table's columns the hover tooltip lists before it stops and counts the rest. A
  *  wide table would otherwise fill the window with something nobody is reading to the end of. */
@@ -60,9 +70,10 @@ interface Props {
   /** The database picked in the header. Applied as a `USE` before the script, so unqualified table
    *  names resolve the way they do in the other tabs. Empty means none is selected. */
   database: string;
-  /** Whether the Query tab is the one being looked at. The tab stays mounted behind the others so
-   *  a script and its results survive a look at the data, but what completion reads is only worth
-   *  reading for someone who is actually here. */
+  /** Whether this is what the user is actually looking at — the Query tab, in the connection tab
+   *  the tab bar is showing. The tab stays mounted behind both so a script and its results survive
+   *  a look at the data, but what completion reads is only worth reading for someone who is
+   *  actually here, and `Ctrl+R` belongs to whichever pane that is. */
   active: boolean;
   /** The saved connection is marked as one nothing is written to, so a statement that would change
    *  anything is refused before it is sent. */
@@ -84,9 +95,9 @@ interface Props {
  * and everything else reports that it ran. A statement that failed carries the reason instead, and
  * stops the ones after it — the results before it are still shown.
  *
- * What actually runs is whichever of three things the user has pointed at: a selection if there is
- * one, else the statement the caret is in, and the whole script only when that is asked for
- * outright. The editor owns the caret, so it is the editor that answers the question.
+ * There is one way to run — `Ctrl+R`, or the Run button that is the same thing — and what it sends
+ * is decided by the selection: the selected text if there is any, the whole script if there is not.
+ * The editor owns the selection, so it is the editor that answers the question.
  */
 function QueryEditor({
   connectionId,
@@ -129,6 +140,14 @@ function QueryEditor({
    *  pressed: the caret moves while a name is being typed, and what is saved should not. */
   const [snippetSql, setSnippetSql] = useState<string | null>(null);
   const editorRef = useRef<SqlEditorHandle>(null);
+  /** The results pane, which is also the box the button below lifts over the window — the same
+   *  element either way, never a second copy of it. */
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const zoom = useResultsZoom(resultsRef);
+  /** The whole tab, measured when the divider is dragged: how tall the results may be is a question
+   *  about how much room there is, and this is the room. */
+  const tabRef = useRef<HTMLDivElement>(null);
+  const pane = useResultsPane(tabRef);
 
   /** Whether this tab has ever been the one on screen.
    *
@@ -205,8 +224,9 @@ function QueryEditor({
     return split.current.statements;
   }
 
-  /** Where the statement covering `pos` sits, which is what the editor highlights and what
-   * `Ctrl+Enter` sends. Split the same way the server splits the script it is given. */
+  /** Where the statement covering `pos` sits — what the editor draws its highlight over, so the
+   * boundaries the server will split the script on are visible while it is written. Nothing runs
+   * from it: `Ctrl+R` sends the selection or the lot. */
   const statementRange = useCallback((doc: string, pos: number) => {
     const statement = statementAt(doc, statementsOf(doc), pos);
     return statement && { from: statement.from, to: statement.to };
@@ -307,7 +327,7 @@ function QueryEditor({
         columns.length > HOVER_COLUMNS
           ? t("query.hoverMoreColumns", { n: columns.length - HOVER_COLUMNS })
           : null,
-        onOpenTable ? t("query.hoverJump", { mod: RUN_MODIFIER }) : null,
+        onOpenTable ? t("query.hoverJump", { mod: MODIFIER_LABEL }) : null,
       ].filter((part) => part !== null);
       return {
         ...at,
@@ -377,6 +397,8 @@ function QueryEditor({
       if (writes.length > 0) {
         setResults(null);
         setError(t("query.readOnlyBlocked", { verb: writes[0].verb }));
+        // The refusal is shown in the pane, so it has to be a pane that is up.
+        pane.reveal();
         return;
       }
     }
@@ -389,8 +411,26 @@ function QueryEditor({
     void run(text, statements);
   }
 
+  /** What the Run button and `Ctrl+R` both do: whatever the editor says is pointed at — the
+   *  selection, or the whole script when there is none. `sql.current` is the fallback for the
+   *  moment before the editor exists, which is only ever the very first press. */
+  const runRequested = () => requestRun(editorRef.current?.textToRun() || sql.current);
+
+  // The Query tab's answer to the shortcut every other pane answers with its reload button. The
+  // guard inside `requestRun` is what stops a second press while a script is in flight.
+  //
+  // Never from behind a dialog. The history and the snippets have the keyboard while they are open,
+  // and the unguarded-write question is the sharpest case of all: the key that opened it would send
+  // the very script it is asking about, around the answer it is waiting for.
+  useReloadShortcut(
+    active && !historyOpen && snippetSql === null && pending === null,
+    runRequested
+  );
+
   async function run(text: string, statements: SqlStatement[]) {
     busy.current = true;
+    // Whatever the pane was doing, a run is a request to see what comes back.
+    pane.reveal();
     setRunning(true);
     setCancelling(false);
     setError("");
@@ -480,15 +520,25 @@ function QueryEditor({
     }
   }
 
+  /** Whether there is anything for the pane to hold. The tab opens on nothing but the editor —
+   *  there is no result to show and no room worth spending on saying so — and this turns true the
+   *  moment the script is sent, so what the pane rises with is the running veil rather than an
+   *  empty frame. */
+  const hasResults = running || results !== null || error !== "";
+
+  /** Whether it is standing up: something to show, and not put away by the button in the footer. */
+  const showResults = hasResults && !pane.shut;
+
   return (
-    <div className={styles.queryEditor}>
+    <div ref={tabRef} className={styles.queryEditor}>
       <div className={styles.toolbar}>
+        {/* The only Run there is. What it runs is decided by the selection, not by a second
+            button: the whole script, or exactly the text picked out of it. */}
         <Button
           size="small"
           variant="primary"
-          className={styles.runButton}
-          title={`${RUN_MODIFIER}+Enter`}
-          onClick={() => requestRun(editorRef.current?.textToRun() || sql.current)}
+          title={`${RELOAD_SHORTCUT} — ${t("query.selectionHint")}`}
+          onClick={runRequested}
           disabled={running || !hasSql}
         >
           <PlayIcon size="0.9em" />
@@ -496,18 +546,7 @@ function QueryEditor({
         </Button>
         <Button
           size="small"
-          className={styles.runButton}
-          title={`${RUN_MODIFIER}+Shift+Enter`}
-          onClick={() => requestRun(editorRef.current?.allText() || sql.current)}
-          disabled={running || !hasSql}
-        >
-          <RunAllIcon size="0.9em" />
-          {t("query.runAll")}
-        </Button>
-        <Button
-          size="small"
-          className={styles.runButton}
-          title={`${RUN_MODIFIER}+Shift+F`}
+          title={`${MODIFIER_LABEL}+Shift+F`}
           onClick={() => editorRef.current?.format()}
           disabled={!hasSql}
         >
@@ -518,7 +557,6 @@ function QueryEditor({
             kept, and an empty editor is exactly when someone wants to go and fetch one. */}
         <Button
           size="small"
-          className={styles.runButton}
           title={t("query.snippetHint")}
           onClick={() => setSnippetSql(editorRef.current?.textToRun() || sql.current)}
         >
@@ -528,7 +566,7 @@ function QueryEditor({
         {/* Only for a saved connection: there would be nothing to file the history under
             otherwise, so there is nothing to open. */}
         {profileId !== "" && (
-          <Button size="small" className={styles.runButton} onClick={() => setHistoryOpen(true)}>
+          <Button size="small" onClick={() => setHistoryOpen(true)}>
             <HistoryIcon size="0.9em" />
             {t("query.history")}
           </Button>
@@ -564,17 +602,12 @@ function QueryEditor({
       <div className={styles.editorPane}>
         <div className={styles.editorBar}>
           <span>{t("query.editorHeading")}</span>
-          {/* Both shortcuts, because which of the two runs is the one thing about this editor
-              worth knowing. What a selection does is a line further in, as the strip's tooltip. */}
+          {/* One shortcut, because there is one way to run: what it sends is chosen by selecting,
+              not by picking a different key. The tooltip spells that out. */}
           <span className={styles.editorHints} title={t("query.selectionHint")}>
-            <kbd className={styles.key}>{RUN_MODIFIER}</kbd>
-            <kbd className={styles.key}>Enter</kbd>
+            <kbd className={styles.key}>{MODIFIER_LABEL}</kbd>
+            <kbd className={styles.key}>R</kbd>
             <span>{t("query.runShortcutHint")}</span>
-            <span aria-hidden="true">·</span>
-            <kbd className={styles.key}>{RUN_MODIFIER}</kbd>
-            <kbd className={styles.key}>Shift</kbd>
-            <kbd className={styles.key}>Enter</kbd>
-            <span className={styles.selectionHint}>{t("query.runAllShortcutHint")}</span>
           </span>
         </div>
         <div className={styles.editorHost}>
@@ -591,7 +624,6 @@ function QueryEditor({
               lint={lint}
               lookup={lookup}
               completions={completions}
-              onRun={requestRun}
               placeholder={t("query.placeholder")}
               ariaLabel={t("query.editorLabel")}
             />
@@ -637,11 +669,113 @@ function QueryEditor({
         />
       )}
 
-      <div className={styles.resultsWrap}>
-        <QueryResults results={results} error={error} limitsAdded={limitsAdded} limit={autoLimit} />
-        {running && (
-          <LoadingOverlay label={cancelling ? t("query.cancelling") : t("query.running")} />
+      {/* The backdrop the lifted box stands on. Portalled, and the only thing here that is: the box
+          itself stays exactly where it is in the tree, so lifting it costs no re-render of the
+          thousands of cells inside it. */}
+      {zoom.zoomed &&
+        createPortal(
+          <div
+            className={
+              zoom.leaving ? `${styles.zoomVeil} ${styles.zoomVeilOut}` : styles.zoomVeil
+            }
+            onMouseDown={zoom.close}
+          />,
+          document.body
         )}
+
+      {/* Only where there is something on both sides of it to divide. A tab that has not been run
+          has one pane, and a handle for splitting one pane is a handle for nothing. */}
+      {showResults && (
+        <div
+          className={pane.dragging ? `${styles.divider} ${styles.dividerHeld}` : styles.divider}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label={t("query.resizeResults")}
+          aria-valuenow={pane.height}
+          tabIndex={0}
+          {...pane.divider}
+        />
+      )}
+
+      {/* The room the results are given, and the only thing here whose height changes: the pane
+          inside is laid out at its full size from the first frame and pinned to the bottom edge, so
+          growing this uncovers it from the bottom up instead of laying out a thousand rows again on
+          every frame of the movement. */}
+      <div
+        className={[
+          styles.resultsSlot,
+          showResults ? "" : styles.resultsSlotShut,
+          pane.dragging ? styles.resultsSlotHeld : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        style={{ height: showResults ? pane.height : 0 }}
+        aria-hidden={!showResults}
+      >
+        <div className={styles.resultsPanel} style={{ height: pane.height }}>
+          <div
+            ref={resultsRef}
+            className={
+              zoom.zoomed ? `${styles.resultsWrap} ${styles.resultsZoomed}` : styles.resultsWrap
+            }
+          >
+            {/* Only while it is up: down in the tab the pane needs no title, since what is under
+                the editor is obviously what the editor produced. */}
+            {zoom.zoomed && (
+              <header className={styles.zoomBar}>
+                <span>{t("query.zoomTitle")}</span>
+                <button
+                  type="button"
+                  className={styles.historyClose}
+                  onClick={zoom.close}
+                  title={t("common.close")}
+                  aria-label={t("common.close")}
+                >
+                  <CloseIcon />
+                </button>
+              </header>
+            )}
+            <QueryResults
+              results={results}
+              error={error}
+              limitsAdded={limitsAdded}
+              limit={autoLimit}
+            />
+            {running && (
+              <LoadingOverlay label={cancelling ? t("query.cancelling") : t("query.running")} />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* The tab's own bar, in the same place and the same shape the data and document tabs put
+          theirs. It stays put whether or not there is a result above it — it is a fixture of the
+          tab rather than part of the pane that comes and goes, and what it holds says for itself
+          when there is nothing to act on. */}
+      <div className={styles.footer}>
+        <ActionBar
+          actions={[
+            {
+              key: "results",
+              // Points the way the pane will move: down to put it away, up to bring it back.
+              icon: showResults ? ChevronDownIcon : ChevronUpIcon,
+              label: showResults ? t("query.hideResults") : t("query.showResults"),
+              disabled: !hasResults,
+              disabledHint: t("query.resultsEmpty"),
+              onClick: pane.toggle,
+            },
+            {
+              key: "zoom",
+              icon: ExpandIcon,
+              label: t("query.zoom"),
+              // Nothing to lift is not the same as a button that does nothing: an icon with no
+              // text has to say why it is grey.
+              disabled: results === null || results.length === 0,
+              disabledHint: t("query.zoomEmpty"),
+              onClick: zoom.open,
+            },
+          ]}
+        />
       </div>
     </div>
   );

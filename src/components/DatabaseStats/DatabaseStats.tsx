@@ -4,6 +4,7 @@ import LoadingOverlay from "../LoadingOverlay";
 import { ChevronDownIcon, ChevronUpIcon, ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
+import { useReloadShortcut, withReloadShortcut } from "../../reload";
 import { mongoCollectionStats } from "../../mongo/api";
 import { mysqlTableStats } from "../../mysql/api";
 import type { TableStats } from "../../types";
@@ -54,8 +55,10 @@ interface Props {
   /** The database being measured. Never empty: the workspace shows a prompt instead of mounting
    *  this until one is selected. */
   database: string;
-  /** Whether the tab is the one on show. This stays mounted behind the others, so it is what says
-   *  when the figures are worth reading — and when a reload the user cannot see would be wasted. */
+  /** Whether this is what the user is actually looking at — the Stats tab, in the connection tab
+   *  the tab bar is showing. This stays mounted behind both, so it is what says when the figures
+   *  are worth reading, when a reload the user cannot see would be wasted, and which of the panes
+   *  mounted at once `Ctrl+R` belongs to. */
   active: boolean;
   onError: (message: string) => void;
 }
@@ -114,6 +117,13 @@ function DatabaseStats({ kind, connectionId, database, active, onError }: Props)
       cancelled = true;
     };
   }, [kind, connectionId, database, active, stats, onError]);
+
+  // Dropping the cache is the reload, the same as the button's. Gated on the same state it is: a
+  // re-read asked for while one is already out is one the button would refuse.
+  useReloadShortcut(active, () => {
+    if (loading) return;
+    setCache(null);
+  });
 
   const sorted = useMemo(() => {
     const rows = [...(stats ?? [])];
@@ -190,7 +200,7 @@ function DatabaseStats({ kind, connectionId, database, active, onError }: Props)
             {
               key: "reload",
               icon: ReloadIcon,
-              label: t("dbStats.reload"),
+              label: withReloadShortcut(t("dbStats.reload")),
               disabled: loading,
               busy: loading,
               // Dropping the cache is the reload: the effect reads again the moment there is
