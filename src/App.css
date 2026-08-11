@@ -566,6 +566,15 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 140px;
+  /* Sized by its entries rather than by the room left to the window edge: without this a menu
+     opened near the right edge is squeezed thin and its labels wrap, and the measurement that
+     places it (`components/contextMenuPosition.ts`) would be of that squeezed shape. */
+  width: max-content;
+  max-width: calc(100vw - 1rem);
+  /* The last resort for a menu with more entries than the window is tall — it is placed to fit
+     wherever it can first, and only scrolls when nowhere fits. */
+  max-height: calc(100vh - 1rem);
+  overflow-y: auto;
   background: var(--surface-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -574,7 +583,8 @@ body {
   gap: 0.1rem;
   /* Grows from the corner it is pinned by, so the eye is led back to what was right-clicked.
      Short: this is a step in a gesture, not a stop in one. Matches `.pop` in
-     `components/dialogMotion.module.css`, which does the same for the dropdowns. */
+     `components/dialogMotion.module.css`, which does the same for the dropdowns. The corner is
+     overridden inline when the menu had to flip up or left to stay in the window. */
   transform-origin: top left;
   animation: context-menu-in 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }

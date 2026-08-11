@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useState } from "react";
+import ContextMenu from "../ContextMenu";
 import styles from "./ItemList.module.css";
 
 /** One entry of the menu an item opens on right-click. */
@@ -44,21 +44,13 @@ function ItemList({
   actions,
 }: ItemListProps) {
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
 
   // The list this menu was opened over can be replaced under it — a reload, another database —
   // and an entry then acts on something no longer there.
   useEffect(() => {
     setMenu((open) => (open && items.includes(open.item) ? open : null));
   }, [items]);
-
-  useEffect(() => {
-    if (menu === null) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setMenu(null);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [menu]);
 
   const hasMenu = actions !== undefined && actions.length > 0;
 
@@ -86,39 +78,25 @@ function ItemList({
         ))}
         {items.length === 0 && emptyMessage && <li className={`muted ${styles.empty}`}>{emptyMessage}</li>}
       </ul>
-      {/* Out at the body, so the sidebar's own scrolling has nothing to clip it against. */}
-      {menu !== null &&
-        actions !== undefined &&
-        createPortal(
-          <>
-            <div
-              className="context-menu-overlay"
-              onClick={() => setMenu(null)}
-              onContextMenu={(e) => {
-                e.preventDefault();
+      {menu !== null && actions !== undefined && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={closeMenu}>
+          {actions.map((action) => (
+            <button
+              key={action.key}
+              type="button"
+              className={action.danger ? "context-menu-delete" : undefined}
+              disabled={action.disabled}
+              title={action.disabled ? action.disabledHint : undefined}
+              onClick={() => {
                 setMenu(null);
+                action.onSelect(menu.item);
               }}
-            />
-            <div className="context-menu" style={{ top: menu.y, left: menu.x }}>
-              {actions.map((action) => (
-                <button
-                  key={action.key}
-                  type="button"
-                  className={action.danger ? "context-menu-delete" : undefined}
-                  disabled={action.disabled}
-                  title={action.disabled ? action.disabledHint : undefined}
-                  onClick={() => {
-                    setMenu(null);
-                    action.onSelect(menu.item);
-                  }}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          </>,
-          document.body,
-        )}
+            >
+              {action.label}
+            </button>
+          ))}
+        </ContextMenu>
+      )}
     </div>
   );
 }

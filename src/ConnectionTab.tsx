@@ -14,6 +14,7 @@ import RedisWorkspace from "./redis/RedisWorkspace";
 import Select from "./components/Select";
 import ErrorBanner from "./components/ErrorBanner";
 import ConfirmDialog from "./components/ConfirmDialog";
+import ContextMenu from "./components/ContextMenu";
 import Button from "./components/Button";
 import Input from "./components/Input";
 import { EyeIcon, EyeOffIcon, PinIcon } from "./icons";
@@ -772,56 +773,53 @@ function ConnectionTab({ active, onTitleChange }: Props) {
           {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
         </section>
         {contextMenu && (
-          <>
-            <div className="context-menu-overlay" onClick={closeContextMenu} onContextMenu={(e) => e.preventDefault()} />
-            <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
+          <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={closeContextMenu}>
+            <button
+              type="button"
+              onClick={() => {
+                togglePinned(contextMenu.id);
+                closeContextMenu();
+              }}
+            >
+              {savedConnections.find((c) => c.id === contextMenu.id)?.pinned
+                ? t("connection.unpin")
+                : t("connection.pin")}
+            </button>
+            {/* MySQL only: the Query tab is the one place that refuses a write, so offering the
+                flag on a Mongo or Redis connection would promise a protection nothing keeps. */}
+            {savedConnections.find((c) => c.id === contextMenu.id)?.config.kind === "mysql" && (
               <button
                 type="button"
                 onClick={() => {
-                  togglePinned(contextMenu.id);
+                  toggleReadOnly(contextMenu.id);
                   closeContextMenu();
                 }}
               >
-                {savedConnections.find((c) => c.id === contextMenu.id)?.pinned
-                  ? t("connection.unpin")
-                  : t("connection.pin")}
+                {savedConnections.find((c) => c.id === contextMenu.id)?.readOnly
+                  ? t("connection.allowWrites")
+                  : t("connection.markReadOnly")}
               </button>
-              {/* MySQL only: the Query tab is the one place that refuses a write, so offering the
-                  flag on a Mongo or Redis connection would promise a protection nothing keeps. */}
-              {savedConnections.find((c) => c.id === contextMenu.id)?.config.kind === "mysql" && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    toggleReadOnly(contextMenu.id);
-                    closeContextMenu();
-                  }}
-                >
-                  {savedConnections.find((c) => c.id === contextMenu.id)?.readOnly
-                    ? t("connection.allowWrites")
-                    : t("connection.markReadOnly")}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  duplicateSavedConnection(contextMenu.id);
-                  closeContextMenu();
-                }}
-              >
-                {t("common.duplicate")}
-              </button>
-              <button
-                type="button"
-                className="context-menu-delete"
-                onClick={() => {
-                  deleteSavedConnection(contextMenu.id);
-                  closeContextMenu();
-                }}
-              >
-                {t("common.delete")}
-              </button>
-            </div>
-          </>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                duplicateSavedConnection(contextMenu.id);
+                closeContextMenu();
+              }}
+            >
+              {t("common.duplicate")}
+            </button>
+            <button
+              type="button"
+              className="context-menu-delete"
+              onClick={() => {
+                deleteSavedConnection(contextMenu.id);
+                closeContextMenu();
+              }}
+            >
+              {t("common.delete")}
+            </button>
+          </ContextMenu>
         )}
       </div>
     );

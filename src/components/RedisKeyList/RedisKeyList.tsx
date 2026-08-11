@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RedisKeyInfo } from "../../redis/api";
 import {
   ancestorPaths,
@@ -9,6 +8,7 @@ import {
   TREE_NAV_KEYS,
   visibleRows,
 } from "../../redis/keyTree";
+import ContextMenu from "../ContextMenu";
 import RedisTypeBadge from "../RedisTypeBadge";
 import { ChevronDownIcon, ChevronRightIcon, FolderIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
@@ -146,14 +146,7 @@ function RedisKeyList({
     setMenu((open) => (open && rows.some((row) => row.node.path === open.path) ? open : null));
   }, [rows]);
 
-  useEffect(() => {
-    if (menu === null) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setMenu(null);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [menu]);
+  const closeMenu = useCallback(() => setMenu(null), []);
 
   const hasGroupMenu = groupActions !== undefined && groupActions.length > 0;
 
@@ -320,37 +313,23 @@ function RedisKeyList({
           )
         )}
       </div>
-      {/* Out at the body, so the sidebar's own scrolling has nothing to clip it against. */}
-      {menu !== null &&
-        groupActions !== undefined &&
-        createPortal(
-          <>
-            <div
-              className="context-menu-overlay"
-              onClick={() => setMenu(null)}
-              onContextMenu={(e) => {
-                e.preventDefault();
+      {menu !== null && groupActions !== undefined && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={closeMenu}>
+          {groupActions.map((action) => (
+            <button
+              key={action.key}
+              type="button"
+              className={action.danger ? "context-menu-delete" : undefined}
+              onClick={() => {
                 setMenu(null);
+                action.onSelect(menu.path);
               }}
-            />
-            <div className="context-menu" style={{ top: menu.y, left: menu.x }}>
-              {groupActions.map((action) => (
-                <button
-                  key={action.key}
-                  type="button"
-                  className={action.danger ? "context-menu-delete" : undefined}
-                  onClick={() => {
-                    setMenu(null);
-                    action.onSelect(menu.path);
-                  }}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          </>,
-          document.body,
-        )}
+            >
+              {action.label}
+            </button>
+          ))}
+        </ContextMenu>
+      )}
     </div>
   );
 }
