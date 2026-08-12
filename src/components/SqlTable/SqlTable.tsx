@@ -24,6 +24,14 @@ import {
   useVirtualRows,
   widestValues,
 } from "../../virtualRows";
+import {
+  fileTable,
+  rememberedTable,
+  sameRequest,
+  type Sort,
+  type TableCache,
+  type TableRequest,
+} from "./request";
 import type { MysqlColumnMeta } from "../../types";
 import styles from "./SqlTable.module.css";
 
@@ -63,13 +71,6 @@ interface EditingCell {
   col: string;
 }
 
-/** Which column the grid is ordered by, and which way. Only ever one at a time: clicking a header
- * replaces this rather than adding to it. `null` is the table's own order, untouched. */
-interface Sort {
-  column: string;
-  desc: boolean;
-}
-
 /** The header click cycle: unsorted → descending → ascending → unsorted. */
 function nextSort(current: Sort | null, column: string): Sort | null {
   if (current?.column !== column) return { column, desc: true };
@@ -100,6 +101,8 @@ function tableCacheKey(db: string, table: string): string {
 export interface RememberedFilters {
   rows: FilterRow<FilterOperator>[];
   applied: MysqlFilter[];
+  /** Which shape of the database the conditions were written against — see {@link Props.schemaToken}. */
+  schemaToken: number;
 }
 
 /** Every table's bar, by the table it belongs to. Held by the workspace rather than here: the grid
@@ -108,11 +111,23 @@ export interface RememberedFilters {
  * table. */
 export type FilterCache = Map<string, RememberedFilters>;
 
-interface TableColumnsInfo {
-  columns: string[];
-  columnMeta: Record<string, MysqlColumnMeta>;
-  primaryKey: string[];
-  autoIncrementColumn: string | null;
+/**
+ * The bar remembered for a table, or nothing when there is nothing worth speaking for.
+ *
+ * Conditions written before the app last changed this table are nothing: they name columns that may
+ * since have been renamed or dropped, and the name they are filed under may since have been dropped
+ * and given to a different table altogether — put back onto that table, they answer the next read
+ * with `Unknown column` rather than with rows. Deleting the entry at the moment of the change is not
+ * enough on its own: the grid is still holding the bar in state and files it straight back on the way
+ * out, so the check has to be here, where the cache is read.
+ */
+function rememberedFilters(
+  cache: FilterCache,
+  key: string,
+  schemaToken: number,
+): RememberedFilters | undefined {
+  const entry = cache.get(key);
+  return entry?.schemaToken === schemaToken ? entry : undefined;
 }
 
 interface Props {
@@ -128,6 +143,15 @@ interface Props {
   layoutWidth?: number;
   /** Where the filter bar is kept between visits — see {@link FilterCache}. */
   filterCache: FilterCache;
+  /** Where the rows themselves are kept between visits — see {@link TableCache}. */
+  tableCache: TableCache;
+  /** Which shape of this database the cache is allowed to speak for. The workspace moves it
+   *  whenever the app changes that shape, and everything remembered under the shape before is then
+   *  read again rather than shown — see {@link TableRequest.schemaToken}. */
+  schemaToken: number;
+  /** Told when rows have been inserted or deleted here. The grid catches up with itself; what the
+   *  table weighs is the Statistics tab's business, and the workspace is what holds those figures. */
+  onRowsChanged?: () => void;
   /** The saved connection is marked as one nothing is written to. The grid still reads, sorts,
    *  filters and pages exactly as it does otherwise — what goes is every door out of read mode. */
   readOnly?: boolean;
@@ -143,19 +167,30 @@ function SqlTable({
   onError,
   layoutWidth,
   filterCache,
+  tableCache,
+  schemaToken,
+  onRowsChanged,
   readOnly = false,
 }: Props) {
   const { t } = useTranslation();
   const tableKey = tableCacheKey(selectedDb, selectedTable);
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(100);
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [columns, setColumns] = useState<string[]>([]);
-  const [columnMeta, setColumnMeta] = useState<Record<string, MysqlColumnMeta>>({});
-  const [primaryKey, setPrimaryKey] = useState<string[]>([]);
-  const [autoIncrementColumn, setAutoIncrementColumn] = useState<string | null>(null);
-  const [total, setTotal] = useState(0);
-  const [sort, setSort] = useState<Sort | null>(null);
+  // Everything below opens on what this table was last left showing, when it has been here before.
+  // A grid mounted afresh — the connection reopened, another database picked and this one come back
+  // to — is then the grid that was left, rather than a first read of the table all over again.
+  const restored = rememberedTable(tableCache, tableKey, schemaToken);
+  const [page, setPage] = useState(restored?.request.page ?? 0);
+  const [pageSize, setPageSize] = useState(restored?.request.pageSize ?? 100);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(restored?.rows ?? []);
+  const [columns, setColumns] = useState<string[]>(restored?.columns ?? []);
+  const [columnMeta, setColumnMeta] = useState<Record<string, MysqlColumnMeta>>(
+    restored?.columnMeta ?? {},
+  );
+  const [primaryKey, setPrimaryKey] = useState<string[]>(restored?.primaryKey ?? []);
+  const [autoIncrementColumn, setAutoIncrementColumn] = useState<string | null>(
+    restored?.autoIncrementColumn ?? null,
+  );
+  const [total, setTotal] = useState(restored?.total ?? 0);
+  const [sort, setSort] = useState<Sort | null>(restored?.request.sort ?? null);
   // The filter bar edits `filterRows` freely; only Apply copies them into `appliedFilters`, which
   // is what the fetch below reads. Keeping the two apart is what stops a half-typed condition
   // from reloading the grid on every keystroke.
@@ -165,14 +200,91 @@ function SqlTable({
   // A trip to Structure or Query no longer comes through here at all: the grid stays mounted
   // behind those tabs, bar and all.
   const [filterRows, setFilterRows] = useState<FilterRow<FilterOperator>[]>(
-    () => filterCache.get(tableKey)?.rows ?? []
+    () => rememberedFilters(filterCache, tableKey, schemaToken)?.rows ?? []
   );
   const [appliedFilters, setAppliedFilters] = useState<MysqlFilter[]>(
-    () => filterCache.get(tableKey)?.applied ?? []
+    () => rememberedFilters(filterCache, tableKey, schemaToken)?.applied ?? []
   );
   // The table whose columns the bar was last seeded from. The seed needs the column list, which
   // is only known once the first fetch lands (or from the cache, when there is one).
   const filtersSeededForRef = useRef<string | null>(null);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  /** Where the grid is scrolled to, kept up to date as it moves. This, and not the box itself, is
+   *  what the position is read from — the box cannot be asked at either of the two moments it
+   *  matters. On the way out React has already detached the ref, and a pane hidden behind another
+   *  tab has no layout box at all; both would answer "the top", and filing that would lose a grid
+   *  left halfway down. */
+  const scrollPosRef = useRef({ top: restored?.scrollTop ?? 0, left: restored?.scrollLeft ?? 0 });
+
+  // The request the rows on screen came from. Held from one render to the next so that coming back
+  // to the Data tab can tell "nothing has changed since these rows were read" — which is free — from
+  // "the table, the page, the order or the conditions moved while the tab was hidden", which is a
+  // read owed. It is also what says which conditions the rows answer, so that what is filed away for
+  // the next visit is a page of rows and the very filters that produced it.
+  const requestRef = useRef<TableRequest | null>(null);
+
+  /**
+   * Files the grid away as it stands, under the table it belongs to, for the next visit to open on.
+   *
+   * Only what a read actually produced is filed. Until the first one lands there is nothing here
+   * worth keeping — an entry written then would be restored later as a grid that has already been
+   * read, every row of it empty, and the fetch that should have filled it is the very thing the
+   * entry says is not owed. And the request filed is the one the rows came from, never the one the
+   * form is asking for next: conditions applied while the read was still out belong to the rows
+   * that answer them, not to the rows already on screen.
+   */
+  function rememberTable(key: string) {
+    const loaded = requestRef.current;
+    if (columns.length === 0 || loaded === null) return;
+    fileTable(tableCache, key, {
+      columns,
+      columnMeta,
+      primaryKey,
+      autoIncrementColumn,
+      rows,
+      total,
+      request: loaded,
+      scrollTop: scrollPosRef.current.top,
+      scrollLeft: scrollPosRef.current.left,
+    });
+  }
+
+  /** The bar as it was last committed, for the two writes that cannot read the state themselves: the
+   * render that first sees another table — where `filterRows` still belongs to the outgoing one, but
+   * `schemaToken` is already counted for the incoming one — and a cleanup, which runs long after the
+   * last render. Declared above both so either can reach it. */
+  const filterStateRef = useRef({
+    key: tableKey,
+    rows: filterRows,
+    applied: appliedFilters,
+    schemaToken,
+  });
+  useEffect(() => {
+    filterStateRef.current = {
+      key: viewTableKey,
+      rows: filterRows,
+      applied: appliedFilters,
+      schemaToken,
+    };
+  });
+
+  /**
+   * Files the bar away under the table it belongs to and the shape of the database it was written
+   * against. That shape is what a later visit judges it by: conditions the workspace has let go of
+   * are filed straight back from here, and the token is the only thing that tells them apart from
+   * conditions that still mean something.
+   *
+   * Only a bar that has had its opening row is worth remembering. Before the columns land there is
+   * nothing in it, and filing that away would read on the way back in as a bar deliberately
+   * emptied — leaving the table with no `id =` row to start from, for good.
+   */
+  function rememberFilters() {
+    const { key, rows, applied, schemaToken: token } = filterStateRef.current;
+    if (filtersSeededForRef.current !== key) return;
+    filterCache.set(key, { rows, applied, schemaToken: token });
+  }
 
   // What the fetch below reads — the page, the order and the conditions — is about one table, so
   // it is swapped over here, during the render that first sees a new table, rather than from an
@@ -184,39 +296,59 @@ function SqlTable({
   if (viewTableKey !== tableKey) {
     // Put the outgoing table's bar away before its state is replaced. This is where it has to
     // happen: by the time any effect runs, `filterRows` already belongs to the new table.
-    filterCache.set(viewTableKey, { rows: filterRows, applied: appliedFilters });
+    rememberFilters();
+    rememberTable(viewTableKey);
     setViewTableKey(tableKey);
-    setPage(0);
-    setSort(null);
+    // A table that has been here before opens where it was left rather than at its first page in
+    // its own order; `pageSize` falls back to the one in hand rather than to the default, so a
+    // size chosen for the last table is still carried onto a table never seen before.
+    setPage(restored?.request.page ?? 0);
+    setPageSize(restored?.request.pageSize ?? pageSize);
+    setSort(restored?.request.sort ?? null);
     // The rows of the bar are put back alongside the columns they name, in the effect below.
-    setAppliedFilters(filterCache.get(tableKey)?.applied ?? []);
+    setAppliedFilters(rememberedFilters(filterCache, tableKey, schemaToken)?.applied ?? []);
   }
 
-  /** The bar as it stands, for the write on the way out: a cleanup runs long after the last
-   * render, so it cannot read the state itself. */
-  const filterStateRef = useRef({ key: viewTableKey, rows: filterRows, applied: appliedFilters });
-  useEffect(() => {
-    filterStateRef.current = { key: viewTableKey, rows: filterRows, applied: appliedFilters };
-  });
+  // The same swap, for the app having changed this table under the grid rather than the user
+  // having moved to another one. The conditions that were running were written against columns
+  // that may since have been renamed or dropped, and sending them again would answer the table
+  // with `Unknown column` rather than with rows; the workspace has already let go of the bar they
+  // came from, so this picks up nothing and the grid opens unfiltered. Here rather than in the
+  // effect below for the reason the swap above is: by then the fetch has already gone out.
+  const [viewSchemaToken, setViewSchemaToken] = useState(schemaToken);
+  if (viewSchemaToken !== schemaToken) {
+    setViewSchemaToken(schemaToken);
+    setAppliedFilters(rememberedFilters(filterCache, tableKey, schemaToken)?.applied ?? []);
+  }
 
   // The bar is put away on the way out as well as on the way to another table: the grid is
   // unmounted when the connection tab closes, and what it was carrying should be there again if
   // the same table is opened later.
   useEffect(() => {
     return () => {
-      const { key, rows, applied } = filterStateRef.current;
-      // Only a bar that has had its opening row is worth remembering. Before the columns land
-      // there is nothing in it, and filing that away would read on the way back in as a bar
-      // deliberately emptied — leaving the table with no `id =` row to start from, for good.
-      if (filtersSeededForRef.current !== key) return;
-      filterCache.set(key, { rows, applied });
+      rememberFilters();
     };
   }, [filterCache]);
+
+  /** The grid as it stands, for the write on the way out — the same reason `filterStateRef` exists:
+   *  a cleanup runs long after the last render and cannot read the state itself. */
+  const tableStateRef = useRef<(key: string) => void>(rememberTable);
+  useEffect(() => {
+    tableStateRef.current = rememberTable;
+  });
+
+  // Filed away on the way out as well as on the way to another table: this is unmounted when the
+  // sidebar loses its selection — picking another database does it — and what was on screen should
+  // be there again when the table is opened later.
+  useEffect(() => {
+    return () => {
+      tableStateRef.current(filterStateRef.current.key);
+    };
+  }, []);
 
   const [loading, setLoading] = useState(false);
   // Bumped by the reload action to re-run the fetch below with the page/size unchanged.
   const [reloadToken, setReloadToken] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const [editingCell, setEditingCellState] = useState<EditingCell | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -228,7 +360,6 @@ function SqlTable({
   } | null>(null);
   const editInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const currentTableRef = useRef({ db: selectedDb, table: selectedTable });
-  const columnsCacheRef = useRef<Map<string, TableColumnsInfo>>(new Map());
   const thRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const tableRef = useRef<HTMLTableElement>(null);
@@ -237,6 +368,25 @@ function SqlTable({
    *  divide between them. Null while the table is sizing itself, which is a small page or the first
    *  frame of a large one. */
   const [gridColumns, setGridColumns] = useState<{ widths: number[]; total: number } | null>(null);
+
+  // Back to where the grid was left. `scrollPosRef` is the only record of that: hiding a pane
+  // behind another tab is `display: none`, which takes its layout box away and the browser's
+  // memory of the position with it, so coming back from Structure needs putting back just as
+  // coming back from another table does. Re-applying a position the box is already at costs
+  // nothing, which is what makes running this on every change of rows harmless.
+  //
+  // `rows` is in the deps because that is what says the DOM is showing this table: the rows put
+  // back for a table come from an effect, so a commit earlier than theirs has nothing of the right
+  // height to scroll within and the position would only be clamped away. A layout effect, not an
+  // effect, so the scrollbar moves before the browser paints rather than after — and declared
+  // above `useVirtualRows` so that the window of rows is chosen for where the grid has been put
+  // back to, rather than for the top and corrected a frame later.
+  useLayoutEffect(() => {
+    const node = scrollRef.current;
+    if (!node || !active) return;
+    node.scrollLeft = scrollPosRef.current.left;
+    node.scrollTop = scrollPosRef.current.top;
+  }, [selectedDb, selectedTable, active, rows]);
 
   // Only the rows on screen are built into the DOM past a certain size. Everything the grid does —
   // selecting, editing, sorting, deleting — is indexed against `rows` rather than against what is
@@ -250,6 +400,17 @@ function SqlTable({
     enabled: virtual,
     pinned: editingCell?.rowIndex ?? null,
   });
+
+  /** Every move of the scrollbar, noted so that the position survives the grid being hidden,
+   *  swapped for another table or unmounted — see {@link scrollPosRef}. A box with no layout is
+   *  not believed: it reports the top, and that is the one answer that must not be filed. */
+  function handleScroll() {
+    const node = scrollRef.current;
+    if (node && node.clientHeight > 0) {
+      scrollPosRef.current = { top: node.scrollTop, left: node.scrollLeft };
+    }
+    if (virtual) view.onScroll();
+  }
 
   // Selected rows are held as indices into the current page: selection is a
   // property of what is on screen, and every path that replaces the rows
@@ -381,31 +542,45 @@ function SqlTable({
     return () => window.removeEventListener("resize", onResize);
   }, [columns]);
 
-  // Runs only when the selected table itself changes (not on page/pageSize
-  // changes). Applies a cached column layout immediately if we have one for
-  // this table, so the header can render right away without stale rows from
-  // the previous table; otherwise clears columns so the whole grid stays
-  // hidden until the fetch below resolves.
+  // Runs when the selected table changes, and when the database's shape does (not on page/pageSize
+  // changes). A table that has been here before is put back as it was left — its rows included, so
+  // the trip costs nothing and shows what it showed; otherwise everything is cleared so the grid
+  // stays hidden until the fetch below resolves.
   useEffect(() => {
     setEditingCell(null);
     pendingRowRef.current = null;
-    setRows([]);
-    setTotal(0);
-    // The page, the sort and the applied filters have already been reset above, during the
-    // render that saw the table change — see the note there.
+    // The page, the size, the sort and the applied filters have already been put back above, during
+    // the render that saw the table change — see the note there.
     const key = tableCacheKey(selectedDb, selectedTable);
-    const cached = columnsCacheRef.current.get(key);
+    const cached = rememberedTable(tableCache, key, schemaToken);
+    // Where the grid goes back to once its rows are in the DOM — see the layout effect below. Set
+    // here rather than left to the box itself, which is at the top whatever the last table did.
+    scrollPosRef.current = { top: cached?.scrollTop ?? 0, left: cached?.scrollLeft ?? 0 };
     // A table that has been here before gets its own bar back; only a first visit is seeded with
     // the opening `id =` row.
-    const remembered = filterCache.get(key);
+    const remembered = rememberedFilters(filterCache, key, schemaToken);
     if (cached) {
       setColumns(cached.columns);
       setColumnMeta(cached.columnMeta);
       setPrimaryKey(cached.primaryKey);
       setAutoIncrementColumn(cached.autoIncrementColumn);
+      setRows(cached.rows);
+      setTotal(cached.total);
       setFilterRows(remembered?.rows ?? initialFilterRows(cached.columns, "eq"));
       filtersSeededForRef.current = key;
+      // What those rows were read with, so the fetch below can tell that nothing is owed — but only
+      // if the bar is asking the same question the rows answer. The two are kept apart (the bar in
+      // `filterCache`, the rows here), and conditions applied while a read was still out are filed
+      // with no rows to match, so the pair has to be checked rather than assumed. By value: the
+      // arrays come from different places, and the fetch's own identity check is the one that has to
+      // be satisfied afterwards, which is why this render's array is what gets marked as loaded.
+      requestRef.current =
+        JSON.stringify(cached.request.filters) === JSON.stringify(appliedFilters)
+          ? { ...cached.request, filters: appliedFilters, reloadToken }
+          : null;
     } else {
+      setRows([]);
+      setTotal(0);
       setColumns([]);
       setColumnMeta({});
       setPrimaryKey([]);
@@ -413,8 +588,14 @@ function SqlTable({
       setFilterRows(remembered?.rows ?? []);
       // Nothing is owed a seed once the bar has been restored, or the fetch would overwrite it.
       filtersSeededForRef.current = remembered ? key : null;
+      // Nothing read for this table yet, so the fetch below is owed one — whatever the previous
+      // table left marked here.
+      requestRef.current = null;
     }
-  }, [selectedDb, selectedTable]);
+    // `schemaToken` is in here as well as the table: a change the app made to this database leaves
+    // what is on screen describing a shape the server no longer has, and running this again is what
+    // empties the grid and marks a read owed.
+  }, [selectedDb, selectedTable, schemaToken]);
 
   // The indices in `selectedRows` only mean anything for the rows currently on
   // screen, so any refetch — a new page, a new size, a new order, a reload, a
@@ -423,29 +604,23 @@ function SqlTable({
     clearSelection();
   }, [selectedDb, selectedTable, page, pageSize, sort, appliedFilters, reloadToken]);
 
-  // Everything the fetch below is about. Held from one render to the next so that coming back to
-  // the Data tab can tell "nothing has changed since these rows were read" — which is free — from
-  // "the table, the page, the order or the conditions moved while the tab was hidden", which is a
-  // read owed. Identity, not value: a fresh `appliedFilters` array is a fresh request even when it
-  // says the same thing, which is what makes Apply re-read.
-  const requestRef = useRef<unknown[] | null>(null);
+  const request: TableRequest = {
+    connectionId,
+    db: selectedDb,
+    table: selectedTable,
+    page,
+    pageSize,
+    sort,
+    filters: appliedFilters,
+    reloadToken,
+    schemaToken,
+  };
 
   useEffect(() => {
     // Nothing is read for a tab nobody is looking at: the sidebar walked while the Structure tab is
     // up would otherwise send a page of rows and a count per table passed over.
     if (!active) return;
-    const request = [
-      connectionId,
-      selectedDb,
-      selectedTable,
-      page,
-      pageSize,
-      sort,
-      appliedFilters,
-      reloadToken,
-    ];
-    const loaded = requestRef.current;
-    if (loaded && loaded.every((value, i) => value === request[i])) return;
+    if (sameRequest(requestRef.current, request)) return;
 
     const db = selectedDb;
     const table = selectedTable;
@@ -461,11 +636,21 @@ function SqlTable({
       .then((result) => {
         if (cancelled) return;
         const key = tableCacheKey(db, table);
-        columnsCacheRef.current.set(key, {
+        // What was just read is what the next visit to this table opens on. Filed here rather than
+        // only on the way out: a read that landed is worth keeping even if the app is closed on
+        // this very table, and the way out has nothing to add beyond where the grid is scrolled to.
+        fileTable(tableCache, key, {
           columns: result.columns,
           columnMeta: result.columnMeta,
           primaryKey: result.primaryKey,
           autoIncrementColumn: result.autoIncrementColumn,
+          rows: result.rows,
+          total: result.total,
+          request,
+          // Where the grid is right now, which for a first read of a table is the top and for a
+          // reload is wherever the user had got to — a reload is not a reason to lose their place.
+          scrollTop: scrollPosRef.current.top,
+          scrollLeft: scrollPosRef.current.left,
         });
         // First look at this table's columns — the bar has been waiting for them to put its
         // opening `id` row together.
@@ -499,15 +684,9 @@ function SqlTable({
     sort,
     appliedFilters,
     reloadToken,
+    schemaToken,
     active,
   ]);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollLeft = 0;
-      scrollRef.current.scrollTop = 0;
-    }
-  }, [selectedTable]);
 
   function commitEditingCell() {
     const cell = editingCellRef.current;
@@ -548,12 +727,21 @@ function SqlTable({
       await mysqlUpdateRow(connectionId, dbAtFlush, tableAtFlush, pending.changes, key);
     } catch (e) {
       onError(errorMessage(t, e));
-      setRows((prevRows) => {
-        if (currentTableRef.current.db !== dbAtFlush || currentTableRef.current.table !== tableAtFlush) {
-          return prevRows;
-        }
-        return prevRows.map((r, i) => (i === pending.rowIndex ? { ...r, ...pending.original } : r));
-      });
+      // The value MySQL refused is on screen and may already be filed away: the grid is put away as
+      // it stands the moment the user leaves the table, which is exactly what they do while a write
+      // is still out. Nothing here can be rolled back in the cache — the entry was written from a
+      // render that had the edit in it — so it goes, and the next visit reads the row as the server
+      // has it. Free while the table is still up: the rows are held in state, and the entry is
+      // written again from them on the way out.
+      tableCache.delete(tableCacheKey(dbAtFlush, tableAtFlush));
+      // On screen, only if the grid is still showing the table the write was for. Otherwise there is
+      // nothing of this row rendered to put back, and the rows in hand belong to another table.
+      if (currentTableRef.current.db !== dbAtFlush || currentTableRef.current.table !== tableAtFlush) {
+        return;
+      }
+      setRows((prevRows) =>
+        prevRows.map((r, i) => (i === pending.rowIndex ? { ...r, ...pending.original } : r)),
+      );
     }
   }
 
@@ -635,6 +823,9 @@ function SqlTable({
     setInsertMode(null);
     focusGrid();
     setReloadToken((n) => n + 1);
+    // The table holds more rows and takes more disk than the Statistics tab was told. That is the
+    // workspace's to answer: a change this app made itself is the one thing not waited on.
+    onRowsChanged?.();
   }
 
   async function openDeleteConfirm() {
@@ -663,6 +854,8 @@ function SqlTable({
       );
       if (wholeTable) setPage(0);
       setReloadToken((n) => n + 1);
+      // Same as an insert: what the table weighs has changed, and the figures are not this grid's.
+      onRowsChanged?.();
     } catch (e) {
       onError(errorMessage(t, e));
     } finally {
@@ -866,7 +1059,7 @@ function SqlTable({
           ref={scrollRef}
           tabIndex={-1}
           onKeyDown={handleGridKeyDown}
-          onScroll={virtual ? view.onScroll : undefined}
+          onScroll={handleScroll}
         >
           <table
             ref={tableRef}

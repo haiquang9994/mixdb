@@ -155,6 +155,12 @@ export interface DocumentProps {
    * the card adopts its edits on success and rolls them back on failure. The list owns the
    * connection, the progress indicator and the error reporting. Not used by a draft. */
   onWrite?: (id: TypedValue, ops: DocUpdateOps) => Promise<boolean>;
+  /** Told what the server holds for this document, each time a write lands: the version handed
+   * down, so the list can find it again, and the version that replaces it. The card keeps its own
+   * working copy, so without this the list goes on holding the document as it was read — and it is
+   * the list's copy, not the card's, that is remembered for the next visit to the collection. Not
+   * used by a draft, which the server has never seen. */
+  onSaved?: (fetched: TypedDocument, saved: TypedDocument) => void;
   /** Asks the list to remove this document; it refetches the page afterwards. */
   onDelete?: (id: TypedValue) => Promise<boolean>;
   /** Draft only: the working copy, reported on every change so the form can submit it. */
@@ -185,6 +191,7 @@ function Document({
   draft = false,
   registerFlush,
   onWrite,
+  onSaved,
   onDelete,
   onChange,
   onRemove,
@@ -215,6 +222,20 @@ function Document({
    * and what to roll back to when a write fails. A draft has no such version — the empty
    * document stands in, which is what makes every field of it read as newly added. */
   const originalRef = useRef<TypedDocument>(draft ? {} : fetchedDoc);
+  /** The list's adopt hook and the document it handed down, as of this render. Reached through a
+   * ref rather than closed over, so that `renameProp` below keeps one identity: it is handed to a
+   * memoized tree, and a fresh callback every time the document changes would re-render every row
+   * of it — which is the whole reason the card is memoized. */
+  const savedRef = useRef({ fetched: fetchedDoc, onSaved });
+  savedRef.current = { fetched: fetchedDoc, onSaved };
+
+  /** Tells the list what the server now holds for this document. Called once `originalRef` has
+   * moved, which is the one place that says a write landed — the working copy on screen may be
+   * ahead of it, and what the list remembers must be what the server confirmed. */
+  const reportSaved = useCallback(() => {
+    const { fetched, onSaved: report } = savedRef.current;
+    report?.(fetched, originalRef.current);
+  }, []);
   // Set once this document is on its way out: its staged edits are moot, and the page-wide
   // flush that precedes the delete must not write them back moments before it lands.
   const abandonedRef = useRef(false);
@@ -310,6 +331,7 @@ function Document({
     if (await onWrite(idRef.current, ops)) {
       originalRef.current = workingDoc;
       setDoc(workingDoc);
+      reportSaved();
       flashSaved();
     } else {
       setDoc(originalRef.current);
@@ -452,6 +474,7 @@ function Document({
       if (await onWrite(idRef.current, ops)) {
         // The server document moved, so the baseline setValue diffs against has to move too.
         originalRef.current = renameKeyAtPath(originalRef.current, path, newKey) as TypedDocument;
+        reportSaved();
       } else {
         setDoc(before.doc);
         setPendingSet(before.pendingSet);
@@ -459,7 +482,7 @@ function Document({
         setRenamedPaths(before.renamedPaths);
       }
     },
-    [draft, onWrite],
+    [draft, onWrite, reportSaved],
   );
 
   const activateEdit = useCallback((path: string[], mode: DocumentEditMode) => {

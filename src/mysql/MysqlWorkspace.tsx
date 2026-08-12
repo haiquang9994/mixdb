@@ -19,15 +19,17 @@ import DatabaseActions from "../components/DatabaseActions";
 import type { DatabaseChange } from "../components/DatabaseActions";
 import DatabaseDialog from "../components/DatabaseDialog";
 import DatabaseStats from "../components/DatabaseStats";
+import type { StatsCache } from "../components/DatabaseStats";
 import TransferOverlay from "../components/TransferOverlay";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import NameDialog from "../components/NameDialog";
 import SqlTable from "../components/SqlTable";
-import type { FilterCache } from "../components/SqlTable";
+import type { FilterCache, TableCache } from "../components/SqlTable";
 import QueryEditor from "../components/QueryEditor";
 import TableDialog from "../components/TableDialog";
 import TableStructure from "../components/TableStructure";
+import type { StructureCache } from "../components/TableStructure";
 import ActionBar from "../components/ActionBar";
 import ItemList from "../components/ItemList";
 import type { ItemAction } from "../components/ItemList";
@@ -130,6 +132,122 @@ function MysqlWorkspace({
    * to the Structure tab. Kept out here because either move unmounts the grid, and kept for as
    * long as this connection's tab is open. */
   const filterCache = useRef<FilterCache>(new Map()).current;
+
+  /** The same idea, for everything else the panes have read: the rows of each table, its shape, and
+   * what the database as a whole weighs. All three live out here rather than inside the pane that
+   * reads them, so that leaving a table — or leaving the database it is in — is something to come
+   * back from rather than something to be read all over again.
+   *
+   * Nothing in here expires on its own. What is shown is what was last read, and the reload each
+   * pane carries (and `Ctrl+R`) is what says otherwise — a client that quietly re-read behind the
+   * user's back would be the thing that made a slow server unusable. The one thing that is not
+   * waited on is a change this app made itself: see {@link forgetTable}. */
+  const tableCache = useRef<TableCache>(new Map()).current;
+  const structureCache = useRef<StructureCache>(new Map()).current;
+  const statsCache = useRef<StatsCache>(new Map()).current;
+
+  /**
+   * How many times this app has changed the shape of something in this connection, counted per
+   * thing changed: a single table under `db :: table`, a whole database under its own name.
+   *
+   * Two counts rather than one so that altering a table does not cost every other table in the
+   * database the page of rows already read for it. Nothing that happens to one table can change
+   * what was read for the one beside it; what a restore or a drop does, on the other hand, reaches
+   * all of them at once, and that is what the database's own count is for.
+   */
+  const [schemaTokens, setSchemaTokens] = useState<Record<string, number>>({});
+
+  /** What the Data and Structure panes watch, for the table they are showing: the two counts added,
+   * so that either one moving is a change they have to notice. Both only ever go up, so their sum
+   * does too — which is all the panes ask of it, since they only compare it against the one their
+   * own entry was filed under. */
+  const schemaToken =
+    (schemaTokens[selectedDb] ?? 0) +
+    (selectedTable === null ? 0 : (schemaTokens[`${selectedDb} :: ${selectedTable}`] ?? 0));
+
+  /** What the Statistics pane watches. Counted apart from the above, and not merely under another
+   * key in it, because the figures answer to something different: they are about the database as a
+   * whole, so a single table altered moves them just as a restore does — and because a database
+   * with a table actually named `stats` must not be able to collide with them. */
+  const [statsTokens, setStatsTokens] = useState<Record<string, number>>({});
+  const statsToken = statsTokens[selectedDb] ?? 0;
+
+  /** Moves the count against each of `keys`, and the one the figures are read under. Every path
+   * below ends here: whatever changed, the database now weighs something else. */
+  const bumpTokens = useCallback((database: string, keys: string[]) => {
+    setSchemaTokens((tokens) => {
+      const next = { ...tokens };
+      for (const key of keys) next[key] = (next[key] ?? 0) + 1;
+      return next;
+    });
+    setStatsTokens((tokens) => ({ ...tokens, [database]: (tokens[database] ?? 0) + 1 }));
+  }, []);
+
+  /**
+   * Everything remembered about one table, let go, because this app has just changed it — created,
+   * renamed, dropped, or a column altered. Both names are given for a rename, since the table has
+   * left one and arrived at the other.
+   *
+   * Waiting for the user to press reload is right for a change somebody else made on the server;
+   * it is wrong for one made from in here, where what is on screen is knowably about a table that
+   * no longer exists in that form. A name is the sharp end of it: a table dropped and made again
+   * under the same name is a different table, and the entry filed under that name would otherwise
+   * be handed to it.
+   *
+   * The counts are bumped as well as the entries dropped, and it has to be both. Dropping alone
+   * does not reach the panes — a Map is the same object before and after, so nothing re-renders off
+   * it, and the grid on screen is holding its own copy of the rows in state and would file them
+   * straight back on the way out. The counts are what the panes actually watch; the entries are
+   * dropped so that a table nobody returns to is not left holding a page of rows for the rest of
+   * the session.
+   */
+  const forgetTable = useCallback(
+    (...tables: string[]) => {
+      if (!selectedDb) return;
+      // The Query tab completes from its own copy of the shape, kept per connection and database.
+      invalidateSchemaOutline(connectionId, selectedDb);
+      const keys = tables.map((table) => `${selectedDb} :: ${table}`);
+      for (const key of keys) {
+        tableCache.delete(key);
+        structureCache.delete(key);
+        // The filter bar goes with them: its conditions name columns, and a column renamed or
+        // dropped turns the next read into `Unknown column` rather than into rows. Conditions the
+        // user typed are their own work, which is why only the table actually changed loses them.
+        filterCache.delete(key);
+      }
+      bumpTokens(selectedDb, keys);
+    },
+    [connectionId, selectedDb, bumpTokens],
+  );
+
+  /**
+   * The same, for a change no single table can be named for — a dump restored over the database, or
+   * the database itself dropped — and for the sidebar's reload, which is the plainest way for the
+   * user to say "forget what you were told about this database".
+   */
+  const forgetDatabase = useCallback(() => {
+    if (!selectedDb) return;
+    invalidateSchemaOutline(connectionId, selectedDb);
+    const prefix = `${selectedDb} :: `;
+    for (const key of tableCache.keys()) if (key.startsWith(prefix)) tableCache.delete(key);
+    for (const key of structureCache.keys()) if (key.startsWith(prefix)) structureCache.delete(key);
+    for (const key of filterCache.keys()) if (key.startsWith(prefix)) filterCache.delete(key);
+    bumpTokens(selectedDb, [selectedDb]);
+  }, [connectionId, selectedDb, bumpTokens]);
+
+  /**
+   * Rows written rather than the shape of something changed — an insert, a delete, an `UPDATE` from
+   * the Query tab.
+   *
+   * Nothing remembered about a table is wrong for this: the columns are where they were, and the pane
+   * that did the writing has read its own page again already. What has moved is what the database
+   * holds, and that is the one thing the figures on the Statistics tab are — so only their count is
+   * bumped, and a session spent editing rows never costs a re-read of anything else.
+   */
+  const rowsChanged = useCallback(() => {
+    if (!selectedDb) return;
+    setStatsTokens((tokens) => ({ ...tokens, [selectedDb]: (tokens[selectedDb] ?? 0) + 1 }));
+  }, [selectedDb]);
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -308,18 +426,24 @@ function MysqlWorkspace({
     setContentMode("data");
   }, []);
 
-  const reloadTables = useCallback(() => {
+  /** Reads the sidebar's list of tables again, and nothing else. What follows a table created,
+   * renamed or dropped: the list is out of date, but every other table in the database was read
+   * just as truthfully a moment ago, and the one that changed has already been let go of by name. */
+  const listTables = useCallback(() => {
     if (!selectedDb) return;
     setTablesLoading(true);
-    // Every path here follows something that changed the database's shape — a table created,
-    // renamed, dropped, or a whole restore. The Query tab completes from a cached copy of that
-    // shape, and this is the one place all of those meet.
-    invalidateSchemaOutline(connectionId, selectedDb);
     mysqlListTables(connectionId, selectedDb)
       .then((t) => setTables(t))
       .catch((e) => setLocalError(errorMessage(t, e)))
       .finally(() => setTablesLoading(false));
   }, [connectionId, selectedDb]);
+
+  /** The sidebar's reload button, and what a restore leaves behind: the list read again, and
+   * everything remembered about the database let go with it. */
+  const reloadTables = useCallback(() => {
+    forgetDatabase();
+    listTables();
+  }, [forgetDatabase, listTables]);
 
   /** What a restore or a drop of the whole database leaves to be caught up with: a restore has
    * replaced the tables under the list, and a drop has taken the database itself away. */
@@ -328,6 +452,9 @@ function MysqlWorkspace({
       reloadTables();
       return;
     }
+    // The database itself has gone; nothing read from it is worth keeping, and a database made
+    // again under the same name later is not the one these entries are about.
+    forgetDatabase();
     setSelectedDb("");
     setSelectedTable(null);
     setTables([]);
@@ -353,7 +480,10 @@ function MysqlWorkspace({
     // Cleared so the new table is visible whatever was being searched for when it was made.
     setTableFilter("");
     setSelectedTable(name);
-    reloadTables();
+    // Under this name there may be an older table of the same one, dropped earlier in the session
+    // and remembered still; what was read for it is not what this one holds.
+    forgetTable(name);
+    listTables();
   }
 
   /** Renames the table and follows it: whatever was open on it stays open, under the new name.
@@ -363,7 +493,10 @@ function MysqlWorkspace({
     setRenamingTable(null);
     setTableFilter("");
     if (selectedTable === table) setSelectedTable(newName);
-    reloadTables();
+    // Both ends of the move: the name it has left, and the name it has arrived at — which may have
+    // been another table's until it was dropped.
+    forgetTable(table, newName);
+    listTables();
   }
 
   /** Drops the table the confirmation was asking about. Nothing is left open on it afterwards. */
@@ -372,7 +505,8 @@ function MysqlWorkspace({
     try {
       await mysqlDropTable(connectionId, selectedDb, table);
       if (selectedTable === table) setSelectedTable(null);
-      reloadTables();
+      forgetTable(table);
+      listTables();
     } catch (e) {
       setLocalError(errorMessage(t, e));
     }
@@ -581,6 +715,9 @@ function MysqlWorkspace({
                 onError={setLocalError}
                 layoutWidth={width}
                 filterCache={filterCache}
+                tableCache={tableCache}
+                schemaToken={schemaToken}
+                onRowsChanged={rowsChanged}
                 readOnly={readOnly}
               />
             </div>
@@ -598,6 +735,9 @@ function MysqlWorkspace({
                 selectedDb={selectedDb}
                 selectedTable={selectedTable}
                 onError={setLocalError}
+                structureCache={structureCache}
+                schemaToken={schemaToken}
+                onSchemaChanged={() => forgetTable(selectedTable)}
                 readOnly={readOnly}
               />
             </div>
@@ -615,6 +755,8 @@ function MysqlWorkspace({
                 database={selectedDb}
                 active={active && contentMode === "stats"}
                 onError={setLocalError}
+                statsCache={statsCache}
+                schemaToken={statsToken}
               />
             </div>
           )}
@@ -629,6 +771,11 @@ function MysqlWorkspace({
               readOnly={readOnly}
               profileId={profileId}
               onOpenTable={openTable}
+              // A script that changed the shape of the database is the sidebar's reload, arrived at
+              // from the other direction: the list of tables may be out of date, and so is everything
+              // read from any table in it — the statement could have named any of them, or several.
+              // Rows written are only the figures.
+              onDatabaseChanged={(change) => (change === "schema" ? reloadTables() : rowsChanged())}
             />
           </div>
         </section>

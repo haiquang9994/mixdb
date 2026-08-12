@@ -15,12 +15,13 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import DatabaseActions from "../components/DatabaseActions";
 import type { DatabaseChange } from "../components/DatabaseActions";
 import DatabaseStats from "../components/DatabaseStats";
+import type { StatsCache } from "../components/DatabaseStats";
 import TransferOverlay from "../components/TransferOverlay";
 import ErrorBanner from "../components/ErrorBanner";
 import Input from "../components/Input";
 import NameDialog from "../components/NameDialog";
 import NoSqlTable from "../components/NoSqlTable";
-import type { FilterCache } from "../components/NoSqlTable";
+import type { DocumentCache, FilterCache } from "../components/NoSqlTable";
 import ActionBar from "../components/ActionBar";
 import ItemList from "../components/ItemList";
 import type { ItemAction } from "../components/ItemList";
@@ -108,6 +109,111 @@ function MongoWorkspace({
    * another collection or to the Stats tab. Kept out here because either move unmounts the
    * document list, and kept for as long as this connection's tab is open. */
   const filterCache = useRef<FilterCache>(new Map()).current;
+
+  /** The page of documents each collection was last left showing, and the figures the Stats tab has
+   * read for each database. Both live out here rather than inside the pane that reads them, so that
+   * leaving a collection — or leaving the database it is in — is something to come back from rather
+   * than something to be read all over again.
+   *
+   * Nothing in here expires on its own. What is shown is what was last read, and the reload each
+   * pane carries (and `Ctrl+R`) is what says otherwise — a client that quietly re-read behind the
+   * user's back would be the thing that made a slow server unusable. The one thing that is not
+   * waited on is a change this app made itself: see {@link forgetCollection}. */
+  const documentCache = useRef<DocumentCache>(new Map()).current;
+  const statsCache = useRef<StatsCache>(new Map()).current;
+
+  /**
+   * How many times this app has changed the shape of something in this connection, counted per
+   * thing changed: a single collection under `db :: collection`, a whole database under its own
+   * name.
+   *
+   * Two counts rather than one so that dropping one collection does not cost every other collection
+   * in the database the page of documents already read for it. Nothing that happens to one can
+   * change what was read for the one beside it; what a restore or a drop does, on the other hand,
+   * reaches all of them at once.
+   */
+  const [schemaTokens, setSchemaTokens] = useState<Record<string, number>>({});
+
+  /** What the Data pane watches, for the collection it is showing: the two counts added, so that
+   * either one moving is a change it has to notice. Both only ever go up, so their sum does too. */
+  const schemaToken =
+    (schemaTokens[selectedDb] ?? 0) +
+    (selectedCollection === null
+      ? 0
+      : (schemaTokens[`${selectedDb} :: ${selectedCollection}`] ?? 0));
+
+  /** What the Statistics pane watches. Counted apart from the above, because the figures are about
+   * the database as a whole: one collection dropped moves them just as a restore does — and because
+   * a database with a collection actually named `stats` must not collide with them. */
+  const [statsTokens, setStatsTokens] = useState<Record<string, number>>({});
+  const statsToken = statsTokens[selectedDb] ?? 0;
+
+  /** Moves the count against each of `keys`, and the one the figures are read under. Every path
+   * below ends here: whatever changed, the database now holds something else. */
+  const bumpTokens = useCallback((database: string, keys: string[]) => {
+    setSchemaTokens((tokens) => {
+      const next = { ...tokens };
+      for (const key of keys) next[key] = (next[key] ?? 0) + 1;
+      return next;
+    });
+    setStatsTokens((tokens) => ({ ...tokens, [database]: (tokens[database] ?? 0) + 1 }));
+  }, []);
+
+  /**
+   * Everything remembered about one collection, let go, because this app has just changed it —
+   * created, renamed or dropped. Both names are given for a rename, since the collection has left
+   * one and arrived at the other.
+   *
+   * Waiting for the user to press reload is right for a change somebody else made on the server; it
+   * is wrong for one made from in here, where what is on screen is knowably about a collection that
+   * no longer exists in that form. A name is the sharp end of it: a collection dropped and made
+   * again under the same name is a different collection, and the entry filed under that name would
+   * otherwise be handed to it.
+   *
+   * The counts are bumped as well as the entries dropped, and it has to be both. Dropping alone
+   * does not reach the panes — a Map is the same object before and after, so nothing re-renders off
+   * it, and the list on screen is holding its own copy of the documents in state and would file
+   * them straight back on the way out.
+   */
+  const forgetCollection = useCallback(
+    (...collections: string[]) => {
+      if (!selectedDb) return;
+      const keys = collections.map((collection) => `${selectedDb} :: ${collection}`);
+      for (const key of keys) {
+        documentCache.delete(key);
+        // The filter bar goes with them: its conditions name fields, and the documents under a
+        // name that has changed hands need carry no field by that name at all.
+        filterCache.delete(key);
+      }
+      bumpTokens(selectedDb, keys);
+    },
+    [selectedDb, bumpTokens],
+  );
+
+  /** The same, for a change no single collection can be named for — a dump restored over the
+   * database, or the database itself dropped — and for the sidebar's reload, which is the plainest
+   * way for the user to say "forget what you were told about this database". */
+  const forgetDatabase = useCallback(() => {
+    if (!selectedDb) return;
+    const prefix = `${selectedDb} :: `;
+    for (const key of documentCache.keys()) if (key.startsWith(prefix)) documentCache.delete(key);
+    for (const key of filterCache.keys()) if (key.startsWith(prefix)) filterCache.delete(key);
+    bumpTokens(selectedDb, [selectedDb]);
+  }, [selectedDb, bumpTokens]);
+
+  /**
+   * Documents inserted or deleted, rather than a collection created, renamed or dropped.
+   *
+   * Nothing about the shape of the database has moved, so nothing remembered about a collection is
+   * wrong — the list that did the writing has refetched its own page already. What has moved is what
+   * the database holds, which is the one thing the figures on the Stats tab are: they are counted per
+   * collection, so a document either way makes them out of date. Only their count is bumped, so a
+   * long session of edits never costs a re-read of anything else.
+   */
+  const documentsChanged = useCallback(() => {
+    if (!selectedDb) return;
+    setStatsTokens((tokens) => ({ ...tokens, [selectedDb]: (tokens[selectedDb] ?? 0) + 1 }));
+  }, [selectedDb]);
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -256,7 +362,11 @@ function MongoWorkspace({
     };
   }, [connectionId, selectedDb]);
 
-  const reloadCollections = useCallback(() => {
+  /** Reads the sidebar's list of collections again, and nothing else. What follows a collection
+   * created, renamed or dropped: the list is out of date, but every other collection in the
+   * database was read just as truthfully a moment ago, and the one that changed has already been
+   * let go of by name. */
+  const listCollections = useCallback(() => {
     if (!selectedDb) return;
     setCollectionsLoading(true);
     mongoListCollections(connectionId, selectedDb)
@@ -265,6 +375,13 @@ function MongoWorkspace({
       .finally(() => setCollectionsLoading(false));
   }, [connectionId, selectedDb]);
 
+  /** The sidebar's reload button, and what a restore leaves behind: the list read again, and
+   * everything remembered about the database let go with it. */
+  const reloadCollections = useCallback(() => {
+    forgetDatabase();
+    listCollections();
+  }, [forgetDatabase, listCollections]);
+
   /** What a restore or a drop of the whole database leaves to be caught up with: a restore has
    * replaced the collections under the list, and a drop has taken the database itself away. */
   async function databaseChanged(change: DatabaseChange) {
@@ -272,6 +389,9 @@ function MongoWorkspace({
       reloadCollections();
       return;
     }
+    // The database itself has gone; nothing read from it is worth keeping, and a database made
+    // again under the same name later is not the one these entries are about.
+    forgetDatabase();
     setSelectedDb("");
     setSelectedCollection(null);
     setCollections([]);
@@ -308,7 +428,10 @@ function MongoWorkspace({
     // Cleared so the new collection is visible whatever was being searched for when it was made.
     setCollectionFilter("");
     setSelectedCollection(name);
-    reloadCollections();
+    // Under this name there may be an older collection of the same one, dropped earlier in the
+    // session and remembered still; what was read for it is not what this one holds.
+    forgetCollection(name);
+    listCollections();
   }
 
   /** Renames the collection and follows it: whatever was open on it stays open, under the new
@@ -318,7 +441,10 @@ function MongoWorkspace({
     setRenamingCollection(null);
     setCollectionFilter("");
     if (selectedCollection === collection) setSelectedCollection(newName);
-    reloadCollections();
+    // Both ends of the move: the name it has left, and the name it has arrived at — which may have
+    // been another collection's until it was dropped.
+    forgetCollection(collection, newName);
+    listCollections();
   }
 
   /** Drops the collection the confirmation was asking about. */
@@ -327,7 +453,8 @@ function MongoWorkspace({
     try {
       await mongoDropCollection(connectionId, selectedDb, collection);
       if (selectedCollection === collection) setSelectedCollection(null);
-      reloadCollections();
+      forgetCollection(collection);
+      listCollections();
     } catch (e) {
       setLocalError(errorMessage(t, e));
     }
@@ -509,22 +636,32 @@ function MongoWorkspace({
           {contentMode === "data" && !selectedCollection && (
             <p className="muted">{t("mongo.selectCollectionPrompt")}</p>
           )}
-          {contentMode === "data" && selectedDb && selectedCollection && (
-            <NoSqlTable
-              active={active}
-              connectionId={connectionId}
-              selectedDb={selectedDb}
-              selectedCollection={selectedCollection}
-              onError={setLocalError}
-              layoutWidth={width}
-              filterCache={filterCache}
-            />
+          {/* Kept mounted while the Stats tab is up, and hidden rather than unmounted: the page of
+              documents read, what has been typed into the cards and the conditions in the filter
+              bar all outlive a look at what the database as a whole weighs. A collection picked
+              while this is hidden costs nothing until the tab is looked at again. */}
+          {selectedDb && selectedCollection && (
+            <div className={contentMode === "data" ? "mongo-panel" : "mongo-panel-hidden"}>
+              <NoSqlTable
+                active={active && contentMode === "data"}
+                connectionId={connectionId}
+                selectedDb={selectedDb}
+                selectedCollection={selectedCollection}
+                onError={setLocalError}
+                layoutWidth={width}
+                filterCache={filterCache}
+                documentCache={documentCache}
+                schemaToken={schemaToken}
+                onDocumentsChanged={documentsChanged}
+              />
+            </div>
           )}
           {contentMode === "stats" && !selectedDb && (
             <p className="muted">{t("mongo.selectDatabaseStatsPrompt")}</p>
           )}
           {/* Kept mounted while the document list is up, and hidden rather than unmounted: the
-              figures it has read stay read, so coming back to the tab costs nothing. */}
+              figures it has read stay read, so coming back to the tab costs nothing. The same goes
+              for coming back to a database, which the cache beside it is what makes free. */}
           {selectedDb && (
             <div className={contentMode === "stats" ? "mongo-panel" : "mongo-panel-hidden"}>
               <DatabaseStats
@@ -533,6 +670,8 @@ function MongoWorkspace({
                 database={selectedDb}
                 active={active && contentMode === "stats"}
                 onError={setLocalError}
+                statsCache={statsCache}
+                schemaToken={statsToken}
               />
             </div>
           )}

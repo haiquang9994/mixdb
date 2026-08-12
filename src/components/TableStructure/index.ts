@@ -1,1 +1,1 @@
-export { default } from "./TableStructure";
+export { default, type RememberedStructure, type StructureCache } from "./TableStructure";

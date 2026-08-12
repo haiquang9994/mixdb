@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   mongoCollectionPage,
   mongoDeleteDocument,
@@ -26,11 +26,20 @@ import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
 import { initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
+import {
+  fileDocuments,
+  rememberedDocuments,
+  sameRequest,
+  type DocumentCache,
+  type DocumentRequest,
+} from "./request";
 import styles from "./NoSqlTable.module.css";
 
 interface Props {
-  /** Whether the connection tab this list sits in is the one on show. Only the list the user is
-   *  looking at answers `Ctrl+R` — the others stay mounted behind their tabs. */
+  /** Whether this is what the user is actually looking at — the Data tab, in the connection tab the
+   *  tab bar is showing. This stays mounted behind both, so it is what says when a page of
+   *  documents is worth reading, when a reload the user cannot see would be wasted, and which of
+   *  the panes mounted at once `Ctrl+R` belongs to. */
   active: boolean;
   connectionId: string;
   selectedDb: string;
@@ -39,6 +48,16 @@ interface Props {
   layoutWidth?: number;
   /** Where the filter bar is kept between visits — see {@link FilterCache}. */
   filterCache: FilterCache;
+  /** Where the documents themselves are kept between visits — see {@link DocumentCache}. */
+  documentCache: DocumentCache;
+  /** Which shape of this database the cache is allowed to speak for. The workspace moves it
+   *  whenever the app changes that shape, and everything remembered under the shape before is then
+   *  read again rather than shown — see {@link DocumentRequest.schemaToken}. */
+  schemaToken: number;
+  /** Told when a document has been inserted or deleted here. What the collection holds has changed,
+   *  which the list catches up with itself; the figures the Statistics tab has read for the database
+   *  are counted from the same documents, and it is the workspace that holds those. */
+  onDocumentsChanged?: () => void;
 }
 
 /** Where a loaded page came from. Held in state rather than read off the props, so the write
@@ -60,6 +79,8 @@ export interface RememberedFilters {
   rows: FilterRow<MongoFilterOperator>[];
   applied: MongoFilter[];
   fields: string[];
+  /** Which shape of the database the bar was written against — see {@link Props.schemaToken}. */
+  schemaToken: number;
 }
 
 /** Every collection's bar, by the collection it belongs to. Held by the workspace rather than
@@ -67,6 +88,24 @@ export interface RememberedFilters {
  * it would go with it — the conditions have to outlive a trip to the Stats tab, not just a trip to
  * another collection. */
 export type FilterCache = Map<string, RememberedFilters>;
+
+/**
+ * The bar remembered for a collection, or nothing when there is nothing worth speaking for.
+ *
+ * Conditions written before the app last changed this collection are nothing: the name they are
+ * filed under may since have been dropped and given to a different collection altogether, whose
+ * documents need carry no field the conditions name. Deleting the entry at the moment of the change
+ * is not enough on its own — the list is still holding the bar in state and files it straight back
+ * on the way out — so the check has to be here, where the cache is read.
+ */
+function rememberedFilters(
+  cache: FilterCache,
+  key: string,
+  schemaToken: number,
+): RememberedFilters | undefined {
+  const entry = cache.get(key);
+  return entry?.schemaToken === schemaToken ? entry : undefined;
+}
 
 /** The only field every document is guaranteed to carry, and so the one the bar can offer before
  * a page has been loaded to read any others off. */
@@ -86,15 +125,27 @@ function NoSqlTable({
   selectedCollection,
   onError,
   filterCache,
+  documentCache,
+  schemaToken,
+  onDocumentsChanged,
 }: Props) {
   const { t } = useTranslation();
   const collectionKey = `${selectedDb} :: ${selectedCollection}`;
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(50);
-  const [documents, setDocuments] = useState<TypedDocument[]>([]);
-  const [target, setTarget] = useState<Target | null>(null);
-  const [total, setTotal] = useState(0);
+  // Everything below opens on what this collection was last left showing, when it has been here
+  // before. A list mounted afresh — the connection reopened, another database picked and this one
+  // come back to — is then the list that was left, rather than a first read of it all over again.
+  const restored = rememberedDocuments(documentCache, collectionKey, schemaToken);
+  const [page, setPage] = useState(restored?.request.page ?? 0);
+  const [pageSize, setPageSize] = useState(restored?.request.pageSize ?? 50);
+  const [documents, setDocuments] = useState<TypedDocument[]>(restored?.documents ?? []);
+  const [target, setTarget] = useState<Target | null>(
+    restored ? { connectionId, database: selectedDb, collection: selectedCollection } : null,
+  );
+  const [total, setTotal] = useState(restored?.total ?? 0);
   const [loading, setLoading] = useState(false);
+  // Bumped by the reload action, by a delete and by an insert, to run the fetch below again with
+  // the page and the conditions unchanged.
+  const [reloadToken, setReloadToken] = useState(0);
   // Counted rather than a flag: a Save and a rename can overlap, and the last one to finish
   // is what should clear the indicator.
   const [writeCount, setWriteCount] = useState(0);
@@ -108,20 +159,64 @@ function NoSqlTable({
   // is what the fetch below reads. Keeping the two apart is what stops a half-typed condition
   // from reloading the list on every keystroke.
   //
-  // All three start from whatever this collection's bar was left carrying: the list is mounted
-  // afresh every time the header comes back to the Data tab, and a bar restored only on the way to
-  // another collection would come back empty from a trip to the Stats tab.
+  // All three start from whatever this collection's bar was left carrying, so a list mounted
+  // afresh — the connection reopened, or a collection picked after none was — opens on the
+  // conditions it closed on. A trip to the Stats tab no longer comes through here at all: the list
+  // stays mounted behind it, bar and all.
   const [filterRows, setFilterRows] = useState<FilterRow<MongoFilterOperator>[]>(
-    () => filterCache.get(collectionKey)?.rows ?? initialFilterRows(ID_FIELD, "eq"),
+    () =>
+      rememberedFilters(filterCache, collectionKey, schemaToken)?.rows ??
+      initialFilterRows(ID_FIELD, "eq"),
   );
   const [appliedFilters, setAppliedFilters] = useState<MongoFilter[]>(
-    () => filterCache.get(collectionKey)?.applied ?? [],
+    () => rememberedFilters(filterCache, collectionKey, schemaToken)?.applied ?? [],
   );
   // What the field select offers: seeded from the collection's first page and added to by every
   // page after it, never narrowed — see `mergeDocumentFields`.
   const [fields, setFields] = useState<string[]>(
-    () => filterCache.get(collectionKey)?.fields ?? ID_FIELD,
+    () => rememberedFilters(filterCache, collectionKey, schemaToken)?.fields ?? ID_FIELD,
   );
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  /** How far down the cards the list is, kept up to date as it moves. This, and not the box itself,
+   *  is what the position is read from — the box cannot be asked at either of the two moments it
+   *  matters. On the way out React has already detached the ref, and a list hidden behind the Stats
+   *  tab has no layout box at all; both would answer "the top", and filing that would lose a list
+   *  left halfway down. */
+  const scrollPosRef = useRef(restored?.scrollTop ?? 0);
+
+  // The request the documents on screen came from. Held from one render to the next so that coming
+  // back to the Data tab can tell "nothing has changed since these were read" — which is free —
+  // from "the collection, the page or the conditions moved while the tab was hidden", which is a
+  // read owed. It is also what says which conditions the documents answer, so that what is filed
+  // away for the next visit is a page and the very filters that produced it.
+  //
+  // Empty even when a page has just been restored above: whether those documents answer the
+  // conditions the bar is carrying is a comparison, not something a mount can assume, and the
+  // effect below is where it is made.
+  const requestRef = useRef<DocumentRequest | null>(null);
+
+  /**
+   * Files the list away as it stands, under the collection it belongs to, for the next visit.
+   *
+   * Only what a read actually produced is filed. Until the first one lands there is nothing here
+   * worth keeping — an entry written then would be restored later as a list that has already been
+   * read, with no cards in it, and the fetch that should have filled it is the very thing the entry
+   * says is not owed. And the request filed is the one the documents came from, never the one the
+   * bar is asking for next: conditions applied while the read was still out belong to the documents
+   * that answer them, not to the ones already on screen.
+   */
+  function rememberDocuments(key: string) {
+    const loaded = requestRef.current;
+    if (loaded === null) return;
+    fileDocuments(documentCache, key, {
+      documents,
+      total,
+      request: loaded,
+      scrollTop: scrollPosRef.current,
+    });
+  }
 
   const flushersRef = useRef<Set<() => Promise<void>>>(new Set());
 
@@ -137,6 +232,36 @@ function NoSqlTable({
     await Promise.all(Array.from(flushersRef.current, (flush) => flush()));
   }, []);
 
+  /** The bar as it was last committed, for the two writes that cannot read the state themselves:
+   * the render that first sees another collection — where `filterRows` still belongs to the
+   * outgoing one, but `schemaToken` is already counted for the incoming one — and a cleanup, which
+   * runs long after the last render. Declared above both so either can reach it. */
+  const filterStateRef = useRef({
+    key: collectionKey,
+    rows: filterRows,
+    applied: appliedFilters,
+    fields,
+    schemaToken,
+  });
+  useEffect(() => {
+    filterStateRef.current = {
+      key: viewCollectionKey,
+      rows: filterRows,
+      applied: appliedFilters,
+      fields,
+      schemaToken,
+    };
+  });
+
+  /** Files the bar away under the collection it belongs to and the shape of the database it was
+   * written against. That shape is what a later visit checks it by: conditions the workspace has
+   * let go of are filed straight back from here, and only the token tells them apart from
+   * conditions that still mean something. */
+  function rememberFilters() {
+    const { key, ...remembered } = filterStateRef.current;
+    filterCache.set(key, remembered);
+  }
+
   // Everything above is about one collection, and the page and the applied filters are what the
   // fetch below reads. They are swapped over here, during the render that first sees a new
   // collection, rather than from an effect: an effect would run after the same commit as the
@@ -147,62 +272,154 @@ function NoSqlTable({
   if (viewCollectionKey !== collectionKey) {
     // Put the outgoing collection's bar away before its state is replaced. This is where it has
     // to happen: by the time any effect runs, `filterRows` already belongs to the new collection.
-    filterCache.set(viewCollectionKey, { rows: filterRows, applied: appliedFilters, fields });
+    rememberFilters();
+    rememberDocuments(viewCollectionKey);
     // A collection that has been here before gets its own bar back. Only a first visit starts
     // over on an empty `_id =` row and the one field every document is known to carry — a filter
     // names a field, and these documents need not carry one by that name.
-    const remembered = filterCache.get(collectionKey);
+    const remembered = rememberedFilters(filterCache, collectionKey, schemaToken);
     setViewCollectionKey(collectionKey);
-    setPage(0);
+    // And opens on the page it was left on rather than at its first; `pageSize` falls back to the
+    // one in hand rather than to the default, so a size chosen for the last collection is still
+    // carried onto a collection never seen before.
+    setPage(restored?.request.page ?? 0);
+    setPageSize(restored?.request.pageSize ?? pageSize);
     setAppliedFilters(remembered?.applied ?? []);
     setFilterRows(remembered?.rows ?? initialFilterRows(ID_FIELD, "eq"));
     setFields(remembered?.fields ?? ID_FIELD);
   }
 
-  /** The bar as it stands, for the write on the way out: a cleanup runs long after the last
-   * render, so it cannot read the state itself. */
-  const filterStateRef = useRef({
-    key: viewCollectionKey,
-    rows: filterRows,
-    applied: appliedFilters,
-    fields,
-  });
-  useEffect(() => {
-    filterStateRef.current = {
-      key: viewCollectionKey,
-      rows: filterRows,
-      applied: appliedFilters,
-      fields,
-    };
-  });
+  // The same swap, for the app having changed this collection under the list rather than the user
+  // having moved to another one. The conditions that were running were written against fields the
+  // documents need no longer carry, and the workspace has already let go of the bar they came
+  // from, so this picks up nothing and the list opens unfiltered. The whole bar goes, not only what
+  // was applied: rows left standing would be filed back under the new shape on the way out, which
+  // is the entry the workspace has just thrown away arriving as one that still means something.
+  const [viewSchemaToken, setViewSchemaToken] = useState(schemaToken);
+  if (viewSchemaToken !== schemaToken) {
+    setViewSchemaToken(schemaToken);
+    const remembered = rememberedFilters(filterCache, collectionKey, schemaToken);
+    setAppliedFilters(remembered?.applied ?? []);
+    setFilterRows(remembered?.rows ?? initialFilterRows(ID_FIELD, "eq"));
+    setFields(remembered?.fields ?? ID_FIELD);
+  }
 
-  // Leaving the Data tab unmounts the list just as thoroughly as closing it would, so the bar is
-  // also put away on the way out — coming back to the tab finds the conditions where they were.
+  // The bar is put away on the way out as well as on the way to another collection: the list is
+  // unmounted when the sidebar loses its selection — picking another database does it — and the
+  // conditions should be there again when the collection is opened later.
   useEffect(() => {
     return () => {
-      const { key, ...remembered } = filterStateRef.current;
-      filterCache.set(key, remembered);
+      rememberFilters();
     };
   }, [filterCache]);
 
-  const loadPage = useCallback(() => {
+  /** The list as it stands, for the write on the way out — the same reason `filterStateRef` exists:
+   *  a cleanup runs long after the last render and cannot read the state itself. */
+  const documentStateRef = useRef<(key: string) => void>(rememberDocuments);
+  useEffect(() => {
+    documentStateRef.current = rememberDocuments;
+  });
+
+  useEffect(() => {
+    return () => {
+      documentStateRef.current(filterStateRef.current.key);
+    };
+  }, []);
+
+  /** Asks for the page again with everything else unchanged — what the reload button, `Ctrl+R`, a
+   *  document deleted and an insert all want. */
+  const reload = useCallback(() => setReloadToken((n) => n + 1), []);
+
+  // Runs when the selected collection changes, and when the database's shape does (not on
+  // page/pageSize changes). A collection that has been here before is put back as it was left —
+  // its documents included, so the trip costs nothing and shows what it showed; otherwise the
+  // cards are cleared and the fetch below is owed a read.
+  useEffect(() => {
+    const key = `${selectedDb} :: ${selectedCollection}`;
+    const cached = rememberedDocuments(documentCache, key, schemaToken);
+    // Where the list goes back to once its cards are in the DOM — see the layout effect below. Set
+    // here rather than left to the box itself, which is at the top whatever the last one did.
+    scrollPosRef.current = cached?.scrollTop ?? 0;
+    // Cards are keyed on this, so it moves whenever the documents under them are replaced: a card
+    // must never carry the state it built for one document onto another at the same index.
+    setLoadId((n) => n + 1);
+    if (cached) {
+      setDocuments(cached.documents);
+      setTotal(cached.total);
+      setTarget({ connectionId, database: selectedDb, collection: selectedCollection });
+      // What those documents were read with, so the fetch below can tell that nothing is owed — but
+      // only if the bar is asking the same question they answer. The two are kept apart (the bar in
+      // `filterCache`, the documents here), and conditions applied while a read was still out are
+      // filed with nothing to match, so the pair has to be checked rather than assumed. By value:
+      // the arrays come from different places, and the fetch's own identity check is the one that
+      // has to be satisfied afterwards, which is why this render's array is what gets marked.
+      requestRef.current =
+        JSON.stringify(cached.request.filters) === JSON.stringify(appliedFilters)
+          ? { ...cached.request, filters: appliedFilters, reloadToken }
+          : null;
+    } else {
+      setDocuments([]);
+      setTotal(0);
+      setTarget(null);
+      // Nothing read for this collection yet, so the fetch below is owed one — whatever the
+      // previous collection left marked here.
+      requestRef.current = null;
+    }
+    // `schemaToken` is in here as well as the collection: a change the app made to this database
+    // leaves what is on screen describing something the server no longer has, and running this
+    // again is what empties the list and marks a read owed.
+  }, [connectionId, selectedDb, selectedCollection, schemaToken]);
+
+  const request: DocumentRequest = {
+    connectionId,
+    db: selectedDb,
+    collection: selectedCollection,
+    page,
+    pageSize,
+    filters: appliedFilters,
+    reloadToken,
+    schemaToken,
+  };
+
+  useEffect(() => {
+    // Nothing is read for a tab nobody is looking at: the sidebar walked while the Stats tab is up
+    // would otherwise send a page of documents and a count per collection passed over.
+    if (!active) return;
+    if (sameRequest(requestRef.current, request)) return;
+
+    const db = selectedDb;
+    const collection = selectedCollection;
     let cancelled = false;
     setLoading(true);
-    mongoCollectionPage(connectionId, selectedDb, selectedCollection, page, pageSize, appliedFilters)
+    mongoCollectionPage(connectionId, db, collection, page, pageSize, appliedFilters)
       .then((result) => {
         if (cancelled) return;
         if (result.documents.length === 0 && page > 0 && result.total > 0) {
           setPage((p) => Math.max(0, p - 1));
           return;
         }
+        // What was just read is what the next visit to this collection opens on. Filed here rather
+        // than only on the way out: a read that landed is worth keeping even if the app is closed
+        // on this very collection, and the way out has nothing to add beyond the scroll position.
+        fileDocuments(documentCache, `${db} :: ${collection}`, {
+          documents: result.documents,
+          total: result.total,
+          request,
+          // Where the list is right now, which for a first read is the top and for a reload is
+          // wherever the user had got to — a reload is not a reason to lose their place.
+          scrollTop: scrollPosRef.current,
+        });
         // One batched update, so `target` can never describe a different collection than the
         // documents rendered alongside it.
         setDocuments(result.documents);
-        setTarget({ connectionId, database: selectedDb, collection: selectedCollection });
+        setTarget({ connectionId, database: db, collection });
         setTotal(result.total);
         setLoadId((n) => n + 1);
         // Whatever these documents carry that the bar didn't know about yet is now filterable.
         setFields((known) => mergeDocumentFields(known, result.documents));
+        // Only a read that landed counts: a request that failed leaves nothing marked, so coming
+        // back to the tab tries again rather than settling on an empty list.
+        requestRef.current = request;
       })
       .catch((e) => onError(errorMessage(t, e)))
       .finally(() => {
@@ -211,9 +428,38 @@ function NoSqlTable({
     return () => {
       cancelled = true;
     };
-  }, [connectionId, selectedDb, selectedCollection, page, pageSize, appliedFilters, onError]);
+  }, [
+    connectionId,
+    selectedDb,
+    selectedCollection,
+    page,
+    pageSize,
+    appliedFilters,
+    reloadToken,
+    schemaToken,
+    active,
+    onError,
+  ]);
 
-  useEffect(() => loadPage(), [loadPage]);
+  // Back to where the list was left. `scrollPosRef` is the only record of that: hiding the pane
+  // behind the Stats tab is `display: none`, which takes its layout box away and the browser's
+  // memory of the position with it. `documents` is in the deps because that is what says the cards
+  // are in the DOM — a commit earlier than theirs has nothing of the right height to scroll within
+  // and the position would only be clamped away. Re-applying a position the box is already at
+  // costs nothing, which is what makes running this on every change of documents harmless.
+  useLayoutEffect(() => {
+    const node = scrollRef.current;
+    if (!node || !active) return;
+    node.scrollTop = scrollPosRef.current;
+  }, [selectedDb, selectedCollection, active, documents]);
+
+  /** Every move of the scrollbar, noted so that the position survives the list being hidden,
+   *  swapped for another collection or unmounted. A box with no layout is not believed: it reports
+   *  the top, and that is the one answer that must not be filed. */
+  function handleScroll() {
+    const node = scrollRef.current;
+    if (node && node.clientHeight > 0) scrollPosRef.current = node.scrollTop;
+  }
 
   /** Applies one card's ops to its document. Resolves to whether the write landed, so the
    * card knows to adopt its edits or roll them back; the error itself is reported here. */
@@ -234,6 +480,39 @@ function NoSqlTable({
     [target, onError],
   );
 
+  /** The page as it stands, for the adopt below — which runs from a card's write and can land after
+   *  the list has moved on, where this render's `documents` would say nothing about it. */
+  const documentsRef = useRef(documents);
+  documentsRef.current = documents;
+
+  /**
+   * A card's document as the server now holds it, taken into the page this list is holding.
+   *
+   * Each card owns its own working copy, so without this the list goes on holding every document as
+   * it was read — and it is the list's copy that is filed away for the next visit, where a saved
+   * change would then read as though it had never landed at all.
+   *
+   * Found by identity rather than by index or by `_id`: the array the card was rendered from may
+   * since have been replaced — another collection selected, another page, a refetch — and then there
+   * is nothing on screen for the write to be adopted into. What was filed for the collection it
+   * belonged to still holds the document as it was read, and showing that again later would hide a
+   * change that did land, so the entry goes and the next visit reads. `target` is the collection the
+   * card was written to, the same way `writeDocument` above reads it.
+   */
+  const adoptDocument = useCallback(
+    (fetched: TypedDocument, saved: TypedDocument) => {
+      const at = documentsRef.current.indexOf(fetched);
+      if (at < 0) {
+        if (target) documentCache.delete(`${target.database} :: ${target.collection}`);
+        return;
+      }
+      setDocuments((prev) =>
+        prev[at] === fetched ? prev.map((doc, i) => (i === at ? saved : doc)) : prev,
+      );
+    },
+    [target, documentCache],
+  );
+
   const removeDocument = useCallback(
     async (id: TypedValue): Promise<boolean> => {
       if (!target) return false;
@@ -243,7 +522,10 @@ function NoSqlTable({
       setWriteCount((n) => n + 1);
       try {
         await mongoDeleteDocument(target.connectionId, target.database, target.collection, id);
-        loadPage();
+        reload();
+        // The collection holds one document fewer, which the figures on the Stats tab were counted
+        // from — and those are the workspace's, not this list's.
+        onDocumentsChanged?.();
         return true;
       } catch (e) {
         onError(errorMessage(t, e));
@@ -252,7 +534,7 @@ function NoSqlTable({
         setWriteCount((n) => n - 1);
       }
     },
-    [target, flushAll, loadPage, onError],
+    [target, flushAll, reload, onError, onDocumentsChanged],
   );
 
   /** Runs `action` once every card has written out its staged edits. Costs nothing when
@@ -306,9 +588,10 @@ function NoSqlTable({
       await mongoInsertDocuments(connectionId, selectedDb, selectedCollection, documents);
     } finally {
       // The insert is ordered rather than atomic, so a failure partway through still leaves the
-      // documents before it written: refetch either way, and let the form report the error over
-      // the page it lands on.
-      loadPage();
+      // documents before it written: refetch either way, tell the workspace the collection has
+      // grown either way, and let the form report the error over the page it lands on.
+      reload();
+      onDocumentsChanged?.();
     }
     setInsertSeeds(null);
   }
@@ -321,7 +604,7 @@ function NoSqlTable({
   // holds documents that have been typed and not yet sent.
   useReloadShortcut(active && insertSeeds === null, () => {
     if (busy) return;
-    flushThen(loadPage);
+    flushThen(reload);
   });
 
   return (
@@ -337,7 +620,7 @@ function NoSqlTable({
         applyDisabled={busy}
       />
       <div className={styles.scrollWrap}>
-        <div className={styles.scroll}>
+        <div className={styles.scroll} ref={scrollRef} onScroll={handleScroll}>
           {documents.length === 0 && !loading && <p className="muted">{t("noSqlTable.noDocuments")}</p>}
           {documents.map((doc, i) => (
             <Document
@@ -346,6 +629,7 @@ function NoSqlTable({
               displayNumber={page * pageSize + i + 1}
               registerFlush={registerFlush}
               onWrite={writeDocument}
+              onSaved={adoptDocument}
               onDelete={removeDocument}
               onClone={cloneDocument}
             />
@@ -364,7 +648,7 @@ function NoSqlTable({
               busy,
               // Same as changing page: whatever the cards have staged is written out before the
               // refetch replaces them.
-              onClick: () => flushThen(loadPage),
+              onClick: () => flushThen(reload),
             },
             {
               key: "insert",

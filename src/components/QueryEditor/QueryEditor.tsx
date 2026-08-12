@@ -85,6 +85,18 @@ interface Props {
   /** Opens a table of the selected database elsewhere in the workspace — what `Ctrl+Click` on a
    *  table name in the script does. Absent means the script is read but never followed. */
   onOpenTable?: (table: string) => void;
+  /**
+   * Told when the script that just ran could have changed the selected database: `"schema"` when it
+   * held a statement that changes what the tables are or how they are shaped, `"rows"` when it only
+   * wrote rows.
+   *
+   * This tab is not the only pane over the database. The grid beside it is holding a page read before
+   * the script ran, the Structure tab a set of columns, the Statistics tab a set of figures — and
+   * after a `DROP COLUMN` run from here, that grid goes on drawing the dropped column and an edit in
+   * it sends an `UPDATE` keyed on a column the table hasn't got. What to let go of is the
+   * workspace's to decide, since the workspace is what holds all three.
+   */
+  onDatabaseChanged?: (change: "schema" | "rows") => void;
 }
 
 /**
@@ -106,6 +118,7 @@ function QueryEditor({
   readOnly = false,
   profileId = "",
   onOpenTable,
+  onDatabaseChanged,
 }: Props) {
   const { t } = useTranslation();
   const snippets = useQuerySnippets();
@@ -465,9 +478,19 @@ function QueryEditor({
       const rowCount = last && !last.truncated ? last.rows.length : null;
       remember(rowCount, produced[produced.length - 1]?.error ?? null);
       // Completion is working from a copy of the schema, and a script that has just created or
-      // dropped something has made that copy wrong.
+      // dropped something has made that copy wrong. The panes over the same database are told as
+      // well, and told which of the two kinds of change it was — see {@link Props.onDatabaseChanged}.
+      //
+      // Whether the script succeeded is not asked: a statement that failed stops the ones after it,
+      // but the ones before it ran, and a script half-applied is exactly the case where what the
+      // other panes are showing must not be trusted. Anything the read-only guard would have refused
+      // counts as having written rows, which is generous — a `SET` changes nothing anyone is looking
+      // at — and the cost of being generous is one re-read of a tab nobody may even open.
       if (database !== "" && changesSchema(statements)) {
         invalidateSchemaOutline(connectionId, database);
+        onDatabaseChanged?.("schema");
+      } else if (database !== "" && writingStatements(statements).length > 0) {
+        onDatabaseChanged?.("rows");
       }
     } catch (e) {
       const message = errorMessage(t, e);

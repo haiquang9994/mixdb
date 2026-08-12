@@ -46,6 +46,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - A Redis connection to another machine with no password now warns that the server's protected mode
   will refuse it, instead of leaving you with "Redis: broken pipe".
 
+### Changed
+
+- A MySQL table opens where you left it — same page, order, filters, scroll and rows — as do its
+  structure and its database's statistics. Only a reload, `Ctrl+R`, or a change you made yourself
+  asks the server again, and a change to one table costs only that table.
+- MongoDB works the same way: a collection opens on the page, filters and scroll it was left at,
+  and the Statistics tab keeps what it read for each database. Moving to the Statistics tab and
+  back no longer re-reads the documents. Creating, renaming or dropping a collection does.
+- A `CREATE`, `ALTER` or `DROP` run in the Query tab refreshes the table list and the other tabs
+  with it, the same as making the change from the sidebar.
+- Inserting or deleting rows or documents moves the statistics too.
+
 ## [0.0.9] - 2026-08-12
 
 ### Added

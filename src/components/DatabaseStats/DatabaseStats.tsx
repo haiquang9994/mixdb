@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { fileInto } from "../../paneCache";
 import { gridStyle, useVirtualRows, widestValues } from "../../virtualRows";
 import ActionBar from "../ActionBar";
 import LoadingOverlay from "../LoadingOverlay";
@@ -73,12 +74,37 @@ function cellText(row: TableStats, column: number): string {
   }
 }
 
-/** The figures on screen and the database they were read from, held together: a database changed
- * while the tab was hidden must not leave the previous one's figures under its name. */
-interface Cache {
-  database: string;
-  rows: TableStats[];
+/** One database's figures as they were last read, and the order they were last put in. `rows` is
+ * null once a reload has dropped them but before the new ones land — the order outlives the figures
+ * it was applied to, so a reload comes back in the order it was asked from. */
+export interface RememberedStats {
+  rows: TableStats[] | null;
+  sort: Sort;
+  /** Which shape of the database the figures were read from — see {@link Props.schemaToken}. The
+   *  order beside them is not judged by it: what the server said about a table is out of date the
+   *  moment the table changes, but the column the user chose to sort by is theirs either way. */
+  schemaToken: number;
 }
+
+/** Every database's figures, by the database they were read from — so a database changed and come
+ * back to shows what it showed, and never the previous one's figures under its name. Held by the
+ * workspace rather than here, so that the figures outlive this panel being unmounted — which is
+ * what selecting no database does. */
+export type StatsCache = Map<string, RememberedStats>;
+
+/**
+ * How many databases' figures are kept before the one read longest ago is let go.
+ *
+ * An entry is one row per table, which for a database of a few thousand tables is a few thousand
+ * rows — and a connection walked database by database is exactly what would otherwise hold all of
+ * them at once, for as long as it stayed open. Twenty is past however many databases anyone moves
+ * between in one piece of work.
+ */
+const STATS_CACHE_LIMIT = 20;
+
+/** What a database is ordered by until the user says otherwise: the heaviest table first, which is
+ * the question this panel exists to answer. */
+const DEFAULT_SORT: Sort = { column: "dataSize", desc: true };
 
 interface Props {
   kind: "mysql" | "mongo";
@@ -92,6 +118,14 @@ interface Props {
    *  mounted at once `Ctrl+R` belongs to. */
   active: boolean;
   onError: (message: string) => void;
+  /** Where the figures read for each database are kept between visits — see {@link StatsCache}. */
+  statsCache: StatsCache;
+  /** Which shape of this database the figures are allowed to speak for. Moved by the workspace
+   *  whenever the app changes that shape — a table or collection created, dropped, altered, a dump
+   *  restored — every one of which is a change to what the figures say. Figures filed under the
+   *  shape before are then read again rather than shown; emptying the cache is not enough on its
+   *  own, since a Map is the same object before and after and nothing re-renders off it. */
+  schemaToken: number;
 }
 
 /**
@@ -101,29 +135,54 @@ interface Props {
  * Ordered by data size to begin with rather than by name — the question this answers is which
  * table is the heavy one, and the sidebar next to it already lists them alphabetically.
  *
- * Read once and kept: the workspace leaves this mounted while another tab is up, so moving between
- * the tabs shows the figures already read rather than asking for them again. They are only re-read
- * when the database changes under them or the reload button asks, and a database changed while the
- * tab was hidden waits until it is looked at again before costing anything.
+ * Read once and kept: the workspace leaves this mounted while another tab is up, and holds the
+ * figures for every database beside it, so moving between the tabs — or between databases — shows
+ * what was read rather than asking for it again. They are only re-read when the reload button asks
+ * or the app itself has changed the database, and either while the tab is hidden waits until it is
+ * looked at again before costing anything.
  *
  * Both databases report the same four numbers, so one grid serves them; only what the columns are
  * called changes, since MySQL counts rows in tables and MongoDB documents in collections. Neither
  * count is read by counting: MySQL's comes from `information_schema` (an estimate, on InnoDB) and
  * MongoDB's from the collection's own metadata, so this costs the server nothing to answer.
  */
-function DatabaseStats({ kind, connectionId, database, active, onError }: Props) {
+function DatabaseStats({
+  kind,
+  connectionId,
+  database,
+  active,
+  onError,
+  statsCache: cache,
+  schemaToken,
+}: Props) {
   const { t } = useTranslation();
-  const [cache, setCache] = useState<Cache | null>(null);
   const [loading, setLoading] = useState(false);
-  const [sort, setSort] = useState<Sort>({ column: "dataSize", desc: true });
+  /** Bumped whenever the cache is written to, since a Map is the same object before and after and
+   *  nothing would re-render off it on its own. */
+  const [, setCacheToken] = useState(0);
 
-  /** What has been read for the database now selected, or null when that is nothing yet — which
-   *  is also what a cache left over from another database counts as. */
-  const stats = cache?.database === database ? cache.rows : null;
+  /** What is filed for the database now selected. Read plainly rather than memoised: it is one map
+   *  lookup, and a memo would only add a list of dependencies to get wrong. */
+  const remembered = cache.get(database);
+  /** The figures on screen, or null when there are none to show — which a read still owed, a
+   *  reload, and figures read before the app last changed this database all count as. */
+  const stats = remembered?.schemaToken === schemaToken ? remembered.rows : null;
+  /** The order this database was last put in, which is part of what coming back to it means. Kept
+   *  across a change of shape as well as across a reload: it is the user's choice, not something
+   *  the server said. */
+  const sort = remembered?.sort ?? DEFAULT_SORT;
+
+  /** Files what is known about the selected database, letting the database read longest ago go once
+   *  the cache is full — the only way anything is written here, so nothing gets past that ceiling.
+   *  The render that would draw it is asked for at the same time, for the reason above. */
+  function fileStats(entry: RememberedStats) {
+    fileInto(cache, database, entry, STATS_CACHE_LIMIT);
+    setCacheToken((n) => n + 1);
+  }
 
   useEffect(() => {
     // Nothing to do until the tab is looked at, and nothing to do once it has been read: this is
-    // what makes moving between the tabs free.
+    // what makes moving between the tabs — and coming back to a database — free.
     if (!active || stats !== null) return;
     let cancelled = false;
     setLoading(true);
@@ -133,7 +192,14 @@ function DatabaseStats({ kind, connectionId, database, active, onError }: Props)
         : mongoCollectionStats(connectionId, database);
     read
       .then((result) => {
-        if (!cancelled) setCache({ database, rows: result });
+        if (cancelled) return;
+        // The order is kept across the read: a reload asked for while sorted by name comes back
+        // sorted by name, rather than throwing the user back to the heaviest table first.
+        fileStats({
+          rows: result,
+          sort: cache.get(database)?.sort ?? DEFAULT_SORT,
+          schemaToken,
+        });
       })
       .catch((e) => {
         if (cancelled) return;
@@ -147,13 +213,27 @@ function DatabaseStats({ kind, connectionId, database, active, onError }: Props)
     return () => {
       cancelled = true;
     };
-  }, [kind, connectionId, database, active, stats, onError]);
+    // `schemaToken` is in here so that a change made while a read is still out drops that read
+    // rather than letting it land: figures filed under the shape before are turned down when read
+    // back, and with nothing else moving there would be nothing left to ask for them again.
+  }, [kind, connectionId, database, active, stats, schemaToken, onError]);
 
-  // Dropping the cache is the reload, the same as the button's. Gated on the same state it is: a
+  /** Drops this database's figures, which is what makes the effect above read them again. The order
+   *  they were in stays: it is the user's choice, not something the server said. */
+  function reload() {
+    fileStats({ rows: null, sort, schemaToken });
+  }
+
+  /** Puts the grid in a new order, and keeps it there for the next visit to this database. */
+  function setSort(next: Sort) {
+    fileStats({ rows: stats, sort: next, schemaToken });
+  }
+
+  // Dropping the figures is the reload, the same as the button's. Gated on the same state it is: a
   // re-read asked for while one is already out is one the button would refuse.
   useReloadShortcut(active, () => {
     if (loading) return;
-    setCache(null);
+    reload();
   });
 
   const sorted = useMemo(() => {
@@ -202,9 +282,9 @@ function DatabaseStats({ kind, connectionId, database, active, onError }: Props)
   /** Moves the clicked column to its next sort state: a new column opens on the order that reads
    *  it best — biggest first for a number, A to Z for a name — and clicking it again reverses. */
   function toggleSort(column: SortColumn) {
-    setSort((prev) =>
-      prev.column === column
-        ? { column, desc: !prev.desc }
+    setSort(
+      sort.column === column
+        ? { column, desc: !sort.desc }
         : { column, desc: column !== "name" },
     );
   }
@@ -249,9 +329,9 @@ function DatabaseStats({ kind, connectionId, database, active, onError }: Props)
               label: withReloadShortcut(t("dbStats.reload")),
               disabled: loading,
               busy: loading,
-              // Dropping the cache is the reload: the effect reads again the moment there is
-              // nothing held for the database on show.
-              onClick: () => setCache(null),
+              // Dropping the figures is the reload: the effect reads again the moment there are
+              // none held for the database on show.
+              onClick: reload,
             },
           ]}
         />
