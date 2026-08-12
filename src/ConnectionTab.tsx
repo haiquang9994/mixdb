@@ -76,6 +76,20 @@ function mongoUriDatabase(uri: string): string {
   }
 }
 
+/**
+ * Whether dialling `host` means talking to this machine — the one case a server refusing everything
+ * but loopback is happy with. The whole `127.0.0.0/8` block counts, not just `127.0.0.1`, and IPv6
+ * writes its loopback either bare or in the brackets a host field may still carry.
+ */
+function isLoopback(host: string): boolean {
+  const name = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return (
+    name === "localhost" ||
+    name === "::1" ||
+    /^127(?:\.\d{1,3}){3}$/.test(name)
+  );
+}
+
 /** Fixed width, not the value's own: the length of a password is itself worth not showing. */
 const MASK = "****";
 
@@ -308,6 +322,17 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
   }
 
   const isMongo = kind === "mongo";
+
+  /* A Redis server whose default user has no password runs in protected mode unless it was told
+     otherwise, and protected mode answers anything that isn't loopback with `-DENIED` and hangs
+     up. The client only finds out when its next write hits the closed socket, so the tab reports
+     a broken pipe and says nothing about why — hence the warning up here, where it can still be
+     acted on.
+     The tunnel doesn't come into it: this host is the address whoever dials Redis uses — this
+     machine directly, or the SSH server on its behalf — so a loopback address means Redis is on
+     the dialling machine either way, and anything else means it is not. */
+  const showRedisProtectedModeHint =
+    kind === "redis" && password === "" && !isLoopback(host);
 
   function buildConnectionConfig(): ConnectionConfig {
     return {
@@ -587,6 +612,12 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
               <Input value={database} onChange={(e) => setDatabase(e.target.value)} />
             </label>
           </div>
+        )}
+
+        {showRedisProtectedModeHint && (
+          <p className="field-warning" role="status">
+            {t("connection.redisNoPasswordWarning")}
+          </p>
         )}
 
         {kind === "mysql" && (

@@ -833,6 +833,20 @@ fieldset .row input {
   max-width: 100%;
 }
 
+/* A note about the values above it, not an error about anything that has happened yet — so it is
+   amber and stays put, rather than the red banner a failed connection puts at the top of the form.
+   The tint carries the same hue as the text, so light and dark are one pair of values. */
+.field-warning {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgb(var(--c-amber-rgb) / 0.35);
+  background: rgb(var(--c-amber-rgb) / 0.1);
+  color: var(--c-amber-text);
+  font-size: 0.85em;
+  line-height: 1.45;
+}
+
 /* Once the window is this narrow, the saved-connection list has taken its share and half of what
    is left is narrower than the shortest useful field — so the pairs stack instead of squeezing. */
 @media (max-width: 980px) {

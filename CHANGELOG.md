@@ -41,6 +41,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- A Redis connection to another machine with no password now warns that the server's protected mode
+  will refuse it, instead of leaving you with "Redis: broken pipe".
+
 ## [0.0.9] - 2026-08-12
 
 ### Added

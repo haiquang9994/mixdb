@@ -51,6 +51,11 @@ const vi: TranslationDict = {
       "Chuỗi kết nối chứa tên đăng nhập và mật khẩu dạng văn bản thuần. Chúng sẽ hiển thị trên màn hình cho đến khi bạn ẩn lại.",
     revealConnectionStringConfirm: "Hiện",
     useSslLabel: "Dùng SSL (bỏ chọn nếu server không có SSL hoặc dùng SSL cũ, ví dụ chứng chỉ tự ký cũ)",
+    // Hiện khi kết nối Redis tới máy khác mà để trống mật khẩu. Đúng trường hợp đó Redis mặc định
+    // bật protected mode và cắt kết nối thay vì trả lời — người dùng chỉ thấy "broken pipe". SSH
+    // chỉ giúp được khi tunnel đi tới đúng máy đang chạy Redis, tức là host ở trên.
+    redisNoPasswordWarning:
+      "Chưa nhập mật khẩu: nếu server bật protected mode — mặc định của Redis khi người dùng default chưa có mật khẩu — nó chỉ nhận kết nối đến từ chính máy nó và cắt mọi kết nối khác, hiện ra thành “Redis: broken pipe”. Hãy đặt mật khẩu trên server (requirepass), hoặc đi vào từ chính máy đó: mở SSH tới máy đang chạy Redis và để host ở trên là 127.0.0.1.",
     connectionMethodLegend: "Phương thức kết nối",
     methodTcpIp: "TCP/IP",
     methodSsh: "SSH",

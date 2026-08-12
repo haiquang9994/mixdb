@@ -53,6 +53,12 @@ const en = {
       "The connection string holds the username and password in plain text. They stay on screen until you hide them again.",
     revealConnectionStringConfirm: "Show",
     useSslLabel: "Use SSL (uncheck if the server has no/legacy SSL, e.g. old self-signed certs)",
+    // Shown while a Redis connection to another machine is left without a password. Protected mode
+    // is Redis's default in exactly that case, and it hangs up on the connection rather than
+    // answering — which reaches the user as "broken pipe" and explains nothing. An SSH tunnel only
+    // helps when it lands on the machine Redis itself runs on, which is what the host says.
+    redisNoPasswordWarning:
+      "No password: if this server runs with protected mode on — Redis's default when the default user has no password — it only accepts connections coming from its own machine and closes every other one, which shows up as “Redis: broken pipe”. Set a password on the server (requirepass), or arrive from that machine: an SSH tunnel to the host Redis runs on, with the host above left at 127.0.0.1.",
     connectionMethodLegend: "Connection method",
     methodTcpIp: "TCP/IP",
     methodSsh: "SSH",
