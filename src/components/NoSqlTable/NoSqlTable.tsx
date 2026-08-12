@@ -148,7 +148,7 @@ function NoSqlTable({
   const [total, setTotal] = useState(restored?.total ?? 0);
   const [loading, setLoading] = useState(false);
   // Bumped by the reload action, by a delete and by an insert, to run the fetch below again with
-  // the page and the conditions unchanged.
+  // the conditions unchanged.
   const [reloadToken, setReloadToken] = useState(0);
   // Counted rather than a flag: a Save and a rename can overlap, and the last one to finish
   // is what should clear the indicator.
@@ -330,9 +330,25 @@ function NoSqlTable({
     };
   }, []);
 
-  /** Asks for the page again with everything else unchanged — what the reload button, `Ctrl+R`, a
-   *  document deleted and an insert all want. */
+  /** Asks for the page again with everything else unchanged — what a document deleted and an
+   *  insert want, which is to see the page they were made on as it now stands. */
   const reload = useCallback(() => setReloadToken((n) => n + 1), []);
+
+  /** What the reload button and `Ctrl+R` do: refetch from the first page.
+   *
+   * Back to page one on purpose: a reload is asked for when the collection is expected to have
+   * moved underneath the list, and the documents the user wants to see after that are the newest
+   * ones — a page counted off a collection that has since grown or shrunk names different documents
+   * anyway. The token is bumped as well as the page reset, so a reload pressed on page one is still
+   * a refetch rather than a no-op. */
+  const reloadFromFirstPage = useCallback(() => {
+    // And back to the head of it: what the first page is worth is the documents at its top, and an
+    // offset carried over from halfway down page five would land the list in the middle of page one
+    // instead. Read by the layout effect below when the new documents arrive.
+    scrollPosRef.current = 0;
+    setPage(0);
+    setReloadToken((n) => n + 1);
+  }, []);
 
   // Runs when the selected collection changes, and when the database's shape does (not on
   // page/pageSize changes). A collection that has been here before is put back as it was left —
@@ -409,8 +425,8 @@ function NoSqlTable({
           documents: result.documents,
           total: result.total,
           request,
-          // Where the list is right now, which for a first read is the top and for a reload is
-          // wherever the user had got to — a reload is not a reason to lose their place.
+          // Where the list is scrolled to right now, which for a first read and for a reload is the
+          // top, and otherwise is wherever the user had got to within the page.
           scrollTop: scrollPosRef.current,
         });
         // One batched update, so `target` can never describe a different collection than the
@@ -608,7 +624,7 @@ function NoSqlTable({
   // holds documents that have been typed and not yet sent.
   useReloadShortcut(active && insertSeeds === null, () => {
     if (busy) return;
-    flushThen(reload);
+    flushThen(reloadFromFirstPage);
   });
 
   return (
@@ -655,7 +671,7 @@ function NoSqlTable({
               busy,
               // Same as changing page: whatever the cards have staged is written out before the
               // refetch replaces them.
-              onClick: () => flushThen(reload),
+              onClick: () => flushThen(reloadFromFirstPage),
             },
             {
               key: "insert",

@@ -84,6 +84,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   sizes.
 - Tab reaches a sidebar list as one stop rather than one per table or collection; the arrows walk
   it from there.
+- Reloading a MySQL table or a MongoDB collection goes back to the top of the first page. An insert
+  or a delete still refetches the page it was made on.
 
 ### Fixed
 

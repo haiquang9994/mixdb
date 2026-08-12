@@ -387,7 +387,8 @@ function SqlTable({
   }, []);
 
   const [loading, setLoading] = useState(false);
-  // Bumped by the reload action to re-run the fetch below with the page/size unchanged.
+  // Bumped by the reload action, by an insert and by a delete, to re-run the fetch below with the
+  // request otherwise unchanged.
   const [reloadToken, setReloadToken] = useState(0);
 
   const [editingCell, setEditingCellState] = useState<EditingCell | null>(null);
@@ -731,8 +732,8 @@ function SqlTable({
           rows: result.rows,
           total: result.total,
           request,
-          // Where the grid is right now, which for a first read of a table is the top and for a
-          // reload is wherever the user had got to — a reload is not a reason to lose their place.
+          // Where the grid is scrolled to right now, which for a first read of a table and for a
+          // reload is the top, and otherwise is wherever the user had got to within the page.
           scrollTop: scrollPosRef.current.top,
           scrollLeft: scrollPosRef.current.left,
         });
@@ -857,10 +858,22 @@ function SqlTable({
     setEditingCell(null);
   }
 
-  /** Refetches the current page. Waits for a staged edit to be written first, so the rows
-   * that come back include it rather than overwriting it with the pre-edit values. */
+  /** Refetches the table from its first page. Waits for a staged edit to be written first, so the
+   * rows that come back include it rather than overwriting it with the pre-edit values.
+   *
+   * Back to page one on purpose: a reload is asked for when the table is expected to have moved
+   * underneath the grid, and the rows the user wants to see after that are the newest ones — a page
+   * counted off a table that has since grown or shrunk names different rows anyway. The token is
+   * bumped as well as the page reset, so a reload pressed on page one is still a refetch rather than
+   * a no-op. */
   async function reload() {
     await commitAndExit();
+    // And back to the head of it: what the first page is worth is the rows at its top, and an offset
+    // carried over from halfway down page five would land the grid in the middle of page one instead.
+    // The horizontal position stays — that says which columns are being read, which a reload does not
+    // change. Read by the layout effect above when the new rows arrive.
+    scrollPosRef.current = { ...scrollPosRef.current, top: 0 };
+    setPage(0);
     setReloadToken((n) => n + 1);
   }
 
