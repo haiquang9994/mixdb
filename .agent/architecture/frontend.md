@@ -67,7 +67,24 @@ in both, so what is developed against is what ships; `F5` and the hard reload st
 > **Unverified**, and worth checking the day someone has a packaged build open: the blocking is a
 > DOM `preventDefault` in [`App.tsx`](../../src/App.tsx), and WebView2 handles reload as a browser
 > accelerator. If the key gets through anyway, the fix is Tauri-side rather than more JavaScript.
-> Nothing suppresses the webview's context menu either, so its own Reload item may be a way round.
+
+### The webview's right-click menu is refused
+
+[`src/nativeContextMenu.ts`](../../src/nativeContextMenu.ts), called once from `main.tsx`, closes
+the other way to the same Reload — and to Back, Save as and View source, none of which mean
+anything in a database client. It is one listener on the `document`, so the panes that answer a
+right-click themselves see the event first and are untouched by it: the sidebar's connections
+([`ConnectionTab`](../../src/ConnectionTab.tsx)), the Redis key groups, the item lists. A new menu
+is added the same way as those — an `onContextMenu` that calls `preventDefault` and opens
+[`ContextMenu`](../../src/components/ContextMenu.tsx); nothing has to be registered here.
+
+Text fields keep the native menu, because cut, copy and paste on a right-click are the webview's to
+give and no part of the app replaces them. Both this and `Ctrl+A` ask
+[`src/textEntry.ts`](../../src/textEntry.ts) which elements those are — one answer, so the two
+gestures cannot come to disagree about the same field.
+
+The cost, and it is a real one: text selected outside a text field — a grid cell, an error message —
+has no Copy on a right-click any more. A pane that wants one owns it, the same as any other entry.
 
 ## Styling
 

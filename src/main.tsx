@@ -6,6 +6,9 @@ import "@fontsource/fira-code/600.css";
 import "@fontsource/fira-code/700.css";
 import App from "./App";
 import { I18nProvider } from "./i18n";
+import { blockNativeContextMenu } from "./nativeContextMenu";
+
+blockNativeContextMenu();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

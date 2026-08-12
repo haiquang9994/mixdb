@@ -5,6 +5,7 @@ import UpdateToast from "./components/UpdateToast";
 import { CloseIcon, LockIcon, PlusIcon, SettingsIcon } from "./icons";
 import { isBlockedReload } from "./reload";
 import { useScrollAcceleration } from "./scroll";
+import { isTextEntry } from "./textEntry";
 import { useAccent, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
 import { useTranslation } from "./i18n";
@@ -16,17 +17,6 @@ interface TabInfo {
   /** Set while this tab holds a connection saved as read-only, so the tab bar can say so — the
    *  sidebar that carried the mark is gone once you are connected. */
   readOnly?: boolean;
-}
-
-/** Whether a keyboard event landed somewhere the user is typing, where the browser's own
- *  editing shortcuts have to keep working. */
-function isTextEntry(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target.isContentEditable
-  );
 }
 
 function App() {

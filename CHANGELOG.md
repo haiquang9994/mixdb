@@ -61,6 +61,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - A `CREATE`, `ALTER` or `DROP` run in the Query tab refreshes the table list and the other tabs
   with it, the same as making the change from the sidebar.
 - Inserting or deleting rows or documents moves the statistics too.
+- A right-click no longer opens the browser's own menu. The app's menus, and cut, copy and paste in
+  a text field, are unchanged.
 
 ## [0.0.9] - 2026-08-12
 
