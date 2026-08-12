@@ -1,1 +1,1 @@
-export { default } from "./FilterBar";
+export { default, type FilterBarHandle } from "./FilterBar";

@@ -3,7 +3,7 @@ import { mysqlDeleteRows, mysqlInsertRows, mysqlTableData, mysqlUpdateRow } from
 import ActionBar from "../ActionBar";
 import ConfirmDialog from "../ConfirmDialog";
 import ContextMenu from "../ContextMenu";
-import FilterBar from "../FilterBar";
+import FilterBar, { type FilterBarHandle } from "../FilterBar";
 import InsertRowsDialog from "../InsertRowsDialog";
 import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
@@ -14,6 +14,7 @@ import { errorMessage } from "../../errors";
 import { copyText } from "../../clipboard";
 import { isBinary, isGenerated } from "../../mysql/columns";
 import { IS_MAC, hasPrimaryModifier } from "../../platform";
+import { isTextEntry } from "../../textEntry";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
 import { filterRowFor, initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
 import {
@@ -246,6 +247,8 @@ function SqlTable({
   const filtersSeededForRef = useRef<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** The filter bar above, so `Ctrl+F` can put the caret in it — see {@link FilterBarHandle}. */
+  const filterBarRef = useRef<FilterBarHandle>(null);
 
   /** Where the grid is scrolled to, kept up to date as it moves. This, and not the box itself, is
    *  what the position is read from — the box cannot be asked at either of the two moments it
@@ -831,6 +834,28 @@ function SqlTable({
     await flushPendingRow();
   }
 
+  /**
+   * Backs out of the open editor and puts the row back the way the server has it — the text being
+   * typed goes, and so do the cells of the same row already staged but not yet written.
+   *
+   * This is Escape, and it is also what `Ctrl+F` does on its way out of the grid. Leaving a cell is
+   * normally taken as agreeing to what is in it, because the user pointed at somewhere else in the
+   * table; a shortcut aimed at the filter bar says nothing about the edit, and writing it to the
+   * server on the strength of that is a change nobody asked for.
+   */
+  function cancelEdit() {
+    const cell = editingCellRef.current;
+    if (!cell) return;
+    const pending = pendingRowRef.current;
+    if (pending && pending.rowIndex === cell.rowIndex) {
+      pendingRowRef.current = null;
+      setRows((prevRows) =>
+        prevRows.map((r, i) => (i === pending.rowIndex ? { ...r, ...pending.original } : r)),
+      );
+    }
+    setEditingCell(null);
+  }
+
   /** Refetches the current page. Waits for a staged edit to be written first, so the rows
    * that come back include it rather than overwriting it with the pre-edit values. */
   async function reload() {
@@ -1074,13 +1099,6 @@ function SqlTable({
     // selection as well would be two things done by one key, and the selection is what the menu is
     // about to act on.
     if (menu !== null) return;
-    if (hasPrimaryModifier(e) && e.key.toLowerCase() === "a") {
-      e.preventDefault();
-      if (rows.length === 0) return;
-      setSelectedRows(new Set(rows.map((_, i) => i)));
-      anchorRowRef.current = 0;
-      return;
-    }
     if (e.key === "Escape" && selectedRows.size > 0) {
       e.preventDefault();
       clearSelection();
@@ -1094,6 +1112,65 @@ function SqlTable({
       void openDeleteConfirm();
     }
   }
+
+  /**
+   * The two chords the Data tab answers from wherever the focus happens to be: `Ctrl+A` — `⌘A` on a
+   * Mac — for every row on the page, and `Ctrl+F` for the filter bar.
+   *
+   * On the window rather than on the scroll box, because "click the grid first" is not something the
+   * user should have to know: the tab is the one on screen, so the tab is what the chord is about.
+   * `active` is what keeps that unambiguous — every background connection tab has a grid mounted too,
+   * and each would otherwise answer the same keystroke alongside this one. See
+   * {@link useReloadShortcut}, which reads the same way for the same reasons.
+   */
+  function handleWindowShortcut(e: KeyboardEvent) {
+    if (!hasPrimaryModifier(e) || e.shiftKey || e.altKey) return;
+    const key = e.key.toLowerCase();
+    if (key !== "a" && key !== "f") return;
+    // The right-click menu is about to act on the selection, which is the very thing select-all
+    // would replace.
+    if (menu !== null) return;
+    // A modal standing over the grid holds the keyboard for as long as it is up, and not only the
+    // ones this pane opens for itself: the workspace puts up its own over the same tab — create a
+    // database, rename or drop a table — and so does the app, and this component has no state that
+    // knows about any of them. What they do share is how every dialog in the app is marked, so that
+    // is what gets asked. Without this, `Ctrl+A` behind a "Drop table?" pulls the focus out of the
+    // question and down into the grid, and `Ctrl+F` puts the caret in a bar nobody can see.
+    if (document.querySelector('[role="dialog"]') !== null) return;
+    if (key === "f") {
+      e.preventDefault();
+      // The grid is being left for the bar above it, so whatever cell is open goes back as it was
+      // rather than being written out by the blur that follows — see {@link cancelEdit}.
+      cancelEdit();
+      filterBarRef.current?.focusValue();
+      return;
+    }
+    // Inside a text box, select-all is that box's own — the value being typed into the filter bar,
+    // the cell open for editing, the search above the table list. See {@link isTextEntry}.
+    if (isTextEntry(e.target)) return;
+    e.preventDefault();
+    if (rows.length === 0) return;
+    setSelectedRows(new Set(rows.map((_, i) => i)));
+    anchorRowRef.current = 0;
+    // Delete and Escape act on the selection and are the grid's own keys, so the keyboard is handed
+    // to it — otherwise a selection made from across the pane could not be acted on without a click.
+    focusGrid();
+  }
+
+  // Through a ref so the listener is bound once per spell of being on screen rather than torn down
+  // and rebound on every render, and still sees the rows and the dialogs as they are when the key is
+  // pressed — the same arrangement `useReloadShortcut` makes for `Ctrl+R`.
+  const shortcutRef = useRef(handleWindowShortcut);
+  shortcutRef.current = handleWindowShortcut;
+
+  useEffect(() => {
+    if (!active) return;
+    function onKeyDown(e: KeyboardEvent) {
+      shortcutRef.current(e);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [active]);
 
   function handleInputBlur(rowIndex: number, col: string) {
     const current = editingCellRef.current;
@@ -1110,14 +1187,7 @@ function SqlTable({
     if (!cell) return;
     if (e.key === "Escape") {
       e.preventDefault();
-      const pending = pendingRowRef.current;
-      if (pending && pending.rowIndex === cell.rowIndex) {
-        pendingRowRef.current = null;
-        setRows((prevRows) =>
-          prevRows.map((r, i) => (i === pending.rowIndex ? { ...r, ...pending.original } : r)),
-        );
-      }
-      setEditingCell(null);
+      cancelEdit();
       return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
@@ -1231,6 +1301,7 @@ function SqlTable({
     <div className={styles.sqlTable}>
       {columns.length > 0 && (
         <FilterBar
+          ref={filterBarRef}
           fields={columns}
           operators={FILTER_OPERATORS}
           defaultOperator="eq"

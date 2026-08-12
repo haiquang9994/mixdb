@@ -78,8 +78,9 @@ function App() {
         closeTab(activeId);
       } else if (shortcutKey && e.key.toLowerCase() === "a" && !isTextEntry(e.target)) {
         // Outside a text field, select-all means "select the whole chrome of the app" — never
-        // something the user wants. Views that have their own notion of "everything" (the SQL
-        // grid selecting all of its rows) handle the key before it bubbles up to here.
+        // something the user wants. Views that have their own notion of "everything" (the SQL grid
+        // selecting all of its rows) listen on the window as well and act on the same keystroke;
+        // all this branch does is stop the webview from taking it, which none of them mind.
         e.preventDefault();
       } else if (isBlockedReload(e)) {
         // Reloading the webview takes every open connection down with it, so no keystroke is left

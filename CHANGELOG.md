@@ -49,6 +49,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   list, until another table is chosen.
 - A Redis connection to another machine with no password now warns that the server's protected mode
   will refuse it, instead of leaving you with "Redis: broken pipe".
+- `Ctrl+F` on a MySQL table puts the caret in the filter bar's first value box, adding a row if
+  there is none.
 
 ### Changed
 
@@ -69,6 +71,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   a text field, are unchanged.
 - A right-click menu no longer holds the rest of the window: the click that dismisses it also does
   what it was aimed at, and scrolling closes it.
+- `Ctrl+A` on a MySQL table's Data tab selects every row on the page without clicking the grid
+  first. In a text box it still selects the text.
 
 ### Fixed
 

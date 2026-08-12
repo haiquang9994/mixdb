@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import Button from "../Button";
 import Input from "../Input";
 import Select from "../Select";
@@ -11,6 +11,19 @@ import {
   type FilterRow,
 } from "../../filters";
 import styles from "./FilterBar.module.css";
+
+/** What the pane above can ask the bar to do — see {@link Props.ref}. */
+export interface FilterBarHandle {
+  /**
+   * Puts the caret in the first value box that takes one, with whatever is in it selected so the
+   * next keystroke replaces it.
+   *
+   * A bar with nowhere to type — no rows at all, or none whose operator reads a value — grows a row
+   * first. The shortcut behind this means "write a condition", and a key that does nothing at all
+   * on an empty bar is one the user has to learn the exception to.
+   */
+  focusValue: () => void;
+}
 
 interface Props<Op extends string> {
   /** The fields a row may point at — a SQL table's columns, or the properties the documents on a
@@ -28,6 +41,9 @@ interface Props<Op extends string> {
   onApply: () => void;
   /** Blocks applying while the grid is busy with something else; the rows stay editable. */
   applyDisabled?: boolean;
+  /** How the pane above reaches {@link FilterBarHandle} — the grid's `Ctrl+F`, which has to land in
+   * a value box from wherever the focus happens to be. */
+  ref?: Ref<FilterBarHandle>;
 }
 
 /** The row of conditions above the grid. Every row is ANDed with the others, and none of them
@@ -42,22 +58,50 @@ function FilterBar<Op extends string>({
   onChange,
   onApply,
   applyDisabled,
+  ref,
 }: Props<Op>) {
   const { t } = useTranslation();
   const valueRefs = useRef(new Map<number, HTMLInputElement>());
-  /** The row whose value box is owed the focus, cleared as soon as it has been given it. */
-  const [pendingFocus, setPendingFocus] = useState<number | null>(null);
+  /** The row whose value box is owed the focus, and whether the text already in it is to be
+   * selected with it. Cleared as soon as the box has been given both. */
+  const [pendingFocus, setPendingFocus] = useState<{ id: number; select: boolean } | null>(null);
 
   // Focusing from an effect rather than straight out of the select handlers, for two reasons:
   // the box is still disabled until the render that a new operator brings, and the select
-  // hands focus back to its own trigger on the way out of the handler.
+  // hands focus back to its own trigger on the way out of the handler. The shortcut below adds a
+  // third: the row it focuses may be one it has just asked for, and which does not exist yet.
   useEffect(() => {
     if (pendingFocus === null) return;
-    valueRefs.current.get(pendingFocus)?.focus();
+    const box = valueRefs.current.get(pendingFocus.id);
+    box?.focus();
+    // Only for the shortcut, which is the start of writing a condition rather than an edit of the
+    // one that is there. A field or operator changed keeps its value on purpose, and selecting it
+    // would put the next keystroke through it.
+    if (pendingFocus.select) box?.select();
     setPendingFocus(null);
   }, [pendingFocus]);
 
   const operatorArity = useMemo(() => arityLookup<Op>(operators), [operators]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusValue() {
+        const typeable = rows.find((row) => operatorArity(row.operator) !== "none");
+        if (typeable) {
+          setPendingFocus({ id: typeable.id, select: true });
+          return;
+        }
+        // Nothing here to type into: an empty bar, or one holding only `IS NULL` and its kind. A
+        // bar with no fields to point a row at is the grid before its first read has landed.
+        if (fields.length === 0) return;
+        const row = createFilterRow<Op>(fields, defaultOperator);
+        onChange([...rows, row]);
+        setPendingFocus({ id: row.id, select: true });
+      },
+    }),
+    [rows, fields, defaultOperator, onChange, operatorArity],
+  );
   const fieldOptions = fields.map((c) => ({ value: c, label: c }));
   const operatorOptions = operators.map((op) => ({
     value: op.id as Op,
@@ -72,7 +116,7 @@ function FilterBar<Op extends string>({
     updateRow(row.id, { column });
     // Same reasoning as the operator below: the field alone is not a condition, so the caret
     // moves on to the value — unless the operator already on the row takes none.
-    if (operatorArity(row.operator) !== "none") setPendingFocus(row.id);
+    if (operatorArity(row.operator) !== "none") setPendingFocus({ id: row.id, select: false });
   }
 
   function changeOperator(row: FilterRow<Op>, operator: Op) {
@@ -82,7 +126,7 @@ function FilterBar<Op extends string>({
     updateRow(row.id, { operator, ...(clears ? { value: "" } : null) });
     // Picking an operator is only ever half of writing a condition, so the value is where the
     // typing goes next — unless the operator is one of the value-less ones.
-    if (!clears) setPendingFocus(row.id);
+    if (!clears) setPendingFocus({ id: row.id, select: false });
   }
 
   function valuePlaceholder(operator: Op): string {
