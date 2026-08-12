@@ -92,6 +92,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - On macOS every shortcut is now `⌘` rather than `Ctrl` — reload, new and close tab, select all,
   format, and click-to-open in the Query tab — leaving `Ctrl+Click` to the context menu it has
   always opened. Shortcuts on screen are written the way the platform writes them.
+- Scrolling the Query tab sideways no longer runs the script over its own line numbers.
 - Colour and edge fixes in the MySQL Data grid, whose rules were drawn in a fixed light grey that
   stayed light on the dark theme, and whose frame had square corners.
 

@@ -35,8 +35,11 @@ export const editorTheme = EditorView.theme({
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
     backgroundColor: "var(--sql-selection)",
   },
+  // Filled, not transparent: the gutter is `position: sticky` at the left edge, so every line of a
+  // script too wide for the editor passes behind it. See `--sql-gutter-bg` for what the fill is
+  // made of.
   ".cm-gutters": {
-    backgroundColor: "transparent",
+    background: "var(--sql-gutter-bg)",
     color: "var(--sql-gutter)",
     border: "none",
     paddingRight: "0.15rem",
