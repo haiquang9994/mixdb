@@ -77,6 +77,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   what it was aimed at, and scrolling closes it.
 - `Ctrl+A` on a MySQL table's Data tab selects every row on the page without clicking the grid
   first. In a text box it still selects the text.
+- A MySQL table now shows 1000 rows a page by default, and 5000 is offered alongside the other
+  sizes.
 
 ### Fixed
 

@@ -193,7 +193,8 @@ interface Props {
   readOnly?: boolean;
 }
 
-const PAGE_SIZES = [100, 200, 500, 1000];
+const PAGE_SIZES = [100, 200, 500, 1000, 5000];
+const DEFAULT_PAGE_SIZE = 1000;
 
 function SqlTable({
   active,
@@ -216,7 +217,7 @@ function SqlTable({
   // to — is then the grid that was left, rather than a first read of the table all over again.
   const restored = rememberedTable(tableCache, tableKey, schemaToken);
   const [page, setPage] = useState(restored?.request.page ?? 0);
-  const [pageSize, setPageSize] = useState(restored?.request.pageSize ?? 100);
+  const [pageSize, setPageSize] = useState(restored?.request.pageSize ?? DEFAULT_PAGE_SIZE);
   const [rows, setRows] = useState<Record<string, unknown>[]>(restored?.rows ?? []);
   const [columns, setColumns] = useState<string[]>(restored?.columns ?? []);
   const [columnMeta, setColumnMeta] = useState<Record<string, MysqlColumnMeta>>(

@@ -449,7 +449,10 @@ pub async fn table_data(
         .await
         .map_err(|e| err!("error.mysql", message = e))?;
 
-    let page_size = query.page_size.clamp(1, 1000);
+    // The ceiling is the largest page size the grid offers. Anything lower silently shortens the
+    // page while the grid still counts its pages by the size it asked for, putting the rows past
+    // the ceiling out of reach.
+    let page_size = query.page_size.clamp(1, 5000);
     let offset = query.page.max(0).saturating_mul(page_size);
     // Only a column the table actually has can reach the SQL text, so a stale or made-up sort
     // column is dropped rather than turned into an error the user can't act on.
