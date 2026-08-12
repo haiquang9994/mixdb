@@ -6,6 +6,7 @@ import {
   hoverTooltip,
   type DecorationSet,
 } from "@codemirror/view";
+import { hasPrimaryModifier } from "../../platform";
 import { docText } from "./extensions";
 import styles from "./SqlEditor.module.css";
 
@@ -133,10 +134,10 @@ const targetField = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field),
 });
 
-/** Whether the event is holding the key that turns a click into a jump — `Ctrl` everywhere, and
- *  `Cmd` as well, which is what a Mac keyboard has under the same thumb. */
+/** Whether the event is holding the key that turns a click into a jump — the same modifier every
+ *  other shortcut in the app is under, which on a Mac is `Cmd` and not `Ctrl`. */
 function held(event: MouseEvent | KeyboardEvent): boolean {
-  return event.ctrlKey || event.metaKey;
+  return hasPrimaryModifier(event);
 }
 
 /**

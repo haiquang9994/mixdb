@@ -46,7 +46,8 @@ import {
 } from "../../icons";
 import { useTranslation, type TranslationKey } from "../../i18n";
 import { errorMessage } from "../../errors";
-import { MODIFIER_LABEL, RELOAD_SHORTCUT, useReloadShortcut } from "../../reload";
+import { MODIFIER_LABEL, shortcutLabel } from "../../platform";
+import { RELOAD_SHORTCUT, useReloadShortcut } from "../../reload";
 import { loadDraft, saveDraft, saveDraftNow } from "../../queryDrafts";
 import { recordQuery } from "../../queryHistory";
 import { useQuerySnippets } from "../../querySnippets";
@@ -339,7 +340,7 @@ function QueryEditor({
         columns.length > HOVER_COLUMNS
           ? t("query.hoverMoreColumns", { n: columns.length - HOVER_COLUMNS })
           : null,
-        onOpenTable ? t("query.hoverJump", { mod: MODIFIER_LABEL }) : null,
+        onOpenTable ? t("query.hoverJump", { shortcut: shortcutLabel("Click") }) : null,
       ].filter((part) => part !== null);
       return {
         ...at,
@@ -568,7 +569,7 @@ function QueryEditor({
         </Button>
         <Button
           size="small"
-          title={`${MODIFIER_LABEL}+Shift+F`}
+          title={shortcutLabel("F", { shift: true })}
           onClick={() => editorRef.current?.format()}
           disabled={!hasSql}
         >

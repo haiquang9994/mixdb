@@ -373,7 +373,7 @@ const vi: TranslationDict = {
     hoverTable: "bảng · {{n}} cột",
     hoverTableOne: "bảng · 1 cột",
     hoverMoreColumns: "còn {{n}} cột nữa",
-    hoverJump: "{{mod}}+Click để mở",
+    hoverJump: "{{shortcut}} để mở",
     hoverFunction: "hàm của MySQL",
     hoverNullable: "cho phép rỗng",
     hoverNotNull: "không được rỗng",

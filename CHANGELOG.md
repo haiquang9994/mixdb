@@ -70,6 +70,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - A right-click menu no longer holds the rest of the window: the click that dismisses it also does
   what it was aimed at, and scrolling closes it.
 
+### Fixed
+
+- On macOS every shortcut is now `⌘` rather than `Ctrl` — reload, new and close tab, select all,
+  format, and click-to-open in the Query tab — leaving `Ctrl+Click` to the context menu it has
+  always opened. Shortcuts on screen are written the way the platform writes them.
+
 ## [0.0.9] - 2026-08-12
 
 ### Added

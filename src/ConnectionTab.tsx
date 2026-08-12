@@ -18,6 +18,7 @@ import ContextMenu from "./components/ContextMenu";
 import Button from "./components/Button";
 import Input from "./components/Input";
 import { EyeIcon, EyeOffIcon, LockIcon, PinIcon } from "./icons";
+import { IS_MAC, IS_WINDOWS } from "./platform";
 import { useTranslation } from "./i18n";
 import { errorMessage } from "./errors";
 
@@ -120,13 +121,13 @@ function maskMongoUri(uri: string): string {
  * someone looking for `~/.ssh` on a Mac. It stays out of the dictionaries because a path is not
  * language: it follows the machine the app runs on, not the language it was asked to speak.
  *
- * Tauri renders in the platform's own webview, so the user agent names the platform. Linux is the
- * fallback rather than a third test: WebKitGTK spells its system several ways (`X11`, `Wayland`,
- * `Linux`), and every remaining desktop puts home directories under `/home`.
+ * Which machine this is comes from {@link ../platform}. Linux is the fallback rather than a third
+ * test: WebKitGTK spells its system several ways (`X11`, `Wayland`, `Linux`), and every remaining
+ * desktop puts home directories under `/home`.
  */
-const PRIVATE_KEY_PLACEHOLDER = navigator.userAgent.includes("Windows")
+const PRIVATE_KEY_PLACEHOLDER = IS_WINDOWS
   ? "C:\\Users\\you\\.ssh\\id_rsa"
-  : navigator.userAgent.includes("Mac OS X")
+  : IS_MAC
     ? "/Users/you/.ssh/id_rsa"
     : "/home/you/.ssh/id_rsa";
 

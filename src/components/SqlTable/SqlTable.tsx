@@ -13,6 +13,7 @@ import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { copyText } from "../../clipboard";
 import { isBinary, isGenerated } from "../../mysql/columns";
+import { IS_MAC, hasPrimaryModifier } from "../../platform";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
 import { filterRowFor, initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
 import {
@@ -958,9 +959,9 @@ function SqlTable({
   }
 
   /** Extends, toggles or replaces the selection the way a list does: plain click selects the one
-   * row, ctrl/cmd toggles it, shift takes everything between the anchor and it. */
+   * row, the platform's own modifier toggles it, shift takes everything between the anchor and it. */
   function selectRow(rowIndex: number, e: React.MouseEvent) {
-    const toggle = e.ctrlKey || e.metaKey;
+    const toggle = hasPrimaryModifier(e);
     const anchor = anchorRowRef.current;
     if (e.shiftKey && anchor !== null) {
       const from = Math.min(anchor, rowIndex);
@@ -985,7 +986,12 @@ function SqlTable({
   }
 
   function handleCellMouseDown(e: React.MouseEvent<HTMLTableCellElement>, rowIndex: number, col: string) {
-    if (e.button !== 0) return;
+    // A secondary click belongs to `handleCellContextMenu`, which decides the selection for itself.
+    // On a Mac that gesture is also `Ctrl+Click`, and WebKit spells it as a plain button-0
+    // mousedown holding `Ctrl` — so `e.button` alone lets it through to the selection code below,
+    // where it would collapse forty selected rows onto the one under the pointer before the menu
+    // that was about to act on them ever opened.
+    if (e.button !== 0 || (IS_MAC && e.ctrlKey)) return;
     const current = editingCellRef.current;
     if (current && current.rowIndex === rowIndex && current.col === col) {
       return;
@@ -999,11 +1005,11 @@ function SqlTable({
       e.preventDefault();
       void commitAndExit();
     }
-    // Shift/ctrl-click means "extend the row selection" here, so the browser must not read it as
-    // "extend the text selection" as well. A plain click keeps its normal text-dragging.
-    if (e.shiftKey || e.ctrlKey || e.metaKey) e.preventDefault();
+    // Shift- or modifier-click means "extend the row selection" here, so the browser must not read
+    // it as "extend the text selection" as well. A plain click keeps its normal text-dragging.
+    if (e.shiftKey || hasPrimaryModifier(e)) e.preventDefault();
     selectRow(rowIndex, e);
-    // The grid owns the ctrl+A shortcut, and a shortcut only reaches it while it holds focus.
+    // The grid owns the select-all shortcut, and a shortcut only reaches it while it holds focus.
     // Clicking a row is what tells us the user is working in the grid — but only on a single
     // click: the second click of a double-click goes to edit mode, whose input takes focus itself.
     scrollRef.current?.focus({ preventScroll: true });
@@ -1068,7 +1074,7 @@ function SqlTable({
     // selection as well would be two things done by one key, and the selection is what the menu is
     // about to act on.
     if (menu !== null) return;
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+    if (hasPrimaryModifier(e) && e.key.toLowerCase() === "a") {
       e.preventDefault();
       if (rows.length === 0) return;
       setSelectedRows(new Set(rows.map((_, i) => i)));

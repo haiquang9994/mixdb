@@ -377,7 +377,7 @@ const en = {
     hoverTable: "table · {{n}} columns",
     hoverTableOne: "table · 1 column",
     hoverMoreColumns: "+{{n}} more",
-    hoverJump: "{{mod}}+Click opens it",
+    hoverJump: "{{shortcut}} opens it",
     hoverFunction: "MySQL function",
     hoverNullable: "nullable",
     hoverNotNull: "not null",

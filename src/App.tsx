@@ -3,6 +3,7 @@ import ConnectionTab from "./ConnectionTab";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
 import { CloseIcon, LockIcon, PlusIcon, SettingsIcon } from "./icons";
+import { hasPrimaryModifier } from "./platform";
 import { isBlockedReload } from "./reload";
 import { useScrollAcceleration } from "./scroll";
 import { isTextEntry } from "./textEntry";
@@ -68,7 +69,7 @@ function App() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      const shortcutKey = e.ctrlKey || e.metaKey;
+      const shortcutKey = hasPrimaryModifier(e);
       if (shortcutKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         openTab();

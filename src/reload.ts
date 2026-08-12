@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
 
+import { hasPrimaryModifier, shortcutLabel } from "./platform";
+
 /**
- * `Ctrl+R`, taken off the webview and handed to the pane on screen.
+ * `Ctrl+R` — `⌘R` on a Mac — taken off the webview and handed to the pane on screen.
  *
  * Every content pane in the app carries a reload button, and `Ctrl+R` is the key a user reaches for
  * to press it — except that the webview underneath answers first and reloads the whole app, which
@@ -14,15 +16,15 @@ import { useEffect, useRef } from "react";
  * `Ctrl+R` is claimed there too, so what is being developed against is the behaviour that ships.
  */
 
-/** `Ctrl`/`Cmd+R` on its own — the gesture the panes answer. */
+/** The platform's own reload chord on its own — the gesture the panes answer. */
 function isPaneReload(e: KeyboardEvent): boolean {
-  return (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "r";
+  return hasPrimaryModifier(e) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "r";
 }
 
 /** The rest of what a webview reloads itself on: the cache-skipping variant, and the function key
  *  with or without a modifier held over it. */
 function isWebviewReload(e: KeyboardEvent): boolean {
-  return e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r");
+  return e.key === "F5" || (hasPrimaryModifier(e) && e.key.toLowerCase() === "r");
 }
 
 /** Whether this is a reload gesture the webview must not be left to act on. */
@@ -30,13 +32,9 @@ export function isBlockedReload(e: KeyboardEvent): boolean {
   return isPaneReload(e) || (import.meta.env.PROD && isWebviewReload(e));
 }
 
-/** The modifier as it is written on the keyboard in front of the user. Tauri renders in the host's
- *  own webview, so the user agent names the platform. Exported because every shortcut the app draws
- *  is drawn with this one — two spellings of the same key would drift apart. */
-export const MODIFIER_LABEL = navigator.userAgent.includes("Mac OS X") ? "⌘" : "Ctrl";
-
-/** How the shortcut is written in a tooltip. A Mac writes its chords without a separator. */
-export const RELOAD_SHORTCUT = MODIFIER_LABEL === "⌘" ? "⌘R" : `${MODIFIER_LABEL}+R`;
+/** How the shortcut is written in a tooltip, in the platform's own spelling — see
+ *  {@link shortcutLabel}. */
+export const RELOAD_SHORTCUT = shortcutLabel("R");
 
 /** Names a reload button after the key that also presses it. Without this the shortcut is one
  *  nothing on screen mentions, which is the same as one nobody has. */
