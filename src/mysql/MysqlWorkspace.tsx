@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import {
   mysqlCollations,
   mysqlCreateDatabase,
@@ -9,6 +10,7 @@ import {
   mysqlRenameTable,
   mysqlServerInfo,
 } from "./api";
+import { onTransferProgress, type TransferProgress } from "../transfer";
 import { invalidateSchemaOutline } from "./schemaCache";
 import { isMysqlSystemDatabase } from "./system";
 import Select from "../components/Select";
@@ -119,6 +121,9 @@ function MysqlWorkspace({
   const [droppingTable, setDroppingTable] = useState<string | null>(null);
   /** What the dump/restore tools are doing, if anything — shown over the whole workspace. */
   const [transferStatus, setTransferStatus] = useState("");
+  /** How far the dump or restore behind that overlay has got — dropping a database has nothing to
+   * report. Null until the first reading arrives, and again once the overlay goes. */
+  const [transferProgress, setTransferProgress] = useState<TransferProgress | null>(null);
 
   /** What each table's filter bar was carrying when it was last left — a filter is often typed out
    * to look something up, and looking it up is exactly what sends the user off to another table or
@@ -216,6 +221,27 @@ function MysqlWorkspace({
   useEffect(() => {
     void loadDatabases();
   }, [loadDatabases]);
+
+  // Only while the overlay is up, which is the only time there is anywhere to show a reading. The
+  // listener is registered as the transfer begins rather than kept for the life of the tab: what it
+  // is listening for happens a few times in a session and reports four times a second while it does.
+  useEffect(() => {
+    if (transferStatus === "") {
+      setTransferProgress(null);
+      return;
+    }
+    let stop: UnlistenFn | null = null;
+    let cancelled = false;
+    void onTransferProgress(connectionId, setTransferProgress).then((unlisten) => {
+      // The transfer ended before the listener was in place; there is nothing left to hear.
+      if (cancelled) void unlisten();
+      else stop = unlisten;
+    });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [transferStatus, connectionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -608,7 +634,9 @@ function MysqlWorkspace({
         </section>
       </div>
 
-      {transferStatus !== "" && <TransferOverlay label={transferStatus} />}
+      {transferStatus !== "" && (
+        <TransferOverlay label={transferStatus} progress={transferProgress} />
+      )}
 
       {creatingDatabase && (
         <DatabaseDialog

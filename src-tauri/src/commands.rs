@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use serde::Serialize;
 use serde_json::{Map, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -18,6 +19,34 @@ const DB_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Where the settings screen listens for how far a tool download has got. Named here and in
 /// `src/tools.ts`, which are the only two places that need to agree on it.
 const TOOLS_PROGRESS_EVENT: &str = "tools://progress";
+
+/// Where the workspace listens for how far a dump or a restore has got. Named here and in
+/// `src/transfer.ts`.
+const TRANSFER_PROGRESS_EVENT: &str = "transfer://progress";
+
+/// One reading of a running transfer, with the connection it belongs to: two tabs can be dumping at
+/// once, and neither overlay has any business showing the other's figures.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransferProgress {
+    id: String,
+    #[serde(flatten)]
+    progress: dump::Progress,
+}
+
+/// Hands every reading of one connection's transfer to the window, on [`TRANSFER_PROGRESS_EVENT`].
+fn reporter(app: &AppHandle, id: &str) -> impl Fn(dump::Progress) {
+    let app = app.clone();
+    let id = id.to_string();
+    move |progress| {
+        // A dropped reading is not worth failing a transfer over: the next one is a quarter of a
+        // second away, and the last word comes from the command's own result.
+        let _ = app.emit(
+            TRANSFER_PROGRESS_EVENT,
+            TransferProgress { id: id.clone(), progress },
+        );
+    }
+}
 
 async fn with_timeout<T>(
     fut: impl std::future::Future<Output = Result<T, AppError>>,
@@ -466,6 +495,10 @@ pub async fn tools_install(app: AppHandle, suite: String) -> Result<(), AppError
 }
 
 /// Writes a database out as SQL. `mode` is `structure`, `data` or `all`.
+///
+/// Long enough on a real database to need saying how far along it is, which it does on
+/// `transfer://progress` — an estimate built from what mysqldump says it is doing, so the command
+/// returning is still what says the dump is done.
 #[tauri::command]
 pub async fn mysql_dump(
     app: AppHandle,
@@ -487,7 +520,20 @@ pub async fn mysql_dump(
     let column_statistics = version
         .as_deref()
         .is_ok_and(|version| !version.starts_with('5'));
+    // What each table weighs, for the progress the dump reports. A server that will not say —
+    // `information_schema` shows a user only what they have privileges on — leaves the dump to run
+    // with a bar that moves without a number, which is not worth refusing to dump over.
+    let tables: Vec<(String, u64)> = mysql_structure::table_stats(&pool, &database)
+        .await
+        .map(|tables| {
+            tables
+                .into_iter()
+                .map(|table| (table.name, table.data_size))
+                .collect()
+        })
+        .unwrap_or_default();
     let endpoint = mysql_endpoint(&state, &id).await?;
+    let report = reporter(&app, &id);
     in_background(move || {
         dump::mysql_dump(
             &tool,
@@ -500,12 +546,17 @@ pub async fn mysql_dump(
             mode,
             column_statistics,
             &path,
+            &tables,
+            &dump::Watch { report: &report },
         )
     })
     .await
 }
 
 /// Replays a SQL file. `database` is the default one for statements that do not name their own.
+///
+/// Reports on `transfer://progress` as the file goes in, which for a restore is a count rather
+/// than an estimate — the file is of a known size and the client is fed it byte by byte.
 #[tauri::command]
 pub async fn mysql_restore(
     app: AppHandle,
@@ -516,6 +567,7 @@ pub async fn mysql_restore(
 ) -> Result<(), AppError> {
     let tool = tools::require(tools::Tool::MysqlClient, &tools_dir(&app)?)?;
     let endpoint = mysql_endpoint(&state, &id).await?;
+    let report = reporter(&app, &id);
     in_background(move || {
         dump::mysql_restore(
             &tool,
@@ -525,12 +577,16 @@ pub async fn mysql_restore(
             &endpoint.password,
             &database,
             &path,
+            &dump::Watch { report: &report },
         )
     })
     .await
 }
 
 /// Writes a database out as a mongodump archive.
+///
+/// Reports on `transfer://progress` as the archive is written, measured against what the server
+/// says the database's documents weigh.
 #[tauri::command]
 pub async fn mongo_dump(
     app: AppHandle,
@@ -540,15 +596,34 @@ pub async fn mongo_dump(
     path: String,
 ) -> Result<(), AppError> {
     let tool = tools::require(tools::Tool::MongoDump, &tools_dir(&app)?)?;
+    let client = mongo_client(&state, &id).await?;
+    // What the archive is being measured against. A server that will not say leaves the dump to
+    // run with a bar that moves without a number, which is not worth refusing to dump over.
+    let documents: u64 = mongo::collection_stats(&client, &db)
+        .await
+        .map(|collections| collections.iter().map(|one| one.data_size).sum())
+        .unwrap_or(0);
     let (uri, endpoint) = mongo_endpoint(&state, &id).await?;
+    let report = reporter(&app, &id);
     in_background(move || {
         let endpoint = endpoint.as_ref().map(|(host, port)| (host.as_str(), *port));
-        dump::mongo_dump(&tool, &uri, endpoint, &db, &path)
+        dump::mongo_dump(
+            &tool,
+            &uri,
+            endpoint,
+            &db,
+            &path,
+            documents,
+            &dump::Watch { report: &report },
+        )
     })
     .await
 }
 
 /// Restores a mongodump archive into `db`, renaming its namespaces on the way in.
+///
+/// Reports on `transfer://progress` as the archive goes in, which like a MySQL restore is a count
+/// rather than an estimate — the archive is fed to mongorestore byte by byte.
 #[tauri::command]
 pub async fn mongo_restore(
     app: AppHandle,
@@ -559,9 +634,17 @@ pub async fn mongo_restore(
 ) -> Result<(), AppError> {
     let tool = tools::require(tools::Tool::MongoRestore, &tools_dir(&app)?)?;
     let (uri, endpoint) = mongo_endpoint(&state, &id).await?;
+    let report = reporter(&app, &id);
     in_background(move || {
         let endpoint = endpoint.as_ref().map(|(host, port)| (host.as_str(), *port));
-        dump::mongo_restore(&tool, &uri, endpoint, &db, &path)
+        dump::mongo_restore(
+            &tool,
+            &uri,
+            endpoint,
+            &db,
+            &path,
+            &dump::Watch { report: &report },
+        )
     })
     .await
 }

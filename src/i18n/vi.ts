@@ -817,6 +817,7 @@ const vi: TranslationDict = {
     dropping: "Đang xóa {{database}}...",
     installing: "Đang tải công cụ...",
     transferHint: "Cơ sở dữ liệu lớn có thể mất vài phút. Hãy để MixDB mở cho tới khi xong.",
+    progressTables: "Bảng {{at}}/{{total}}",
     installTitle: "Tải công cụ về?",
     installMysql:
       "Dump cần mysqldump, máy này chưa có. MixDB có thể tải bộ MySQL client tools từ dev.mysql.com — bản tải nặng từ vài chục tới vài trăm MB, nhưng chỉ giữ lại vài file cần thiết. Chỉ tải một lần.",

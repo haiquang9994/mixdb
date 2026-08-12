@@ -821,6 +821,7 @@ const en = {
     dropping: "Dropping {{database}}...",
     installing: "Downloading the tools...",
     transferHint: "A large database can take several minutes. Leave MixDB open until it finishes.",
+    progressTables: "Table {{at}} of {{total}}",
     installTitle: "Download the tools?",
     installMysql:
       "Dumping needs mysqldump, which is not on this machine. MixDB can download the MySQL client tools from dev.mysql.com \u2014 a distribution of some tens to a couple of hundred megabytes, of which only a few files are kept. It happens once.",

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { onTransferProgress, type TransferProgress } from "../transfer";
 import {
   mongoCreateCollection,
   mongoDropCollection,
@@ -92,6 +94,9 @@ function MongoWorkspace({
   const [droppingCollection, setDroppingCollection] = useState<string | null>(null);
   /** What the dump/restore tools are doing, if anything — shown over the whole workspace. */
   const [transferStatus, setTransferStatus] = useState("");
+  /** How far the dump or restore behind that overlay has got — dropping a database has nothing to
+   * report. Null until the first reading arrives, and again once the overlay goes. */
+  const [transferProgress, setTransferProgress] = useState<TransferProgress | null>(null);
 
   /** The selection as `loadDatabases` needs to read it: through a ref, so reloading the list stays
    * one callback per connection instead of a new one on every change of database. */
@@ -195,6 +200,27 @@ function MongoWorkspace({
   useEffect(() => {
     void loadDatabases();
   }, [loadDatabases]);
+
+  // Only while the overlay is up, which is the only time there is anywhere to show a reading. The
+  // listener is registered as the transfer begins rather than kept for the life of the tab: what it
+  // is listening for happens a few times in a session and reports four times a second while it does.
+  useEffect(() => {
+    if (transferStatus === "") {
+      setTransferProgress(null);
+      return;
+    }
+    let stop: UnlistenFn | null = null;
+    let cancelled = false;
+    void onTransferProgress(connectionId, setTransferProgress).then((unlisten) => {
+      // The transfer ended before the listener was in place; there is nothing left to hear.
+      if (cancelled) void unlisten();
+      else stop = unlisten;
+    });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [transferStatus, connectionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -513,7 +539,9 @@ function MongoWorkspace({
         </section>
       </div>
 
-      {transferStatus !== "" && <TransferOverlay label={transferStatus} />}
+      {transferStatus !== "" && (
+        <TransferOverlay label={transferStatus} progress={transferProgress} />
+      )}
 
       {creatingDatabase && (
         <NameDialog
