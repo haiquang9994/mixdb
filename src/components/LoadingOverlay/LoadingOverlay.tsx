@@ -18,7 +18,7 @@ function LoadingOverlay({ label }: Props) {
 
   return (
     <div className={styles.overlay}>
-      <span className={styles.label}>
+      <span className={`${styles.label} glass-pill`}>
         {/* Decoration on a line that already says what is happening, so it is hidden rather than
             described a second time. */}
         <span className={styles.spinner} aria-hidden="true" />

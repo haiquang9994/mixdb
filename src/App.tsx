@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import ConnectionTab from "./ConnectionTab";
+import GlassFilter from "./components/GlassFilter";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
 import { CloseIcon, LockIcon, PlusIcon, SettingsIcon } from "./icons";
@@ -7,10 +8,13 @@ import { hasPrimaryModifier } from "./platform";
 import { isBlockedReload } from "./reload";
 import { useScrollAcceleration } from "./scroll";
 import { isTextEntry } from "./textEntry";
-import { useAccent, useTheme } from "./theme";
+import { useAccent, useGlass, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
 import { useTranslation } from "./i18n";
 import "./App.css";
+/* After App.css, so the glass surfaces override the plain ones they replace rather than the other
+   way round. */
+import "./glass.css";
 
 interface TabInfo {
   id: string;
@@ -31,6 +35,7 @@ function App() {
   const [activeId, setActiveId] = useState(tabs[0].id);
   const [theme, setTheme] = useTheme();
   const [accent, setAccent] = useAccent();
+  const [glass, setGlass] = useGlass();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const update = useUpdateCheck();
 
@@ -95,6 +100,10 @@ function App() {
 
   return (
     <main className="app">
+      {/* Draws nothing on its own — it is the filter the glass surfaces point at, and it has to
+          outlive any one of them. Left out entirely while the setting is off, so a look nobody
+          asked for costs nothing to have shipped. */}
+      {glass && <GlassFilter />}
       <div className="tab-bar">
         {/* The app's name is also its settings button, which nothing about a bare word at 70%
             opacity said — so it wears a surface, a border and a gear, and reads as something to
@@ -171,6 +180,8 @@ function App() {
           onThemeChange={setTheme}
           accent={accent}
           onAccentChange={setAccent}
+          glass={glass}
+          onGlassChange={setGlass}
           update={update}
           onClose={() => setSettingsOpen(false)}
         />

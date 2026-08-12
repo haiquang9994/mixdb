@@ -120,7 +120,9 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--page-bg);
+  background: var(--rail-bg);
+  -webkit-backdrop-filter: var(--rail-filter);
+  backdrop-filter: var(--rail-filter);
   cursor: pointer;
   user-select: none;
 }
@@ -129,8 +131,10 @@
   background: var(--hover-bg);
 }
 
+/* Over the header's own fill rather than in place of it — see the same rule in SqlTable: replacing
+   it lets the rows scrolling underneath show through the column name under the pointer. */
 .headerCell:hover {
-  background: rgba(128, 128, 128, 0.18);
+  background: linear-gradient(rgb(128 128 128 / 0.18), rgb(128 128 128 / 0.18)), var(--rail-bg);
 }
 
 .name {
@@ -164,12 +168,14 @@
 }
 
 /* The totals, pinned to the bottom of the frame so they stay in view however far the list of
-   tables is scrolled. Opaque for the same reason the header is: the rows pass underneath it. */
+   tables is scrolled. Filled for the same reason the header is: the rows pass underneath it. */
 .grid tfoot td {
   position: sticky;
   bottom: 0;
   z-index: 1;
-  background: var(--page-bg);
+  background: var(--rail-bg);
+  -webkit-backdrop-filter: var(--rail-filter);
+  backdrop-filter: var(--rail-filter);
   border-top: 1px solid var(--border);
   border-bottom: none;
   font-weight: 600;

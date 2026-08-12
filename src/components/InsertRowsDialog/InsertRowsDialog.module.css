@@ -82,7 +82,9 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--page-bg);
+  background: var(--rail-bg);
+  -webkit-backdrop-filter: var(--rail-filter);
+  backdrop-filter: var(--rail-filter);
   padding: 5px 6px;
 }
 

@@ -714,15 +714,17 @@
   border-bottom: none;
 }
 
-/* Painted in a fully opaque colour — the rows pass underneath it — which rules out the card's own
-   surface: that one is a translucent wash in the dark theme. The page colour is the same one every
-   other grid in the app pins its header with. The bottom rule comes from the shared cell border
-   above; a box-shadow here would only be one more thing to repaint on every scrolled frame. */
+/* Painted with the same fill every other pinned strip in the app takes — the rows pass underneath
+   it, which rules out the card's own surface: that one is a translucent wash in the dark theme. The
+   bottom rule comes from the shared cell border above; a box-shadow here would only be one more
+   thing to repaint on every scrolled frame. */
 .grid thead th {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--page-bg);
+  background: var(--rail-bg);
+  -webkit-backdrop-filter: var(--rail-filter);
+  backdrop-filter: var(--rail-filter);
   font-weight: 600;
 }
 

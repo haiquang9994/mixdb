@@ -51,6 +51,19 @@
   --surface-bg: #ffffff;
   --page-bg: #f6f6f6;
 
+  /* What a *pinned* strip paints with: a grid's header, its totals, the column of buttons held
+     against the right edge. These are the one part of the app proper that live content passes
+     behind, so they are the one part that can be real glass — but only when the setting is on, and
+     only if the engine has the property. Both are decided in `glass.css`; here they resolve to the
+     opaque page colour every one of these strips used to name directly, so with the setting off
+     nothing about them has changed.
+
+     Carried as variables rather than as a class because a `<th>` cannot compose one: the rules that
+     pin these strips are descendant selectors (`.grid thead th`), and CSS Modules' `composes` only
+     works on a bare class. */
+  --rail-bg: var(--page-bg);
+  --rail-filter: none;
+
   /* One ring, one meaning: keyboard focus.
 
      Drawn *inside* the border box. A ring painted outside is at the mercy of every ancestor that

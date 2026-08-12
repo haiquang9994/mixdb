@@ -51,6 +51,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   will refuse it, instead of leaving you with "Redis: broken pipe".
 - `Ctrl+F` on a MySQL table puts the caret in the filter bar's first value box, adding a row if
   there is none.
+- Settings › Appearance can turn the layers that float over your data — menus, dropdowns, tooltips,
+  the update toast, the loading pill and the dialogs — to liquid glass, which frosts and bends what
+  is behind them. A grid's pinned header and totals frost the rows sliding under them, and the page,
+  the tab bar and the controls take the same material. Off by default.
 
 ### Changed
 
@@ -79,6 +83,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - On macOS every shortcut is now `⌘` rather than `Ctrl` — reload, new and close tab, select all,
   format, and click-to-open in the Query tab — leaving `Ctrl+Click` to the context menu it has
   always opened. Shortcuts on screen are written the way the platform writes them.
+- Colour and edge fixes in the MySQL Data grid, whose rules were drawn in a fixed light grey that
+  stayed light on the dark theme, and whose frame had square corners.
 
 ## [0.0.9] - 2026-08-12
 

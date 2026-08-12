@@ -19,6 +19,15 @@
   outline: none;
 }
 
+/* The lit top edge, under the liquid-glass setting only. Written here against the button's own
+   class rather than into `--control-shadow`, which every bare `<button>` in the app also reads —
+   a token would draw a white line across the icon buttons and list rows that carry no surface at
+   all. Above the state rules on purpose: `:focus-visible` shares this specificity and has to keep
+   winning, so the ring still replaces the rim while the keyboard is here. */
+:root[data-glass="on"] .button {
+  box-shadow: var(--glass-control-shadow);
+}
+
 /* Centred on the word beside it rather than on the line box around it. A line box reserves room
    under the baseline for descenders, and `Clear` has none — so an icon centred in that box sits low
    against the letters, which is exactly where it looked. A transform rather than a margin: the

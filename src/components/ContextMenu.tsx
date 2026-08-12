@@ -65,7 +65,7 @@ function ContextMenu({ x, y, onClose, children }: Props) {
   }, [onClose, ref]);
 
   return createPortal(
-    <div className="context-menu" ref={ref} style={style}>
+    <div className="context-menu glass" ref={ref} style={style}>
       {children}
     </div>,
     document.body,

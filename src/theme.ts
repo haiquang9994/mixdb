@@ -32,6 +32,7 @@ const DEFAULT_ACCENT: AccentColor = "blue";
 
 const STORAGE_KEY = "mixdb-theme";
 const ACCENT_STORAGE_KEY = "mixdb-accent";
+const GLASS_STORAGE_KEY = "mixdb-glass";
 
 function readStoredTheme(): ThemeMode {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -41,6 +42,12 @@ function readStoredTheme(): ThemeMode {
 function readStoredAccent(): AccentColor {
   const stored = localStorage.getItem(ACCENT_STORAGE_KEY);
   return ACCENT_COLORS.includes(stored as AccentColor) ? (stored as AccentColor) : DEFAULT_ACCENT;
+}
+
+/* Off unless the user has turned it on. It is a look rather than a fix — the plain pill is the one
+   that has to work everywhere — so the stored value is only ever the opt-in. */
+function readStoredGlass(): boolean {
+  return localStorage.getItem(GLASS_STORAGE_KEY) === "on";
 }
 
 function applyTheme(theme: ThemeMode): void {
@@ -67,9 +74,23 @@ function applyAccent(accent: AccentColor): void {
   }
 }
 
+/* Same shape again — the default is the bare `:root`, so "off" is the absence of the attribute
+   rather than a value of its own. */
+function applyGlass(on: boolean): void {
+  const root = document.documentElement;
+  if (on) {
+    root.setAttribute("data-glass", "on");
+    localStorage.setItem(GLASS_STORAGE_KEY, "on");
+  } else {
+    root.removeAttribute("data-glass");
+    localStorage.removeItem(GLASS_STORAGE_KEY);
+  }
+}
+
 /* Read before React mounts: the stored choice has to be on the root element for the very first
    paint, otherwise the window flashes the default accent on every launch. */
 applyAccent(readStoredAccent());
+applyGlass(readStoredGlass());
 
 export function useTheme(): [ThemeMode, (theme: ThemeMode) => void] {
   const [theme, setTheme] = useState<ThemeMode>(readStoredTheme);
@@ -91,4 +112,15 @@ export function useAccent(): [AccentColor, (accent: AccentColor) => void] {
   }
 
   return [accent, updateAccent];
+}
+
+export function useGlass(): [boolean, (on: boolean) => void] {
+  const [glass, setGlass] = useState<boolean>(readStoredGlass);
+
+  function updateGlass(next: boolean) {
+    applyGlass(next);
+    setGlass(next);
+  }
+
+  return [glass, updateGlass];
 }

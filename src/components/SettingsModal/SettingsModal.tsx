@@ -17,6 +17,8 @@ interface SettingsModalProps {
   onThemeChange: (theme: ThemeMode) => void;
   accent: AccentColor;
   onAccentChange: (accent: AccentColor) => void;
+  glass: boolean;
+  onGlassChange: (glass: boolean) => void;
   update: UpdateCheck;
   onClose: () => void;
 }
@@ -40,7 +42,16 @@ const SECTIONS: { id: SectionId; labelKey: TranslationKey; icon: ComponentType<I
  * happen to live behind the same door, and reading as one column made the door look busier than
  * what is behind it.
  */
-function SettingsModal({ theme, onThemeChange, accent, onAccentChange, update, onClose }: SettingsModalProps) {
+function SettingsModal({
+  theme,
+  onThemeChange,
+  accent,
+  onAccentChange,
+  glass,
+  onGlassChange,
+  update,
+  onClose,
+}: SettingsModalProps) {
   const { t } = useTranslation();
   const { close, cls } = useDialogExit();
   /* Opened while an update is waiting, this dialog is almost always being opened *for* the update —
@@ -108,6 +119,8 @@ function SettingsModal({ theme, onThemeChange, accent, onAccentChange, update, o
               onThemeChange={onThemeChange}
               accent={accent}
               onAccentChange={onAccentChange}
+              glass={glass}
+              onGlassChange={onGlassChange}
             />
           </div>
           <div

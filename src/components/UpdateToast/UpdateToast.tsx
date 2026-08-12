@@ -84,7 +84,7 @@ function UpdateToast({ update }: Props) {
   const installing = status === "installing";
 
   return (
-    <div className={styles.toast} role="status" aria-live="polite">
+    <div className={`${styles.toast} glass`} role="status" aria-live="polite">
       <div className={styles.header}>
         <span className={styles.title}>
           {status === "downloaded"

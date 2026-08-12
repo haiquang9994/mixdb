@@ -5,10 +5,14 @@
   font-size: 0.9em;
 }
 
+/* `var(--border)` rather than the `#ccc` this grid used to draw itself in — the one grid in the app
+   that named a colour instead of taking the shared one. `#ccc` is an opaque light grey, so it was a
+   hard line on a light page and a *bright* one on a dark page, where every other grid draws a soft
+   grey at a quarter strength. It is the reason this table read as heavier than the rest of them. */
 .sqlTable th,
 .sqlTable td {
-  border-right: 1px solid #ccc;
-  border-bottom: 1px solid #ccc;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 4px 8px;
   text-align: left;
   white-space: nowrap;
@@ -17,20 +21,16 @@
   text-overflow: ellipsis;
 }
 
-.sqlTable th:first-child,
-.sqlTable td:first-child {
-  border-left: 1px solid #ccc;
-}
 
-.sqlTable thead th {
-  border-top: 1px solid #ccc;
-}
-
+/* The rows pass underneath, so the header has to hide them — `--rail-bg` is the page colour until
+   the glass setting turns it into a tint over a blur of whatever is behind it. */
 .scroll thead th {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--page-bg);
+  background: var(--rail-bg);
+  -webkit-backdrop-filter: var(--rail-filter);
+  backdrop-filter: var(--rail-filter);
 }
 
 /* Every header cell is the control that sorts by its column, so it takes the pointer the whole
@@ -41,8 +41,12 @@
   user-select: none;
 }
 
+/* The lift goes *over* the header's own fill rather than replacing it. Written as a gradient of one
+   flat colour because that is the only way to stack a wash on a background colour in one property —
+   and it has to be one property, since the fill is what stops the rows scrolling underneath from
+   showing straight through the column name under the pointer. */
 .headerCell:hover {
-  background: rgba(128, 128, 128, 0.14);
+  background: linear-gradient(rgb(128 128 128 / 0.14), rgb(128 128 128 / 0.14)), var(--rail-bg);
 }
 
 /* Kept in the flow even while empty, so a column doesn't change width as its sort comes and
@@ -204,10 +208,18 @@
   flex-direction: column;
 }
 
+/* The frame is this box's, not the cells'. This grid is the only one in the app that closes itself
+   in on all four sides — the others are full-width and draw interior rules only — and a box made
+   out of the first column's left border and the header's top border is a box that cannot be
+   rounded: its four corners belong to four different cells, and the two at the bottom belong to a
+   virtualiser's spacer, which has no borders at all. Drawn instead by the element that already
+   clips the content, it is one box with one radius, and the header and the rows are cut to it. */
 .scroll {
   flex: 1;
   min-width: 0;
   min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   overflow: auto;
   overscroll-behavior: contain;
   /* Off, and not as a nicety. Scroll anchoring watches for content above the viewport changing

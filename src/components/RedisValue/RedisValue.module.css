@@ -91,13 +91,16 @@
   vertical-align: top;
 }
 
-/* The sticky header hides the rows scrolling under it by being opaque, so it needs the page's own
-   background rather than a translucent one — `--page-bg` is that colour in either theme. */
+/* The sticky header has to hide the rows scrolling under it, so it takes the page's own colour
+   rather than a wash of the card's — `--rail-bg` is that colour in either theme, and a frosted
+   tint over them once the glass setting is on. */
 .table th {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--page-bg);
+  background: var(--rail-bg);
+  -webkit-backdrop-filter: var(--rail-filter);
+  backdrop-filter: var(--rail-filter);
   font-weight: 600;
   white-space: nowrap;
 }

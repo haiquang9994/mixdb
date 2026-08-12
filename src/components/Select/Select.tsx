@@ -296,7 +296,7 @@ function Select<T extends string | number>({
       </button>
       {open &&
         createPortal(
-          <div className={styles.menu} ref={menuRef} style={menuStyle}>
+          <div className={`${styles.menu} glass`} ref={menuRef} style={menuStyle}>
             {searchable && (
               <input
                 ref={searchRef}

@@ -79,7 +79,9 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--page-bg);
+  background: var(--rail-bg);
+  -webkit-backdrop-filter: var(--rail-filter);
+  backdrop-filter: var(--rail-filter);
 }
 
 /* Past a few dozen rows each grid holds only the rows on screen, and these are the two things that
@@ -160,7 +162,7 @@
 
 /* Pinned to the right edge, so a row's own buttons stay where they are however far the grid is
    scrolled sideways — a wide table would otherwise put them out of reach of the row they act on.
-   Opaque, because the cells it now sits over would show straight through it. */
+   Filled, because the cells it now sits over would show straight through it. */
 .rowActions {
   position: sticky;
   right: 0;
@@ -168,9 +170,11 @@
   width: 1%;
   /* The buttons are pinned to their own size; ellipsising them would clip a button in half. */
   overflow: visible;
-  /* The same colour the sticky header takes, which is what the rows themselves show: nothing
-     between the grid and the page paints a background of its own. */
-  background: var(--page-bg);
+  /* The same fill the sticky header takes, which is what the rows themselves show: nothing between
+     the grid and the page paints a background of its own. */
+  background: var(--rail-bg);
+  -webkit-backdrop-filter: var(--rail-filter);
+  backdrop-filter: var(--rail-filter);
   /* Its own left edge, since the border of the cell in front of it passes underneath as soon as
      the grid is scrolled — the column would otherwise sit on the rows with no edge at all. */
   border-left: 1px solid var(--border);
