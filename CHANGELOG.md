@@ -48,6 +48,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Changed
 
+- Marking a connection read-only now works for every kind, not only MySQL. On MongoDB the
+  collections cannot be created, renamed or dropped, the dump tools are closed, and documents
+  neither open for editing nor take an insert, a clone or a delete; on Redis, keys cannot be
+  deleted from either the value pane or a group. Everything that reads works as before.
 - A MySQL table opens where you left it — same page, order, filters, scroll and rows — as do its
   structure and its database's statistics. Only a reload, `Ctrl+R`, or a change you made yourself
   asks the server again, and a change to one table costs only that table.

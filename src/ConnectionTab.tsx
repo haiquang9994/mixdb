@@ -364,10 +364,6 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
         id: editingId,
         name,
         config,
-        // Read-only is the exception to that: only MySQL enforces it and only MySQL offers the menu
-        // item that clears it, so a connection changed to another kind drops the flag rather than
-        // keeping one nothing acts on and nothing can turn off.
-        readOnly: config.kind === "mysql" ? existing?.readOnly : undefined,
       };
       await updateConnection(entry);
       setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
@@ -410,6 +406,10 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
       id: crypto.randomUUID(),
       name: `${source.name} (copy)`,
       config: source.config,
+      // Carried over, unlike `pinned`: a copy of a production connection points at the same
+      // server, so the mark that says not to write to it has to come along. Losing it would
+      // turn "duplicate" into the one click that makes a read-only connection writable.
+      readOnly: source.readOnly,
     };
     await addConnection(entry);
   }
@@ -850,21 +850,20 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
                 ? t("connection.unpin")
                 : t("connection.pin")}
             </button>
-            {/* MySQL only: the Query tab is the one place that refuses a write, so offering the
-                flag on a Mongo or Redis connection would promise a protection nothing keeps. */}
-            {savedConnections.find((c) => c.id === contextMenu.id)?.config.kind === "mysql" && (
-              <button
-                type="button"
-                onClick={() => {
-                  toggleReadOnly(contextMenu.id);
-                  closeContextMenu();
-                }}
-              >
-                {savedConnections.find((c) => c.id === contextMenu.id)?.readOnly
-                  ? t("connection.allowWrites")
-                  : t("connection.markReadOnly")}
-              </button>
-            )}
+            {/* Offered whatever the kind: each workspace closes off everything of its own that
+                would write, so the flag means the same thing on a Mongo or Redis connection as it
+                does on a MySQL one. */}
+            <button
+              type="button"
+              onClick={() => {
+                toggleReadOnly(contextMenu.id);
+                closeContextMenu();
+              }}
+            >
+              {savedConnections.find((c) => c.id === contextMenu.id)?.readOnly
+                ? t("connection.allowWrites")
+                : t("connection.markReadOnly")}
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -920,6 +919,7 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
         onDisconnect={disconnect}
         sidebarWidth={activeSavedConnection?.sidebarWidth}
         onSidebarWidthChange={updateSidebarWidth}
+        readOnly={activeSavedConnection?.readOnly ?? false}
       />
     );
   }
@@ -936,6 +936,7 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
       onSidebarWidthChange={updateSidebarWidth}
       scanLimit={activeSavedConnection?.redisScanLimit}
       onScanLimitChange={updateRedisScanLimit}
+      readOnly={activeSavedConnection?.readOnly ?? false}
     />
   );
 }

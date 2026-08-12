@@ -32,6 +32,14 @@ interface Props {
   /** The remembered key ceiling for this connection, or undefined for {@link DEFAULT_SCAN_LIMIT}. */
   scanLimit?: number;
   onScanLimitChange?: (limit: number) => void;
+  /**
+   * The connection is marked read-only, so nothing here may write to the server.
+   *
+   * Deleting is all a Redis keyspace can be changed by from in here, so that is what closes: the
+   * value pane's delete button and the group pane's. Walking the keyspace, reading a value and
+   * switching database are reads and stay exactly as they are.
+   */
+  readOnly?: boolean;
 }
 
 /** The panes the content area can show: the selected key's value, or the keys under one group of
@@ -103,6 +111,7 @@ function RedisWorkspace({
   onSidebarWidthChange,
   scanLimit,
   onScanLimitChange,
+  readOnly = false,
 }: Props) {
   const { t } = useTranslation();
   const [databases, setDatabases] = useState<RedisDbInfo[]>([]);
@@ -590,6 +599,7 @@ function RedisWorkspace({
               key={`${selectedDb}:${selectedKey}`}
               connectionId={connectionId}
               keyName={selectedKey}
+              readOnly={readOnly}
               onError={setLocalError}
               onDeleted={(name) => handleKeysDeleted([name])}
             />
@@ -603,6 +613,7 @@ function RedisWorkspace({
               prefix={groupPrefix}
               keys={groupKeys}
               partial={keysLoading || !scanDone}
+              readOnly={readOnly}
               onError={setLocalError}
               onDeleted={handleKeysDeleted}
               onClose={closeGroup}

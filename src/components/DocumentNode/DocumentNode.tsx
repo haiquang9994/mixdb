@@ -466,6 +466,12 @@ export interface DocumentNodeProps {
   value: TypedValue;
   parentKind: "object" | "array";
   readOnly?: boolean;
+  /** Whether a read-only node marks itself with a lock beside its key. The `_id` of an otherwise
+   *  editable document does: it is the one field that refuses an edit, and the mark is what says
+   *  why. A card that is read-only throughout — a read-only connection — says so once below the
+   *  list instead, so it passes `false` rather than repeating it on every row. Defaults to on;
+   *  ignored on a node that is editable anyway. */
+  showLock?: boolean;
   depth: number;
   /** Whether the whole document this node belongs to is in edit mode. */
   documentEditing: boolean;
@@ -505,6 +511,7 @@ function DocumentNode({
   value,
   parentKind,
   readOnly,
+  showLock = true,
   depth,
   documentEditing,
   activeEditPath,
@@ -602,6 +609,7 @@ function DocumentNode({
             // makes its whole subtree read-only — mutating a nested part of
             // a compound _id is just as forbidden as replacing _id itself.
             readOnly={readOnly}
+            showLock={showLock}
             depth={depth + 1}
             documentEditing={documentEditing}
             activeEditPath={activeEditPath}
@@ -701,7 +709,7 @@ function DocumentNode({
             }}
           >
             {parentKind === "array" ? `[${propKey}]` : propKey}
-            {readOnly && (
+            {readOnly && showLock && (
               <span className={styles.lock} title={t("noSqlTable.idReadOnlyTooltip")}>
                 <LockIcon />
               </span>

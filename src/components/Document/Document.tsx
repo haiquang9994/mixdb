@@ -148,6 +148,11 @@ export interface DocumentProps {
    * `onChange`, `_id` is editable like any other field, and the header carries a "drop this
    * draft" button in place of Save/Discard/Delete. */
   draft?: boolean;
+  /** The connection is marked read-only: no field opens for editing, nothing can be added or
+   *  marked for deletion, and the header carries neither Delete nor Clone. Nothing is said on the
+   *  card itself — a document that simply does not open reads as one for looking at, and the
+   *  reason is on the buttons below the list, where someone wanting to change it is looking. */
+  readOnly?: boolean;
   /** Hands the list a way to write out this card's staged edits before it refetches.
    * Returns the matching unregister function. Not used by a draft. */
   registerFlush?: (flush: () => Promise<void>) => () => void;
@@ -189,6 +194,7 @@ function Document({
   doc: fetchedDoc,
   displayNumber,
   draft = false,
+  readOnly = false,
   registerFlush,
   onWrite,
   onSaved,
@@ -296,6 +302,10 @@ function Document({
     // A draft has nowhere to flush to: its working copy *is* the pending state, and the form
     // reads it off `onChange` when the user submits.
     if (draft || !onWrite || abandonedRef.current) return;
+    // The flag can come on while edits are already staged — it is read off the store, so another
+    // tab can set it — and the unmount flush would then write them out with nothing on screen to
+    // say so. Nothing staged before it goes to the server after it.
+    if (readOnly) return;
     if (Object.keys(pendingSet).length === 0 && deletedPaths.size === 0) return;
 
     let setOps: Record<string, TypedValue> = { ...pendingSet };
@@ -446,6 +456,10 @@ function Document({
 
   const renameProp = useCallback(
     async (path: string[], newKey: string) => {
+      // Before the working copy is touched, not after: a rename goes to the server the moment it
+      // is made, so on a read-only connection there is no half of it worth keeping on screen.
+      // An editor left open when the flag came on is how one still gets here.
+      if (readOnly) return;
       const oldPath = path.join(".");
       // `$rename` takes a full dotted path on both sides — handing it the bare key would move
       // a nested property up to the root of the document instead of renaming it in place.
@@ -482,7 +496,7 @@ function Document({
         setRenamedPaths(before.renamedPaths);
       }
     },
-    [draft, onWrite, reportSaved],
+    [draft, readOnly, onWrite, reportSaved],
   );
 
   const activateEdit = useCallback((path: string[], mode: DocumentEditMode) => {
@@ -510,7 +524,7 @@ function Document({
 
   async function performDelete() {
     setConfirmingDelete(false);
-    if (!onDelete) return;
+    if (!onDelete || readOnly) return;
     setDeleting(true);
     abandonedRef.current = true;
     if (!(await onDelete(idRef.current))) abandonedRef.current = false;
@@ -520,6 +534,11 @@ function Document({
   const nodeProps = useMemo(
     () => ({
       parentKind: "object" as const,
+      readOnly,
+      // A card that is read-only throughout says so once, below the list; a lock on every row of
+      // every document would be noise. The `_id` of an editable document is the other case, and
+      // there the mark is the whole explanation — see {@link DocumentNodeProps.showLock}.
+      showLock: !readOnly,
       depth: 0,
       documentEditing: isEditing,
       activeEditPath: activeEdit?.path ?? null,
@@ -537,6 +556,7 @@ function Document({
       onAddChild: addChild,
     }),
     [
+      readOnly,
       isEditing,
       activeEdit,
       deletedPaths,
@@ -593,16 +613,20 @@ function Document({
               <DotIcon />
               {t("noSqlTable.unsavedChanges", { n: pendingCount })}
             </span>
-            <button
-              type="button"
-              className={styles.saveBtn}
-              onClick={() => {
-                setActiveEdit(null);
-                void flush();
-              }}
-            >
-              {t("common.save")}
-            </button>
+            {/* Read-only keeps Discard but drops Save: the edits are already staged by the time
+                the flag arrives, and the way out of them is to throw them away. */}
+            {!readOnly && (
+              <button
+                type="button"
+                className={styles.saveBtn}
+                onClick={() => {
+                  setActiveEdit(null);
+                  void flush();
+                }}
+              >
+                {t("common.save")}
+              </button>
+            )}
             <button type="button" className={styles.discardBtn} onClick={discard}>
               {t("noSqlTable.discardChanges")}
             </button>
@@ -627,7 +651,7 @@ function Document({
                 <TrashIcon />
               </button>
             )
-          : confirmingDelete
+          : confirmingDelete && !readOnly
             ? (
               <span className={styles.confirmDelete}>
                 {t("noSqlTable.confirmDeleteDocument")}
@@ -662,15 +686,20 @@ function Document({
                     <CopyIcon />
                   </button>
                 )}
-                <button
-                  type="button"
-                  className={styles.deleteDocButton}
-                  disabled={deleting}
-                  title={t("noSqlTable.deleteDocument")}
-                  onClick={() => setConfirmingDelete(true)}
-                >
-                  <TrashIcon />
-                </button>
+                {/* Gone rather than greyed out on a read-only connection: the card carries no
+                    other button, and one dead icon per document is a row of them down the list
+                    saying the same thing the action bar already says once. */}
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className={styles.deleteDocButton}
+                    disabled={deleting}
+                    title={t("noSqlTable.deleteDocument")}
+                    onClick={() => setConfirmingDelete(true)}
+                  >
+                    <TrashIcon />
+                  </button>
+                )}
               </>
             )}
       </div>
@@ -685,25 +714,29 @@ function Document({
           {otherKeys.map((key) => (
             <DocumentNode {...nodeProps} key={key} path={[key]} propKey={key} value={doc[key]} />
           ))}
-          {addingRoot ? (
-            <div className={styles.addRootRow}>
-              <ValueEditor
-                initialValue=""
-                propertyName={{ value: newRootKey, onChange: setNewRootKey }}
-                onCommit={(value) => {
-                  closeAddRoot();
-                  // A property nobody named was never really added: leave the document as it was.
-                  if (!newRootKey.trim()) return;
-                  addChild([], newRootKey.trim(), value);
-                }}
-                onCancel={closeAddRoot}
-              />
-            </div>
-          ) : (
-            <button type="button" className={styles.addRootButton} onClick={() => setAddingRoot(true)}>
-              + {t("noSqlTable.addProperty")}
-            </button>
-          )}
+          {/* Nothing may be added to a document on a read-only connection, the same as nothing
+              inside it may be edited — the row goes rather than opening an editor with nowhere
+              to write to. */}
+          {!readOnly &&
+            (addingRoot ? (
+              <div className={styles.addRootRow}>
+                <ValueEditor
+                  initialValue=""
+                  propertyName={{ value: newRootKey, onChange: setNewRootKey }}
+                  onCommit={(value) => {
+                    closeAddRoot();
+                    // A property nobody named was never really added: leave the document as it was.
+                    if (!newRootKey.trim()) return;
+                    addChild([], newRootKey.trim(), value);
+                  }}
+                  onCancel={closeAddRoot}
+                />
+              </div>
+            ) : (
+              <button type="button" className={styles.addRootButton} onClick={() => setAddingRoot(true)}>
+                + {t("noSqlTable.addProperty")}
+              </button>
+            ))}
         </>
       )}
     </div>

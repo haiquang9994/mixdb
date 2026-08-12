@@ -41,6 +41,15 @@ interface Props {
   onDisconnect: () => void;
   sidebarWidth?: number;
   onSidebarWidthChange?: (width: number) => void;
+  /**
+   * The connection is marked read-only, so nothing here may write to the server.
+   *
+   * Everything that would change it is turned off: collections cannot be created, renamed or
+   * dropped, the database tools are closed, and the documents in the Data tab neither open for
+   * editing nor take an insert or a delete. What still works is everything that reads, which is
+   * the point of the flag.
+   */
+  readOnly?: boolean;
 }
 
 /** The panes the content area can show: the selected collection's documents, or what every
@@ -76,6 +85,7 @@ function MongoWorkspace({
   error,
   sidebarWidth,
   onSidebarWidthChange,
+  readOnly = false,
 }: Props) {
   const { t } = useTranslation();
   const [databases, setDatabases] = useState<string[]>([]);
@@ -464,20 +474,28 @@ function MongoWorkspace({
    * nothing in it may be created, renamed or dropped, nor anything done to it as a whole. */
   const systemDatabase = selectedDb !== "" && isMongoSystemDatabase(selectedDb);
 
+  /** The two reasons this workspace refuses to change anything, and the one worth saying first.
+   * Read-only is a decision someone made about the connection; a system database is a fact about
+   * the server, and the one they are more likely to already know. */
+  const noWrites = readOnly || systemDatabase;
+  const noWritesHint = readOnly
+    ? t("common.readOnlyConnection")
+    : t("mongo.systemCollection", { database: selectedDb });
+
   const collectionActions: ItemAction[] = [
     {
       key: "rename",
       label: t("mongo.renameCollection"),
-      disabled: systemDatabase,
-      disabledHint: t("mongo.systemCollection", { database: selectedDb }),
+      disabled: noWrites,
+      disabledHint: noWritesHint,
       onSelect: setRenamingCollection,
     },
     {
       key: "drop",
       label: t("mongo.dropCollection"),
       danger: true,
-      disabled: systemDatabase,
-      disabledHint: t("mongo.systemCollection", { database: selectedDb }),
+      disabled: noWrites,
+      disabledHint: noWritesHint,
       onSelect: setDroppingCollection,
     },
   ];
@@ -527,6 +545,9 @@ function MongoWorkspace({
               {
                 value: NEW_DATABASE,
                 label: t("mongo.createDatabase"),
+                // Shown rather than hidden, so the picker offers the same thing wherever it is
+                // opened and the missing entry is not read as a bug.
+                disabled: readOnly,
                 optionLabel: <span className="select-new-option">+ {t("mongo.createDatabase")}</span>,
               },
               ...databases.map((db) => ({ value: db, label: db })),
@@ -603,18 +624,24 @@ function MongoWorkspace({
                   label: systemDatabase
                     ? t("mongo.addCollectionSystem", { database: selectedDb })
                     : t("mongo.addCollection"),
-                  disabled: !selectedDb || collectionsLoading || systemDatabase,
+                  disabled: !selectedDb || collectionsLoading || noWrites,
+                  // Only for read-only: the system-database case already says so in its label.
+                  disabledHint: readOnly ? t("common.readOnlyConnection") : undefined,
                   onClick: () => setCreatingCollection(true),
                 },
               ]}
             />
             {/* The database as a whole, kept at the far end: these act on everything the list
                 above is showing rather than on anything in it. */}
+            {/* Dump, restore and drop. A dump only reads, but restore and drop are here too and
+                the component takes one `disabled` for all three — closing the lot is the right way
+                round: a read-only connection losing its dump button is a nuisance, and keeping its
+                restore button is the thing the flag was set to prevent. */}
             <DatabaseActions
               kind="mongo"
               connectionId={connectionId}
               database={selectedDb}
-              disabled={collectionsLoading}
+              disabled={collectionsLoading || readOnly}
               onError={setLocalError}
               onChanged={databaseChanged}
               onBusyChange={setTransferStatus}
@@ -653,6 +680,7 @@ function MongoWorkspace({
                 documentCache={documentCache}
                 schemaToken={schemaToken}
                 onDocumentsChanged={documentsChanged}
+                readOnly={readOnly}
               />
             </div>
           )}

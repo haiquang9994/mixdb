@@ -19,6 +19,9 @@ interface Props {
   connectionId: string;
   /** The key on screen. Changing it starts the value over from its first page. */
   keyName: string;
+  /** The connection is marked read-only: the key is shown as it is, and the delete button is
+   *  closed with the reason on it. */
+  readOnly?: boolean;
   onError: (message: string) => void;
   /** Called once the key is gone, so the sidebar can drop it and clear the selection. */
   onDeleted: (key: string) => void;
@@ -106,7 +109,7 @@ function CellValue({ text }: { text: string }) {
  * with no notion of a page number to jump to — and having the other three behave the same way
  * keeps one control for all of them.
  */
-function RedisValue({ connectionId, keyName, onError, onDeleted }: Props) {
+function RedisValue({ connectionId, keyName, readOnly = false, onError, onDeleted }: Props) {
   const { t } = useTranslation();
   const [page, setPage] = useState<RedisValuePage | null>(null);
   const [items, setItems] = useState<RedisValueItem[]>([]);
@@ -234,7 +237,8 @@ function RedisValue({ connectionId, keyName, onError, onDeleted }: Props) {
               icon: TrashIcon,
               label: t("redisValue.deleteKey"),
               danger: true,
-              disabled: busy,
+              disabled: readOnly || busy,
+              disabledHint: readOnly ? t("common.readOnlyConnection") : undefined,
               onClick: () => setConfirmingDelete(true),
             },
           ]}

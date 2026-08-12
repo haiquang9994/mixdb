@@ -39,13 +39,15 @@ export interface SavedConnection {
    *  to be found alphabetically among every one they have ever saved. Absent means not pinned, so
    *  a list written before pinning existed reads correctly. */
   pinned?: boolean;
-  /** Marks the connection as one nothing is to be written to. The Query tab refuses to send a
-   *  statement that would change anything — the point being the production server sitting one line
-   *  above the staging one in the sidebar. It is a reminder, not a permission: the credential
-   *  decides what the server actually allows, and this only decides what MixDB will send.
+  /** Marks the connection as one nothing is to be written to. Everything that would change
+   *  something is closed off — the Query tab refuses to send such a statement, and every button
+   *  that would insert, edit, rename, drop or delete is greyed out — the point being the production
+   *  server sitting one line above the staging one in the sidebar. It is a reminder, not a
+   *  permission: the credential decides what the server actually allows, and this only decides what
+   *  MixDB will send.
    *
-   *  MySQL only, because that is where the checks live; the flag is offered and kept for no other
-   *  kind. */
+   *  Offered for every kind, because a production Mongo or Redis server is as easy to mistake for
+   *  its staging twin as a MySQL one is. */
   readOnly?: boolean;
 }
 

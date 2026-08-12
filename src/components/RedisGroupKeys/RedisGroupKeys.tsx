@@ -20,6 +20,9 @@ interface Props {
   /** The sweep behind {@link keys} has not run to the end of the keyspace, so this listing is
    * what has been read rather than everything the prefix holds. */
   partial?: boolean;
+  /** The connection is marked read-only: the group is listed as it is — which is what the pane is
+   *  for — and the button that would delete the ticked keys is closed with the reason on it. */
+  readOnly?: boolean;
   onError: (message: string) => void;
   /** The names that are gone, once the server has confirmed it. */
   onDeleted: (names: string[]) => void;
@@ -46,7 +49,16 @@ const ROW_REVEAL_STEP = 200;
  * already read, so a scan that stopped short says so rather than passing a partial group off as
  * the whole of it.
  */
-function RedisGroupKeys({ connectionId, prefix, keys, partial, onError, onDeleted, onClose }: Props) {
+function RedisGroupKeys({
+  connectionId,
+  prefix,
+  keys,
+  partial,
+  readOnly = false,
+  onError,
+  onDeleted,
+  onClose,
+}: Props) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
@@ -180,7 +192,10 @@ function RedisGroupKeys({ connectionId, prefix, keys, partial, onError, onDelete
         />
         <Button
           className={styles.delete}
-          disabled={selectedCount === 0 || deleting}
+          disabled={readOnly || selectedCount === 0 || deleting}
+          // The button carries its own words, so the reason goes in the tooltip rather than in
+          // place of them — unlike the icon-only buttons, which have nothing else to say.
+          title={readOnly ? t("common.readOnlyConnection") : undefined}
           onClick={() => setConfirming(true)}
         >
           {t("redisGroup.deleteSelected", { n: selectedCount })}

@@ -58,6 +58,9 @@ interface Props {
    *  which the list catches up with itself; the figures the Statistics tab has read for the database
    *  are counted from the same documents, and it is the workspace that holds those. */
   onDocumentsChanged?: () => void;
+  /** The connection is marked read-only: the insert button is closed and the cards below neither
+   *  open for editing nor offer a delete or a clone. Everything that reads is untouched. */
+  readOnly?: boolean;
 }
 
 /** Where a loaded page came from. Held in state rather than read off the props, so the write
@@ -128,6 +131,7 @@ function NoSqlTable({
   documentCache,
   schemaToken,
   onDocumentsChanged,
+  readOnly = false,
 }: Props) {
   const { t } = useTranslation();
   const collectionKey = `${selectedDb} :: ${selectedCollection}`;
@@ -627,11 +631,14 @@ function NoSqlTable({
               key={`${loadId}:${i}`}
               doc={doc}
               displayNumber={page * pageSize + i + 1}
+              readOnly={readOnly}
               registerFlush={registerFlush}
               onWrite={writeDocument}
               onSaved={adoptDocument}
               onDelete={removeDocument}
-              onClone={cloneDocument}
+              // A clone is an insert seeded from this document, so it goes with the insert button
+              // rather than staying on a card that can no longer write anything.
+              onClone={readOnly ? undefined : cloneDocument}
             />
           ))}
         </div>
@@ -654,7 +661,8 @@ function NoSqlTable({
               key: "insert",
               icon: PlusIcon,
               label: t("noSqlTable.insertDocuments"),
-              disabled: busy,
+              disabled: readOnly || busy,
+              disabledHint: readOnly ? t("common.readOnlyConnection") : undefined,
               onClick: () => openInsert([]),
             },
           ]}
