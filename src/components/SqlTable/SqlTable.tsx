@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { mysqlDeleteRows, mysqlInsertRows, mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
 import ActionBar from "../ActionBar";
 import ConfirmDialog from "../ConfirmDialog";
+import ContextMenu from "../ContextMenu";
 import FilterBar from "../FilterBar";
 import InsertRowsDialog from "../InsertRowsDialog";
 import LoadingOverlay from "../LoadingOverlay";
@@ -10,8 +11,10 @@ import Tooltip from "../Tooltip";
 import { ChevronDownIcon, ChevronUpIcon, CopyIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
+import { copyText } from "../../clipboard";
+import { isBinary, isGenerated } from "../../mysql/columns";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
-import { initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
+import { filterRowFor, initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
 import {
   FILTER_OPERATORS,
   operatorArity,
@@ -34,6 +37,7 @@ import {
   type TableCache,
   type TableRequest,
 } from "./request";
+import { csvText, insertStatements, spreadsheetText } from "./rowText";
 import type { MysqlColumnMeta } from "../../types";
 import styles from "./SqlTable.module.css";
 
@@ -85,6 +89,15 @@ const EDIT_COLUMN = 240;
 interface EditingCell {
   rowIndex: number;
   col: string;
+}
+
+/** Which cell the right-click menu was opened on, and where the pointer was when it was. Null
+ *  while the menu is closed. */
+interface CellMenu {
+  rowIndex: number;
+  col: string;
+  x: number;
+  y: number;
 }
 
 /** The header click cycle: unsorted → descending → ascending → unsorted. */
@@ -168,6 +181,11 @@ interface Props {
   /** Told when rows have been inserted or deleted here. The grid catches up with itself; what the
    *  table weighs is the Statistics tab's business, and the workspace is what holds those figures. */
   onRowsChanged?: () => void;
+  /** Told to follow a foreign key out of this grid: open `table` on the Data tab with its filter
+   *  bar already asking for `column = value`. Only the workspace can do it — it owns which table is
+   *  selected — and a key pointing back at this same table never gets here; see
+   *  {@link SqlTable.openReferenced}. */
+  onOpenRelated?: (table: string, column: string, value: string) => void;
   /** The saved connection is marked as one nothing is written to. The grid still reads, sorts,
    *  filters and pages exactly as it does otherwise — what goes is every door out of read mode. */
   readOnly?: boolean;
@@ -186,6 +204,7 @@ function SqlTable({
   tableCache,
   schemaToken,
   onRowsChanged,
+  onOpenRelated,
   readOnly = false,
 }: Props) {
   const { t } = useTranslation();
@@ -472,6 +491,9 @@ function SqlTable({
   // Where a shift-click range starts. A ref rather than state because it is
   // only ever read from inside an event handler.
   const anchorRowRef = useRef<number | null>(null);
+  /** The right-click menu, and where it was opened — see {@link CellMenu}. */
+  const [menu, setMenu] = useState<CellMenu | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteWholeTable, setDeleteWholeTable] = useState(false);
   const [resetAutoIncrement, setResetAutoIncrement] = useState(false);
@@ -653,8 +675,12 @@ function SqlTable({
   // The indices in `selectedRows` only mean anything for the rows currently on
   // screen, so any refetch — a new page, a new size, a new order, a reload, a
   // new table — drops the selection rather than carrying it onto different rows.
+  //
+  // The right-click menu goes with it: it is opened on one row of one page, and every entry in it
+  // acts on the selection the same indices name.
   useEffect(() => {
     clearSelection();
+    setMenu(null);
   }, [selectedDb, selectedTable, page, pageSize, sort, appliedFilters, reloadToken]);
 
   const request: TableRequest = {
@@ -983,10 +1009,65 @@ function SqlTable({
     scrollRef.current?.focus({ preventScroll: true });
   }
 
+  /**
+   * The right-click menu, opened on the cell under the pointer.
+   *
+   * The selection moves onto that row first when the row was not already in it, the way a list
+   * does: every entry below the two cell ones acts on the selected rows, and a menu acting on rows
+   * other than the highlighted ones would be read as acting on the wrong ones. A right-click
+   * *inside* the selection leaves it alone — that is what makes "copy these forty rows" one
+   * gesture rather than a re-selection followed by a copy of a single row.
+   */
+  function handleCellContextMenu(
+    e: React.MouseEvent<HTMLTableCellElement>,
+    rowIndex: number,
+    col: string,
+  ) {
+    e.preventDefault();
+    // A staged edit is written out first, exactly as leaving the cell by any other route does: the
+    // entries below copy `rows`, and a value still sitting in the input is not in them yet.
+    void commitAndExit();
+    if (!selectedRows.has(rowIndex)) {
+      setSelectedRows(new Set([rowIndex]));
+      anchorRowRef.current = rowIndex;
+    }
+    setMenu({ rowIndex, col, x: e.clientX, y: e.clientY });
+  }
+
+  /** Puts text on the clipboard and closes the menu it was chosen from. A webview that refuses the
+   *  clipboard outright is worth saying out loud — the alternative is a copy that silently did
+   *  nothing and a paste of whatever was there before. */
+  function copyToClipboard(text: string) {
+    closeMenu();
+    void copyText(text).catch((e) => onError(errorMessage(t, e)));
+  }
+
+  /**
+   * Follows a foreign key: the table it points at, opened on the row it points to.
+   *
+   * A key pointing back at this very table — a `parent_id`, a `replied_to` — never changes which
+   * table is on screen, so the workspace has nothing to swap and this grid would not be re-mounted
+   * with the new conditions. Its bar is set here instead, exactly as Apply sets it.
+   */
+  function openReferenced(fk: { table: string; column: string; value: string }) {
+    closeMenu();
+    if (fk.table !== selectedTable) {
+      onOpenRelated?.(fk.table, fk.column, fk.value);
+      return;
+    }
+    setFilterRows([filterRowFor<FilterOperator>(fk.column, "eq", fk.value)]);
+    setAppliedFilters([{ column: fk.column, operator: "eq", value: fk.value }]);
+    setPage(0);
+  }
+
   function handleGridKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     // While a cell is open for editing its input owns the keyboard: select-all takes the text,
     // and Escape backs the edit out.
     if (editingCellRef.current) return;
+    // The right-click menu answers the keyboard while it is up — Escape closes it. Clearing the
+    // selection as well would be two things done by one key, and the selection is what the menu is
+    // about to act on.
+    if (menu !== null) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
       e.preventDefault();
       if (rows.length === 0) return;
@@ -1079,6 +1160,50 @@ function SqlTable({
   /** The columns each drawn row actually builds cells for. The whole set until they are worth
    *  windowing, and the header keeps the whole set either way — see the note over `<thead>`. */
   const drawnColumns = columnsVirtual ? columns.slice(colView.first, colView.last) : columns;
+
+  /** The row the menu was opened on, or null when it is closed — and null again if that row has
+   *  gone from under it, which is what stops an entry acting on a row that is no longer there. */
+  const menuRow = menu === null ? null : (rows[menu.rowIndex] ?? null);
+
+  /** Where the cell under the menu points, when it points anywhere: the referenced table and
+   *  column, and the value to look up there. Null for a column that is not a foreign key, and for
+   *  one that is but holds nothing — a key with no value points at no row. */
+  const menuForeignKey = (() => {
+    if (menu === null || menuRow === null) return null;
+    const fk = columnMeta[menu.col]?.foreignKey ?? null;
+    if (fk === null) return null;
+    const value = normalizeCellValue(menuRow[menu.col]);
+    return value === null || value === "" ? null : { table: fk.table, column: fk.column, value };
+  })();
+
+  /** The rows the menu's row entries act on: the selection, which the right-click has already moved
+   *  onto the row under the pointer if it was outside it. */
+  const menuRows = (() => {
+    if (menuRow === null) return [];
+    const selected = selectedRowsInOrder();
+    return selected.length > 0 ? selected : [menuRow];
+  })();
+
+  /** The columns an `INSERT` copied from here may name. A generated column is MySQL's to compute,
+   *  and a statement that names one is refused outright — the AUTO_INCREMENT column is not, which
+   *  is why it stays in and is only dropped by the second of the two copies. */
+  const insertableColumns = useMemo(
+    () => columns.filter((c) => {
+      const meta = columnMeta[c];
+      return meta === undefined || !isGenerated(meta);
+    }),
+    [columns, columnMeta],
+  );
+
+  /** The columns whose values came over base64-encoded, and which a copied `INSERT` therefore has
+   *  to decode again rather than quote as the text they look like. */
+  const binaryColumns = useMemo(
+    () => new Set(columns.filter((c) => {
+      const meta = columnMeta[c];
+      return meta !== undefined && isBinary(meta);
+    })),
+    [columns, columnMeta],
+  );
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const allPageRowsSelected = rows.length > 0 && selectedRows.size === rows.length;
@@ -1322,6 +1447,10 @@ function SqlTable({
                           title={value}
                           className={cellClassName || undefined}
                           onMouseDown={(e) => handleCellMouseDown(e, i, c)}
+                          // Only on a cell being read. The cell open for editing is the branch
+                          // above and deliberately has none: right-clicking inside its input is
+                          // the webview's own cut/copy/paste, which nothing here replaces.
+                          onContextMenu={(e) => handleCellContextMenu(e, i, c)}
                         >
                           {value}
                         </td>
@@ -1398,6 +1527,79 @@ function SqlTable({
           }}
         />
       </div>
+      {menu !== null && menuRow !== null && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={closeMenu}>
+          <button type="button" onClick={() => copyToClipboard(displayValue(menuRow[menu.col]))}>
+            {t("sqlTable.copyCellValue")}
+          </button>
+          {menuForeignKey !== null && (
+            <button type="button" onClick={() => openReferenced(menuForeignKey)}>
+              {t("sqlTable.openReferencedRow", { table: menuForeignKey.table })}
+            </button>
+          )}
+          <div className="context-menu-separator" />
+          <button
+            type="button"
+            onClick={() =>
+              copyToClipboard(
+                insertStatements(selectedTable, insertableColumns, menuRows, null, binaryColumns),
+              )
+            }
+          >
+            {menuRows.length === 1
+              ? t("sqlTable.copyInsert")
+              : t("sqlTable.copyInsertRows", { n: menuRows.length })}
+          </button>
+          {/* Only a table MySQL numbers itself has a column an insert can sensibly leave out.
+              Everywhere else every column is a value somebody has to provide, and an INSERT short
+              of one would simply be refused — so the entry is not offered rather than offered and
+              broken. */}
+          {autoIncrementColumn !== null && (
+            <button
+              type="button"
+              onClick={() =>
+                copyToClipboard(
+                  insertStatements(
+                    selectedTable,
+                    insertableColumns,
+                    menuRows,
+                    autoIncrementColumn,
+                    binaryColumns,
+                  ),
+                )
+              }
+            >
+              {menuRows.length === 1
+                ? t("sqlTable.copyInsertWithout", { column: autoIncrementColumn })
+                : t("sqlTable.copyInsertRowsWithout", {
+                    n: menuRows.length,
+                    column: autoIncrementColumn,
+                  })}
+            </button>
+          )}
+          <button type="button" onClick={() => copyToClipboard(spreadsheetText(columns, menuRows))}>
+            {menuRows.length === 1
+              ? t("sqlTable.copyAsTsv")
+              : t("sqlTable.copyRowsAsTsv", { n: menuRows.length })}
+          </button>
+          <button type="button" onClick={() => copyToClipboard(csvText(columns, menuRows))}>
+            {menuRows.length === 1
+              ? t("sqlTable.copyAsCsv")
+              : t("sqlTable.copyRowsAsCsv", { n: menuRows.length })}
+          </button>
+          <div className="context-menu-separator" />
+          <button
+            type="button"
+            disabled={loading || deleting}
+            onClick={() => {
+              closeMenu();
+              void reload();
+            }}
+          >
+            {withReloadShortcut(t("sqlTable.reloadRows"))}
+          </button>
+        </ContextMenu>
+      )}
       {insertMode !== null && (
         <InsertRowsDialog
           table={selectedTable}

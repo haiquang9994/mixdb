@@ -98,6 +98,7 @@ const vi: TranslationDict = {
     statsTab: "Thống kê",
     queryTab: "Truy vấn",
     searchTablesPlaceholder: "Tìm bảng...",
+    followedTableHint: "Mở từ một khóa ngoại — giữ ở đây cho tới khi bạn chọn bảng khác",
     reloadTables: "Tải lại danh sách bảng",
     addTable: "Tạo bảng mới",
     addTableSystem: "{{database}} là cơ sở dữ liệu hệ thống — không thể tạo bảng mới",
@@ -432,6 +433,19 @@ const vi: TranslationDict = {
     sortNone: "{{column}} — nhấn để sắp xếp giảm dần",
     sortDesc: "{{column}} — đang giảm dần, nhấn để sắp xếp tăng dần",
     sortAsc: "{{column}} — đang tăng dần, nhấn để bỏ sắp xếp",
+    // Menu chuột phải trên vùng dữ liệu. Các mục thao tác theo dòng có hai cách viết: một cho dòng
+    // dưới con trỏ, một cho nhiều dòng đang chọn — `t()` không có quy tắc số nhiều, và đặt {{n}}
+    // vào một chuỗi duy nhất thì câu cho một dòng đọc không xuôi.
+    copyCellValue: "Sao chép giá trị ô",
+    openReferencedRow: "Mở dòng được tham chiếu trong {{table}}",
+    copyInsert: "Sao chép câu lệnh INSERT",
+    copyInsertRows: "Sao chép {{n}} dòng thành câu lệnh INSERT",
+    copyInsertWithout: "Sao chép câu lệnh INSERT không kèm {{column}}",
+    copyInsertRowsWithout: "Sao chép {{n}} dòng thành câu lệnh INSERT không kèm {{column}}",
+    copyAsTsv: "Sao chép dòng dạng TSV",
+    copyRowsAsTsv: "Sao chép {{n}} dòng dạng TSV",
+    copyAsCsv: "Sao chép dòng dạng CSV",
+    copyRowsAsCsv: "Sao chép {{n}} dòng dạng CSV",
     // Nghĩa tiếng Việt đứng trước, ký hiệu/từ khóa SQL trong ngoặc — người dùng đọc được ngay
     // toán tử làm gì mà vẫn thấy đúng thứ câu lệnh sẽ chạy.
     op: {
@@ -970,6 +984,10 @@ const vi: TranslationDict = {
     cannotRemoveDirectory: "Không xóa được {{path}}: {{message}}",
     noAppDataDir: "MixDB không có chỗ nào để lưu file riêng của nó: {{message}}",
     backgroundTaskFailed: "Tác vụ không hoàn tất: {{message}}",
+
+    // Lỗi duy nhất ở đây do webview báo chứ không phải backend. Phải nói rõ, vì nếu im lặng thì
+    // người dùng dán ở chỗ khác và nhận đúng thứ đang có sẵn trong clipboard từ trước.
+    clipboard: "Chưa sao chép được — clipboard từ chối: {{message}}",
 
     /** Dạng lỗi MixDB không nhận ra — hiển thị nguyên trạng thay vì nuốt mất. */
     unknown: "{{message}}",

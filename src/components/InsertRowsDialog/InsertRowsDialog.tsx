@@ -5,6 +5,7 @@ import { useDialogExit } from "../dialogMotion";
 import { PlusIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
+import { isAutoIncrement, isServerAssigned } from "../../mysql/columns";
 import type { MysqlColumnMeta } from "../../types";
 import styles from "./InsertRowsDialog.module.css";
 
@@ -29,20 +30,6 @@ interface Props {
   /** Rejects with the reason the insert failed: the dialog then shows it and stays open. The
    *  caller is what closes the dialog, once this resolves. */
   onSubmit: (rows: Record<string, string | null>[]) => Promise<void>;
-}
-
-function isAutoIncrement(meta: MysqlColumnMeta): boolean {
-  return meta.extra.toLowerCase().includes("auto_increment");
-}
-
-function isGenerated(meta: MysqlColumnMeta): boolean {
-  const extra = meta.extra.toLowerCase();
-  return extra.includes("virtual generated") || extra.includes("stored generated");
-}
-
-/** A column MySQL fills in itself, and that an INSERT therefore must not name at all. */
-function isServerAssigned(meta: MysqlColumnMeta): boolean {
-  return isAutoIncrement(meta) || isGenerated(meta);
 }
 
 /** A default written as an expression rather than a literal (`CURRENT_TIMESTAMP`, `(uuid())`).

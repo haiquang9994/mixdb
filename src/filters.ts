@@ -128,14 +128,14 @@ function startingColumn(columns: string[]): string {
   return columns.find((c) => c.toLowerCase() === "id" || c.toLowerCase() === "_id") ?? columns[0] ?? "";
 }
 
+/** One row of the bar for a condition that is already known — following a foreign key writes the
+ * whole of it, column, operator and value together, rather than leaving anything to be typed. */
+export function filterRowFor<Op extends string>(column: string, operator: Op, value: string): FilterRow<Op> {
+  return { id: nextRowId++, enabled: true, column, operator, value };
+}
+
 export function createFilterRow<Op extends string>(columns: string[], operator: Op): FilterRow<Op> {
-  return {
-    id: nextRowId++,
-    enabled: true,
-    column: startingColumn(columns),
-    operator,
-    value: "",
-  };
+  return filterRowFor(startingColumn(columns), operator, "");
 }
 
 /** What the bar holds when a table is first opened: an empty `id =` row, ready for the lookup

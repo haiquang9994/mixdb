@@ -11,6 +11,8 @@ import {
   mysqlServerInfo,
 } from "./api";
 import { onTransferProgress, type TransferProgress } from "../transfer";
+import { filterRowFor } from "../filters";
+import type { FilterOperator } from "./filters";
 import { invalidateSchemaOutline } from "./schemaCache";
 import { isMysqlSystemDatabase } from "./system";
 import Select from "../components/Select";
@@ -112,6 +114,16 @@ function MysqlWorkspace({
   const [tablesLoading, setTablesLoading] = useState(false);
   const [tableFilter, setTableFilter] = useState("");
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  /**
+   * A table held above the sidebar's list, put there by following a foreign key out of the grid.
+   *
+   * The list itself is left exactly as it was — the search box especially, which is very often what
+   * the user was in the middle of when a key took them somewhere else, and clearing it would lose
+   * the search they will want back. The table they were sent to is instead shown on its own row at
+   * the top, in reach whatever the list underneath is filtered down to, until they pick another
+   * table — which is the moment they no longer need a way back to this one.
+   */
+  const [pinnedTable, setPinnedTable] = useState<string | null>(null);
   const [contentMode, setContentMode] = useState<ContentMode>("data");
   const [localError, setLocalError] = useState("");
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
@@ -398,10 +410,12 @@ function MysqlWorkspace({
     if (!selectedDb) {
       setTables([]);
       setSelectedTable(null);
+      setPinnedTable(null);
       return;
     }
     let cancelled = false;
     setSelectedTable(null);
+    setPinnedTable(null);
     mysqlListTables(connectionId, selectedDb)
       .then((t) => {
         if (!cancelled) setTables(t);
@@ -412,7 +426,17 @@ function MysqlWorkspace({
     };
   }, [connectionId, selectedDb]);
 
+  // A table the list no longer holds — dropped from in here, or gone from the server by the time it
+  // was read again — has nothing left to pin above it.
+  useEffect(() => {
+    setPinnedTable((pinned) => (pinned === null || tables.includes(pinned) ? pinned : null));
+  }, [tables]);
+
+  /** A table chosen from the sidebar — either row of it. Choosing anything other than the pinned
+   * table takes the pin down: it was a way back from a key that has now been followed away from,
+   * and one that outstayed that would just be a row nobody asked for. */
   function selectTable(table: string) {
+    if (table !== pinnedTable) setPinnedTable(null);
     setSelectedTable(table);
   }
 
@@ -422,9 +446,45 @@ function MysqlWorkspace({
    * of a script is going to read rows rather than column definitions. */
   const openTable = useCallback((table: string) => {
     setTableFilter("");
+    setPinnedTable(null);
     setSelectedTable(table);
     setContentMode("data");
   }, []);
+
+  /**
+   * Follows a foreign key out of the data grid: the referenced table opened on the Data tab, its
+   * filter bar already asking for the row the key points at.
+   *
+   * The conditions are written straight into the cache rather than handed down as a prop, because
+   * that is where the grid reads its bar from as it swaps to another table — which is the very
+   * render `openTable` below causes. They are filed under the token *that* table is judged by, not
+   * the one the table being left from is, or the grid would take them for conditions written
+   * against a shape the database no longer has and drop them.
+   *
+   * What was remembered of the target's own grid goes, and it has to: an entry restored alongside
+   * these conditions would put the grid back on the page, the order and the scroll position it was
+   * last left at, and the row being looked up is on the first page of the filtered read, not the
+   * fifth page of an unfiltered one.
+   *
+   * The sidebar is not touched beyond {@link pinnedTable}: unlike `openTable` above, this is a
+   * short trip — a value looked up, then back to where the user was — and the search they had typed
+   * in the box is part of where they were.
+   */
+  const openRelated = useCallback(
+    (table: string, column: string, value: string) => {
+      const key = `${selectedDb} :: ${table}`;
+      tableCache.delete(key);
+      filterCache.set(key, {
+        rows: [filterRowFor<FilterOperator>(column, "eq", value)],
+        applied: [{ column, operator: "eq", value }],
+        schemaToken: (schemaTokens[selectedDb] ?? 0) + (schemaTokens[key] ?? 0),
+      });
+      setPinnedTable(table);
+      setSelectedTable(table);
+      setContentMode("data");
+    },
+    [selectedDb, schemaTokens],
+  );
 
   /** Reads the sidebar's list of tables again, and nothing else. What follows a table created,
    * renamed or dropped: the list is out of date, but every other table in the database was read
@@ -493,6 +553,9 @@ function MysqlWorkspace({
     setRenamingTable(null);
     setTableFilter("");
     if (selectedTable === table) setSelectedTable(newName);
+    // The pinned row follows the rename rather than being dropped by the check above: it is the
+    // same table, and it is still the way back to where the user came from.
+    if (pinnedTable === table) setPinnedTable(newName);
     // Both ends of the move: the name it has left, and the name it has arrived at — which may have
     // been another table's until it was dropped.
     forgetTable(table, newName);
@@ -644,6 +707,8 @@ function MysqlWorkspace({
             onSelect={selectTable}
             emptyMessage={tablesEmptyMessage}
             actions={tableActions}
+            pinnedItem={pinnedTable}
+            pinnedHint={t("mysql.followedTableHint")}
           />
           <div className="mysql-sidebar-actions">
             <ActionBar
@@ -718,6 +783,7 @@ function MysqlWorkspace({
                 tableCache={tableCache}
                 schemaToken={schemaToken}
                 onRowsChanged={rowsChanged}
+                onOpenRelated={openRelated}
                 readOnly={readOnly}
               />
             </div>

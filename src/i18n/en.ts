@@ -101,6 +101,7 @@ const en = {
     statsTab: "Statistics",
     queryTab: "Query",
     searchTablesPlaceholder: "Search tables...",
+    followedTableHint: "Opened by following a foreign key — held here until you pick another table",
     reloadTables: "Reload tables",
     addTable: "Create a table",
     addTableSystem: "{{database}} belongs to the server — no table can be added to it",
@@ -438,6 +439,19 @@ const en = {
     sortNone: "{{column}} — click to sort descending",
     sortDesc: "{{column}} — sorted descending, click to sort ascending",
     sortAsc: "{{column}} — sorted ascending, click to remove the sort",
+    // The right-click menu over the rows. The row entries come in two spellings each, one for the
+    // single row under the pointer and one for a selection — there is no plural rule in `t()`, and
+    // "Copy 1 rows" is worse than a second key.
+    copyCellValue: "Copy cell value",
+    openReferencedRow: "Open the referenced row in {{table}}",
+    copyInsert: "Copy as INSERT statement",
+    copyInsertRows: "Copy {{n}} rows as INSERT statements",
+    copyInsertWithout: "Copy as INSERT statement without {{column}}",
+    copyInsertRowsWithout: "Copy {{n}} rows as INSERT statements without {{column}}",
+    copyAsTsv: "Copy row as TSV",
+    copyRowsAsTsv: "Copy {{n}} rows as TSV",
+    copyAsCsv: "Copy row as CSV",
+    copyRowsAsCsv: "Copy {{n}} rows as CSV",
     // What the operator does in words, with the SQL it stands for in brackets — the four that
     // are all LIKE underneath are told apart by the shape of the pattern each one builds.
     op: {
@@ -975,6 +989,10 @@ const en = {
     cannotRemoveDirectory: "Cannot remove {{path}}: {{message}}",
     noAppDataDir: "There is nowhere for MixDB to keep its own files: {{message}}",
     backgroundTaskFailed: "The task did not finish: {{message}}",
+
+    // The one error in here the webview raises rather than the backend. Said out loud because the
+    // alternative is a copy that did nothing and a paste, somewhere else, of what was there before.
+    clipboard: "Nothing was copied — the clipboard refused: {{message}}",
 
     /** An error shape MixDB doesn't recognise \u2014 shown as-is rather than swallowed. */
     unknown: "{{message}}",

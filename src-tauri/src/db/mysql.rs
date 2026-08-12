@@ -201,6 +201,11 @@ pub struct ColumnMeta {
 /// privileges on — so an empty result means "none visible to you", not necessarily "none". A
 /// failure here is swallowed by the caller for the same reason: the FK markers are decoration on
 /// top of the grid, and losing them must not cost the user the rows themselves.
+///
+/// A key may point into another schema, and those are left out: what reaches the frontend is a
+/// bare table name, opened inside the database the grid is already on. Reported, such a key would
+/// name a table that database does not have — an error where a row was promised, and a marker
+/// claiming a relationship to the wrong table of the same name where it happens to exist.
 async fn foreign_keys(
     conn: &mut sqlx::MySqlConnection,
     database: &str,
@@ -210,6 +215,7 @@ async fn foreign_keys(
         "SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
          FROM information_schema.KEY_COLUMN_USAGE
          WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL
+           AND REFERENCED_TABLE_SCHEMA = TABLE_SCHEMA
          ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION",
     )
     .bind(database)

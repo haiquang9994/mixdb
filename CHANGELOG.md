@@ -43,6 +43,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
+- A right-click menu on MySQL rows: copy a cell, copy the selected rows as `INSERT` statements, as
+  TSV or as CSV, follow a foreign key to the row it points at, and reload.
+  Following a key leaves the table search alone and pins the table it opened at the top of the
+  list, until another table is chosen.
 - A Redis connection to another machine with no password now warns that the server's protected mode
   will refuse it, instead of leaving you with "Redis: broken pipe".
 
@@ -63,6 +67,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - Inserting or deleting rows or documents moves the statistics too.
 - A right-click no longer opens the browser's own menu. The app's menus, and cut, copy and paste in
   a text field, are unchanged.
+- A right-click menu no longer holds the rest of the window: the click that dismisses it also does
+  what it was aimed at, and scrolling closes it.
 
 ## [0.0.9] - 2026-08-12
 
