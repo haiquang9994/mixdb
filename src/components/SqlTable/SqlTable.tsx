@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { mysqlDeleteRows, mysqlInsertRows, mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
 import ActionBar from "../ActionBar";
 import ConfirmDialog from "../ConfirmDialog";
@@ -19,8 +19,10 @@ import {
   type MysqlFilter,
 } from "../../mysql/filters";
 import {
+  columnEdges,
   gridStyle,
   measureColumns,
+  useVirtualColumns,
   useVirtualRows,
   widestValues,
 } from "../../virtualRows";
@@ -38,6 +40,20 @@ import styles from "./SqlTable.module.css";
 /** Where handing the browser the whole page stops being the cheap thing to do. Below this the rows
  *  are rendered as they always were, and the table sizes its own columns. */
 const VIRTUAL_FROM = 60;
+
+/** The same question asked sideways: how many columns a table has to have before the drawn rows are
+ *  cut down to the ones on screen as well.
+ *
+ * Higher than the row threshold, and deliberately: a column is only ever windowed once the widths
+ * have been measured, so the grid has already paid for the whole page by the time this can apply —
+ * what it saves is every render after that, and every cell in every row it saves them on. Forty is
+ * where a page of them stops being a few hundred cells and starts being a few thousand. */
+const VIRTUAL_COLUMNS_FROM = 40;
+
+/** What {@link useVirtualColumns} is handed before there are any widths to speak of: one edge and no
+ *  columns. A constant rather than a fresh `[0]`, since the hook searches it on every scroll and a
+ *  new array each render would be a new search each render. */
+const NO_EDGES: readonly number[] = [0];
 
 /** How tall a row of this grid is — stated, never measured; see `virtualRows.ts` for why that
  *  distinction is what makes a window of rows sound. 33px is what a row here has always come to: a
@@ -401,6 +417,42 @@ function SqlTable({
     pinned: editingCell?.rowIndex ?? null,
   });
 
+  /**
+   * Where every column starts, in the very pixels the colgroup lays the table out in.
+   *
+   * The column being edited is widened there ({@link EDIT_COLUMN}) and so is widened here: worked
+   * out from the unopened widths, every column to its right would be looked up one column short of
+   * where it actually is for as long as an edit was open.
+   *
+   * Null until the widths are both known and this table's. `gridColumns` holds the outgoing table's
+   * until the measuring effect runs on the incoming one, and a window read off another table's
+   * widths is a window over columns that are not there.
+   */
+  const edges = useMemo(() => {
+    if (!gridColumns || gridColumns.widths.length !== columns.length) return null;
+    return columnEdges(
+      gridColumns.widths.map((width, c) =>
+        columns[c] === editingCell?.col ? Math.max(width, EDIT_COLUMN) : width
+      )
+    );
+  }, [gridColumns, columns, editingCell?.col]);
+
+  // The other half of the window, and the half a table of two hundred columns actually needs: a
+  // grid windowed by rows alone still builds every column of every drawn row, which is where the
+  // cells are. Fifty rows of two hundred columns is ten thousand of them whatever the rows did.
+  //
+  // Only ever on once the widths are measured, and for the same reason the row window insists on
+  // them: the columns outside the window are stood in for by a cell spanning them, and a cell can
+  // only stand in for what a fixed layout has already given a width to.
+  const columnsVirtual = edges !== null && columns.length >= VIRTUAL_COLUMNS_FROM;
+  const colView = useVirtualColumns(scrollRef, {
+    edges: edges ?? NO_EDGES,
+    enabled: columnsVirtual,
+    // Held by index, where the row is held by position: both come to the same thing, which is that
+    // the cell under the caret is never unmounted from under it.
+    pinned: editingCell ? columns.indexOf(editingCell.col) : null,
+  });
+
   /** Every move of the scrollbar, noted so that the position survives the grid being hidden,
    *  swapped for another table or unmounted — see {@link scrollPosRef}. A box with no layout is
    *  not believed: it reports the top, and that is the one answer that must not be filed. */
@@ -410,6 +462,7 @@ function SqlTable({
       scrollPosRef.current = { top: node.scrollTop, left: node.scrollLeft };
     }
     if (virtual) view.onScroll();
+    if (columnsVirtual) colView.onScroll();
   }
 
   // Selected rows are held as indices into the current page: selection is a
@@ -1023,6 +1076,10 @@ function SqlTable({
     return Math.max(0, EDIT_COLUMN - gridColumns.widths[index]);
   })();
 
+  /** The columns each drawn row actually builds cells for. The whole set until they are worth
+   *  windowing, and the header keeps the whole set either way — see the note over `<thead>`. */
+  const drawnColumns = columnsVirtual ? columns.slice(colView.first, colView.last) : columns;
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const allPageRowsSelected = rows.length > 0 && selectedRows.size === rows.length;
   // Under a filter, `total` counts the matching rows rather than the table's — and a whole-table
@@ -1063,6 +1120,12 @@ function SqlTable({
         >
           <table
             ref={tableRef}
+            // What a row would hold if all of it were built. Once the columns are windowed the body
+            // rows hold only the drawn ones, and a reader counting cells would otherwise be told
+            // the table is sixteen columns wide and put the wrong header to every value in it. The
+            // header row is exempt from the matching `aria-colindex` below: it never drops a cell,
+            // so its columns are already where they are counted to be.
+            aria-colcount={columns.length}
             // Rows pinned whenever they are windowed; columns pinned once they have been measured.
             // Two classes because they answer to different conditions — the measuring can fail in a
             // way the windowing cannot, and a windowed grid whose rows were left to size themselves
@@ -1096,6 +1159,13 @@ function SqlTable({
                 ))}
               </colgroup>
             )}
+            {/* Every column, drawn or not, and on purpose. The header is one row where the body is
+                fifty, so windowing it would save a fiftieth of what windowing the body saves — and
+                it would cost the two things that are measured off the DOM rather than out of the
+                data: `headerExtras` reads the chevron and the FK chip out of each header cell, and
+                `measureColumnWidths` reads each column's laid-out width for the edit input. Both
+                would come back short for every column that had been left out, and the widths they
+                feed are what the window itself is worked out from. */}
             <thead>
               <tr>
                 {columns.map((c) => {
@@ -1178,7 +1248,17 @@ function SqlTable({
                     className={selectedRows.has(i) ? styles.rowSelected : undefined}
                     aria-selected={selectedRows.has(i)}
                   >
-                    {columns.map((c) => {
+                    {/* The columns outside the window, as one cell spanning them. It needs no
+                        width of its own: a fixed layout takes every column's from the colgroup
+                        above, which holds all of them whether or not a cell was built for them, so
+                        the space left here is the space those columns were measured to want. */}
+                    {columnsVirtual && colView.first > 0 && (
+                      <td colSpan={colView.first} aria-hidden="true" />
+                    )}
+                    {drawnColumns.map((c, at) => {
+                      // Where this cell sits in the whole table rather than in what was drawn —
+                      // see `aria-colcount` above. One-based, as the attribute counts.
+                      const colIndex = colView.first + at + 1;
                       const isEditing = editingCell?.rowIndex === i && editingCell.col === c;
                       if (isEditing) {
                         const multiline = isMultilineType(columnMeta[c]?.dataType);
@@ -1186,6 +1266,7 @@ function SqlTable({
                         return (
                           <td
                             key={c}
+                            aria-colindex={colIndex}
                             className={styles.cellEditing}
                             style={cellWidth ? { width: cellWidth } : undefined}
                           >
@@ -1237,6 +1318,7 @@ function SqlTable({
                       return (
                         <td
                           key={c}
+                          aria-colindex={colIndex}
                           title={value}
                           className={cellClassName || undefined}
                           onMouseDown={(e) => handleCellMouseDown(e, i, c)}
@@ -1245,6 +1327,9 @@ function SqlTable({
                         </td>
                       );
                     })}
+                    {columnsVirtual && colView.last < columns.length && (
+                      <td colSpan={columns.length - colView.last} aria-hidden="true" />
+                    )}
                   </tr>
                 );
               })}

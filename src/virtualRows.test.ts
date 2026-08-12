@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { rowWindow, widestValues } from "./virtualRows";
+import { columnEdges, columnWindow, rowWindow, widestValues } from "./virtualRows";
 
 /** The grid's own constants, repeated rather than imported: a test that reads the number it is
  *  checking against cannot notice that number changing. */
 const OVERSCAN = 8;
 const BLOCK = 16;
 const BLIND_ROWS = 48;
+const COLUMN_OVERSCAN = 2;
+const COLUMN_BLOCK = 4;
+const BLIND_COLUMNS = 24;
 
 /** A row's height and a pane's height, in the shape the grid actually sees them: 25px rows and a
  *  400px pane is sixteen rows on screen. */
@@ -160,6 +163,152 @@ describe("rowWindow over every size of result", () => {
         if (first + (last - first) + (total - last) !== total) {
           wrong.push(`${total} rows at ${at}`);
         }
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+});
+
+/** A column of the round width the sweeps below reason in, and a pane eight of them wide. */
+const COLUMN = 100;
+const PANE_WIDTH = 800;
+
+/** Two hundred columns, which is the table this was written for. */
+const WIDE = 200;
+
+/** Widths that are all different, inside the band the grid measures columns into (48–320). The
+ *  point of columns is that they are *not* evenly spaced — a window that only works over equal
+ *  widths is a window that works in the test and not in the app — so everything below that can be
+ *  asked of uneven widths is. */
+const uneven = (count: number) =>
+  columnEdges(Array.from({ length: count }, (_, c) => 48 + ((c * 37) % 273)));
+
+const even = (count: number) => columnEdges(Array.from({ length: count }, () => COLUMN));
+
+describe("columnEdges", () => {
+  it("gives each column its start and the set its total", () => {
+    expect(columnEdges([100, 48, 320])).toEqual([0, 100, 148, 468]);
+  });
+
+  it("copes with no columns at all", () => {
+    expect(columnEdges([])).toEqual([0]);
+  });
+});
+
+describe("columnWindow", () => {
+  it("opens on a block of columns at the left of the table", () => {
+    // Eight columns on screen, the overscan beyond them, rounded out to the next block.
+    expect(columnWindow(even(WIDE), 0, PANE_WIDTH)).toEqual({ first: 0, last: 12 });
+  });
+
+  it("keeps whole blocks either side once it is scrolled across", () => {
+    // At column 100: 100–108 are on screen, 98–111 with the overscan, 96–112 as blocks.
+    expect(columnWindow(even(WIDE), 100 * COLUMN, PANE_WIDTH)).toEqual({ first: 96, last: 112 });
+  });
+
+  it("does not move while the scroll stays inside a block", () => {
+    // The point of the rounding: most frames of a sideways drag find the window they already have,
+    // and a window that has not changed is fifty rows that do not re-render.
+    const edges = even(WIDE);
+    const settled = columnWindow(edges, 100 * COLUMN, PANE_WIDTH);
+    for (const px of [1, 20, 50, 99]) {
+      expect(columnWindow(edges, 100 * COLUMN + px, PANE_WIDTH)).toEqual(settled);
+    }
+  });
+
+  it("starts and ends on block boundaries while there is table on either side", () => {
+    const { first, last } = columnWindow(uneven(WIDE), 4000, PANE_WIDTH);
+    expect(first % COLUMN_BLOCK).toBe(0);
+    expect(last % COLUMN_BLOCK).toBe(0);
+  });
+
+  it("keeps at least the overscan beyond each edge, over widths that are all different", () => {
+    const edges = uneven(WIDE);
+    const at = 4000;
+    const { first, last } = columnWindow(edges, at, PANE_WIDTH);
+    // Which columns are actually on screen, found without the arithmetic under test.
+    const onScreen = [...Array(WIDE).keys()].filter(
+      (c) => edges[c + 1] > at && edges[c] < at + PANE_WIDTH
+    );
+    expect(onScreen[0] - first).toBeGreaterThanOrEqual(COLUMN_OVERSCAN);
+    expect(last - (onScreen[onScreen.length - 1] + 1)).toBeGreaterThanOrEqual(COLUMN_OVERSCAN);
+  });
+
+  it("reaches the last column at the right-hand end", () => {
+    const edges = uneven(WIDE);
+    const total = edges[WIDE];
+    expect(columnWindow(edges, total - PANE_WIDTH, PANE_WIDTH).last).toBe(WIDE);
+  });
+
+  it("renders a blind pane's worth when the box has no width", () => {
+    // A tab nobody is looking at measures zero, and a window worked out from that would be empty.
+    expect(columnWindow(even(WIDE), 0, 0)).toEqual({ first: 0, last: BLIND_COLUMNS });
+  });
+
+  it("never hands over more columns than the backstop allows", () => {
+    const { first, last } = columnWindow(even(500), 0, 1_000_000);
+    expect(last - first).toBeLessThanOrEqual(120);
+  });
+
+  it("never claims more columns than there are", () => {
+    expect(columnWindow(even(6), 0, 0)).toEqual({ first: 0, last: 6 });
+    expect(columnWindow(even(6), 0, PANE_WIDTH).last).toBe(6);
+    expect(columnWindow(columnEdges([]), 0, PANE_WIDTH)).toEqual({ first: 0, last: 0 });
+  });
+
+  it("never ends before it starts", () => {
+    // Scrolled past the right-hand end, which a box can be for a frame when a narrower table
+    // replaces a wider one under it.
+    const { first, last } = columnWindow(even(6), 50_000, PANE_WIDTH);
+    expect(last).toBeGreaterThanOrEqual(first);
+  });
+});
+
+/**
+ * The properties that have to hold at every position, not at the one that was tried.
+ *
+ * Uneven widths are what make this worth sweeping rather than sampling: the column a given offset
+ * falls in is a search rather than a division, and a search that is one out shows up at some offsets
+ * and not at others.
+ */
+describe("columnWindow across the whole table", () => {
+  const counts = [40, 41, 120, 199, 200, 500];
+  const panes = [320, 800, 1600];
+
+  it("covers the columns on screen wherever it is scrolled", () => {
+    const uncovered: string[] = [];
+    for (const count of counts) {
+      const edges = uneven(count);
+      const width = edges[count];
+      for (const pane of panes) {
+        const rightmost = Math.max(0, width - pane);
+        // A prime-ish step, so the positions land all over the columns rather than on the same
+        // offset within each of them.
+        for (let at = 0; at <= rightmost + 137; at += 137) {
+          const scrollLeft = Math.min(at, rightmost);
+          const { first, last } = columnWindow(edges, scrollLeft, pane);
+          const covered =
+            edges[first] <= scrollLeft &&
+            edges[last] >= Math.min(scrollLeft + pane, width) &&
+            last <= count;
+          if (!covered) uncovered.push(`${count} columns, ${pane}px pane, at ${scrollLeft}`);
+        }
+      }
+    }
+    expect(uncovered).toEqual([]);
+  });
+
+  it("accounts for every column exactly once", () => {
+    // What makes the two spanning cells and the drawn ones add up to the table: the columns before
+    // the window, the columns in it and the columns after it are the whole set. Miscount and the
+    // rows are a cell short of the colgroup, which a fixed layout answers by shifting every column
+    // sideways.
+    const wrong: string[] = [];
+    for (const count of counts) {
+      const edges = uneven(count);
+      for (let at = 0; at <= edges[count]; at += 311) {
+        const { first, last } = columnWindow(edges, at, 800);
+        if (first + (last - first) + (count - last) !== count) wrong.push(`${count} at ${at}`);
       }
     }
     expect(wrong).toEqual([]);

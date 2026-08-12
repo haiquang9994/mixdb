@@ -33,6 +33,11 @@ import { useCallback, useEffect, useLayoutEffect, useState, type RefObject } fro
  *   always did, around a row that is always present and always the widest. That is what suits a
  *   grid whose cells hold badges, buttons and several fonts — describing all of that to a canvas is
  *   how it gets it wrong, and the browser already knows.
+ *
+ * A grid wide enough needs the same treatment sideways ({@link useVirtualColumns}), and for the
+ * same arithmetic: what a grid costs is rows times columns, so windowing one of the two leaves the
+ * other free to put the cost back. Fifty rows of two hundred columns is ten thousand cells whether
+ * or not the rows were windowed down to fifty.
  */
 
 /** Rows kept either side of the visible window, so a flick of the wheel lands on rows that are
@@ -93,7 +98,8 @@ export function rowWindow(
 }
 
 /** A window widened to keep one particular row in it — the row being edited, which must not be
- *  unmounted from under the input it is holding. */
+ *  unmounted from under the input it is holding. Serves the column window too, which is the same
+ *  pair of numbers over the same kind of index and has the same one cell it cannot drop. */
 function including(window: RowWindow, row: number | null | undefined, total: number): RowWindow {
   if (row === null || row === undefined || row < 0 || row >= total) return window;
   if (row >= window.first && row < window.last) return window;
@@ -189,6 +195,174 @@ export function useVirtualRows(
     padBottom: (total - held.last) * rowHeight,
     onScroll: syncWindow,
   };
+}
+
+/** Columns kept either side of the visible window. Fewer than the rows' {@link OVERSCAN} because a
+ *  column costs far more than a row: one extra column is one extra cell in every drawn row, so the
+ *  same generosity here would cost fifty times as much. Two is enough for what horizontal scrolling
+ *  is — a deliberate drag, not a flick of the wheel. */
+const COLUMN_OVERSCAN = 2;
+
+/** The column window's edges are rounded out to a multiple of this many columns, for the reason the
+ *  rows are rounded to {@link BLOCK}: without it every pixel of a sideways drag produces a different
+ *  window, and every drawn row is reconciled again on every frame of it. */
+const COLUMN_BLOCK = 4;
+
+/** How many columns are drawn before the box has been measured — the first frame, and a grid in a
+ *  tab nobody is looking at. Enough to fill a pane at any width it can be dragged to. */
+const BLIND_COLUMNS = 24;
+
+/** The most columns the window will ever hold, however wide the box claims to be. The sideways
+ *  {@link MAX_WINDOW}: a backstop against a box measured mid-transition, not a working limit. */
+const MAX_COLUMN_WINDOW = 120;
+
+/** Which columns a sideways-scrolled box is over: the first one in it, and one past the last. */
+export interface ColumnWindow {
+  first: number;
+  last: number;
+}
+
+/**
+ * Where every column starts, and where the last one ends: `edges[c]` is the left edge of column `c`,
+ * and `edges[count]` is what all of them add up to.
+ *
+ * This is the one thing columns cannot borrow from rows. A row's position is `index × rowHeight` and
+ * so is arithmetic; a column's is the sum of every width before it, and so is a table. It is built
+ * once per set of widths rather than per scroll, which is what lets {@link columnWindow} answer with
+ * a search instead of a walk.
+ */
+export function columnEdges(widths: readonly number[]): number[] {
+  const edges = new Array<number>(widths.length + 1);
+  edges[0] = 0;
+  for (let c = 0; c < widths.length; c++) edges[c + 1] = edges[c] + widths[c];
+  return edges;
+}
+
+/** The column an offset falls in: the last one starting at or before it. A binary search because
+ *  this is asked twice per scroll event, and a grid wide enough to be windowed is exactly the grid
+ *  where a walk over the columns would be long. */
+function columnAt(edges: readonly number[], x: number): number {
+  let low = 0;
+  let high = edges.length - 2;
+  while (low < high) {
+    const mid = (low + high + 1) >> 1;
+    if (edges[mid] <= x) low = mid;
+    else high = mid - 1;
+  }
+  return low;
+}
+
+/**
+ * The columns worth rendering, given where the box is scrolled sideways to and how wide it is.
+ *
+ * Its own function and exported for the reason {@link rowWindow} is: it is the whole of the
+ * arithmetic that decides what is built, and an off-by-one here is a strip of blank cells down one
+ * edge of the grid.
+ *
+ * What it does *not* return is the pair of paddings its row equivalent does. The columns outside the
+ * window are stood in for by a cell spanning them, and a spanning cell in a fixed layout takes its
+ * width from the colgroup — which already holds every column, drawn or not. So the space is
+ * accounted for by the same widths the window was worked out from, rather than by a second number
+ * that could disagree with them.
+ */
+export function columnWindow(
+  edges: readonly number[],
+  scrollLeft: number,
+  span: number
+): ColumnWindow {
+  const count = edges.length - 1;
+  // A box of no width belongs to a tab nobody is looking at, exactly as a box of no height does.
+  if (count <= 0 || span <= 0) {
+    return { first: 0, last: Math.max(0, Math.min(count, BLIND_COLUMNS)) };
+  }
+  const from = columnAt(edges, scrollLeft) - COLUMN_OVERSCAN;
+  // One past the column the right-hand edge lands in, since `last` is exclusive.
+  const to = columnAt(edges, scrollLeft + span) + 1 + COLUMN_OVERSCAN;
+  const first = Math.max(0, Math.floor(from / COLUMN_BLOCK) * COLUMN_BLOCK);
+  const last = Math.min(
+    count,
+    first + MAX_COLUMN_WINDOW,
+    Math.ceil(to / COLUMN_BLOCK) * COLUMN_BLOCK
+  );
+  return { first, last: Math.max(first, last) };
+}
+
+export interface VirtualColumns extends ColumnWindow {
+  /** Put on the scrolling box, beside the one {@link useVirtualRows} hands back. */
+  onScroll: () => void;
+}
+
+export interface VirtualColumnsOptions {
+  /** Where every column starts — {@link columnEdges}. Held steady between renders by the caller,
+   *  since it is what the window is worked out from and what every scroll is searched against. */
+  edges: readonly number[];
+  /** False for a grid narrow enough not to need any of this, which then renders every column. */
+  enabled: boolean;
+  /** A column that has to stay in the window whatever the scroll says — the one being edited. */
+  pinned?: number | null;
+}
+
+/**
+ * The window of columns a box is scrolled over, kept up to date.
+ *
+ * The twin of {@link useVirtualRows}, down to reading the offset off the box rather than holding it
+ * in state and to writing the window only when it changes. It observes the same element and so
+ * installs a second `ResizeObserver` on it: two observers on one box is a callback the browser was
+ * already going to make, and the alternative — one hook returning both windows — would tie a grid
+ * that only wants rows windowed to the machinery for columns.
+ */
+export function useVirtualColumns(
+  scroll: RefObject<HTMLElement | null>,
+  { edges, enabled, pinned = null }: VirtualColumnsOptions
+): VirtualColumns {
+  /** How wide the scrolling box is. Zero until measured, and zero again whenever the tab is put
+   *  away — which is why a zero span is answered with a blind window rather than an empty one. */
+  const [viewport, setViewport] = useState(0);
+  const [view, setView] = useState<ColumnWindow>({ first: 0, last: BLIND_COLUMNS });
+
+  const syncWindow = useCallback(() => {
+    const el = scroll.current;
+    if (!el) return;
+    // A box of no width belongs to a tab nobody is looking at. It cannot say how much is on screen,
+    // but it can still say where it is scrolled to — so a blind pane's worth is measured out from
+    // there rather than from the left edge. Anchoring at zero instead would leave a grid put back
+    // halfway across it drawing the columns at the far left, which is to say a frame of nothing but
+    // the filler cell. A mean column is the width to guess with: the real ones are not yet known to
+    // be worth asking about, since without a viewport there is nothing to compare them to.
+    const count = edges.length - 1;
+    const span =
+      viewport > 0 ? viewport : (edges[Math.max(0, count)] / Math.max(1, count)) * BLIND_COLUMNS;
+    const next = columnWindow(edges, el.scrollLeft, span);
+    setView((current) =>
+      current.first === next.first && current.last === next.last ? current : next
+    );
+  }, [scroll, edges, viewport]);
+
+  const remeasure = useCallback(() => {
+    const el = scroll.current;
+    if (!el) return;
+    setViewport(el.clientWidth);
+    syncWindow();
+  }, [scroll, syncWindow]);
+
+  // Before paint, so the first frame of a set of widths is the right columns rather than the last
+  // set's — a table swapped for a wider one would otherwise show a frame missing its right-hand end.
+  useLayoutEffect(() => {
+    syncWindow();
+  }, [syncWindow]);
+
+  useEffect(() => {
+    const el = scroll.current;
+    if (!el) return;
+    const observer = new ResizeObserver(remeasure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [scroll, remeasure]);
+
+  const count = Math.max(0, edges.length - 1);
+  if (!enabled) return { first: 0, last: count, onScroll: syncWindow };
+  const held = including({ first: view.first, last: Math.min(view.last, count) }, pinned, count);
+  return { first: held.first, last: held.last, onScroll: syncWindow };
 }
 
 /** How many of a column's values are actually measured. The longest string is not always the widest
