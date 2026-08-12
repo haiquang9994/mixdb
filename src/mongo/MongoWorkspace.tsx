@@ -27,6 +27,7 @@ import ItemList from "../components/ItemList";
 import type { ItemAction } from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
 import { PlusIcon, ReloadIcon } from "../icons";
+import { useSidebarKeyboard } from "../sidebarKeyboard";
 import { useTranslation } from "../i18n";
 import { errorMessage } from "../errors";
 
@@ -113,6 +114,9 @@ function MongoWorkspace({
    * one callback per connection instead of a new one on every change of database. */
   const selectedDbRef = useRef(selectedDb);
   selectedDbRef.current = selectedDb;
+
+  /** The sidebar's search box and the list under it — see {@link useSidebarKeyboard}. */
+  const sidebarKeys = useSidebarKeyboard(active, selectedDb);
 
   /** What each collection's filter bar was carrying when it was last left — a filter is often
    * typed out to look something up, and looking it up is exactly what sends the user off to
@@ -594,18 +598,23 @@ function MongoWorkspace({
       <div className="mongo-body">
         <aside className="mongo-sidebar" style={{ flexBasis: width }}>
           <Input
+            ref={sidebarKeys.searchRef}
             size="normal"
             className="mongo-sidebar-search"
             placeholder={t("mongo.searchCollectionsPlaceholder")}
             value={collectionFilter}
             onChange={(e) => setCollectionFilter(e.target.value)}
+            onKeyDown={sidebarKeys.onSearchKeyDown}
           />
           <ItemList
+            ref={sidebarKeys.listRef}
             items={filteredCollections}
             selectedItem={selectedCollection}
             onSelect={setSelectedCollection}
             emptyMessage={collectionsEmptyMessage}
             actions={collectionActions}
+            // The way back: `ArrowUp` off the top row is the search box again, caret and all.
+            onLeaveTop={sidebarKeys.focusSearch}
           />
           <div className="mongo-sidebar-actions">
             <ActionBar

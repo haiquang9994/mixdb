@@ -37,6 +37,7 @@ import ItemList from "../components/ItemList";
 import type { ItemAction } from "../components/ItemList";
 import itemListStyles from "../components/ItemList/ItemList.module.css";
 import { PlusIcon, ReloadIcon } from "../icons";
+import { useSidebarKeyboard } from "../sidebarKeyboard";
 import { useTranslation } from "../i18n";
 import { errorMessage } from "../errors";
 import type { MysqlCollation } from "../types";
@@ -138,6 +139,9 @@ function MysqlWorkspace({
   /** How far the dump or restore behind that overlay has got — dropping a database has nothing to
    * report. Null until the first reading arrives, and again once the overlay goes. */
   const [transferProgress, setTransferProgress] = useState<TransferProgress | null>(null);
+
+  /** The sidebar's search box and the list under it — see {@link useSidebarKeyboard}. */
+  const sidebarKeys = useSidebarKeyboard(active, selectedDb);
 
   /** What each table's filter bar was carrying when it was last left — a filter is often typed out
    * to look something up, and looking it up is exactly what sends the user off to another table or
@@ -695,13 +699,16 @@ function MysqlWorkspace({
       <div className="mysql-body">
         <aside className="mysql-sidebar" style={{ flexBasis: width }}>
           <Input
+            ref={sidebarKeys.searchRef}
             size="normal"
             className="mysql-sidebar-search"
             placeholder={t("mysql.searchTablesPlaceholder")}
             value={tableFilter}
             onChange={(e) => setTableFilter(e.target.value)}
+            onKeyDown={sidebarKeys.onSearchKeyDown}
           />
           <ItemList
+            ref={sidebarKeys.listRef}
             items={filteredTables}
             selectedItem={selectedTable}
             onSelect={selectTable}
@@ -709,6 +716,8 @@ function MysqlWorkspace({
             actions={tableActions}
             pinnedItem={pinnedTable}
             pinnedHint={t("mysql.followedTableHint")}
+            // The way back: `ArrowUp` off the top row is the search box again, caret and all.
+            onLeaveTop={sidebarKeys.focusSearch}
           />
           <div className="mysql-sidebar-actions">
             <ActionBar

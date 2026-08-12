@@ -55,6 +55,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   the update toast, the loading pill and the dialogs — to liquid glass, which frosts and bends what
   is behind them. A grid's pinned header and totals frost the rows sliding under them, and the page,
   the tab bar and the controls take the same material. Off by default.
+- Opening a MySQL or MongoDB database puts the caret in the sidebar's search box, and `↓` from there
+  hands the keyboard to the list: the arrows walk the tables or collections, Enter opens the one they
+  are on, and `↑` off the top row goes back to the search box.
 
 ### Changed
 
@@ -79,6 +82,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   first. In a text box it still selects the text.
 - A MySQL table now shows 1000 rows a page by default, and 5000 is offered alongside the other
   sizes.
+- Tab reaches a sidebar list as one stop rather than one per table or collection; the arrows walk
+  it from there.
 
 ### Fixed
 
