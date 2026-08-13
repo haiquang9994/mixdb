@@ -34,4 +34,4 @@ export type FilterOperator = (typeof FILTER_OPERATORS)[number]["id"];
 export const operatorArity = arityLookup<FilterOperator>(FILTER_OPERATORS);
 
 /** One condition sent to the server, ANDed with the others. */
-export type MysqlFilter = QueryFilter<FilterOperator>;
+export type SqlFilter = QueryFilter<FilterOperator>;

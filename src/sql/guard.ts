@@ -12,7 +12,8 @@
  */
 
 import { tokenize, type Token } from "./lint";
-import type { SqlStatement } from "./statements";
+import type { SqlDialect } from "./dialect";
+import type { SqlStatement } from "../sql/statements";
 
 /** One name-or-keyword of a statement that is code rather than comment, string or bracketed
  *  subquery. */
@@ -29,9 +30,9 @@ interface TopWord {
 
 /** The tokens that are actually code, with the brackets counted so a clause can be recognised as
  *  belonging to the statement itself rather than to a subquery inside it. */
-function topLevelWords(statement: SqlStatement): TopWord[] {
+function topLevelWords(statement: SqlStatement, dialect: SqlDialect): TopWord[] {
   const words: TopWord[] = [];
-  const code = tokenize(statement.text, statement.from).filter((t) => t.kind !== "comment");
+  const code = tokenize(statement.text, dialect.syntax, statement.from).filter((t) => t.kind !== "comment");
   let depth = 0;
   for (const token of code) {
     if (token.raw === "(") depth += 1;
@@ -135,14 +136,17 @@ function actualVerb(statement: SqlStatement, words: readonly TopWord[]): { verb:
  * {@link actualVerb}. Everything after the verb is read from where the verb sits, so the `WHERE`
  * that bounds a common table expression is not mistaken for one bounding the `DELETE` it feeds.
  */
-export function unguardedWrites(statements: readonly SqlStatement[]): UnguardedWrite[] {
+export function unguardedWrites(
+  statements: readonly SqlStatement[],
+  dialect: SqlDialect
+): UnguardedWrite[] {
   const found: UnguardedWrite[] = [];
   for (const statement of statements) {
     // The cheap test first: the opening word settles it for everything but a `WITH`, and only that
     // one is worth tokenising a statement to look inside. A script is mostly `SELECT`s, and this
     // runs over the whole of it every time Run All is pressed.
     if (!GUARDED.has(statement.verb) && statement.verb !== "WITH") continue;
-    const words = topLevelWords(statement);
+    const words = topLevelWords(statement, dialect);
     const { verb, at } = actualVerb(statement, words);
     if (!GUARDED.has(verb)) continue;
     // The statement proper: what the verb governs, and nothing in front of it.
@@ -196,12 +200,20 @@ export const AUTO_LIMIT = 10_000;
  * from — but only until it turns out to lead into a write, where a `LIMIT` would not page a result
  * but cap how many rows the statement changes.
  */
-export function withLimit(statement: SqlStatement, limit: number): string | null {
+export function withLimit(
+  statement: SqlStatement,
+  limit: number,
+  dialect: SqlDialect
+): string | null {
   if (statement.verb !== "SELECT" && statement.verb !== "WITH") return null;
-  const words = topLevelWords(statement);
+  const words = topLevelWords(statement, dialect);
   if (statement.verb === "WITH" && words.some(({ word }) => WRITING_WORDS.has(word))) return null;
   if (!words.some(({ word }) => word === "FROM")) return null;
   if (words.some(({ word }) => word === "LIMIT")) return null;
+  // `FETCH FIRST n ROWS ONLY` is the standard's spelling of the same ceiling, and what PostgreSQL
+  // accepts alongside `OFFSET`. A statement that has one cannot also carry a `LIMIT`: appending one
+  // is a syntax error rather than a narrower page.
+  if (words.some(({ word }) => word === "FETCH")) return null;
   // `SELECT ... INTO OUTFILE` and `INTO @var` are not result sets to be paged through.
   if (words.some(({ word }) => word === "INTO")) return null;
   // A locking clause — `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE` — has to come *after* the
@@ -226,13 +238,14 @@ export function withLimit(statement: SqlStatement, limit: number): string | null
 export function withAutoLimits(
   sql: string,
   statements: readonly SqlStatement[],
-  limit: number
+  limit: number,
+  dialect: SqlDialect
 ): { sql: string; added: number } {
   if (limit <= 0) return { sql, added: 0 };
   let out = sql;
   let added = 0;
   for (let i = statements.length - 1; i >= 0; i -= 1) {
-    const limited = withLimit(statements[i], limit);
+    const limited = withLimit(statements[i], limit, dialect);
     if (limited === null) continue;
     out = out.slice(0, statements[i].from) + limited + out.slice(statements[i].to);
     added += 1;
@@ -271,14 +284,17 @@ export interface BlockedWrite {
  * into one — reads no more than any other `SELECT` but leaves a file on the server's disk, which is
  * exactly the kind of mark on a machine this flag is set to prevent.
  */
-export function writingStatements(statements: readonly SqlStatement[]): BlockedWrite[] {
+export function writingStatements(
+  statements: readonly SqlStatement[],
+  dialect: SqlDialect
+): BlockedWrite[] {
   const blocked: BlockedWrite[] = [];
   for (const statement of statements) {
     if (!READ_VERBS.has(statement.verb)) {
       blocked.push({ statement, verb: statement.verb });
       continue;
     }
-    const words = topLevelWords(statement);
+    const words = topLevelWords(statement, dialect);
 
     if (statement.verb === "WITH") {
       const writing = words.find(({ word }) => WRITING_WORDS.has(word));
@@ -296,6 +312,14 @@ export function writingStatements(statements: readonly SqlStatement[]): BlockedW
     const target = into >= 0 ? words[into + 1]?.word : undefined;
     if (target === "OUTFILE" || target === "DUMPFILE") {
       blocked.push({ statement, verb: `INTO ${target}` });
+      continue;
+    }
+    // PostgreSQL has no `OUTFILE`, and no session variables to select into either: at the top level
+    // of a statement its `INTO` is `SELECT ... INTO t`, which is `CREATE TABLE AS` in another
+    // spelling. That leaves a table behind on the server, which is exactly what this flag is set to
+    // prevent.
+    if (into >= 0 && dialect.kind === "postgres") {
+      blocked.push({ statement, verb: "SELECT INTO" });
     }
   }
   return blocked;

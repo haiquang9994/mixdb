@@ -5,8 +5,9 @@ import { useDialogExit } from "../dialogMotion";
 import { PlusIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
-import { isAutoIncrement, isServerAssigned } from "../../mysql/columns";
-import type { MysqlColumnMeta } from "../../types";
+import { useSqlDialect } from "../../sql/context";
+import type { SqlDialect } from "../../sql/dialect";
+import type { SqlColumnMeta } from "../../types";
 import styles from "./InsertRowsDialog.module.css";
 
 /** One cell of a row waiting to be inserted. `isNull` is a mode rather than a value: writing SQL
@@ -22,7 +23,7 @@ interface Props {
   table: string;
   /** The table's columns, in table order. */
   columns: string[];
-  columnMeta: Record<string, MysqlColumnMeta>;
+  columnMeta: Record<string, SqlColumnMeta>;
   /** Rows to seed the form with, one draft row each — the selected rows, for a clone. Left out
    *  (or empty), the form opens on a single blank row. */
   seedRows?: Record<string, unknown>[];
@@ -35,13 +36,13 @@ interface Props {
 /** A default written as an expression rather than a literal (`CURRENT_TIMESTAMP`, `(uuid())`).
  * It cannot be prefilled as text — sent as a string it would be written out literally — so the
  * column is left out of the INSERT and shows its expression as a hint instead. */
-function isExpressionDefault(meta: MysqlColumnMeta): boolean {
+function isExpressionDefault(meta: SqlColumnMeta): boolean {
   // MySQL 8 flags it in Extra; 5.7 leaves Extra empty and only reports the expression itself.
   if (meta.extra.toUpperCase().includes("DEFAULT_GENERATED")) return true;
   return /^current_timestamp/i.test(meta.defaultValue ?? "");
 }
 
-function hasDefault(meta: MysqlColumnMeta): boolean {
+function hasDefault(meta: SqlColumnMeta): boolean {
   return meta.defaultValue !== null || isExpressionDefault(meta);
 }
 
@@ -54,32 +55,33 @@ function isTextLikeType(dataType: string): boolean {
 
 /** How a column starts out on a blank row: at its default where it has one, at NULL where that
  * is what it would fall back to, and empty otherwise. */
-function blankCell(meta: MysqlColumnMeta): DraftCell {
+function blankCell(dialect: SqlDialect, meta: SqlColumnMeta): DraftCell {
   // Empty is what keeps a column out of the INSERT, which is the only way MySQL gets to fill
   // in the ones it computes for itself.
-  if (isServerAssigned(meta) || isExpressionDefault(meta)) return { text: "", isNull: false };
+  if (dialect.isServerAssigned(meta) || isExpressionDefault(meta)) return { text: "", isNull: false };
   if (meta.defaultValue !== null) return { text: meta.defaultValue, isNull: false };
   if (meta.nullable) return { text: "", isNull: true };
   return { text: "", isNull: false };
 }
 
-function cellFromExisting(meta: MysqlColumnMeta, raw: unknown): DraftCell {
+function cellFromExisting(dialect: SqlDialect, meta: SqlColumnMeta, raw: unknown): DraftCell {
   // A clone gets its own id and its own computed values rather than the original's.
-  if (isServerAssigned(meta)) return blankCell(meta);
+  if (dialect.isServerAssigned(meta)) return blankCell(dialect, meta);
   if (raw === null || raw === undefined) return { text: "", isNull: true };
   return { text: typeof raw === "object" ? JSON.stringify(raw) : String(raw), isNull: false };
 }
 
 function buildRow(
+  dialect: SqlDialect,
   columns: string[],
-  columnMeta: Record<string, MysqlColumnMeta>,
+  columnMeta: Record<string, SqlColumnMeta>,
   source: Record<string, unknown> | null,
 ): DraftRow {
   const row: DraftRow = {};
   for (const c of columns) {
     const meta = columnMeta[c];
     if (!meta) continue;
-    row[c] = source ? cellFromExisting(meta, source[c]) : blankCell(meta);
+    row[c] = source ? cellFromExisting(dialect, meta, source[c]) : blankCell(dialect, meta);
   }
   return row;
 }
@@ -99,12 +101,13 @@ function cellKey(rowIndex: number, column: string): string {
  */
 function InsertRowsDialog({ table, columns, columnMeta, seedRows, onCancel, onSubmit }: Props) {
   const { t } = useTranslation();
+  const dialect = useSqlDialect();
   const sources = seedRows && seedRows.length > 0 ? seedRows : null;
   const cloning = sources !== null;
   const [draftRows, setDraftRows] = useState<DraftRow[]>(() =>
     sources
-      ? sources.map((source) => buildRow(columns, columnMeta, source))
-      : [buildRow(columns, columnMeta, null)],
+      ? sources.map((source) => buildRow(dialect, columns, columnMeta, source))
+      : [buildRow(dialect, columns, columnMeta, null)],
   );
   const [errors, setErrors] = useState<string[]>([]);
   const [invalidCells, setInvalidCells] = useState<Set<string>>(new Set());
@@ -113,7 +116,7 @@ function InsertRowsDialog({ table, columns, columnMeta, seedRows, onCancel, onSu
   const { close, cls } = useDialogExit();
   const firstEditableColumn = columns.find((c) => {
     const meta = columnMeta[c];
-    return meta !== undefined && !isServerAssigned(meta);
+    return meta !== undefined && !dialect.isServerAssigned(meta);
   });
 
   useEffect(() => {
@@ -148,7 +151,7 @@ function InsertRowsDialog({ table, columns, columnMeta, seedRows, onCancel, onSu
   }
 
   function addRow() {
-    setDraftRows((prev) => [...prev, buildRow(columns, columnMeta, null)]);
+    setDraftRows((prev) => [...prev, buildRow(dialect, columns, columnMeta, null)]);
     clearErrors();
   }
 
@@ -165,7 +168,7 @@ function InsertRowsDialog({ table, columns, columnMeta, seedRows, onCancel, onSu
     for (const c of columns) {
       const meta = columnMeta[c];
       const cell = row[c];
-      if (!meta || !cell || isServerAssigned(meta)) continue;
+      if (!meta || !cell || dialect.isServerAssigned(meta)) continue;
       if (cell.isNull) {
         payload[c] = null;
         continue;
@@ -183,7 +186,7 @@ function InsertRowsDialog({ table, columns, columnMeta, seedRows, onCancel, onSu
       for (const c of columns) {
         const meta = columnMeta[c];
         const cell = row[c];
-        if (!meta || !cell || isServerAssigned(meta)) continue;
+        if (!meta || !cell || dialect.isServerAssigned(meta)) continue;
         if (cell.isNull && !meta.nullable) {
           messages.push(t("insertRows.errorNotNull", { n: i + 1, column: c }));
           invalid.add(cellKey(i, c));
@@ -265,8 +268,8 @@ function InsertRowsDialog({ table, columns, columnMeta, seedRows, onCancel, onSu
                     const meta = columnMeta[c];
                     const cell = row[c];
                     if (!meta || !cell) return <td key={c} />;
-                    if (isServerAssigned(meta)) {
-                      const auto = isAutoIncrement(meta);
+                    if (dialect.isServerAssigned(meta)) {
+                      const auto = dialect.isAutoIncrement(meta);
                       return (
                         <td key={c}>
                           <span

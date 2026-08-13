@@ -8,7 +8,11 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::db::{dump, mongo, mysql, mysql_script, mysql_structure, redis as redis_db, tools};
+use crate::db::{
+    dump, mongo, mysql, mysql_script, mysql_structure, postgres, postgres_ddl, postgres_script,
+    postgres_structure,
+    redis as redis_db, tools,
+};
 use crate::models::{ConnectionConfig, DbKind, SshConfig};
 use crate::secrets;
 use crate::ssh_tunnel;
@@ -106,6 +110,28 @@ pub async fn connect_db(
             .await?;
             (DbHandle::Mysql(pool), Some((host, port)), tunnel)
         }
+        DbKind::Postgres => {
+            let (host, port, tunnel) = resolve_endpoint(&config, &app_data).await?;
+            let username = config.username.clone().unwrap_or_default();
+            let password = config.password.clone().unwrap_or_default();
+            let pools = with_timeout(
+                postgres::connect(
+                    &host,
+                    port,
+                    &username,
+                    &password,
+                    config.database.as_deref(),
+                    config.use_ssl,
+                ),
+                "PostgreSQL",
+            )
+            .await?;
+            (
+                DbHandle::Postgres(Arc::new(pools)),
+                Some((host, port)),
+                tunnel,
+            )
+        }
         // MongoDB is configured as a whole connection string rather than host/port/user/password,
         // so the endpoint lives inside the URI. Tunneling therefore has to read the host back out
         // of it and then override it, instead of going through `resolve_endpoint`.
@@ -187,6 +213,35 @@ async fn mysql_pool(state: &State<'_, AppState>, id: &str) -> Result<sqlx::MySql
     match handle(state, id).await? {
         DbHandle::Mysql(pool) => Ok(pool),
         _ => Err(err!("error.wrongConnectionKind", kind = "MySQL")),
+    }
+}
+
+/// The pool for one database of a PostgreSQL connection, opening it if this is the first time that
+/// database has been asked for. `database` empty means the one the connection was opened on.
+///
+/// Every PostgreSQL command goes through this rather than through a pool of its own, because that
+/// is the whole difference from MySQL: there is no `USE`, so which database a command runs against
+/// is decided by which pool it is handed.
+async fn postgres_pool(
+    state: &State<'_, AppState>,
+    id: &str,
+    database: &str,
+) -> Result<sqlx::PgPool, AppError> {
+    match handle(state, id).await? {
+        DbHandle::Postgres(pools) => pools.pool(Some(database)).await,
+        _ => Err(err!("error.wrongConnectionKind", kind = "PostgreSQL")),
+    }
+}
+
+/// The whole PostgreSQL connection rather than one of its pools — for `DROP DATABASE`, which has
+/// to close the pool on the database it is dropping before the server will allow it.
+async fn postgres_pools(
+    state: &State<'_, AppState>,
+    id: &str,
+) -> Result<Arc<postgres::Pools>, AppError> {
+    match handle(state, id).await? {
+        DbHandle::Postgres(pools) => Ok(pools),
+        _ => Err(err!("error.wrongConnectionKind", kind = "PostgreSQL")),
     }
 }
 
@@ -345,24 +400,36 @@ pub async fn mysql_collations(
 /// Read out of the connection and returned by value on purpose — the tools run for as long as the
 /// database is big, and holding the connection lock across that would stop every other command in
 /// the app until the dump finished.
-struct MysqlEndpoint {
+struct SqlEndpoint {
     host: String,
     port: u16,
     user: String,
     password: String,
 }
 
-async fn mysql_endpoint(state: &State<'_, AppState>, id: &str) -> Result<MysqlEndpoint, AppError> {
+/// The endpoint of a MySQL or PostgreSQL connection, checking on the way that it is the kind the
+/// caller expects — the tools of one engine cannot be pointed at the other's server.
+async fn sql_endpoint(
+    state: &State<'_, AppState>,
+    id: &str,
+    kind: DbKind,
+) -> Result<SqlEndpoint, AppError> {
     let connections = state.connections.lock().await;
     let connection = connections.get(id).ok_or_else(|| err!("error.unknownConnection"))?;
-    if !matches!(connection.handle, DbHandle::Mysql(_)) {
-        return Err(err!("error.wrongConnectionKind", kind = "MySQL"));
+    let matches = match kind {
+        DbKind::Mysql => matches!(connection.handle, DbHandle::Mysql(_)),
+        DbKind::Postgres => matches!(connection.handle, DbHandle::Postgres(_)),
+        _ => false,
+    };
+    if !matches {
+        let name = if kind == DbKind::Postgres { "PostgreSQL" } else { "MySQL" };
+        return Err(err!("error.wrongConnectionKind", kind = name));
     }
     let (host, port) = connection
         .endpoint
         .clone()
         .ok_or_else(|| err!("error.noDumpAddress"))?;
-    Ok(MysqlEndpoint {
+    Ok(SqlEndpoint {
         host,
         port,
         user: connection.config.username.clone().unwrap_or_default(),
@@ -532,7 +599,7 @@ pub async fn mysql_dump(
                 .collect()
         })
         .unwrap_or_default();
-    let endpoint = mysql_endpoint(&state, &id).await?;
+    let endpoint = sql_endpoint(&state, &id, DbKind::Mysql).await?;
     let report = reporter(&app, &id);
     in_background(move || {
         dump::mysql_dump(
@@ -566,7 +633,7 @@ pub async fn mysql_restore(
     path: String,
 ) -> Result<(), AppError> {
     let tool = tools::require(tools::Tool::MysqlClient, &tools_dir(&app)?)?;
-    let endpoint = mysql_endpoint(&state, &id).await?;
+    let endpoint = sql_endpoint(&state, &id, DbKind::Mysql).await?;
     let report = reporter(&app, &id);
     in_background(move || {
         dump::mysql_restore(
@@ -1076,4 +1143,402 @@ pub async fn redis_delete_keys(
     let conn = redis_connection(&state, &id).await?;
     let mut conn = conn.lock().await;
     redis_db::delete_keys(conn.commands(), &keys).await
+}
+
+// ---------------------------------------------------------------------------
+// PostgreSQL
+//
+// Every one of these takes the database as an argument the way the MySQL commands do, but it means
+// something different: there it names a database to reach into from the one connection, here it
+// picks which pool the command runs on. See `postgres_pool`.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn postgres_list_databases(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<String>, AppError> {
+    let pool = postgres_pool(&state, &id, "").await?;
+    postgres::list_databases(&pool).await
+}
+
+#[tauri::command]
+pub async fn postgres_server_info(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<postgres::ServerInfo, AppError> {
+    let pool = postgres_pool(&state, &id, "").await?;
+    postgres::server_info(&pool).await
+}
+
+#[tauri::command]
+pub async fn postgres_list_tables(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+) -> Result<Vec<String>, AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres::list_tables(&pool).await
+}
+
+#[tauri::command]
+pub async fn postgres_table_stats(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+) -> Result<Vec<postgres_structure::TableStats>, AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_structure::table_stats(&pool).await
+}
+
+#[tauri::command]
+pub async fn postgres_table_data(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    query: postgres::PageQuery,
+) -> Result<postgres::TablePage, AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres::table_data(&pool, &table, &query).await
+}
+
+#[tauri::command]
+pub async fn postgres_update_row(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    updates: Map<String, Value>,
+    key: Map<String, Value>,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres::update_row(&pool, &table, &updates, &key).await
+}
+
+#[tauri::command]
+pub async fn postgres_insert_rows(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    rows: Vec<Map<String, Value>>,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres::insert_rows(&pool, &table, &rows).await
+}
+
+/// `reset_auto_increment` keeps MySQL's name because it is the frontend's name for the same
+/// checkbox; what it resets here is the table's identity or `serial` sequence.
+#[tauri::command]
+pub async fn postgres_delete_rows(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    keys: Vec<Map<String, Value>>,
+    all: bool,
+    reset_auto_increment: bool,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres::delete_rows(&pool, &table, &keys, all, reset_auto_increment).await
+}
+
+#[tauri::command]
+pub async fn postgres_table_structure(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+) -> Result<postgres_structure::TableStructure, AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_structure::table_structure(&pool, &table).await
+}
+
+#[tauri::command]
+pub async fn postgres_collations(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<postgres_structure::Collation>, AppError> {
+    let pool = postgres_pool(&state, &id, "").await?;
+    postgres_structure::collations(&pool).await
+}
+
+#[tauri::command]
+pub async fn postgres_query(
+    state: State<'_, AppState>,
+    id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<Vec<serde_json::Map<String, serde_json::Value>>, AppError> {
+    let pool = postgres_pool(&state, &id, database.as_deref().unwrap_or("")).await?;
+    postgres::query(&pool, &sql).await
+}
+
+#[tauri::command]
+pub async fn postgres_schema_outline(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+) -> Result<postgres_structure::SchemaOutline, AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_structure::schema_outline(&pool, &database).await
+}
+
+#[tauri::command]
+pub async fn postgres_run_script(
+    state: State<'_, AppState>,
+    id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<Vec<postgres_script::StatementResult>, AppError> {
+    let pool = postgres_pool(&state, &id, database.as_deref().unwrap_or("")).await?;
+    let result = postgres_script::run(&pool, &sql, |pid| {
+        state.running_queries.lock().unwrap().insert(id.clone(), pid);
+    })
+    .await;
+    // However it ended, there is nothing left to cancel — and the pid would otherwise name a
+    // session running someone else's statement by the time the button was next pressed.
+    state.running_queries.lock().unwrap().remove(&id);
+    result
+}
+
+/// Asks PostgreSQL to parse one statement without running it, for the editor's error checking.
+#[tauri::command]
+pub async fn postgres_validate_sql(
+    state: State<'_, AppState>,
+    id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<Option<postgres_script::SqlProblem>, AppError> {
+    let pool = postgres_pool(&state, &id, database.as_deref().unwrap_or("")).await?;
+    postgres_script::validate(&pool, &sql).await
+}
+
+/// Stops the script this connection is running, if it is running one.
+///
+/// The cancel goes out on a connection of its own, since the one being cancelled is busy — and to
+/// the same database, because a backend pid is only cancellable from the server it belongs to.
+#[tauri::command]
+pub async fn postgres_cancel_query(
+    state: State<'_, AppState>,
+    id: String,
+    database: Option<String>,
+) -> Result<(), AppError> {
+    let pid = state.running_queries.lock().unwrap().get(&id).copied();
+    let Some(pid) = pid else {
+        return Ok(());
+    };
+    let pool = postgres_pool(&state, &id, database.as_deref().unwrap_or("")).await?;
+    postgres_script::cancel(&pool, pid).await
+}
+
+/// Creates a database, for the header's database picker. `collation` is accepted and ignored: see
+/// `postgres_ddl::create_database`.
+#[tauri::command]
+pub async fn postgres_create_database(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    #[allow(unused_variables)] collation: Option<String>,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, "").await?;
+    postgres_ddl::create_database(&pool, &name).await
+}
+
+/// Drops a database and every table in it. Takes the whole connection rather than a pool, since the
+/// pool on the database being dropped is what has to be closed first.
+#[tauri::command]
+pub async fn postgres_drop_database(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+) -> Result<(), AppError> {
+    let pools = postgres_pools(&state, &id).await?;
+    postgres_ddl::drop_database(&pools, &database).await
+}
+
+/// Creates an empty table — one `id` column and its primary key — for the sidebar's add button.
+/// `collation` is accepted and ignored: a PostgreSQL table has none of its own.
+#[tauri::command]
+pub async fn postgres_create_table(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    #[allow(unused_variables)] collation: Option<String>,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_ddl::create_table(&pool, &table).await
+}
+
+#[tauri::command]
+pub async fn postgres_rename_table(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    new_name: String,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_ddl::rename_table(&pool, &table, &new_name).await
+}
+
+#[tauri::command]
+pub async fn postgres_drop_table(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_ddl::drop_table(&pool, &table).await
+}
+
+#[tauri::command]
+pub async fn postgres_add_column(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    spec: postgres_ddl::ColumnSpec,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_ddl::add_column(&pool, &table, &spec).await
+}
+
+#[tauri::command]
+pub async fn postgres_modify_column(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+    spec: postgres_ddl::ColumnSpec,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_ddl::modify_column(&pool, &table, &name, &spec).await
+}
+
+#[tauri::command]
+pub async fn postgres_drop_column(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_ddl::drop_column(&pool, &table, &name).await
+}
+
+#[tauri::command]
+pub async fn postgres_add_index(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    spec: postgres_ddl::IndexSpec,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_ddl::add_index(&pool, &table, &spec).await
+}
+
+#[tauri::command]
+pub async fn postgres_modify_index(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+    spec: postgres_ddl::IndexSpec,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_ddl::modify_index(&pool, &table, &name, &spec).await
+}
+
+#[tauri::command]
+pub async fn postgres_drop_index(
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+) -> Result<(), AppError> {
+    let pool = postgres_pool(&state, &id, &database).await?;
+    postgres_ddl::drop_index(&pool, &table, &name).await
+}
+
+
+/// Writes a PostgreSQL database out as SQL. `mode` is `structure`, `data` or `all`.
+///
+/// Reports on `transfer://progress` as pg_dump names each table it reaches, the same estimate the
+/// MySQL dump gives — so the command returning is still what says the dump is done.
+#[tauri::command]
+pub async fn postgres_dump(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    mode: String,
+    path: String,
+) -> Result<(), AppError> {
+    let mode = dump::DumpMode::parse(&mode)?;
+    let tool = tools::require(tools::Tool::PgDump, &tools_dir(&app)?)?;
+    // What each table weighs, for the progress the dump reports. A server that will not say leaves
+    // the dump to run with a bar that moves without a number, which is not worth refusing over.
+    let pool = postgres_pool(&state, &id, &database).await?;
+    let tables: Vec<(String, u64)> = postgres_structure::table_stats(&pool)
+        .await
+        .map(|tables| {
+            tables
+                .into_iter()
+                .map(|table| (table.name, table.data_size))
+                .collect()
+        })
+        .unwrap_or_default();
+    let endpoint = sql_endpoint(&state, &id, DbKind::Postgres).await?;
+    let report = reporter(&app, &id);
+    in_background(move || {
+        dump::postgres_dump(
+            &tool,
+            &endpoint.host,
+            endpoint.port,
+            &endpoint.user,
+            &endpoint.password,
+            &database,
+            mode,
+            &path,
+            &tables,
+            &dump::Watch { report: &report },
+        )
+    })
+    .await
+}
+
+/// Replays a SQL file through psql, into `database`.
+#[tauri::command]
+pub async fn postgres_restore(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    database: String,
+    path: String,
+) -> Result<(), AppError> {
+    let tool = tools::require(tools::Tool::PsqlClient, &tools_dir(&app)?)?;
+    let endpoint = sql_endpoint(&state, &id, DbKind::Postgres).await?;
+    let report = reporter(&app, &id);
+    in_background(move || {
+        dump::postgres_restore(
+            &tool,
+            &endpoint.host,
+            endpoint.port,
+            &endpoint.user,
+            &endpoint.password,
+            &database,
+            &path,
+            &dump::Watch { report: &report },
+        )
+    })
+    .await
 }

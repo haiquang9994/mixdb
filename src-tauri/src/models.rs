@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum DbKind {
     Mysql,
+    Postgres,
     Mongo,
     Redis,
 }
@@ -30,14 +31,18 @@ pub struct ConnectionConfig {
     pub port: u16,
     pub username: Option<String>,
     pub password: Option<String>,
-    /// Database name (MySQL/Mongo) or numeric DB index as string (Redis).
+    /// Database name (MySQL/PostgreSQL/Mongo) or numeric DB index as string (Redis).
+    ///
+    /// PostgreSQL is the one kind this is not merely a starting point for: a connection there is
+    /// bound to one database and cannot see into another, so browsing a second one opens a second
+    /// pool rather than switching this. Left empty, `postgres` is dialed.
     pub database: Option<String>,
     /// MongoDB only, and the only endpoint it uses: a full `mongodb://` / `mongodb+srv://`
     /// connection string, which carries host, port, credentials and options in one value —
     /// so `host`/`port`/`username`/`password` are ignored for that kind.
     pub uri: Option<String>,
     pub ssh: Option<SshConfig>,
-    /// MySQL only. `None`/`Some(true)` tries SSL and falls back to plaintext
+    /// MySQL and PostgreSQL. `None`/`Some(true)` tries SSL and falls back to plaintext
     /// if the server doesn't advertise it; `Some(false)` skips SSL entirely
     /// (useful when already tunneled over SSH, or against servers with SSL
     /// configs too old for any modern TLS backend to negotiate).

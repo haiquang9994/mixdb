@@ -1,16 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fileInto } from "../../paneCache";
 import { gridStyle, useVirtualRows, widestValues } from "../../virtualRows";
-import {
-  mysqlAddColumn,
-  mysqlAddIndex,
-  mysqlCollations,
-  mysqlDropColumn,
-  mysqlDropIndex,
-  mysqlModifyColumn,
-  mysqlModifyIndex,
-  mysqlTableStructure,
-} from "../../mysql/api";
 import ActionBar from "../ActionBar";
 import ColumnDialog from "../ColumnDialog";
 import ConfirmDialog from "../ConfirmDialog";
@@ -20,13 +10,14 @@ import { PencilIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
+import { useSqlApi, useSqlDialect } from "../../sql/context";
 import type {
-  MysqlCollation,
-  MysqlColumnSpec,
-  MysqlIndexSpec,
-  MysqlStructureColumn,
-  MysqlTableIndex,
-  MysqlTableStructure,
+  SqlCollation,
+  SqlColumnSpec,
+  SqlIndexSpec,
+  SqlStructureColumn,
+  SqlTableIndex,
+  SqlTableStructure,
 } from "../../types";
 import styles from "./TableStructure.module.css";
 
@@ -39,16 +30,18 @@ const INDEX_KIND_LABEL = {
   index: "structure.kindIndex",
 } as const;
 
-/** How the index is stored, when that is a choice the index had. `FULLTEXT`/`SPATIAL` name a kind
- * rather than a structure, and the Kind column already says so. */
-function indexMethod(index: MysqlTableIndex): string {
+/** How the index is stored, when that is a choice the index had. Read against the methods this
+ * engine offers rather than a fixed pair, so PostgreSQL's `GIN`/`GiST`/`BRIN`/`SP-GiST` are named
+ * here as well — the edit dialog fills its picker from the same list. `FULLTEXT`/`SPATIAL` name a
+ * kind rather than a structure, and the Kind column already says so. */
+function indexMethod(index: SqlTableIndex, methods: readonly string[]): string {
   const type = index.indexType.toUpperCase();
-  return type === "BTREE" || type === "HASH" ? type : "";
+  return methods.includes(type) ? type : "";
 }
 
 /** An index over an expression rather than over columns. Its expression is not read here, so such
  * an index cannot be rebuilt from what the grid knows — only dropped. */
-function isFunctional(index: MysqlTableIndex): boolean {
+function isFunctional(index: SqlTableIndex): boolean {
   return index.columns.some((column) => column.name === null);
 }
 
@@ -64,15 +57,15 @@ const VIRTUAL_FROM = 60;
 const ROW_HEIGHT = 33;
 
 /** Which dialog is open and on what: an entry with nothing in it is the "add" form. */
-type ColumnDialogState = { column?: MysqlStructureColumn };
-type IndexDialogState = { index?: MysqlTableIndex };
+type ColumnDialogState = { column?: SqlStructureColumn };
+type IndexDialogState = { index?: SqlTableIndex };
 /** What the confirmation is about to drop. */
 type PendingDrop = { kind: "column"; name: string } | { kind: "index"; name: string };
 
 /** One table's shape as it was last read, and which shape of the database it was read from — see
  * {@link Props.schemaToken}. */
 export interface RememberedStructure {
-  structure: MysqlTableStructure;
+  structure: SqlTableStructure;
   schemaToken: number;
 }
 
@@ -146,6 +139,8 @@ function TableStructure({
   readOnly = false,
 }: Props) {
   const { t } = useTranslation();
+  const api = useSqlApi();
+  const { editing: offers } = useSqlDialect();
   /** Bumped whenever the cache is written to or dropped, since a Map is the same object either way
    *  and nothing would re-render off it on its own. Only the setter is ever read: the count says
    *  nothing, it only says that the cache is worth looking at again. */
@@ -155,13 +150,13 @@ function TableStructure({
   const [columnDialog, setColumnDialog] = useState<ColumnDialogState | null>(null);
   const [indexDialog, setIndexDialog] = useState<IndexDialogState | null>(null);
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null);
-  const [collations, setCollations] = useState<MysqlCollation[]>([]);
+  const [collations, setCollations] = useState<SqlCollation[]>([]);
 
   // Read once per connection rather than per table: the list belongs to the server, and every
   // column dialog opened on it picks from the same one.
   useEffect(() => {
     let cancelled = false;
-    mysqlCollations(connectionId)
+    api.collations(connectionId)
       .then((result) => {
         if (!cancelled) setCollations(result);
       })
@@ -173,7 +168,7 @@ function TableStructure({
     return () => {
       cancelled = true;
     };
-  }, [connectionId]);
+  }, [api, connectionId]);
 
   /** The table the panel is showing, as one string: what the cache is keyed on. */
   const tableKey = `${selectedDb} :: ${selectedTable}`;
@@ -192,7 +187,7 @@ function TableStructure({
     if (!active || structure !== null) return;
     let cancelled = false;
     setLoading(true);
-    mysqlTableStructure(connectionId, selectedDb, selectedTable)
+    api.tableStructure(connectionId, selectedDb, selectedTable)
       .then((result) => {
         if (cancelled) return;
         const entry = { structure: result, schemaToken };
@@ -214,7 +209,7 @@ function TableStructure({
     // `schemaToken` is in here so that a change made while a read is still out drops that read
     // rather than letting it land: columns filed under the shape before are turned down when read
     // back, and with nothing else moving there would be nothing left to ask for them again.
-  }, [connectionId, selectedDb, selectedTable, tableKey, active, structure, schemaToken]);
+  }, [api, connectionId, selectedDb, selectedTable, tableKey, active, structure, schemaToken]);
 
   const columns = structure?.columns ?? [];
   const indexes = structure?.indexes ?? [];
@@ -269,7 +264,7 @@ function TableStructure({
         [
           index.name,
           t(INDEX_KIND_LABEL[indexKind(index)]),
-          indexMethod(index) || t("structure.none"),
+          indexMethod(index, offers.indexMethods) || t("structure.none"),
           index.columns
             .map((column) =>
               column.prefixLength === null
@@ -280,7 +275,7 @@ function TableStructure({
           index.comment,
         ][c]
       ),
-    [indexes, t]
+    [indexes, offers.indexMethods, t]
   );
   /** What every button that would send an `ALTER TABLE` is gated on. The reload beside them is
    *  not: reading is the one thing a read-only connection is for. */
@@ -326,22 +321,22 @@ function TableStructure({
     }
   }
 
-  async function submitColumn(spec: MysqlColumnSpec) {
+  async function submitColumn(spec: SqlColumnSpec) {
     const original = columnDialog?.column;
     await apply(() =>
       original
-        ? mysqlModifyColumn(connectionId, selectedDb, selectedTable, original.name, spec)
-        : mysqlAddColumn(connectionId, selectedDb, selectedTable, spec),
+        ? api.modifyColumn(connectionId, selectedDb, selectedTable, original.name, spec)
+        : api.addColumn(connectionId, selectedDb, selectedTable, spec),
     );
     setColumnDialog(null);
   }
 
-  async function submitIndex(spec: MysqlIndexSpec) {
+  async function submitIndex(spec: SqlIndexSpec) {
     const original = indexDialog?.index;
     await apply(() =>
       original
-        ? mysqlModifyIndex(connectionId, selectedDb, selectedTable, original.name, spec)
-        : mysqlAddIndex(connectionId, selectedDb, selectedTable, spec),
+        ? api.modifyIndex(connectionId, selectedDb, selectedTable, original.name, spec)
+        : api.addIndex(connectionId, selectedDb, selectedTable, spec),
     );
     setIndexDialog(null);
   }
@@ -353,8 +348,8 @@ function TableStructure({
     try {
       await apply(() =>
         target.kind === "column"
-          ? mysqlDropColumn(connectionId, selectedDb, selectedTable, target.name)
-          : mysqlDropIndex(connectionId, selectedDb, selectedTable, target.name),
+          ? api.dropColumn(connectionId, selectedDb, selectedTable, target.name)
+          : api.dropIndex(connectionId, selectedDb, selectedTable, target.name),
       );
     } catch (e) {
       onError(errorMessage(t, e));
@@ -705,7 +700,9 @@ function TableStructure({
                         {t(INDEX_KIND_LABEL[indexKind(index)])}
                       </span>
                     </td>
-                    <td className={styles.muted}>{indexMethod(index) || t("structure.none")}</td>
+                    <td className={styles.muted}>
+                      {indexMethod(index, offers.indexMethods) || t("structure.none")}
+                    </td>
                     <td className={styles.mono}>
                       {index.columns
                         .map((column) => {

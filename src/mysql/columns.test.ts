@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { isBinary } from "./columns";
-import type { MysqlColumnMeta } from "../types";
+import type { SqlColumnMeta } from "../types";
 
-function meta(dataType: string): MysqlColumnMeta {
+function meta(dataType: string): SqlColumnMeta {
   return { dataType, nullable: true, defaultValue: null, extra: "", foreignKey: null };
 }
 

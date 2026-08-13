@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-/** The two downloads a tool can come from: each carries the pair of tools for its database. */
-export type ToolSuite = "mysql" | "mongo";
+/** The three sets of tools, one per SQL-or-document engine: each carries the pair its database
+ *  needs. Only two of them are ever downloadable — PostgreSQL publishes no client-only archive. */
+export type ToolSuite = "mysql" | "postgres" | "mongo";
 
 /** Where a tool was found. `custom` is a path picked in Settings, `downloaded` a copy MixDB
  *  fetched for itself, and `system` something already installed on the machine. */

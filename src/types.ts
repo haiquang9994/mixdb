@@ -1,4 +1,4 @@
-export type DbKind = "mysql" | "mongo" | "redis";
+export type DbKind = "mysql" | "postgres" | "mongo" | "redis";
 
 export type SshAuth =
   | { type: "password"; password: string }
@@ -53,18 +53,19 @@ export interface SavedConnection {
 
 export const DEFAULT_PORTS: Record<DbKind, number> = {
   mysql: 3306,
+  postgres: 5432,
   mongo: 27017,
   redis: 6379,
 };
 
 /** The row a foreign key column points at: what it references, not what it is declared as. */
-export interface MysqlForeignKey {
+export interface SqlForeignKey {
   table: string;
   column: string;
 }
 
 /** What the server knows about one column beyond its name — what a new row has to respect. */
-export interface MysqlColumnMeta {
+export interface SqlColumnMeta {
   /** The declared type as MySQL spells it, e.g. `varchar(255)` or `int unsigned`. */
   dataType: string;
   nullable: boolean;
@@ -75,13 +76,13 @@ export interface MysqlColumnMeta {
   /** `SHOW COLUMNS`' Extra: `auto_increment`, `DEFAULT_GENERATED`, `STORED GENERATED`, ... */
   extra: string;
   /** What this column references, or null when it is not part of a foreign key. */
-  foreignKey: MysqlForeignKey | null;
+  foreignKey: SqlForeignKey | null;
 }
 
-export interface MysqlTablePage {
+export interface SqlTablePage {
   columns: string[];
   /** Keyed by column name; `columns` is what carries their order. */
-  columnMeta: Record<string, MysqlColumnMeta>;
+  columnMeta: Record<string, SqlColumnMeta>;
   primaryKey: string[];
   /** The AUTO_INCREMENT column, or null when the table has none — only such a table has a
    *  counter that resetting after a delete would mean anything for. */
@@ -91,7 +92,7 @@ export interface MysqlTablePage {
 }
 
 /** One column as the table currently declares it — a row of the Structure tab's column grid. */
-export interface MysqlStructureColumn {
+export interface SqlStructureColumn {
   name: string;
   /** The full declared type as MySQL spells it: `varchar(255)`, `int unsigned`, `enum('a','b')`. */
   dataType: string;
@@ -115,16 +116,16 @@ export interface MysqlStructureColumn {
 
 /** One collation the connected server has. Read from the server, so the list matches that MySQL
  *  version exactly rather than whatever this client was built knowing about. */
-export interface MysqlCollation {
+export interface SqlCollation {
   name: string;
   charset: string;
   /** Whether this is its character set's default — what a column gets without a `COLLATE`. */
   isDefault: boolean;
 }
 
-/** What a column is to be declared as: the write-side counterpart of {@link MysqlStructureColumn},
+/** What a column is to be declared as: the write-side counterpart of {@link SqlStructureColumn},
  *  carrying only the parts that go into an `ADD`/`CHANGE COLUMN` clause. */
-export interface MysqlColumnSpec {
+export interface SqlColumnSpec {
   name: string;
   dataType: string;
   nullable: boolean;
@@ -140,51 +141,51 @@ export interface MysqlColumnSpec {
   after?: string;
 }
 
-export interface MysqlIndexColumn {
+export interface SqlIndexColumn {
   /** null for a functional index, which indexes an expression rather than a column. */
   name: string | null;
   /** How many leading characters are indexed, when only a prefix of the column is. */
   prefixLength: number | null;
 }
 
-export interface MysqlTableIndex {
+export interface SqlTableIndex {
   name: string;
   unique: boolean;
   primary: boolean;
   /** `BTREE`, `HASH`, `FULLTEXT` or `SPATIAL` as MySQL reports it. */
   indexType: string;
-  columns: MysqlIndexColumn[];
+  columns: SqlIndexColumn[];
   comment: string;
 }
 
-export type MysqlIndexKind = "index" | "unique" | "fulltext" | "spatial" | "primary";
+export type SqlIndexKind = "index" | "unique" | "fulltext" | "spatial" | "primary";
 
-export interface MysqlIndexColumnSpec {
+export interface SqlIndexColumnSpec {
   name: string;
   prefixLength: number | null;
 }
 
-export interface MysqlIndexSpec {
+export interface SqlIndexSpec {
   /** Left empty, MySQL names the index after its first column. Ignored for a primary key. */
   name: string;
-  kind: MysqlIndexKind;
+  kind: SqlIndexKind;
   /** `BTREE`/`HASH`, or null for the engine's own default. Only meaningful for a plain or unique
    *  index — full-text and spatial indexes have one structure each. */
   indexType: string | null;
-  columns: MysqlIndexColumnSpec[];
+  columns: SqlIndexColumnSpec[];
   comment: string;
 }
 
-export interface MysqlTableStructure {
+export interface SqlTableStructure {
   /** In table order, which is the order a `SELECT *` returns them in. */
-  columns: MysqlStructureColumn[];
+  columns: SqlStructureColumn[];
   /** The primary key first, then the rest as the server listed them. */
-  indexes: MysqlTableIndex[];
+  indexes: SqlTableIndex[];
 }
 
 /** One column as the Query tab's completion knows it — the name, and enough beside it to tell two
  *  similar columns apart in the list. */
-export interface MysqlOutlineColumn {
+export interface SqlOutlineColumn {
   name: string;
   /** The declared type as MySQL spells it: `varchar(255)`, `int unsigned`. */
   dataType: string;
@@ -195,30 +196,30 @@ export interface MysqlOutlineColumn {
   references: string | null;
 }
 
-export interface MysqlOutlineTable {
+export interface SqlOutlineTable {
   name: string;
   /** In table order. Views are listed here too — their columns complete like any others'. */
-  columns: MysqlOutlineColumn[];
+  columns: SqlOutlineColumn[];
 }
 
 /** Every table and column of one database. Read once and cached, and only ever as much as the
  *  connected user has privileges to see. */
-export interface MysqlSchemaOutline {
+export interface SqlSchemaOutline {
   database: string;
-  tables: MysqlOutlineTable[];
+  tables: SqlOutlineTable[];
 }
 
 /** How a statement's result is to be read: a result set, a count of rows changed, plain success,
  *  or the reason it failed. */
-export type MysqlStatementKind = "rows" | "affected" | "ok" | "error";
+export type SqlStatementKind = "rows" | "affected" | "ok" | "error";
 
 /** What one statement of the Query tab's script produced. */
-export interface MysqlStatementResult {
+export interface SqlStatementResult {
   /** The statement this came from, as the user wrote it. */
   statement: string;
   /** The keyword it opens with, upper-cased. */
   verb: string;
-  kind: MysqlStatementKind;
+  kind: SqlStatementKind;
   columns: string[];
   /** Positional rather than keyed by column name: an arbitrary SELECT may name the same column
    *  twice, and only a positional row keeps the two apart. */
@@ -236,17 +237,17 @@ export interface MysqlStatementResult {
  *  text — certain. `warning` is everything else, which may only be wrong from where the check was
  *  standing: it runs on its own connection, so a temporary table or a `USE` from earlier in the
  *  script is invisible to it. */
-export type MysqlProblemSeverity = "error" | "warning";
+export type SqlProblemSeverity = "error" | "warning";
 
 /** What the server made of a statement it was asked to parse but not to run. */
-export interface MysqlSqlProblem {
+export interface SqlProblem {
   /** The server's own words, untranslated. */
   message: string;
   /** MySQL's error number — 1064 is a syntax error, 1146 an unknown table. Zero when none came. */
   number: number;
   /** The 1-based line *within the statement* MySQL pointed at, when it pointed at one. */
   line: number | null;
-  severity: MysqlProblemSeverity;
+  severity: SqlProblemSeverity;
 }
 
 export interface MongoCollectionPage {

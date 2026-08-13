@@ -15,21 +15,22 @@
  */
 
 import { functionSignature } from "./functions";
-import { RESERVED, readScope, tokenize, type StatementScope, type Token } from "./lint";
-import type { SqlStatement } from "./statements";
-import type { MysqlOutlineColumn, MysqlOutlineTable, MysqlSchemaOutline } from "../types";
+import { readScope, tokenize, type StatementScope, type Token } from "../sql/lint";
+import type { SqlDialect } from "../sql/dialect";
+import type { SqlStatement } from "../sql/statements";
+import type { SqlOutlineColumn, SqlOutlineTable, SqlSchemaOutline } from "../types";
 
 /** What a name in the script turned out to name, and where it is written. */
 export type SqlReference =
-  | { kind: "table"; from: number; to: number; table: MysqlOutlineTable }
+  | { kind: "table"; from: number; to: number; table: SqlOutlineTable }
   | {
       kind: "column";
       from: number;
       to: number;
       /** The table the column was found in — the one an alias stood for, when it was written as
        *  one. */
-      table: MysqlOutlineTable;
-      column: MysqlOutlineColumn;
+      table: SqlOutlineTable;
+      column: SqlOutlineColumn;
     }
   | { kind: "function"; from: number; to: number; name: string; signature: string };
 
@@ -89,10 +90,10 @@ const STRUCTURE = new Set([
  * One entry is enough: the pointer is over one editor at a time, and an outline is immutable — a
  * database whose shape changed is a new object, never an edited one. Without this, holding `Ctrl`
  * and moving the pointer would rebuild a map of every table in the database on every mouse event. */
-let indexedOutline: MysqlSchemaOutline | null = null;
-let indexedTables = new Map<string, MysqlOutlineTable>();
+let indexedOutline: SqlSchemaOutline | null = null;
+let indexedTables = new Map<string, SqlOutlineTable>();
 
-function tablesByName(outline: MysqlSchemaOutline): Map<string, MysqlOutlineTable> {
+function tablesByName(outline: SqlSchemaOutline): Map<string, SqlOutlineTable> {
   if (outline !== indexedOutline) {
     indexedTables = new Map(outline.tables.map((table) => [table.name.toLowerCase(), table]));
     indexedOutline = outline;
@@ -104,8 +105,8 @@ function tablesByName(outline: MysqlSchemaOutline): Map<string, MysqlOutlineTabl
 function tableFor(
   name: string,
   scope: StatementScope,
-  byName: Map<string, MysqlOutlineTable>
-): MysqlOutlineTable | null {
+  byName: Map<string, SqlOutlineTable>
+): SqlOutlineTable | null {
   const key = name.toLowerCase();
   const aliased = scope.aliases.get(key);
   if (aliased) {
@@ -115,7 +116,7 @@ function tableFor(
   return byName.get(key) ?? null;
 }
 
-function columnOf(table: MysqlOutlineTable, name: string): MysqlOutlineColumn | null {
+function columnOf(table: SqlOutlineTable, name: string): SqlOutlineColumn | null {
   const key = name.toLowerCase();
   return table.columns.find((column) => column.name.toLowerCase() === key) ?? null;
 }
@@ -124,10 +125,10 @@ function columnOf(table: MysqlOutlineTable, name: string): MysqlOutlineColumn | 
  *  heard of drops out, as does one qualified with another database entirely. */
 function scopeTables(
   scope: StatementScope,
-  outline: MysqlSchemaOutline,
-  byName: Map<string, MysqlOutlineTable>
-): MysqlOutlineTable[] {
-  const found: MysqlOutlineTable[] = [];
+  outline: SqlSchemaOutline,
+  byName: Map<string, SqlOutlineTable>
+): SqlOutlineTable[] {
+  const found: SqlOutlineTable[] = [];
   for (const ref of scope.tables) {
     if (ref.database !== "" && ref.database.toLowerCase() !== outline.database.toLowerCase()) {
       continue;
@@ -169,19 +170,20 @@ function asFunction(token: Token): SqlReference | null {
 export function referenceAt(
   statements: readonly SqlStatement[],
   pos: number,
-  outline: MysqlSchemaOutline | null
+  outline: SqlSchemaOutline | null,
+  dialect: SqlDialect
 ): SqlReference | null {
   const statement = statements.find((one) => pos >= one.from && pos <= one.to);
   if (!statement) return null;
 
-  const code = tokenize(statement.text, statement.from).filter(
+  const code = tokenize(statement.text, dialect.syntax, statement.from).filter(
     (token) => token.kind !== "comment"
   );
   const i = nameAt(code, pos);
   if (i < 0) return null;
   const token = code[i];
 
-  const table = (found: MysqlOutlineTable | null): SqlReference | null =>
+  const table = (found: SqlOutlineTable | null): SqlReference | null =>
     found ? { kind: "table", from: token.from, to: token.to, table: found } : null;
 
   // Without an outline the only thing that can be recognised is a function — everything else here
@@ -195,7 +197,7 @@ export function referenceAt(
   }
 
   const byName = tablesByName(outline);
-  const scope = readScope(code, statement.verb);
+  const scope = readScope(code, statement.verb, dialect);
   const qualified = code[i + 1]?.raw === "." && code[i + 2] !== undefined;
   const isDatabase = token.value.toLowerCase() === outline.database.toLowerCase();
 
@@ -252,6 +254,6 @@ export function referenceAt(
   // the spelling. Here the full reserved list applies: a database with a table called `order` would
   // otherwise have the `ORDER` of every `ORDER BY` described as that table, and `Ctrl+Click` would
   // offer to open it.
-  if (bare && RESERVED.has(token.value.toLowerCase())) return null;
+  if (bare && dialect.reserved.has(token.value.toLowerCase())) return null;
   return table(byName.get(token.value.toLowerCase()) ?? null);
 }

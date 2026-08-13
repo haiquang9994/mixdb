@@ -1,16 +1,20 @@
 /**
  * Carving the Query tab's script into the statements it is made of.
  *
- * This is a port of `split_statements` in `src-tauri/src/db/mysql_script.rs`, which is what
- * actually runs a script. The backend splits so it can send one statement at a time; the editor
- * splits so it can say which statement the caret is in, run that one alone, and draw it. The two
- * must agree — a statement the editor highlights and sends has to be the same one the server ends
- * up running — **so a change to either splitter belongs in the same commit as the other**, and in
- * both sets of tests: [statements.test.ts](./statements.test.ts) here, `mod tests` there, case for
- * case.
+ * This is a port of `split_statements` in `src-tauri/src/db/mysql_script.rs` and
+ * `postgres_script.rs`, which are what actually run a script. The backend splits so it can send one
+ * statement at a time; the editor splits so it can say which statement the caret is in, run that
+ * one alone, and draw it. They must agree — a statement the editor highlights and sends has to be
+ * the same one the server ends up running — **so a change to any of the splitters belongs in the
+ * same commit as the others**, and in every set of tests:
+ * [statements.test.ts](./statements.test.ts) here, `mod tests` there, case for case.
  *
- * The only thing this one adds is where each statement sits in the text.
+ * One splitter serves both engines: what differs between them is lexical, and travels in a
+ * {@link SqlSyntax}. The only thing this port adds over the Rust ones is where each statement sits
+ * in the text.
  */
+
+import { dollarTag, type SqlSyntax } from "./syntax";
 
 /** One statement, and the range of the script it came from. */
 export interface SqlStatement {
@@ -33,11 +37,13 @@ function isWordChar(c: string): boolean {
 /**
  * Splits a script into its statements.
  *
- * Only a semicolon outside a string, a quoted identifier and a comment separates two. The
- * client-side `DELIMITER` directive is not supported here any more than it is in the backend: a
- * routine body whose `BEGIN ... END` holds semicolons of its own reads as several statements.
+ * Only a semicolon outside a string, a quoted identifier, a comment and — where the engine has
+ * them — a dollar-quoted body separates two. MySQL's client-side `DELIMITER` directive is not
+ * supported here any more than it is in the backend: a routine body whose `BEGIN ... END` holds
+ * semicolons of its own reads as several statements, and has to be run as the one statement it is.
+ * PostgreSQL needs no such directive, its function bodies being dollar-quoted.
  */
-export function splitStatements(sql: string): SqlStatement[] {
+export function splitStatements(sql: string, syntax: SqlSyntax): SqlStatement[] {
   const statements: SqlStatement[] = [];
   let chunkStart = 0;
   let verb = "";
@@ -69,36 +75,62 @@ export function splitStatements(sql: string): SqlStatement[] {
   while (i < sql.length) {
     const c = sql[i];
 
-    // `--` opens a comment only when whitespace (or the end of the text) follows it: `5--3` is
-    // arithmetic, not a comment.
-    if (c === "-" && sql[i + 1] === "-" && (i + 2 >= sql.length || " \t\n\r".includes(sql[i + 2]))) {
+    // On MySQL `--` opens a comment only when whitespace (or the end of the text) follows it, so
+    // that `5--3` stays arithmetic. PostgreSQL has no such rule.
+    if (
+      c === "-" &&
+      sql[i + 1] === "-" &&
+      (!syntax.dashCommentNeedsSpace || i + 2 >= sql.length || " \t\n\r".includes(sql[i + 2]))
+    ) {
       while (i < sql.length && sql[i] !== "\n") i += 1;
       continue;
     }
-    if (c === "#") {
+    if (c === "#" && syntax.hashComments) {
       while (i < sql.length && sql[i] !== "\n") i += 1;
       continue;
     }
     if (c === "/" && sql[i + 1] === "*") {
-      i += 2;
+      let depth = 0;
       while (i < sql.length) {
-        if (sql[i] === "*" && sql[i + 1] === "/") {
+        if (sql[i] === "/" && sql[i + 1] === "*") {
+          depth += 1;
           i += 2;
-          break;
+          continue;
+        }
+        if (sql[i] === "*" && sql[i + 1] === "/") {
+          depth -= 1;
+          i += 2;
+          // Where comments do not nest the first close ends it, whatever the count says.
+          if (depth === 0 || !syntax.nestedBlockComments) break;
+          continue;
         }
         i += 1;
       }
       continue;
     }
 
-    if (c === "'" || c === '"' || c === "`") {
+    // A dollar-quoted body ends only at its own tag, so `$$ ... ; ... $$` is one statement however
+    // many semicolons it holds.
+    if (syntax.dollarQuoting) {
+      const tag = dollarTag(sql, i);
+      if (tag !== null) {
+        const close = `$${tag}$`;
+        i += close.length;
+        const end = sql.indexOf(close, i);
+        i = end === -1 ? sql.length : end + close.length;
+        if (verb !== "") verbDone = true;
+        continue;
+      }
+    }
+
+    if (c === "'" || c === '"' || c === syntax.identifierQuote) {
       i += 1;
       while (i < sql.length) {
         const ch = sql[i];
         i += 1;
-        // A backslash escapes the next character inside a string literal. Inside a backtick-quoted
-        // identifier it does not — there, doubling is the only escape.
-        if (ch === "\\" && c !== "`") {
+        // A backslash escapes the next character inside a string literal, where the engine says so.
+        // Inside a quoted identifier it never does — there, doubling is the only escape.
+        if (ch === "\\" && syntax.backslashEscapes && c !== syntax.identifierQuote) {
           i += 1;
           continue;
         }

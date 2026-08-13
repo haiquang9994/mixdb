@@ -7,7 +7,8 @@ import { useDialogExit } from "../dialogMotion";
 import { MinusIcon, PlusIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
-import type { MysqlIndexKind, MysqlIndexSpec, MysqlTableIndex } from "../../types";
+import type { SqlIndexKind, SqlIndexSpec, SqlTableIndex } from "../../types";
+import { useSqlDialect } from "../../sql/context";
 import styles from "./IndexDialog.module.css";
 
 /** One column of the index being built. `prefixLength` is text rather than a number so a
@@ -21,8 +22,12 @@ interface DraftColumn {
 }
 
 /** Which kind of index this is, read back off one the server reported: the kind is spread across
- * three of its fields, and the dialog needs it as the single choice it is on screen. */
-export function indexKind(index: MysqlTableIndex): MysqlIndexKind {
+ * three of its fields, and the dialog needs it as the single choice it is on screen.
+ *
+ * `FULLTEXT` and `SPATIAL` are MySQL's, and never come back from PostgreSQL — where the access
+ * methods that would be nearest to them are index *methods* rather than kinds. So the same reading
+ * serves either engine. */
+export function indexKind(index: SqlTableIndex): SqlIndexKind {
   if (index.primary) return "primary";
   const type = index.indexType.toUpperCase();
   if (type === "FULLTEXT") return "fulltext";
@@ -30,15 +35,16 @@ export function indexKind(index: MysqlTableIndex): MysqlIndexKind {
   return index.unique ? "unique" : "index";
 }
 
-/** The two kinds that have a choice of structure. `FULLTEXT` and `SPATIAL` have exactly one each,
- * and MySQL rejects a `USING` clause on them. */
-function takesMethod(kind: MysqlIndexKind): boolean {
+/** The kinds that have a choice of access method. A primary key never does — either engine builds
+ * it the one way — and MySQL's `FULLTEXT` and `SPATIAL` each have exactly one structure, which is
+ * why it rejects a `USING` clause on them. */
+function takesMethod(kind: SqlIndexKind): boolean {
   return kind === "index" || kind === "unique";
 }
 
 let nextId = 0;
 
-function draftColumns(index: MysqlTableIndex | undefined, columns: string[]): DraftColumn[] {
+function draftColumns(index: SqlTableIndex | undefined, columns: string[]): DraftColumn[] {
   if (!index) {
     return [{ id: nextId++, name: columns[0] ?? "", prefixLength: "" }];
   }
@@ -56,11 +62,11 @@ interface Props {
   /** The columns available to index, in table order. */
   columns: string[];
   /** The index being replaced, or left out to add a new one. */
-  index?: MysqlTableIndex;
+  index?: SqlTableIndex;
   onCancel: () => void;
   /** Rejects with the reason the ALTER failed: the dialog then shows it and stays open with the
    *  typed values still in it. The caller is what closes the dialog, once this resolves. */
-  onSubmit: (spec: MysqlIndexSpec) => Promise<void>;
+  onSubmit: (spec: SqlIndexSpec) => Promise<void>;
 }
 
 /**
@@ -70,12 +76,15 @@ interface Props {
  */
 function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
   const { t } = useTranslation();
+  const { editing: offers } = useSqlDialect();
   const editing = index !== undefined;
   const [name, setName] = useState(index?.name ?? "");
-  const [kind, setKind] = useState<MysqlIndexKind>(index ? indexKind(index) : "index");
+  const [kind, setKind] = useState<SqlIndexKind>(index ? indexKind(index) : "index");
   const [method, setMethod] = useState(() => {
     const type = index?.indexType.toUpperCase() ?? "";
-    return type === "BTREE" || type === "HASH" ? type : "";
+    // Only a method the picker offers: an index reported as something the list has no entry for
+    // would otherwise leave the trigger blank and be rebuilt as something else on save.
+    return offers.indexMethods.includes(type) ? type : "";
   });
   const [draft, setDraft] = useState<DraftColumn[]>(() => draftColumns(index, columns));
   const [comment, setComment] = useState(index?.comment ?? "");
@@ -105,15 +114,23 @@ function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
   }
 
   const columnOptions = columns.map((c) => ({ value: c, label: c }));
-  const kindOptions: { value: MysqlIndexKind; label: string }[] = [
-    { value: "index", label: t("indexDialog.kindIndex") },
-    { value: "unique", label: t("indexDialog.kindUnique") },
-    { value: "primary", label: t("indexDialog.kindPrimary") },
-    { value: "fulltext", label: t("indexDialog.kindFulltext") },
-    { value: "spatial", label: t("indexDialog.kindSpatial") },
+  const KIND_LABELS: Record<SqlIndexKind, string> = {
+    index: t("indexDialog.kindIndex"),
+    unique: t("indexDialog.kindUnique"),
+    primary: t("indexDialog.kindPrimary"),
+    fulltext: t("indexDialog.kindFulltext"),
+    spatial: t("indexDialog.kindSpatial"),
+  };
+  const kindOptions = offers.indexKinds.map((value) => ({ value, label: KIND_LABELS[value] }));
+  const methodOptions = [
+    { value: "", label: t("indexDialog.methodDefault") },
+    ...offers.indexMethods.map((value) => ({ value, label: value })),
   ];
+  /** What a primary key is called, where the engine fixes it. Null leaves the box open, since
+   *  PostgreSQL names the constraint behind a primary key like any other. */
+  const fixedName = kind === "primary" ? offers.primaryKeyName : null;
 
-  function toSpec(): MysqlIndexSpec {
+  function toSpec(): SqlIndexSpec {
     return {
       name: name.trim(),
       kind,
@@ -173,11 +190,11 @@ function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
             <Input
               ref={nameRef}
               size="normal"
-              value={kind === "primary" ? "PRIMARY" : name}
+              value={fixedName ?? name}
               placeholder={t("indexDialog.namePlaceholder")}
-              // A primary key is always called PRIMARY, so there is nothing to type here.
-              disabled={saving || kind === "primary"}
-              title={kind === "primary" ? t("indexDialog.nameFixed") : undefined}
+              // On MySQL a primary key is always called PRIMARY, so there is nothing to type.
+              disabled={saving || fixedName !== null}
+              title={fixedName !== null ? t("indexDialog.nameFixed") : undefined}
               onChange={(e) => setName(e.target.value)}
             />
           </label>
@@ -202,11 +219,7 @@ function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
             <Select
               value={method}
               size="normal"
-              options={[
-                { value: "", label: t("indexDialog.methodDefault") },
-                { value: "BTREE", label: "BTREE" },
-                { value: "HASH", label: "HASH" },
-              ]}
+              options={methodOptions}
               ariaLabel={t("indexDialog.method")}
               disabled={saving || !takesMethod(kind)}
               onChange={setMethod}
@@ -238,17 +251,20 @@ function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
                 searchable
                 onChange={(next) => updateColumn(row.id, { name: next })}
               />
-              <Input
-                size="small"
-                className={styles.prefixInput}
-                value={row.prefixLength}
-                placeholder={t("indexDialog.prefixPlaceholder")}
-                aria-label={t("indexDialog.prefixLength")}
-                title={t("indexDialog.prefixTooltip")}
-                inputMode="numeric"
-                disabled={saving}
-                onChange={(e) => updateColumn(row.id, { prefixLength: e.target.value })}
-              />
+              {/* PostgreSQL indexes a whole value: there is no prefix to ask for. */}
+              {offers.indexPrefix && (
+                <Input
+                  size="small"
+                  className={styles.prefixInput}
+                  value={row.prefixLength}
+                  placeholder={t("indexDialog.prefixPlaceholder")}
+                  aria-label={t("indexDialog.prefixLength")}
+                  title={t("indexDialog.prefixTooltip")}
+                  inputMode="numeric"
+                  disabled={saving}
+                  onChange={(e) => updateColumn(row.id, { prefixLength: e.target.value })}
+                />
+              )}
               <button
                 type="button"
                 className={styles.iconButton}

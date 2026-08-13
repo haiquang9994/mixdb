@@ -13,7 +13,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { splitStatements, statementAt } from "./statements";
+import { splitStatements as split, statementAt } from "./statements";
+import { MYSQL_SYNTAX, POSTGRES_SYNTAX } from "./syntax";
+
+/** The MySQL splitter, which is what the first half of this file holds the port against. */
+const splitStatements = (sql: string) => split(sql, MYSQL_SYNTAX);
 
 const texts = (sql: string) => splitStatements(sql).map((statement) => statement.text);
 const verbs = (sql: string) => splitStatements(sql).map((statement) => statement.verb);
@@ -98,5 +102,56 @@ describe("statementAt", () => {
   it("answers with nothing for a script that holds no statements", () => {
     expect(statementAt("", [], 0)).toBeNull();
     expect(statementAt("-- a note", splitStatements("-- a note"), 4)).toBeNull();
+  });
+});
+
+/**
+ * The second engine, held against `postgres_script.rs` the same way — case for case, in the same
+ * order. Only the cases where PostgreSQL reads the text differently from MySQL are here; the rest
+ * are covered above and go through the identical code.
+ */
+describe("splitStatements on PostgreSQL", () => {
+  const pg = (sql: string) => split(sql, POSTGRES_SYNTAX).map((statement) => statement.verb);
+  const pgTexts = (sql: string) => split(sql, POSTGRES_SYNTAX).map((statement) => statement.text);
+
+  /** The one MySQL's splitter would get wrong: a function body is held together by its dollar
+   *  quotes however many semicolons are inside it. */
+  it("keeps a dollar-quoted body in one statement", () => {
+    const sql =
+      "CREATE FUNCTION f() RETURNS int AS $$ BEGIN a := 1; RETURN a; END $$ LANGUAGE plpgsql; SELECT 2";
+    expect(pg(sql)).toEqual(["CREATE", "SELECT"]);
+    expect(pgTexts(sql)[0]).toContain("RETURN a;");
+  });
+
+  it("closes a tagged body only on its own tag", () => {
+    const sql = "CREATE FUNCTION f() RETURNS text AS $body$ SELECT '$$'; $body$ LANGUAGE sql; SELECT 1";
+    expect(pg(sql)).toEqual(["CREATE", "SELECT"]);
+  });
+
+  /** `$1` is a placeholder. Read as an opening quote it would swallow the rest of the script. */
+  it("does not read a placeholder as a dollar quote", () => {
+    expect(pg("SELECT $1; SELECT $2")).toEqual(["SELECT", "SELECT"]);
+  });
+
+  /** A backslash is an ordinary character in PostgreSQL, so the string ends at the quote after it
+   *  — where MySQL would read that quote as escaped. */
+  it("does not treat a backslash as an escape", () => {
+    expect(pg(String.raw`SELECT 'a\'; SELECT 2`)).toEqual(["SELECT", "SELECT"]);
+    // Doubling is still the escape it is everywhere.
+    expect(pg("SELECT 'it''s; here'; SELECT 2")).toEqual(["SELECT", "SELECT"]);
+  });
+
+  it("nests block comments", () => {
+    expect(pg("/* a /* b */ ; c */ SELECT 1")).toEqual(["SELECT"]);
+  });
+
+  /** `#` is an operator in PostgreSQL, not the start of a comment. */
+  it("does not read a hash as a comment", () => {
+    expect(pg("SELECT 1 # 2; SELECT 3")).toEqual(["SELECT", "SELECT"]);
+  });
+
+  /** PostgreSQL needs no whitespace after `--`, unlike MySQL. */
+  it("opens a comment on two dashes alone", () => {
+    expect(pg("SELECT 1 --2; SELECT 3")).toEqual(["SELECT"]);
   });
 });

@@ -5,21 +5,21 @@
  * `VIRTUAL GENERATED` or `STORED GENERATED`, and 5.7 leaves Extra empty where 8 fills it in — so
  * every place that has to know "may an INSERT name this column?" asks the same question here.
  */
-import type { MysqlColumnMeta } from "../types";
+import type { SqlColumnMeta } from "../types";
 
 /** The column MySQL numbers itself. */
-export function isAutoIncrement(meta: MysqlColumnMeta): boolean {
+export function isAutoIncrement(meta: SqlColumnMeta): boolean {
   return meta.extra.toLowerCase().includes("auto_increment");
 }
 
 /** A column MySQL computes from the others. */
-export function isGenerated(meta: MysqlColumnMeta): boolean {
+export function isGenerated(meta: SqlColumnMeta): boolean {
   const extra = meta.extra.toLowerCase();
   return extra.includes("virtual generated") || extra.includes("stored generated");
 }
 
 /** A column MySQL fills in itself, and that an INSERT therefore must not name at all. */
-export function isServerAssigned(meta: MysqlColumnMeta): boolean {
+export function isServerAssigned(meta: SqlColumnMeta): boolean {
   return isAutoIncrement(meta) || isGenerated(meta);
 }
 
@@ -31,7 +31,7 @@ export function isServerAssigned(meta: MysqlColumnMeta): boolean {
  * arrive as. The length is cut off first: the declared type is `binary(16)`, not `binary`, and
  * nothing else MySQL declares ends in either word.
  */
-export function isBinary(meta: MysqlColumnMeta): boolean {
+export function isBinary(meta: SqlColumnMeta): boolean {
   const type = meta.dataType.toLowerCase().split("(")[0].trim();
   return type.endsWith("binary") || type.endsWith("blob");
 }

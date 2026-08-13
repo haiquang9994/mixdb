@@ -7,7 +7,7 @@ import {
   type CompletionResult,
 } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { MySQL, sql, type SQLNamespace } from "@codemirror/lang-sql";
+import { sql, type SQLDialect, type SQLNamespace } from "@codemirror/lang-sql";
 import { bracketMatching, indentUnit } from "@codemirror/language";
 import { lintKeymap } from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
@@ -66,11 +66,16 @@ export function docText(doc: Text): string {
   return lastText;
 }
 
-/** The language extension for a given schema — MySQL either way, with completion over the schema
- *  when there is one. `defaultSchema` is what lets both `table` and `db.table` complete. */
-export function sqlLanguage(schema: SQLNamespace | null, database: string): Extension {
+/** The language extension for a given schema — in the engine's own dialect, with completion over
+ *  the schema when there is one. `defaultSchema` is what lets both `table` and `db.table`
+ *  complete. */
+export function sqlLanguage(
+  schema: SQLNamespace | null,
+  database: string,
+  dialect: SQLDialect
+): Extension {
   return sql({
-    dialect: MySQL,
+    dialect,
     // Written in upper case because that is how SQL is written here, and because it is what tells
     // a keyword apart from an identifier at a glance in a script that mixes the two.
     upperCaseKeywords: true,
@@ -96,8 +101,11 @@ export interface EditorCompletion {
  * one autocompletion configuration, and overriding it would mean rebuilding the schema completion
  * this sits beside. Registering against the language leaves that one alone and adds to it.
  */
-function extraCompletions(source: () => readonly EditorCompletion[]): Extension {
-  return MySQL.language.data.of({
+function extraCompletions(
+  source: () => readonly EditorCompletion[],
+  dialect: SQLDialect
+): Extension {
+  return dialect.language.data.of({
     autocomplete: (context: CompletionContext): CompletionResult | null => {
       const options = source();
       if (options.length === 0) return null;
@@ -181,6 +189,8 @@ export interface EditorSetup {
    *  has to open with it — nothing would swap it back in. */
   schema: SQLNamespace | null;
   database: string;
+  /** The engine's CodeMirror dialect: what is highlighted as a keyword, and what completes. */
+  dialect: SQLDialect;
   /** The statement the caret is in, for the highlight. Must be stable — it is read on every
    *  update, and the extension list is built once. */
   statementRange: (doc: string, pos: number) => StatementRange | null;
@@ -231,7 +241,7 @@ export function editorSetup(setup: EditorSetup): Extension[] {
     bracketMatching(),
     closeBrackets(),
     autocompletion(),
-    extraCompletions(setup.completions),
+    extraCompletions(setup.completions, setup.dialect),
     highlightSelectionMatches(),
     activeStatement(setup.statementRange),
     sqlLint(setup.lint),
@@ -239,7 +249,7 @@ export function editorSetup(setup: EditorSetup): Extension[] {
     // Two spaces, as the textarea this replaced also inserted.
     indentUnit.of("  "),
     EditorState.tabSize.of(2),
-    schemaCompartment.of(sqlLanguage(setup.schema, setup.database)),
+    schemaCompartment.of(sqlLanguage(setup.schema, setup.database, setup.dialect)),
     editorTheme,
     sqlHighlighting,
     placeholderExt(setup.placeholder),

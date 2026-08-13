@@ -1,9 +1,14 @@
 //! Finding — and, when they are nowhere to be found, fetching — the command-line tools that dump
-//! and restore a database: `mysqldump`/`mysql` and `mongodump`/`mongorestore`.
+//! and restore a database: `mysqldump`/`mysql`, `pg_dump`/`psql` and `mongodump`/`mongorestore`.
 //!
-//! They are not bundled with the app. `mysqldump` is GPL, the MongoDB tools are another 60MB, and
-//! most machines that talk to a database already have one set or the other installed — so the app
-//! looks for what is there first, and only downloads a copy of its own when asked to.
+//! They are not bundled with the app. `mysqldump` is GPL, the PostgreSQL and MongoDB downloads are
+//! hundreds of megabytes apiece, and most machines that talk to a database already have one set
+//! installed — so the app looks for what is there first, and only downloads a copy of its own when
+//! asked to.
+//!
+//! Not every suite can be downloaded on every platform, and the difference is the vendor's rather
+//! than the app's: see {@link archive_source}. Where there is nothing to fetch the tools have to
+//! come from the machine, and the settings screen asks for a path instead of offering a button.
 //!
 //! A downloaded copy lives under the app's data directory and is never put on `PATH`: it belongs
 //! to MixDB rather than to the machine.
@@ -20,6 +25,8 @@ use std::time::Duration;
 pub enum Tool {
     MysqlDump,
     MysqlClient,
+    PgDump,
+    PsqlClient,
     MongoDump,
     MongoRestore,
 }
@@ -29,6 +36,7 @@ pub enum Tool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Suite {
     Mysql,
+    Postgres,
     Mongo,
 }
 
@@ -36,6 +44,7 @@ impl Suite {
     pub fn parse(value: &str) -> Result<Self, AppError> {
         match value {
             "mysql" => Ok(Self::Mysql),
+            "postgres" => Ok(Self::Postgres),
             "mongo" => Ok(Self::Mongo),
             other => Err(err!("error.unknownToolSuite", suite = other)),
         }
@@ -44,6 +53,7 @@ impl Suite {
     fn slug(self) -> &'static str {
         match self {
             Self::Mysql => "mysql",
+            Self::Postgres => "postgres",
             Self::Mongo => "mongo",
         }
     }
@@ -52,6 +62,7 @@ impl Suite {
     pub fn tools(self) -> [Tool; 2] {
         match self {
             Self::Mysql => [Tool::MysqlDump, Tool::MysqlClient],
+            Self::Postgres => [Tool::PgDump, Tool::PsqlClient],
             Self::Mongo => [Tool::MongoDump, Tool::MongoRestore],
         }
     }
@@ -65,9 +76,11 @@ impl Suite {
 
 impl Tool {
     /// Every tool, in the order the settings screen lists them.
-    pub const ALL: [Tool; 4] = [
+    pub const ALL: [Tool; 6] = [
         Tool::MysqlDump,
         Tool::MysqlClient,
+        Tool::PgDump,
+        Tool::PsqlClient,
         Tool::MongoDump,
         Tool::MongoRestore,
     ];
@@ -83,6 +96,8 @@ impl Tool {
         match self {
             Self::MysqlDump => "mysqldump",
             Self::MysqlClient => "mysql",
+            Self::PgDump => "pg_dump",
+            Self::PsqlClient => "psql",
             Self::MongoDump => "mongodump",
             Self::MongoRestore => "mongorestore",
         }
@@ -99,6 +114,7 @@ impl Tool {
     pub fn suite(self) -> Suite {
         match self {
             Self::MysqlDump | Self::MysqlClient => Suite::Mysql,
+            Self::PgDump | Self::PsqlClient => Suite::Postgres,
             Self::MongoDump | Self::MongoRestore => Suite::Mongo,
         }
     }
@@ -171,6 +187,16 @@ pub fn set_path(tool: Tool, path: Option<&str>, tools_dir: &Path) -> Result<(), 
 /// `--column-statistics=0`, which the dump adds when it sees one.
 const MYSQL_VERSION: &str = "8.0.40";
 
+/// The PostgreSQL version downloaded, as EDB numbers its builds: the release, then their own build
+/// number after the dash.
+///
+/// Unlike {@link MYSQL_VERSION} this constant has a shelf life, and the difference is worth
+/// spelling out. `pg_dump` refuses outright to dump a server whose major version is newer than its
+/// own — it will reach backwards to any older release, but not forwards by even one. So the pin has
+/// to be the newest major there is, and it has to be raised each September when the next one lands,
+/// or dumping stops working for whoever upgrades their server first.
+const PG_VERSION: &str = "18.6-1";
+
 /// Linux takes 8.4 instead, and not for its own sake: every 8.0 build published as a Linux tarball
 /// is linked against `libncurses.so.5`, which the distributions this app runs on stopped shipping
 /// years ago, so the client would not start. The 8.4 build is linked against ncurses 6 and reaches
@@ -188,10 +214,12 @@ const EXTRA_DIRS: &[&str] = &[
     r"C:\Program Files\MySQL\*\bin",
     r"C:\Program Files (x86)\MySQL\*\bin",
     r"C:\Program Files\MariaDB *\bin",
+    r"C:\Program Files\PostgreSQL\*\bin",
     r"C:\Program Files\MongoDB\Tools\*\bin",
     r"C:\Program Files\MongoDB\Server\*\bin",
     r"C:\xampp\mysql\bin",
     r"C:\laragon\bin\mysql\*\bin",
+    r"C:\laragon\bin\postgresql\*\bin",
     r"C:\wamp64\bin\mysql\*\bin",
 ];
 
@@ -202,6 +230,15 @@ const EXTRA_DIRS: &[&str] = &[
     "/opt/homebrew/bin",
     "/usr/local/mysql/bin",
     "/opt/local/bin",
+    // PostgreSQL's client programs are routinely off `PATH`: Debian and Ubuntu keep one set per
+    // major version here and put only the wrappers on `PATH`, Red Hat uses `/usr/pgsql-16`, the
+    // graphical installer uses `/Library/PostgreSQL`, and Homebrew keg-only `libpq` never links
+    // `psql` into `/opt/homebrew/bin` at all.
+    "/usr/lib/postgresql/*/bin",
+    "/usr/pgsql-*/bin",
+    "/Library/PostgreSQL/*/bin",
+    "/opt/homebrew/opt/libpq/bin",
+    "/usr/local/opt/libpq/bin",
 ];
 
 /// Every directory an entry of {@link EXTRA_DIRS} stands for, with its `*` expanded against what
@@ -315,6 +352,8 @@ pub fn require(tool: Tool, tools_dir: &Path) -> Result<PathBuf, AppError> {
     find(tool, tools_dir).ok_or_else(|| match (tool.suite(), downloadable(tool.suite())) {
         (Suite::Mysql, true) => err!("error.mysqlToolNotFound", tool = tool.stem()),
         (Suite::Mysql, false) => err!("error.mysqlToolNotInstalled", tool = tool.stem()),
+        (Suite::Postgres, true) => err!("error.postgresToolNotFound", tool = tool.stem()),
+        (Suite::Postgres, false) => err!("error.postgresToolNotInstalled", tool = tool.stem()),
         (Suite::Mongo, _) => err!("error.mongoToolNotFound", tool = tool.stem()),
     })
 }
@@ -372,6 +411,34 @@ fn archive_source(suite: Suite) -> Option<(String, &'static str)> {
             "f284b17b9e038adbe77f0dd5fb11ed30262286b23a390b8b4e367abc3574c42e",
         )),
         Suite::Mysql => None,
+        // EnterpriseDB's "binaries" zip — the install tree without the installer around it, which
+        // is the whole server at some hundreds of megabytes for the two programs wanted here. The
+        // rest is thrown away after unpacking, the same as MySQL's.
+        //
+        // The download page hands out `sbp.enterprisedb.com/getfile.jsp?fileid=…` links, but every
+        // one of them redirects here, to a URL that spells out its version — so the version is
+        // pinned rather than an opaque file id that says nothing about what it fetches.
+        Suite::Postgres if windows => Some((
+            format!(
+                "https://get.enterprisedb.com/postgresql/postgresql-{PG_VERSION}-windows-x64-binaries.zip"
+            ),
+            "fbe23da234ee31547bf8a36d29dfd81e82b849df2d2b78d2eecb43d360252f8c",
+        )),
+        // One download for both Macs, where MySQL needs two: EDB builds these as universal
+        // binaries, so the same file carries the Intel and Apple Silicon halves and there is no
+        // architecture to choose between.
+        Suite::Postgres if macos => Some((
+            format!(
+                "https://get.enterprisedb.com/postgresql/postgresql-{PG_VERSION}-osx-binaries.zip"
+            ),
+            "2a6739fccbbc36474cb2446e4e7b4f377abb8471653d3a294e4e5092271e4796",
+        )),
+        // Linux: EDB stopped building it after PostgreSQL 10, and there is no other official
+        // client-only download to pin a checksum against. So there `pg_dump` and `psql` are found
+        // rather than fetched — which is why {@link EXTRA_DIRS} knows more places to look for them
+        // than for anything else — and where they are nowhere to be found, the settings screen asks
+        // for a path instead.
+        Suite::Postgres => None,
         Suite::Mongo => {
             let (platform, extension, sha256) = match (windows, macos, arm) {
                 (true, _, _) => (
@@ -565,28 +632,71 @@ fn download(url: &str, archive: &Path, suite: Suite, report: &dyn Fn(Progress)) 
     finish(child, "error.downloadFailed")
 }
 
+/// Libraries in a PostgreSQL download that `pg_dump` and `psql` never load, matched on the start of
+/// the name. ICU is the one that matters: the collation data belongs to the server, and on macOS —
+/// where the archive stores each versioned alias as a copy of the library rather than as a link to
+/// it — the three of them come to 229MB, against 60MB for everything the two programs actually
+/// need. The rest are the ECPG precompiler's and the server's XML support, and on Windows the Stack
+/// Builder's GUI.
+///
+/// Both spellings of ICU are here because the platforms name it differently — `icudt77.dll` beside
+/// `libicudata.77.dylib` — and one list checked everywhere is less to keep in step than one per
+/// platform.
+///
+/// Named as what to leave rather than what to take, so that a library a later release starts
+/// linking against is copied by default: shipping a few megabytes too many is a waste, shipping one
+/// file too few is a program that will not start.
+const PG_SPARE_LIBRARIES: &[&str] = &[
+    "icu",
+    "libicu",
+    "wx",
+    "libxml2",
+    "libxslt",
+    "libecpg",
+    "libpgtypes",
+    "testplug",
+];
+
 /// Where a library the tools need has to be put, relative to the suite's own directory, or `None`
 /// for a file that is not one of them. `parent` is the directory it was found in, inside the
 /// unpacked archive.
 ///
-/// Only OpenSSL is taken: it is all the MySQL clients are linked against beyond what the operating
-/// system itself provides, and each platform looks for it in a fixed place relative to the program
-/// — beside it on Windows, `@loader_path/../lib` on macOS, `$ORIGIN/../lib/private` on Linux. Put
-/// anywhere else it might as well not have been downloaded.
-fn library_dir(name: &str, parent: &Path) -> Option<PathBuf> {
+/// Each platform looks for these in a fixed place relative to the program — beside it on Windows,
+/// `@loader_path/../lib` on macOS, `$ORIGIN/../lib/private` on Linux. Put anywhere else they might
+/// as well not have been downloaded.
+///
+/// What counts as one differs by suite. The MySQL clients need only OpenSSL beyond what the
+/// operating system provides; `pg_dump` and `psql` arrive with their whole dependency tree in the
+/// archive — libpq, OpenSSL, Kerberos, gettext and three compressors — so there it is easier to say
+/// which of the libraries beside them are the ones they do *not* want, which is
+/// {@link PG_SPARE_LIBRARIES}.
+fn library_dir(suite: Suite, name: &str, parent: &Path) -> Option<PathBuf> {
     let in_dir = |dir: &str| parent.file_name().is_some_and(|found| found == dir);
+    let lower = name.to_lowercase();
+    let spare = || PG_SPARE_LIBRARIES.iter().any(|spare| lower.starts_with(spare));
+    let openssl = || name.starts_with("libssl") || name.starts_with("libcrypto");
+
     if cfg!(windows) {
         // Windows loads from the executable's own directory, and the archive keeps the DLLs there.
-        return (in_dir("bin") && name.to_lowercase().ends_with(".dll")).then(|| PathBuf::from("bin"));
-    }
-    if !name.starts_with("libssl") && !name.starts_with("libcrypto") {
-        return None;
+        if !in_dir("bin") || !lower.ends_with(".dll") {
+            return None;
+        }
+        return (suite != Suite::Postgres || !spare()).then(|| PathBuf::from("bin"));
     }
     if cfg!(target_os = "macos") {
-        (in_dir("lib") && name.ends_with(".dylib")).then(|| PathBuf::from("lib"))
-    } else {
-        (in_dir("private") && name.contains(".so.")).then(|| PathBuf::from("lib").join("private"))
+        if !in_dir("lib") || !name.ends_with(".dylib") {
+            return None;
+        }
+        return match suite {
+            Suite::Postgres => !spare(),
+            _ => openssl(),
+        }
+        .then(|| PathBuf::from("lib"));
     }
+    // Linux, where only MySQL is fetched: PostgreSQL has no download here, so nothing has had to
+    // say which of its libraries to keep.
+    (openssl() && in_dir("private") && name.contains(".so."))
+        .then(|| PathBuf::from("lib").join("private"))
 }
 
 /// Copies out of `dir`, recursively, every file the suite needs, into the layout its tools expect
@@ -617,7 +727,7 @@ fn collect(dir: &Path, suite: Suite, target: &Path) -> Result<usize, AppError> {
             let Some(relative) = (if is_tool {
                 Some(PathBuf::from("bin"))
             } else {
-                library_dir(&name, &current)
+                library_dir(suite, &name, &current)
             }) else {
                 continue;
             };
@@ -647,7 +757,12 @@ fn collect(dir: &Path, suite: Suite, target: &Path) -> Result<usize, AppError> {
 /// second — this takes minutes on an ordinary connection, and the one question the user has all
 /// the way through is whether it is still going.
 pub fn install(suite: Suite, tools_dir: &Path, report: &dyn Fn(Progress)) -> Result<(), AppError> {
-    let (url, sha256) = archive_source(suite).ok_or_else(|| err!("error.noMysqlArchive"))?;
+    let (url, sha256) = archive_source(suite).ok_or_else(|| match suite {
+        Suite::Postgres => err!("error.noPostgresArchive"),
+        // Mongo is published for every platform this builds for, so it is only ever MySQL that
+        // arrives here beside PostgreSQL.
+        Suite::Mysql | Suite::Mongo => err!("error.noMysqlArchive"),
+    })?;
 
     let target = suite.dir(tools_dir);
     std::fs::create_dir_all(&target)
@@ -702,8 +817,79 @@ pub fn install(suite: Suite, tools_dir: &Path, report: &dyn Fn(Progress)) -> Res
 
 #[cfg(test)]
 mod tests {
-    use super::{collect, expand_dir, locate, verify_sha256, Source, Suite, Tool};
+    use super::{
+        collect, downloadable, expand_dir, install, locate, verify_sha256, Source, Suite, Tool,
+    };
     use std::path::{Path, PathBuf};
+
+    /// Fetches a suite the way the app does and checks the result is usable: the pinned URL still
+    /// serves a file, that file still hashes to what {@link archive_source} pins, the archive still
+    /// holds the programs {@link collect} goes looking for, and — the part that cannot be answered
+    /// from any other machine — those programs start here, with the libraries copied out beside
+    /// them and nothing else.
+    ///
+    /// A platform with no archive for this suite passes without downloading: that is the vendor's
+    /// answer, not a fault.
+    fn check_pinned_download(suite: Suite) {
+        if !downloadable(suite) {
+            eprintln!("{}: no archive for this platform, nothing to check", suite.slug());
+            return;
+        }
+        let tools_dir = std::env::temp_dir().join(format!("mixdb-download-{}", uuid::Uuid::new_v4()));
+        let installed = install(suite, &tools_dir, &|_| {});
+        // Every check runs before the cleanup, so that a failure still takes the download with it
+        // rather than leaving hundreds of megabytes behind on the runner.
+        let ran: Vec<(&str, String)> = suite
+            .tools()
+            .into_iter()
+            .map(|tool| {
+                // `locate` would happily return a copy already on the machine, which would make
+                // this pass without the download having worked at all.
+                let Some((path, Source::Downloaded)) = locate(tool, &tools_dir) else {
+                    return (tool.stem(), "was not in the download".to_string());
+                };
+                match std::process::Command::new(&path).arg("--version").output() {
+                    Ok(out) if out.status.success() => (tool.stem(), String::new()),
+                    Ok(out) => (
+                        tool.stem(),
+                        format!("exited {}: {}", out.status, String::from_utf8_lossy(&out.stderr)),
+                    ),
+                    // A missing library reads as the program not starting, which is the whole
+                    // reason this runs on a real machine of each kind.
+                    Err(e) => (tool.stem(), format!("did not start: {e}")),
+                }
+            })
+            .collect();
+        let _ = std::fs::remove_dir_all(&tools_dir);
+
+        if let Err(e) = installed {
+            panic!("installing the {} tools failed: {e}", suite.slug());
+        }
+        for (tool, problem) in ran {
+            assert!(problem.is_empty(), "{tool} {problem}");
+        }
+    }
+
+    /// Ignored because each of these fetches tens to hundreds of megabytes from a vendor, which is
+    /// no part of an ordinary test run. `.github/workflows/tool-downloads.yml` runs them on a real
+    /// machine of each kind — see `.agent/conventions/bumping-tool-downloads.md`.
+    #[test]
+    #[ignore = "downloads from the vendor; run it through the tool-downloads workflow"]
+    fn the_pinned_mysql_download_still_installs_and_runs() {
+        check_pinned_download(Suite::Mysql);
+    }
+
+    #[test]
+    #[ignore = "downloads from the vendor; run it through the tool-downloads workflow"]
+    fn the_pinned_postgres_download_still_installs_and_runs() {
+        check_pinned_download(Suite::Postgres);
+    }
+
+    #[test]
+    #[ignore = "downloads from the vendor; run it through the tool-downloads workflow"]
+    fn the_pinned_mongo_download_still_installs_and_runs() {
+        check_pinned_download(Suite::Mongo);
+    }
 
     /// The empty file's SHA-256, which is a fine stand-in for a real archive: what is under test is
     /// the comparison, not the hashing.
@@ -788,6 +974,56 @@ mod tests {
         let (path, source) = located.expect("the downloaded copy was not found again");
         assert!(matches!(source, Source::Downloaded));
         assert_eq!(path.parent().and_then(Path::file_name).unwrap(), "bin");
+    }
+
+    /// A PostgreSQL archive carries the whole install's libraries, most of which belong to the
+    /// server, the ECPG precompiler or the Stack Builder rather than to the two programs taken out
+    /// of it. What the tools load has to come along; the collation data beside it must not.
+    ///
+    /// Only where there is a download to shape: on Linux the tools come from the machine, and
+    /// nothing has had to decide which of their libraries to keep.
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn a_postgres_download_leaves_the_libraries_its_tools_never_load() {
+        // Where each platform's archive keeps its libraries, what they are called there, and where
+        // the tools then look for them.
+        let (from, into, kept, spare): (_, _, &[&str], &[&str]) = if cfg!(windows) {
+            (
+                "bin",
+                "bin",
+                &["libpq.dll", "libssl-3-x64.dll", "libintl-9.dll", "libzstd.dll"],
+                &["icudt77.dll", "wxbase3211u_vc_x64_custom.dll", "libxml2.dll"],
+            )
+        } else {
+            (
+                "lib",
+                "lib",
+                &["libpq.5.dylib", "libssl.3.dylib", "libintl.8.dylib", "libzstd.1.dylib"],
+                &["libicudata.77.1.dylib", "libxml2.16.dylib", "libecpg.6.dylib"],
+            )
+        };
+
+        let root = std::env::temp_dir().join(format!("mixdb-test-{}", uuid::Uuid::new_v4()));
+        let unpacked = root.join("unpacked").join("pgsql");
+        std::fs::create_dir_all(unpacked.join("bin")).unwrap();
+        std::fs::create_dir_all(unpacked.join(from)).unwrap();
+        for tool in Suite::Postgres.tools() {
+            std::fs::write(unpacked.join("bin").join(tool.file_name()), b"").unwrap();
+        }
+        for name in kept.iter().chain(spare.iter()) {
+            std::fs::write(unpacked.join(from).join(name), b"").unwrap();
+        }
+
+        let target = root.join("tools").join("postgres");
+        let found = collect(&root.join("unpacked"), Suite::Postgres, &target).unwrap();
+        let landed = target.join(into);
+        let all_kept = kept.iter().all(|name| landed.join(name).is_file());
+        let none_spare = spare.iter().all(|name| !landed.join(name).exists());
+        std::fs::remove_dir_all(&root).unwrap();
+
+        assert_eq!(found, 2);
+        assert!(all_kept, "a library the tools load was left behind");
+        assert!(none_spare, "a library the tools never load was copied out");
     }
 
     #[test]

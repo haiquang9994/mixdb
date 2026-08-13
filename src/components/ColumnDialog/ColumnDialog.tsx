@@ -8,109 +8,88 @@ import type { SelectOption } from "../Select";
 import { useDialogExit } from "../dialogMotion";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
-import type { MysqlCollation, MysqlColumnSpec, MysqlStructureColumn } from "../../types";
+import type { SqlCollation, SqlColumnSpec, SqlStructureColumn } from "../../types";
+import type { SqlTypeSpec } from "../../sql/dialect";
+import { useSqlDialect } from "../../sql/context";
 import styles from "./ColumnDialog.module.css";
 
-/** One type the picker offers, and what the box beside it holds — the argument MySQL takes inside
- * the type's parentheses. */
-interface TypeSpec {
-  name: string;
-  /** What to suggest for the argument: `null` for a type that takes none (the box is then closed),
-   *  and `""` for one that accepts an argument no column really needs to give. */
-  arg: string | null;
-  /** Not valid without an argument: `varchar` has no length of its own to fall back on. */
-  required?: boolean;
-  /** The argument is a list of values rather than a number, so it is not checked as one. */
-  list?: boolean;
-  /** UNSIGNED means something here. */
-  numeric?: boolean;
-}
-
-/** The types a column can be declared as, each family in the order it is usually reached for.
- * Every MySQL version in the app's reach has all of these; what differs between versions is the
- * collation list, which is read from the server instead. */
-const TYPES: TypeSpec[] = [
-  { name: "int", arg: "", numeric: true },
-  { name: "bigint", arg: "", numeric: true },
-  { name: "tinyint", arg: "1", numeric: true },
-  { name: "smallint", arg: "", numeric: true },
-  { name: "mediumint", arg: "", numeric: true },
-  { name: "decimal", arg: "10,2", numeric: true },
-  { name: "float", arg: "", numeric: true },
-  { name: "double", arg: "", numeric: true },
-  { name: "bit", arg: "1" },
-  { name: "varchar", arg: "255", required: true },
-  { name: "char", arg: "36" },
-  { name: "text", arg: null },
-  { name: "mediumtext", arg: null },
-  { name: "longtext", arg: null },
-  { name: "tinytext", arg: null },
-  { name: "enum", arg: "'a','b'", required: true, list: true },
-  { name: "set", arg: "'a','b'", required: true, list: true },
-  { name: "date", arg: null },
-  { name: "datetime", arg: "" },
-  { name: "timestamp", arg: "" },
-  { name: "time", arg: "" },
-  { name: "year", arg: null },
-  { name: "json", arg: null },
-  { name: "binary", arg: "16" },
-  { name: "varbinary", arg: "255", required: true },
-  { name: "blob", arg: null },
-  { name: "mediumblob", arg: null },
-  { name: "longblob", arg: null },
-  { name: "tinyblob", arg: null },
-  { name: "geometry", arg: null },
-  { name: "point", arg: null },
-  { name: "linestring", arg: null },
-  { name: "polygon", arg: null },
-  { name: "multipoint", arg: null },
-  { name: "multilinestring", arg: null },
-  { name: "multipolygon", arg: null },
-  { name: "geometrycollection", arg: null },
-];
-
-/** What is known about a type name, or undefined for one this list doesn't carry — a column
- * declared as something older or newer than the app knows still has to be editable. */
-function typeSpec(name: string): TypeSpec | undefined {
-  return TYPES.find((type) => type.name === name.toLowerCase());
+/** What is known about a type name, or undefined for one the engine's list doesn't carry — a column
+ * declared as something older, newer or more exotic than the app knows still has to be editable. */
+function typeSpec(types: readonly SqlTypeSpec[], name: string): SqlTypeSpec | undefined {
+  return types.find((type) => type.name === name.toLowerCase());
 }
 
 /** Only a number, or a number and a scale: what every type but `enum`/`set` takes. */
 const NUMERIC_ARGUMENT = /^\d+(\s*,\s*\d+)?$/;
 
-/** Splits a declared type into the parts the form edits. `varchar(255)` is a name and an argument,
+/**
+ * Splits a declared type into the parts the form edits. `varchar(255)` is a name and an argument,
  * `int unsigned` a name and a flag, and anything else trailing (`zerofill`, a character set) is
- * kept verbatim so that editing a column cannot quietly drop it. */
-function parseType(dataType: string): Pick<Draft, "typeName" | "typeArg" | "unsigned" | "typeTail"> {
+ * kept verbatim so that editing a column cannot quietly drop it.
+ *
+ * The name is not simply the first word, because on PostgreSQL it often is not one: `double
+ * precision` and `timestamp with time zone` are single types whose names have spaces in them. So
+ * the longest run of leading words that names a type the engine's list carries is taken as the
+ * name, and only failing that the first word — which is what leaves MySQL's `int unsigned` reading
+ * as `int` with an attribute after it.
+ */
+export function parseType(
+  types: readonly SqlTypeSpec[],
+  dataType: string,
+): Pick<Draft, "typeName" | "typeArg" | "unsigned" | "typeTail"> {
   const text = dataType.trim();
   const open = text.indexOf("(");
   // The last `)`, not the first: an enum's values may have parentheses of their own inside quotes.
   const close = text.lastIndexOf(")");
   const parenthesised = open !== -1 && close > open;
   const head = (parenthesised ? text.slice(0, open) : text).trim();
-  const [name = "", ...rest] = head.split(/\s+/);
-  const words = [...rest, ...(parenthesised ? text.slice(close + 1) : "").split(/\s+/)].filter(
-    (word) => word !== "",
-  );
+
+  const headWords = head.split(/\s+/).filter((word) => word !== "");
+  let taken = 1;
+  for (let n = headWords.length; n > 1; n -= 1) {
+    if (typeSpec(types, headWords.slice(0, n).join(" "))) {
+      taken = n;
+      break;
+    }
+  }
+  const words = [
+    ...headWords.slice(taken),
+    ...(parenthesised ? text.slice(close + 1) : "").split(/\s+/),
+  ].filter((word) => word !== "");
+
   return {
-    typeName: name.toLowerCase(),
+    typeName: headWords.slice(0, taken).join(" ").toLowerCase(),
     typeArg: parenthesised ? text.slice(open + 1, close).trim() : "",
     unsigned: words.some((word) => word.toLowerCase() === "unsigned"),
     typeTail: words.filter((word) => word.toLowerCase() !== "unsigned").join(" "),
   };
 }
 
-/** The declared type the parts add back up to — what actually reaches the `ALTER TABLE`. */
-function composeType(draft: Draft): string {
+/** The declared type the parts add back up to — what actually reaches the server. */
+export function composeType(types: readonly SqlTypeSpec[], draft: Draft): string {
   const name = draft.typeName.trim();
   if (name === "") return "";
   const arg = draft.typeArg.trim();
-  const spec = typeSpec(name);
+  const spec = typeSpec(types, name);
+  // `[]` binds tight to the type it makes an array of, so it goes back on the name rather than
+  // being joined to it with a space. It arrives in the tail as a word of its own — a
+  // `character varying(255)[]` is split at the `)`, leaving the brackets on the far side of the
+  // join — and PostgreSQL accepts the spaced spelling, which is exactly the trouble: it is not the
+  // spelling `format_type` reports, so `postgres_ddl::modify_column` reads the column as having
+  // changed type and rewrites the whole table for a saved comment.
+  //
+  // Only a word that is nothing but brackets moves. Sweeping the finished string would reach inside
+  // the argument as well, where MySQL's `enum('a [b]')` has a bracket that is part of a value.
+  const tail = draft.typeTail.split(/\s+/).filter((word) => word !== "");
+  const brackets = tail.filter((word) => word === "[]").join("");
+  const rest = tail.filter((word) => word !== "[]");
+
   // An argument on a type that takes none is dropped rather than written out: the box is closed
   // for those, so anything left in it is from a type chosen before.
-  const parts = [arg !== "" && spec?.arg !== null ? `${name}(${arg})` : name];
+  const base = arg !== "" && spec?.arg !== null ? `${name}(${arg})` : name;
+  const parts = [`${base}${brackets}`];
   if (draft.unsigned) parts.push("unsigned");
-  if (draft.typeTail !== "") parts.push(draft.typeTail);
+  if (rest.length > 0) parts.push(rest.join(" "));
   return parts.join(" ");
 }
 
@@ -141,7 +120,10 @@ interface Draft {
   position: string;
 }
 
-function draftFromColumn(column: MysqlStructureColumn | undefined): Draft {
+function draftFromColumn(
+  types: readonly SqlTypeSpec[],
+  column: SqlStructureColumn | undefined,
+): Draft {
   if (!column) {
     return {
       name: "",
@@ -162,7 +144,7 @@ function draftFromColumn(column: MysqlStructureColumn | undefined): Draft {
   }
   return {
     name: column.name,
-    ...parseType(column.dataType),
+    ...parseType(types, column.dataType),
     nullable: column.nullable,
     hasDefault: column.defaultValue !== null,
     defaultValue: column.defaultValue ?? "",
@@ -178,16 +160,16 @@ function draftFromColumn(column: MysqlStructureColumn | undefined): Draft {
 interface Props {
   table: string;
   /** The table's columns as they stand, for the position picker. */
-  columns: MysqlStructureColumn[];
+  columns: SqlStructureColumn[];
   /** What this server supports, for the collation picker. Empty — a server that would not say, or
    *  a list still on its way — leaves the collation a text box, which is what it was before. */
-  collations: MysqlCollation[];
+  collations: SqlCollation[];
   /** The column being redefined, or left out to add a new one. */
-  column?: MysqlStructureColumn;
+  column?: SqlStructureColumn;
   onCancel: () => void;
   /** Rejects with the reason the ALTER failed: the dialog then shows it and stays open with the
    *  typed values still in it. The caller is what closes the dialog, once this resolves. */
-  onSubmit: (spec: MysqlColumnSpec) => Promise<void>;
+  onSubmit: (spec: SqlColumnSpec) => Promise<void>;
 }
 
 /**
@@ -197,8 +179,9 @@ interface Props {
  */
 function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }: Props) {
   const { t } = useTranslation();
+  const { editing: offers } = useSqlDialect();
   const editing = column !== undefined;
-  const [draft, setDraft] = useState<Draft>(() => draftFromColumn(column));
+  const [draft, setDraft] = useState<Draft>(() => draftFromColumn(offers.columnTypes, column));
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -236,20 +219,20 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
       })),
   ];
 
-  const selectedType = typeSpec(draft.typeName);
+  const selectedType = typeSpec(offers.columnTypes, draft.typeName);
   const typeOptions: SelectOption<string>[] = [
     // A type the list has no entry for goes on the front of it: without an option of its own the
     // picker would show nothing, and saving would redeclare the column as something else.
     ...(draft.typeName !== "" && selectedType === undefined
       ? [{ value: draft.typeName, label: draft.typeName }]
       : []),
-    ...TYPES.map((type) => ({ value: type.name, label: type.name })),
+    ...offers.columnTypes.map((type) => ({ value: type.name, label: type.name })),
   ];
 
   /** Switching type takes the previous type's argument with it when the new one has no
    * parentheses to put it in, and drops UNSIGNED where it means nothing. */
   function chooseType(typeName: string) {
-    const spec = typeSpec(typeName);
+    const spec = typeSpec(offers.columnTypes, typeName);
     patch({
       typeName,
       ...(spec?.arg === null ? { typeArg: "" } : null),
@@ -257,11 +240,11 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
     });
   }
 
-  function toSpec(): MysqlColumnSpec {
+  function toSpec(): SqlColumnSpec {
     const position = draft.position;
     return {
       name: draft.name.trim(),
-      dataType: composeType(draft),
+      dataType: composeType(offers.columnTypes, draft),
       nullable: draft.nullable,
       defaultValue: draft.hasDefault ? draft.defaultValue : null,
       defaultIsExpression: draft.hasDefault && draft.defaultIsExpression,
@@ -359,18 +342,22 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
             </div>
           </label>
 
-          <label className={styles.field}>
-            {t("columnDialog.position")}
-            <Select
-              value={draft.position}
-              size="normal"
-              options={positionOptions}
-              ariaLabel={t("columnDialog.position")}
-              disabled={saving}
-              searchable
-              onChange={(position) => patch({ position })}
-            />
-          </label>
+          {/* PostgreSQL appends a column and has no statement that moves one, so there is nothing
+              to choose there. */}
+          {offers.columnPosition && (
+            <label className={styles.field}>
+              {t("columnDialog.position")}
+              <Select
+                value={draft.position}
+                size="normal"
+                options={positionOptions}
+                ariaLabel={t("columnDialog.position")}
+                disabled={saving}
+                searchable
+                onChange={(position) => patch({ position })}
+              />
+            </label>
+          )}
 
           <label className={styles.field}>
             {t("columnDialog.collation")}
@@ -407,7 +394,7 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
           </label>
           {/* Shown for the types it means something to, and for a type the list doesn't carry that
               already says it — dropping it there would change the column behind the user's back. */}
-          {(selectedType?.numeric || draft.unsigned) && (
+          {offers.unsigned && (selectedType?.numeric || draft.unsigned) && (
             <label className={styles.toggle}>
               <input
                 type="checkbox"
@@ -427,15 +414,19 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
             />
             {t("columnDialog.autoIncrement")}
           </label>
-          <label className={styles.toggle}>
-            <input
-              type="checkbox"
-              checked={draft.onUpdateCurrentTimestamp}
-              disabled={saving}
-              onChange={(e) => patch({ onUpdateCurrentTimestamp: e.target.checked })}
-            />
-            {t("columnDialog.onUpdate")}
-          </label>
+          {/* A MySQL clause. The same effect on PostgreSQL is a trigger, which is not a property of
+              the column and so not this dialog's to offer. */}
+          {offers.onUpdateCurrentTimestamp && (
+            <label className={styles.toggle}>
+              <input
+                type="checkbox"
+                checked={draft.onUpdateCurrentTimestamp}
+                disabled={saving}
+                onChange={(e) => patch({ onUpdateCurrentTimestamp: e.target.checked })}
+              />
+              {t("columnDialog.onUpdate")}
+            </label>
+          )}
         </div>
 
         <div className={styles.defaultBlock}>

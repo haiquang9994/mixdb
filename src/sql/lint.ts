@@ -16,25 +16,31 @@
  * is not where either language lives.
  */
 
-import { MySQL } from "@codemirror/lang-sql";
+import type { SQLDialect } from "@codemirror/lang-sql";
+import type { SqlDialect } from "./dialect";
+import { dollarTag, type SqlSyntax } from "./syntax";
 import type { TranslationKey } from "../i18n";
-import type { MysqlSchemaOutline } from "../types";
-import type { SqlStatement } from "./statements";
+import type { SqlSchemaOutline } from "../types";
+import type { SqlStatement } from "../sql/statements";
 
 /**
- * Every word MySQL owns, lower-cased — its keywords and its type names, taken from the same dialect
- * the editor highlights with, so the two can never drift apart.
+ * Every word the engine owns, lower-cased — its keywords and its type names, read off the same
+ * CodeMirror dialect the editor highlights with, so the two can never drift apart.
  *
- * The dialect's `builtin` list is left out on purpose: it holds the *command-line client's* words
- * (`edit`, `pager`, `status`, `source`), and treating those as reserved would quietly stop a column
- * actually named `status` from ever being checked.
+ * The dialect's `builtin` list is left out on purpose: on MySQL it holds the *command-line
+ * client's* words (`edit`, `pager`, `status`, `source`), and treating those as reserved would
+ * quietly stop a column actually named `status` from ever being checked.
  *
  * Built-in *functions* are mostly not in here either, and do not need to be: a name followed by `(`
  * is never checked against the schema.
  */
-export const RESERVED: ReadonlySet<string> = new Set(
-  `${MySQL.spec.keywords ?? ""} ${MySQL.spec.types ?? ""}`.split(/\s+/).filter((word) => word !== "")
-);
+export function reservedWords(dialect: SQLDialect): ReadonlySet<string> {
+  return new Set(
+    `${dialect.spec.keywords ?? ""} ${dialect.spec.types ?? ""}`
+      .split(/\s+/)
+      .filter((word) => word !== "")
+  );
+}
 
 export type TokenKind = "word" | "quoted" | "string" | "number" | "variable" | "punct" | "comment";
 
@@ -68,7 +74,7 @@ function isIdentPart(c: string): boolean {
  * that only care about code filter them out. `offset` is added to every position, so a statement
  * can be tokenised on its own text and still report where it sits in the whole script.
  */
-export function tokenize(sql: string, offset = 0): Token[] {
+export function tokenize(sql: string, syntax: SqlSyntax, offset = 0): Token[] {
   const tokens: Token[] = [];
   let i = 0;
 
@@ -92,11 +98,12 @@ export function tokenize(sql: string, offset = 0): Token[] {
       continue;
     }
 
-    // `--` opens a comment only when whitespace follows it, exactly as the splitter has it: `5--3`
-    // is arithmetic.
+    // Comments open exactly as the splitter has them — see {@link SqlSyntax}, which both read from.
     if (
-      (c === "-" && sql[i + 1] === "-" && (i + 2 >= sql.length || /\s/.test(sql[i + 2]))) ||
-      c === "#"
+      (c === "-" &&
+        sql[i + 1] === "-" &&
+        (!syntax.dashCommentNeedsSpace || i + 2 >= sql.length || /\s/.test(sql[i + 2]))) ||
+      (c === "#" && syntax.hashComments)
     ) {
       const start = i;
       while (i < sql.length && sql[i] !== "\n") i += 1;
@@ -106,13 +113,22 @@ export function tokenize(sql: string, offset = 0): Token[] {
 
     if (c === "/" && sql[i + 1] === "*") {
       const start = i;
-      i += 2;
+      let depth = 0;
       let closed = false;
       while (i < sql.length) {
-        if (sql[i] === "*" && sql[i + 1] === "/") {
+        if (sql[i] === "/" && sql[i + 1] === "*") {
+          depth += 1;
           i += 2;
-          closed = true;
-          break;
+          continue;
+        }
+        if (sql[i] === "*" && sql[i + 1] === "/") {
+          depth -= 1;
+          i += 2;
+          if (depth === 0 || !syntax.nestedBlockComments) {
+            closed = true;
+            break;
+          }
+          continue;
         }
         i += 1;
       }
@@ -120,17 +136,34 @@ export function tokenize(sql: string, offset = 0): Token[] {
       continue;
     }
 
-    if (c === "'" || c === '"' || c === "`") {
+    // A dollar-quoted body is a string that may hold anything — quotes and semicolons included.
+    if (syntax.dollarQuoting) {
+      const tag = dollarTag(sql, i);
+      if (tag !== null) {
+        const start = i;
+        const close = `$${tag}$`;
+        const end = sql.indexOf(close, i + close.length);
+        const closed = end !== -1;
+        const inner = closed ? sql.slice(i + close.length, end) : sql.slice(i + close.length);
+        i = closed ? end + close.length : sql.length;
+        push("string", start, i, inner, !closed);
+        continue;
+      }
+    }
+
+    if (c === "'" || c === '"' || c === syntax.identifierQuote) {
       const start = i;
       i += 1;
       let value = "";
       let closed = false;
+      // Which of the two this run is, which decides both how it escapes and what it means.
+      const isName = c === syntax.identifierQuote || (c === '"' && syntax.doubleQuoteIsIdentifier);
       while (i < sql.length) {
         const ch = sql[i];
         i += 1;
-        // A backslash escapes the next character inside a string literal, but not inside a
-        // backtick-quoted identifier — there, doubling is the only escape.
-        if (ch === "\\" && c !== "`") {
+        // A backslash escapes the next character inside a string literal, where the engine says so.
+        // Inside a quoted name it never does — there, doubling is the only escape.
+        if (ch === "\\" && syntax.backslashEscapes && !isName) {
           if (i < sql.length) {
             value += sql[i];
             i += 1;
@@ -148,8 +181,7 @@ export function tokenize(sql: string, offset = 0): Token[] {
         }
         value += ch;
       }
-      // A double-quoted run is a string in MySQL's default mode, not an identifier.
-      push(c === "`" ? "quoted" : "string", start, i, value, !closed);
+      push(isName ? "quoted" : "string", start, i, value, !closed);
       continue;
     }
 
@@ -218,7 +250,7 @@ interface SchemaIndex {
   columnNames: Map<string, string[]>;
 }
 
-function indexOutline(outline: MysqlSchemaOutline | null): SchemaIndex | null {
+function indexOutline(outline: SqlSchemaOutline | null): SchemaIndex | null {
   if (!outline || outline.tables.length === 0) return null;
   const tables = new Map<string, Set<string>>();
   const columnNames = new Map<string, string[]>();
@@ -299,10 +331,14 @@ export interface TableRef {
   to: number;
 }
 
-/** A suggested name, written the way the name it replaces was written. Swapping a backtick-quoted
- *  identifier for a bare one would be a fix that breaks anything needing the quotes. */
-function asWritten(original: Token, name: string): string {
-  return original.kind === "quoted" ? `\`${name.replace(/`/g, "``")}\`` : name;
+/** A suggested name, written the way the name it replaces was written. Swapping a quoted identifier
+ *  for a bare one would be a fix that breaks anything needing the quotes — and quoting it with the
+ *  wrong engine's quote would be a fix that does not parse, so the quote comes from the dialect:
+ *  MySQL's backtick, PostgreSQL's `"`. Either is escaped inside a name by doubling it. */
+function asWritten(original: Token, name: string, dialect: SqlDialect): string {
+  if (original.kind !== "quoted") return name;
+  const quote = dialect.syntax.identifierQuote ?? '"';
+  return `${quote}${name.split(quote).join(quote + quote)}${quote}`;
 }
 
 /** The token at `i` as an upper-cased keyword, or undefined when it is not a bare word. */
@@ -340,7 +376,11 @@ export interface StatementScope {
  * `code` is the statement's tokens with the comments already dropped, and `verb` its opening
  * keyword — which is what tells `INSERT INTO t` from `SELECT ... INTO OUTFILE`.
  */
-export function readScope(code: readonly Token[], verb: string): StatementScope {
+export function readScope(
+  code: readonly Token[],
+  verb: string,
+  dialect: SqlDialect
+): StatementScope {
   const tables: TableRef[] = [];
   const aliases = new Map<string, string>();
   const consumed = new Set<number>();
@@ -394,7 +434,7 @@ export function readScope(code: readonly Token[], verb: string): StatementScope 
       } else if (
         code[i] &&
         (code[i].kind === "quoted" ||
-          (code[i].kind === "word" && !RESERVED.has(code[i].value.toLowerCase())))
+          (code[i].kind === "word" && !dialect.reserved.has(code[i].value.toLowerCase())))
       ) {
         alias = code[i];
         consumed.add(i);
@@ -459,8 +499,13 @@ export function readScope(code: readonly Token[], verb: string): StatementScope 
  * rather than model that, this stops looking. Silence is the right failure here: a checker that
  * cries wolf on valid SQL gets switched off, and then it catches nothing at all.
  */
-function checkStatement(statement: SqlStatement, index: SchemaIndex | null, out: LintFinding[]) {
-  const all = tokenize(statement.text, statement.from);
+function checkStatement(
+  statement: SqlStatement,
+  index: SchemaIndex | null,
+  out: LintFinding[],
+  dialect: SqlDialect,
+) {
+  const all = tokenize(statement.text, dialect.syntax, statement.from);
   const code = all.filter((token) => token.kind !== "comment");
 
   let unreadable = false;
@@ -510,7 +555,7 @@ function checkStatement(statement: SqlStatement, index: SchemaIndex | null, out:
   // Past here the text has to be readable and the statement has to be about tables that exist.
   if (unreadable || index === null || !CHECKED_VERBS.has(statement.verb)) return;
 
-  const { tables, aliases, consumed, declared, opaque } = readScope(code, statement.verb);
+  const { tables, aliases, consumed, declared, opaque } = readScope(code, statement.verb, dialect);
 
   const scope: string[] = [];
   let complete = tables.length > 0;
@@ -533,7 +578,7 @@ function checkStatement(statement: SqlStatement, index: SchemaIndex | null, out:
       severity: "warning",
       code: "lint.unknownTable",
       params: { name: table.token.value },
-      ...(near ? { suggestion: asWritten(table.token, near) } : {}),
+      ...(near ? { suggestion: asWritten(table.token, near, dialect) } : {}),
     });
   }
 
@@ -573,12 +618,12 @@ function checkStatement(statement: SqlStatement, index: SchemaIndex | null, out:
         severity: "warning",
         code: "lint.unknownColumn",
         params: { name: column.value, table: token.value },
-        ...(near ? { suggestion: asWritten(column, near) } : {}),
+        ...(near ? { suggestion: asWritten(column, near, dialect) } : {}),
       });
       continue;
     }
 
-    if (token.kind === "word" && RESERVED.has(token.value.toLowerCase())) continue;
+    if (token.kind === "word" && dialect.reserved.has(token.value.toLowerCase())) continue;
     // A name followed by `(` is a function, and MixDB does not carry a list of every function
     // MySQL and its plugins have.
     if (code[i + 1]?.raw === "(") continue;
@@ -598,7 +643,7 @@ function checkStatement(statement: SqlStatement, index: SchemaIndex | null, out:
       severity: "warning",
       code: "lint.unknownName",
       params: { name: token.value },
-      suggestion: asWritten(token, near),
+      suggestion: asWritten(token, near, dialect),
     });
   }
 }
@@ -612,11 +657,12 @@ function checkStatement(statement: SqlStatement, index: SchemaIndex | null, out:
  */
 export function lintScript(
   statements: readonly SqlStatement[],
-  outline: MysqlSchemaOutline | null
+  outline: SqlSchemaOutline | null,
+  dialect: SqlDialect
 ): LintFinding[] {
   const index = indexOutline(outline);
   const findings: LintFinding[] = [];
-  for (const statement of statements) checkStatement(statement, index, findings);
+  for (const statement of statements) checkStatement(statement, index, findings, dialect);
   return findings;
 }
 

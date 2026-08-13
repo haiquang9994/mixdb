@@ -12,8 +12,12 @@ use tokio::sync::Mutex;
 #[derive(Clone)]
 pub enum DbHandle {
     Mysql(sqlx::MySqlPool),
+    /// One pool per database rather than one for the server: a PostgreSQL connection is bound to
+    /// the database it was opened on, so selecting another in the sidebar dials again. Behind an
+    /// `Arc` because the set of them grows as databases are opened — see `db::postgres::Pools`.
+    Postgres(Arc<crate::db::postgres::Pools>),
     Mongo(mongodb::Client),
-    /// Behind a lock of its own: unlike the other two, a Redis connection is used through `&mut`,
+    /// Behind a lock of its own: unlike the others, a Redis connection is used through `&mut`,
     /// and selecting a database replaces it outright.
     Redis(Arc<Mutex<crate::db::redis::Connection>>),
 }
@@ -42,8 +46,9 @@ pub struct AppState {
     /// again before anything is run on what was found — a query awaited while holding it would
     /// stop every other command in the app, in every tab, for as long as it took.
     pub connections: Mutex<HashMap<String, ActiveConnection>>,
-    /// The MySQL session id of the script each connection is running, while it runs one. It is
-    /// what `KILL QUERY` names, and so the only thing that lets the Cancel button reach a
+    /// The server-side id of the session each connection is running a script on, while it runs
+    /// one — MySQL's thread id, or PostgreSQL's backend pid. It is what `KILL QUERY` and
+    /// `pg_cancel_backend` name, and so the only thing that lets the Cancel button reach a
     /// statement already in flight.
     ///
     /// A blocking lock rather than an async one: nothing is awaited while it is held, and it has

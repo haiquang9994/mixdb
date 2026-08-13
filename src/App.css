@@ -643,6 +643,11 @@ body {
   color: #00758f;
 }
 
+.kind-postgres {
+  background: rgba(51, 103, 145, 0.18);
+  color: #336791;
+}
+
 .kind-mongo {
   background: rgba(77, 179, 61, 0.18);
   color: #4db33d;
@@ -1002,7 +1007,7 @@ textarea {
   box-sizing: border-box;
 }
 
-.mysql-workspace {
+.sql-workspace {
   /* What the dump and restore overlay is positioned against — it covers this tab's workspace,
      and only it, so the tab bar and the other connections stay usable meanwhile. */
   position: relative;
@@ -1017,7 +1022,7 @@ textarea {
   padding: var(--view-padding);
 }
 
-.mysql-header {
+.sql-header {
   display: flex;
   align-items: center;
   gap: 1.25rem;
@@ -1025,30 +1030,30 @@ textarea {
   flex-shrink: 0;
 }
 
-.mysql-header-left {
+.sql-header-left {
   display: flex;
   align-items: center;
   gap: 0.75rem;
 }
 
-.mysql-server-info {
+.sql-server-info {
   opacity: 0.6;
   font-size: 0.9em;
   white-space: nowrap;
 }
 
-.mysql-db-select {
+.sql-db-select {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.mysql-content-tabs {
+.sql-content-tabs {
   margin-bottom: 0;
   border-bottom: none;
 }
 
-.mysql-body {
+.sql-body {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -1056,7 +1061,7 @@ textarea {
   gap: 0.2rem;
 }
 
-.mysql-sidebar {
+.sql-sidebar {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -1065,14 +1070,14 @@ textarea {
   padding-right: 0.15rem;
 }
 
-.mysql-sidebar-resizer {
+.sql-sidebar-resizer {
   flex: 0 0 5px;
   align-self: stretch;
   cursor: col-resize;
   position: relative;
 }
 
-.mysql-sidebar-resizer::after {
+.sql-sidebar-resizer::after {
   content: "";
   position: absolute;
   top: 0;
@@ -1082,14 +1087,14 @@ textarea {
   background: var(--border);
 }
 
-.mysql-sidebar-resizer:hover::after,
-.mysql-sidebar-resizer:active::after {
+.sql-sidebar-resizer:hover::after,
+.sql-sidebar-resizer:active::after {
   left: 1px;
   width: 3px;
   background: var(--accent);
 }
 
-.mysql-sidebar-search {
+.sql-sidebar-search {
   flex: 0 0 auto;
   width: 100%;
   min-width: 0;
@@ -1100,7 +1105,7 @@ textarea {
 /* Only where the bar sits: the buttons themselves are the shared ActionBar's. */
 /* Two bars: what the list holds on the left, what the database as a whole answers to on the
    right, pushed apart so the destructive one is nowhere near the everyday ones. */
-.mysql-sidebar-actions {
+.sql-sidebar-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1111,7 +1116,7 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
-.mysql-content {
+.sql-content {
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -1125,7 +1130,7 @@ textarea {
    and the shape Structure has, none of which should have to be fetched again for a look at one of
    the others. Taking one out of the flow rather than unmounting it is what keeps that state; it
    costs the layout nothing while hidden. */
-.mysql-panel {
+.sql-panel {
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -1133,7 +1138,7 @@ textarea {
   flex-direction: column;
 }
 
-.mysql-panel-hidden {
+.sql-panel-hidden {
   display: none;
 }
 

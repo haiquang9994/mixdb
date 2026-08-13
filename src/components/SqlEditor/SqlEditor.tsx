@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, type Ref } from "react";
-import type { SQLNamespace } from "@codemirror/lang-sql";
+import type { SQLDialect, SQLNamespace } from "@codemirror/lang-sql";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { format } from "sql-formatter";
@@ -41,6 +41,10 @@ interface Props {
   schema: SQLNamespace | null;
   /** The database the schema describes, so `db.table` completes as well as `table`. */
   database: string;
+  /** The engine this script is written against: what is painted as a keyword, and what the
+   *  built-in completions offer. Handed in rather than reached for, so this component stays a
+   *  plain editor with no opinion about connections. */
+  dialect: SQLDialect;
   /** Where the statement covering `pos` sits. Supplied by the caller: what splits a script into
    *  statements is a property of the database, not of the editor. */
   statementRange: (doc: string, pos: number) => StatementRange | null;
@@ -57,8 +61,8 @@ interface Props {
 }
 
 /**
- * A MySQL editor: syntax highlighting, completion over the database's own tables and columns,
- * search and replace, and the shortcuts a script is worked through with.
+ * A SQL editor: syntax highlighting in the engine's own dialect, completion over the database's
+ * own tables and columns, search and replace, and the shortcuts a script is worked through with.
  *
  * CodeMirror owns the document while the editor is mounted, and the bridge is deliberately narrow:
  * `initialValue` is read as it is created, everything typed comes back out through `onChange`, and
@@ -75,6 +79,7 @@ function SqlEditor({
   onChange,
   schema,
   database,
+  dialect,
   statementRange,
   lint,
   lookup,
@@ -96,6 +101,7 @@ function SqlEditor({
     statementRange,
     schema,
     database,
+    dialect,
     lint,
     lookup,
     completions,
@@ -107,6 +113,7 @@ function SqlEditor({
       statementRange,
       schema,
       database,
+      dialect,
       lint,
       lookup,
       completions,
@@ -195,6 +202,7 @@ function SqlEditor({
           // and the schema has not changed, only the editor under it.
           schema: latest.current.schema,
           database: latest.current.database,
+          dialect: latest.current.dialect,
           statementRange: (doc, pos) => latest.current.statementRange(doc, pos),
           onFormat: formatDocument,
           lint: () => latest.current.lint,
@@ -225,7 +233,7 @@ function SqlEditor({
   useEffect(() => {
     const current = view.current;
     if (!current) return;
-    current.dispatch({ effects: schemaCompartment.reconfigure(sqlLanguage(schema, database)) });
+    current.dispatch({ effects: schemaCompartment.reconfigure(sqlLanguage(schema, database, dialect)) });
     // The checks were made against whatever was known a moment ago — which, until now, was
     // nothing. Left alone they would keep underlining every table in the script as unknown until
     // the next keystroke.

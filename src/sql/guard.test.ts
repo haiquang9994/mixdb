@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { unguardedWrites, withAutoLimits, withLimit, writingStatements } from "./guard";
-import { splitStatements } from "./statements";
+import { splitStatements } from "../sql/statements";
+import { mysqlDialect } from "../mysql/dialect";
+import { postgresDialect } from "../postgres/dialect";
+import { MYSQL_SYNTAX, POSTGRES_SYNTAX } from "../sql/syntax";
 
 /**
  * The gates, held against the statements they exist to stop.
@@ -13,8 +16,10 @@ import { splitStatements } from "./statements";
  * statement the editor would never actually produce.
  */
 
-const guarded = (sql: string) => unguardedWrites(splitStatements(sql));
-const blocked = (sql: string) => writingStatements(splitStatements(sql)).map((b) => b.verb);
+const guarded = (sql: string) => unguardedWrites(splitStatements(sql, MYSQL_SYNTAX), mysqlDialect);
+const blocked = (sql: string) => writingStatements(splitStatements(sql, MYSQL_SYNTAX), mysqlDialect).map((b) => b.verb);
+const blockedPg = (sql: string) =>
+  writingStatements(splitStatements(sql, POSTGRES_SYNTAX), postgresDialect).map((b) => b.verb);
 
 describe("unguardedWrites", () => {
   it("stops a write that names no rows, and names the table it would take", () => {
@@ -154,6 +159,16 @@ describe("writingStatements", () => {
       .toEqual(["INTO OUTFILE"]);
   });
 
+  it("refuses PostgreSQL's SELECT INTO, which creates the table it names", () => {
+    expect(blockedPg("SELECT * INTO backup FROM users")).toEqual(["SELECT INTO"]);
+    expect(blockedPg("SELECT * INTO TEMP backup FROM users")).toEqual(["SELECT INTO"]);
+    expect(blockedPg("WITH ids AS (SELECT id FROM banned) SELECT * INTO backup FROM ids")).toEqual([
+      "SELECT INTO",
+    ]);
+    // An INTO inside a subquery is not the statement's own.
+    expect(blockedPg("SELECT * FROM (SELECT 1) t")).toEqual([]);
+  });
+
   it("names every refused statement, not only the first", () => {
     expect(blocked("SELECT 1; DELETE FROM a; INSERT INTO b VALUES (1)")).toEqual([
       "DELETE",
@@ -163,7 +178,7 @@ describe("writingStatements", () => {
 });
 
 describe("withLimit", () => {
-  const one = (sql: string, limit = 500) => withLimit(splitStatements(sql)[0], limit);
+  const one = (sql: string, limit = 500) => withLimit(splitStatements(sql, MYSQL_SYNTAX)[0], limit, mysqlDialect);
 
   it("puts a ceiling on a read that sets none of its own", () => {
     expect(one("SELECT * FROM users")).toBe("SELECT * FROM users\nLIMIT 500");
@@ -177,6 +192,15 @@ describe("withLimit", () => {
     expect(one("SELECT NOW()")).toBeNull();
     expect(one("UPDATE users SET active = 0")).toBeNull();
     expect(one("SELECT * FROM users INTO OUTFILE '/tmp/u.csv'")).toBeNull();
+  });
+
+  it("leaves a read that sets its ceiling the standard's way alone", () => {
+    // `FETCH FIRST` is the ceiling; PostgreSQL rejects a `LIMIT` appended beside it.
+    const pg = (sql: string) => withLimit(splitStatements(sql, POSTGRES_SYNTAX)[0], 500, postgresDialect);
+    expect(pg("SELECT * FROM users FETCH FIRST 10 ROWS ONLY")).toBeNull();
+    expect(pg("SELECT * FROM users OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY")).toBeNull();
+    // An OFFSET on its own sets no ceiling, so it still gets one.
+    expect(pg("SELECT * FROM users OFFSET 20")).toBe("SELECT * FROM users OFFSET 20\nLIMIT 500");
   });
 
   it("leaves a locking read exactly as it was written", () => {
@@ -197,7 +221,7 @@ describe("withLimit", () => {
 describe("withAutoLimits", () => {
   it("rewrites every statement that wanted one and leaves the rest where they were", () => {
     const sql = "SELECT * FROM a;\nUPDATE b SET x = 1;\nSELECT * FROM c;";
-    expect(withAutoLimits(sql, splitStatements(sql), 100)).toEqual({
+    expect(withAutoLimits(sql, splitStatements(sql, MYSQL_SYNTAX), 100, mysqlDialect)).toEqual({
       sql: "SELECT * FROM a\nLIMIT 100;\nUPDATE b SET x = 1;\nSELECT * FROM c\nLIMIT 100;",
       added: 2,
     });
@@ -205,12 +229,15 @@ describe("withAutoLimits", () => {
 
   it("does nothing at all when the ceiling is off", () => {
     const sql = "SELECT * FROM a";
-    expect(withAutoLimits(sql, splitStatements(sql), 0)).toEqual({ sql, added: 0 });
+    expect(withAutoLimits(sql, splitStatements(sql, MYSQL_SYNTAX), 0, mysqlDialect)).toEqual({
+      sql,
+      added: 0,
+    });
   });
 
   it("keeps the script's own text around each statement it rewrites", () => {
     const sql = "-- a note\nSELECT * FROM a;\n\n-- and another\nSELECT * FROM b;\n";
-    const { sql: out, added } = withAutoLimits(sql, splitStatements(sql), 5);
+    const { sql: out, added } = withAutoLimits(sql, splitStatements(sql, MYSQL_SYNTAX), 5, mysqlDialect);
     expect(added).toBe(2);
     expect(out).toContain("-- a note");
     expect(out).toContain("-- and another");

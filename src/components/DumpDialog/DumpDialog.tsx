@@ -3,12 +3,12 @@ import { createPortal } from "react-dom";
 import Button from "../Button";
 import { useDialogExit } from "../dialogMotion";
 import { useTranslation } from "../../i18n";
-import type { MysqlDumpMode } from "../../mysql/api";
+import type { SqlDumpMode } from "../../sql/api";
 import styles from "./DumpDialog.module.css";
 
 /** The three choices, in the order they are offered: the whole thing first, since that is what a
  * backup means, and the two halves after it. */
-const MODES: { mode: MysqlDumpMode; labelKey: "dump.modeAll" | "dump.modeStructure" | "dump.modeData"; hintKey: "dump.modeAllHint" | "dump.modeStructureHint" | "dump.modeDataHint" }[] = [
+const MODES: { mode: SqlDumpMode; labelKey: "dump.modeAll" | "dump.modeStructure" | "dump.modeData"; hintKey: "dump.modeAllHint" | "dump.modeStructureHint" | "dump.modeDataHint" }[] = [
   { mode: "all", labelKey: "dump.modeAll", hintKey: "dump.modeAllHint" },
   { mode: "structure", labelKey: "dump.modeStructure", hintKey: "dump.modeStructureHint" },
   { mode: "data", labelKey: "dump.modeData", hintKey: "dump.modeDataHint" },
@@ -18,14 +18,14 @@ interface Props {
   database: string;
   onCancel: () => void;
   /** Given the chosen mode. The file to write to is asked for after this, by the caller. */
-  onSubmit: (mode: MysqlDumpMode) => void;
+  onSubmit: (mode: SqlDumpMode) => void;
 }
 
 /** What of a MySQL database to write out. Only MySQL asks: a mongodump archive is whole or not
  *  at all. */
 function DumpDialog({ database, onCancel, onSubmit }: Props) {
   const { t } = useTranslation();
-  const [mode, setMode] = useState<MysqlDumpMode>("all");
+  const [mode, setMode] = useState<SqlDumpMode>("all");
   const { close, cls } = useDialogExit();
 
   useEffect(() => {

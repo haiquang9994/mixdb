@@ -8,7 +8,14 @@ import {
   useSavedConnections,
 } from "./savedConnectionsStore";
 import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
-import MysqlWorkspace from "./mysql/MysqlWorkspace";
+import SqlWorkspace from "./sql/SqlWorkspace";
+import { SqlProvider } from "./sql/context";
+import type { SqlApi } from "./sql/api";
+import type { SqlDialect } from "./sql/dialect";
+import { mysqlApi } from "./mysql/api";
+import { mysqlDialect } from "./mysql/dialect";
+import { postgresApi } from "./postgres/api";
+import { postgresDialect } from "./postgres/dialect";
 import MongoWorkspace from "./mongo/MongoWorkspace";
 import RedisWorkspace from "./redis/RedisWorkspace";
 import Select from "./components/Select";
@@ -19,7 +26,7 @@ import Button from "./components/Button";
 import Input from "./components/Input";
 import { EyeIcon, EyeOffIcon, LockIcon, PinIcon } from "./icons";
 import { IS_MAC, IS_WINDOWS } from "./platform";
-import { useTranslation } from "./i18n";
+import { useTranslation, type TranslationKey } from "./i18n";
 import { errorMessage } from "./errors";
 
 interface Props {
@@ -34,9 +41,37 @@ interface Props {
 
 const KIND_BADGE: Record<DbKind, string> = {
   mysql: "SQL",
+  postgres: "PG",
   mongo: "MDB",
   redis: "RDS",
 };
+
+/** What each kind is called on the tab that picks it. */
+const KIND_LABEL: Record<DbKind, TranslationKey> = {
+  mysql: "connection.kindMysql",
+  postgres: "connection.kindPostgres",
+  mongo: "connection.kindMongo",
+  redis: "connection.kindRedis",
+};
+
+/**
+ * The engines the shared SQL workspace can be opened on — the one place a kind is turned into the
+ * pair of things everything below the workspace works through.
+ *
+ * A kind that is in here is a SQL kind — {@link isSqlKind} is read off this map — so adding an
+ * engine is this entry and nothing else.
+ */
+const SQL_ENGINES = {
+  mysql: { api: mysqlApi, dialect: mysqlDialect },
+  postgres: { api: postgresApi, dialect: postgresDialect },
+} as const satisfies Partial<Record<DbKind, { api: SqlApi; dialect: SqlDialect }>>;
+
+type SqlKind = keyof typeof SQL_ENGINES;
+
+/** Whether this kind opens the SQL workspace, and — to TypeScript — which of them it is. */
+function isSqlKind(kind: DbKind): kind is SqlKind {
+  return kind in SQL_ENGINES;
+}
 
 // Key order isn't stable across sources (object literals vs. values that
 // round-tripped through the Tauri store's JSON), so a plain JSON.stringify
@@ -347,7 +382,7 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
       database: isMongo ? undefined : database || undefined,
       uri: isMongo ? uri.trim() || undefined : undefined,
       ssh: buildSshConfig(),
-      use_ssl: kind === "mysql" ? useSsl : undefined,
+      use_ssl: isSqlKind(kind) ? useSsl : undefined,
     };
   }
 
@@ -543,7 +578,7 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
       <fieldset>
         <legend>{t("connection.databaseLegend")}</legend>
         <div className="method-tabs" role="tablist">
-          {(["mysql", "mongo", "redis"] as DbKind[]).map((k) => (
+          {(["mysql", "postgres", "mongo", "redis"] as DbKind[]).map((k) => (
             <button
               key={k}
               type="button"
@@ -552,7 +587,7 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
               className={`method-tab${kind === k ? " method-tab-active" : ""}`}
               onClick={() => changeKind(k)}
             >
-              {k === "mysql" ? t("connection.kindMysql") : k === "mongo" ? t("connection.kindMongo") : t("connection.kindRedis")}
+              {t(KIND_LABEL[k])}
             </button>
           ))}
         </div>
@@ -621,7 +656,7 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
           </p>
         )}
 
-        {kind === "mysql" && (
+        {isSqlKind(kind) && (
           <div className="row">
             <label>
               <input type="checkbox" checked={useSsl} onChange={(e) => setUseSsl(e.target.checked)} />{" "}
@@ -890,21 +925,26 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
     );
   }
 
-  if (kind === "mysql") {
+  if (isSqlKind(kind)) {
     const activeSavedConnection = savedConnections.find((c) => c.id === editingId);
+    // The one place the engine behind a SQL workspace is chosen. Everything below reaches for it
+    // through the context rather than importing an engine of its own — see `src/sql/context.tsx`.
+    const engine = SQL_ENGINES[kind];
     return (
-      <MysqlWorkspace
-        active={active}
-        connectionId={connectionId}
-        initialDatabase={database}
-        status={status}
-        error={error}
-        onDisconnect={disconnect}
-        sidebarWidth={activeSavedConnection?.sidebarWidth}
-        onSidebarWidthChange={updateSidebarWidth}
-        readOnly={activeSavedConnection?.readOnly ?? false}
-        profileId={activeSavedConnection?.id ?? ""}
-      />
+      <SqlProvider api={engine.api} dialect={engine.dialect}>
+        <SqlWorkspace
+          active={active}
+          connectionId={connectionId}
+          initialDatabase={database}
+          status={status}
+          error={error}
+          onDisconnect={disconnect}
+          sidebarWidth={activeSavedConnection?.sidebarWidth}
+          onSidebarWidthChange={updateSidebarWidth}
+          readOnly={activeSavedConnection?.readOnly ?? false}
+          profileId={activeSavedConnection?.id ?? ""}
+        />
+      </SqlProvider>
     );
   }
 

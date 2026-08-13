@@ -1,6 +1,6 @@
-import type { MysqlFilter } from "../../mysql/filters";
+import type { SqlFilter } from "../../sql/filters";
 import { fileInto } from "../../paneCache";
-import type { MysqlColumnMeta } from "../../types";
+import type { SqlColumnMeta } from "../../types";
 
 /** Which column the grid is ordered by, and which way. Only ever one at a time: clicking a header
  * replaces this rather than adding to it. `null` is the table's own order, untouched. */
@@ -17,7 +17,7 @@ export interface TableRequest {
   page: number;
   pageSize: number;
   sort: Sort | null;
-  filters: MysqlFilter[];
+  filters: SqlFilter[];
   reloadToken: number;
   /** Which shape of the database the rows were read from. Moved by the workspace every time this
    *  app changes that shape — a table created, renamed or dropped, a column altered, a dump
@@ -64,7 +64,7 @@ export function sameRequest(loaded: TableRequest | null, wanted: TableRequest): 
  */
 export interface RememberedTable {
   columns: string[];
-  columnMeta: Record<string, MysqlColumnMeta>;
+  columnMeta: Record<string, SqlColumnMeta>;
   primaryKey: string[];
   autoIncrementColumn: string | null;
   rows: Record<string, unknown>[];

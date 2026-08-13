@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { mysqlSchemaOutline } from "./api";
-import type { MysqlSchemaOutline } from "../types";
+import type { SqlApi } from "./api";
+import type { SqlSchemaOutline } from "../types";
 
 /**
  * The schema outline the Query tab's completion works from, read once per database and kept.
@@ -15,8 +15,8 @@ import type { MysqlSchemaOutline } from "../types";
  * banner over a tab the user is typing in.
  */
 
-const cache = new Map<string, MysqlSchemaOutline>();
-const inFlight = new Map<string, Promise<MysqlSchemaOutline>>();
+const cache = new Map<string, SqlSchemaOutline>();
+const inFlight = new Map<string, Promise<SqlSchemaOutline>>();
 /** Notified with the key that was thrown away, so the hooks holding it read it again. */
 const listeners = new Set<(key: string) => void>();
 /**
@@ -36,7 +36,7 @@ function cacheKey(connectionId: string, database: string): string {
   return `${connectionId}\u0000${database}`;
 }
 
-function read(connectionId: string, database: string): Promise<MysqlSchemaOutline> {
+function read(api: SqlApi, connectionId: string, database: string): Promise<SqlSchemaOutline> {
   const key = cacheKey(connectionId, database);
   const cached = cache.get(key);
   if (cached) return Promise.resolve(cached);
@@ -44,7 +44,8 @@ function read(connectionId: string, database: string): Promise<MysqlSchemaOutlin
   if (pending) return pending;
 
   const started = generations.get(key) ?? 0;
-  const call: Promise<MysqlSchemaOutline> = mysqlSchemaOutline(connectionId, database)
+  const call: Promise<SqlSchemaOutline> = api
+    .schemaOutline(connectionId, database)
     .then((outline) => {
       // Still answered with — whoever asked is owed the best that is known — but kept out of the
       // cache once it has been overtaken. See {@link generations}.
@@ -88,11 +89,12 @@ export function invalidateSchemaOutline(connectionId: string, database: string) 
  * until the tab is actually looked at, and what has already been read is kept when it is left.
  */
 export function useSchemaOutline(
+  api: SqlApi,
   connectionId: string,
   database: string,
   active: boolean
-): MysqlSchemaOutline | null {
-  const [outline, setOutline] = useState<MysqlSchemaOutline | null>(null);
+): SqlSchemaOutline | null {
+  const [outline, setOutline] = useState<SqlSchemaOutline | null>(null);
 
   useEffect(() => {
     // Left as it was rather than cleared: the editor is hidden, and clearing would only mean
@@ -120,7 +122,7 @@ export function useSchemaOutline(
         return;
       }
       setOutline(null);
-      read(connectionId, database)
+      read(api, connectionId, database)
         .then((result) => {
           if (!cancelled && mine === attempt) setOutline(result);
         })
@@ -138,7 +140,10 @@ export function useSchemaOutline(
       cancelled = true;
       listeners.delete(listener);
     };
-  }, [connectionId, database, active]);
+    // `api` belongs to the connection and so cannot change under a live one, but it is named here
+    // rather than left out: it is what the read goes through, and a dependency list that hides that
+    // is one refactor away from reading a schema through the wrong engine.
+  }, [api, connectionId, database, active]);
 
   return outline;
 }

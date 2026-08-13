@@ -2,12 +2,12 @@ import { memo } from "react";
 import ResultGrid from "./ResultGrid";
 import { TerminalIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import type { MysqlStatementResult } from "../../types";
+import type { SqlStatementResult } from "../../types";
 import styles from "./QueryEditor.module.css";
 
 interface Props {
   /** One result per statement, or null before anything has been run. */
-  results: MysqlStatementResult[] | null;
+  results: SqlStatementResult[] | null;
   /** A failure to run the script at all. Per-statement errors travel inside `results`. */
   error: string;
   /** How many statements of this run were sent with a `LIMIT` they were not written with. Said out
@@ -33,7 +33,7 @@ function QueryResults({ results, error, limitsAdded, limit }: Props) {
   const { t } = useTranslation();
 
   /** The one line under a result's header that says what it did. */
-  function summary(result: MysqlStatementResult): string {
+  function summary(result: SqlStatementResult): string {
     switch (result.kind) {
       case "rows":
         return result.truncated

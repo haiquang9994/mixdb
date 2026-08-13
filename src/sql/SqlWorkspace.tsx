@@ -1,20 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import {
-  mysqlCollations,
-  mysqlCreateDatabase,
-  mysqlCreateTable,
-  mysqlDropTable,
-  mysqlListDatabases,
-  mysqlListTables,
-  mysqlRenameTable,
-  mysqlServerInfo,
-} from "./api";
+import { useSqlApi, useSqlDialect } from "./context";
 import { onTransferProgress, type TransferProgress } from "../transfer";
 import { filterRowFor } from "../filters";
 import type { FilterOperator } from "./filters";
 import { invalidateSchemaOutline } from "./schemaCache";
-import { isMysqlSystemDatabase } from "./system";
 import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DatabaseActions from "../components/DatabaseActions";
@@ -40,7 +30,7 @@ import { PlusIcon, ReloadIcon } from "../icons";
 import { useSidebarKeyboard } from "../sidebarKeyboard";
 import { useTranslation } from "../i18n";
 import { errorMessage } from "../errors";
-import type { MysqlCollation } from "../types";
+import type { SqlCollation } from "../types";
 
 interface Props {
   /** Whether this connection's tab is the one on show. Passed straight through to the content
@@ -77,12 +67,12 @@ type ContentMode = "data" | "structure" | "stats" | "query";
 /** The tabs in the order they are shown, each with the key that names it. */
 const CONTENT_TABS: {
   mode: ContentMode;
-  labelKey: "mysql.dataTab" | "mysql.structureTab" | "mysql.statsTab" | "mysql.queryTab";
+  labelKey: "sql.dataTab" | "sql.structureTab" | "sql.statsTab" | "sql.queryTab";
 }[] = [
-  { mode: "data", labelKey: "mysql.dataTab" },
-  { mode: "structure", labelKey: "mysql.structureTab" },
-  { mode: "stats", labelKey: "mysql.statsTab" },
-  { mode: "query", labelKey: "mysql.queryTab" },
+  { mode: "data", labelKey: "sql.dataTab" },
+  { mode: "structure", labelKey: "sql.structureTab" },
+  { mode: "stats", labelKey: "sql.statsTab" },
+  { mode: "query", labelKey: "sql.queryTab" },
 ];
 
 /** The database picker's first entry, which opens the create dialog instead of selecting anything.
@@ -97,7 +87,7 @@ const DEFAULT_SIDEBAR_WIDTH = 200;
 const MIN_SIDEBAR_WIDTH = 140;
 const MAX_SIDEBAR_WIDTH = 480;
 
-function MysqlWorkspace({
+function SqlWorkspace({
   active,
   connectionId,
   initialDatabase,
@@ -108,6 +98,8 @@ function MysqlWorkspace({
   profileId = "",
 }: Props) {
   const { t } = useTranslation();
+  const api = useSqlApi();
+  const dialect = useSqlDialect();
   const [databases, setDatabases] = useState<string[]>([]);
   const [databasesLoading, setDatabasesLoading] = useState(false);
   const [selectedDb, setSelectedDb] = useState(initialDatabase ?? "");
@@ -128,7 +120,7 @@ function MysqlWorkspace({
   const [contentMode, setContentMode] = useState<ContentMode>("data");
   const [localError, setLocalError] = useState("");
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
-  const [collations, setCollations] = useState<MysqlCollation[]>([]);
+  const [collations, setCollations] = useState<SqlCollation[]>([]);
   const [creatingDatabase, setCreatingDatabase] = useState(false);
   const [creatingTable, setCreatingTable] = useState(false);
   /** The table the context menu's rename is open on, and the one its drop is asking about. */
@@ -330,7 +322,7 @@ function MysqlWorkspace({
     }
     const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
     document.body.removeChild(probe);
-    const sidebarPadding = 4; // .mysql-sidebar's own right padding, plus a little breathing room
+    const sidebarPadding = 4; // .sql-sidebar's own right padding, plus a little breathing room
     const target = Math.ceil(textWidth + horizontalPadding + sidebarPadding);
     const next = Math.min(MAX_SIDEBAR_WIDTH, Math.max(DEFAULT_SIDEBAR_WIDTH, target));
     setWidth(next);
@@ -342,7 +334,7 @@ function MysqlWorkspace({
   const loadDatabases = useCallback(async () => {
     setDatabasesLoading(true);
     try {
-      const dbs = await mysqlListDatabases(connectionId);
+      const dbs = await api.listDatabases(connectionId);
       setDatabases(dbs);
       setSelectedDb((prev) => (prev && dbs.includes(prev) ? prev : ""));
     } catch (e) {
@@ -350,7 +342,7 @@ function MysqlWorkspace({
     } finally {
       setDatabasesLoading(false);
     }
-  }, [connectionId]);
+  }, [api, connectionId]);
 
   useEffect(() => {
     void loadDatabases();
@@ -380,7 +372,7 @@ function MysqlWorkspace({
   useEffect(() => {
     let cancelled = false;
     setServerInfo(null);
-    mysqlServerInfo(connectionId)
+    api.serverInfo(connectionId)
       .then((info) => {
         if (!cancelled) setServerInfo(info);
       })
@@ -390,13 +382,13 @@ function MysqlWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [connectionId]);
+  }, [api, connectionId]);
 
   // A property of the server rather than of any one database, so one read per connection covers
   // every table created on it.
   useEffect(() => {
     let cancelled = false;
-    mysqlCollations(connectionId)
+    api.collations(connectionId)
       .then((result) => {
         if (!cancelled) setCollations(result);
       })
@@ -407,7 +399,7 @@ function MysqlWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [connectionId]);
+  }, [api, connectionId]);
 
   useEffect(() => {
     setTableFilter("");
@@ -420,7 +412,7 @@ function MysqlWorkspace({
     let cancelled = false;
     setSelectedTable(null);
     setPinnedTable(null);
-    mysqlListTables(connectionId, selectedDb)
+    api.listTables(connectionId, selectedDb)
       .then((t) => {
         if (!cancelled) setTables(t);
       })
@@ -428,7 +420,7 @@ function MysqlWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [connectionId, selectedDb]);
+  }, [api, connectionId, selectedDb]);
 
   // A table the list no longer holds — dropped from in here, or gone from the server by the time it
   // was read again — has nothing left to pin above it.
@@ -496,11 +488,11 @@ function MysqlWorkspace({
   const listTables = useCallback(() => {
     if (!selectedDb) return;
     setTablesLoading(true);
-    mysqlListTables(connectionId, selectedDb)
+    api.listTables(connectionId, selectedDb)
       .then((t) => setTables(t))
       .catch((e) => setLocalError(errorMessage(t, e)))
       .finally(() => setTablesLoading(false));
-  }, [connectionId, selectedDb]);
+  }, [api, connectionId, selectedDb]);
 
   /** The sidebar's reload button, and what a restore leaves behind: the list read again, and
    * everything remembered about the database let go with it. */
@@ -528,7 +520,7 @@ function MysqlWorkspace({
   /** Creates the database and switches to it, empty. Errors reject back into the dialog, which is
    * what shows them and stays open. */
   async function createDatabase(name: string, collation: string | null) {
-    await mysqlCreateDatabase(connectionId, name, collation);
+    await api.createDatabase(connectionId, name, collation);
     setCreatingDatabase(false);
     setSelectedDb(name);
     setSelectedTable(null);
@@ -539,7 +531,7 @@ function MysqlWorkspace({
   /** Creates the table and leaves it selected, so the columns it still needs are one tab away.
    * Errors reject back into the dialog, which is what shows them and stays open. */
   async function createTable(name: string, collation: string | null) {
-    await mysqlCreateTable(connectionId, selectedDb, name, collation);
+    await api.createTable(connectionId, selectedDb, name, collation);
     setCreatingTable(false);
     // Cleared so the new table is visible whatever was being searched for when it was made.
     setTableFilter("");
@@ -553,7 +545,7 @@ function MysqlWorkspace({
   /** Renames the table and follows it: whatever was open on it stays open, under the new name.
    * Errors reject back into the dialog, which is what shows them and stays open. */
   async function renameTable(table: string, newName: string) {
-    await mysqlRenameTable(connectionId, selectedDb, table, newName);
+    await api.renameTable(connectionId, selectedDb, table, newName);
     setRenamingTable(null);
     setTableFilter("");
     if (selectedTable === table) setSelectedTable(newName);
@@ -570,7 +562,7 @@ function MysqlWorkspace({
   async function dropTable(table: string) {
     setDroppingTable(null);
     try {
-      await mysqlDropTable(connectionId, selectedDb, table);
+      await api.dropTable(connectionId, selectedDb, table);
       if (selectedTable === table) setSelectedTable(null);
       forgetTable(table);
       listTables();
@@ -581,7 +573,7 @@ function MysqlWorkspace({
 
   /** A database the server keeps for itself: its tables are read here like any other, but nothing
    * in it may be created, renamed or dropped, nor anything done to it as a whole. */
-  const systemDatabase = selectedDb !== "" && isMysqlSystemDatabase(selectedDb);
+  const systemDatabase = selectedDb !== "" && dialect.isSystemDatabase(selectedDb);
 
   /** The two reasons this workspace refuses to change anything, and the one worth saying first.
    * Read-only is a decision someone made about the connection; a system database is a fact about
@@ -589,19 +581,19 @@ function MysqlWorkspace({
   const noWrites = readOnly || systemDatabase;
   const noWritesHint = readOnly
     ? t("common.readOnlyConnection")
-    : t("mysql.systemTable", { database: selectedDb });
+    : t("sql.systemTable", { database: selectedDb });
 
   const tableActions: ItemAction[] = [
     {
       key: "rename",
-      label: t("mysql.renameTable"),
+      label: t("sql.renameTable"),
       disabled: noWrites,
       disabledHint: noWritesHint,
       onSelect: setRenamingTable,
     },
     {
       key: "drop",
-      label: t("mysql.dropTable"),
+      label: t("sql.dropTable"),
       danger: true,
       disabled: noWrites,
       disabledHint: noWritesHint,
@@ -614,20 +606,26 @@ function MysqlWorkspace({
     : tables;
 
   const tablesEmptyMessage =
-    tables.length === 0 ? t("mysql.noTables") : filteredTables.length === 0 ? t("mysql.noMatchingTables") : undefined;
+    tables.length === 0 ? t("sql.noTables") : filteredTables.length === 0 ? t("sql.noMatchingTables") : undefined;
 
   return (
-    <div className="mysql-workspace">
-      <div className="mysql-header">
-        <div className="mysql-header-left">
+    <div className="sql-workspace">
+      <div className="sql-header">
+        <div className="sql-header-left">
           {serverInfo && (
-            <span className="mysql-server-info">
-              {t("mysql.serverInfo", { os: serverInfo.os, version: serverInfo.version })}
+            <span className="sql-server-info">
+              {t("sql.serverInfo", {
+                os: serverInfo.os,
+                // Named rather than assumed: the header used to read "MySQL" whatever it was
+                // connected to.
+                engine: t(dialect.kind === "postgres" ? "connection.kindPostgres" : "connection.kindMysql"),
+                version: serverInfo.version,
+              })}
             </span>
           )}
         </div>
-        <label className="mysql-db-select">
-          {t("mysql.databaseLabel")}{" "}
+        <label className="sql-db-select">
+          {t("sql.databaseLabel")}{" "}
           <Select
             value={selectedDb}
             onChange={(db) => {
@@ -642,23 +640,23 @@ function MysqlWorkspace({
               setSelectedDb(db);
               setSelectedTable(null);
             }}
-            placeholder={t("mysql.databasePlaceholder")}
+            placeholder={t("sql.databasePlaceholder")}
             size="normal"
             searchable
-            searchPlaceholder={t("mysql.searchDatabasesPlaceholder")}
+            searchPlaceholder={t("sql.searchDatabasesPlaceholder")}
             options={[
               {
                 value: NEW_DATABASE,
-                label: t("mysql.createDatabase"),
+                label: t("sql.createDatabase"),
                 // Shown rather than hidden, so the picker offers the same thing wherever it is
                 // opened and the missing entry is not read as a bug.
                 disabled: readOnly,
-                optionLabel: <span className="select-new-option">+ {t("mysql.createDatabase")}</span>,
+                optionLabel: <span className="select-new-option">+ {t("sql.createDatabase")}</span>,
               },
               ...databases.map((db) => ({ value: db, label: db })),
               {
                 value: RELOAD_DATABASES,
-                label: t("mysql.reloadDatabases"),
+                label: t("sql.reloadDatabases"),
                 // The menu stays open behind it: the reloaded list is the whole point of the
                 // click, and closing would hide it until the picker is opened again.
                 keepOpen: true,
@@ -669,14 +667,14 @@ function MysqlWorkspace({
                       size="1em"
                       className={databasesLoading ? "select-reload-option-spinning" : undefined}
                     />
-                    {t("mysql.reloadDatabases")}
+                    {t("sql.reloadDatabases")}
                   </span>
                 ),
               },
             ]}
           />
         </label>
-        <div className="method-tabs mysql-content-tabs" role="tablist">
+        <div className="method-tabs sql-content-tabs" role="tablist">
           {CONTENT_TABS.map(({ mode, labelKey }) => (
             <button
               key={mode}
@@ -696,13 +694,13 @@ function MysqlWorkspace({
         <ErrorBanner message={error || localError} onDismiss={() => setLocalError("")} />
       )}
 
-      <div className="mysql-body">
-        <aside className="mysql-sidebar" style={{ flexBasis: width }}>
+      <div className="sql-body">
+        <aside className="sql-sidebar" style={{ flexBasis: width }}>
           <Input
             ref={sidebarKeys.searchRef}
             size="normal"
-            className="mysql-sidebar-search"
-            placeholder={t("mysql.searchTablesPlaceholder")}
+            className="sql-sidebar-search"
+            placeholder={t("sql.searchTablesPlaceholder")}
             value={tableFilter}
             onChange={(e) => setTableFilter(e.target.value)}
             onKeyDown={sidebarKeys.onSearchKeyDown}
@@ -715,17 +713,17 @@ function MysqlWorkspace({
             emptyMessage={tablesEmptyMessage}
             actions={tableActions}
             pinnedItem={pinnedTable}
-            pinnedHint={t("mysql.followedTableHint")}
+            pinnedHint={t("sql.followedTableHint")}
             // The way back: `ArrowUp` off the top row is the search box again, caret and all.
             onLeaveTop={sidebarKeys.focusSearch}
           />
-          <div className="mysql-sidebar-actions">
+          <div className="sql-sidebar-actions">
             <ActionBar
               actions={[
                 {
                   key: "reload",
                   icon: ReloadIcon,
-                  label: t("mysql.reloadTables"),
+                  label: t("sql.reloadTables"),
                   disabled: !selectedDb || tablesLoading,
                   busy: tablesLoading,
                   onClick: reloadTables,
@@ -734,8 +732,8 @@ function MysqlWorkspace({
                   key: "add",
                   icon: PlusIcon,
                   label: systemDatabase
-                    ? t("mysql.addTableSystem", { database: selectedDb })
-                    : t("mysql.addTable"),
+                    ? t("sql.addTableSystem", { database: selectedDb })
+                    : t("sql.addTable"),
                   disabled: !selectedDb || tablesLoading || noWrites,
                   // Only for read-only: the system-database case already says so in its label.
                   disabledHint: readOnly ? t("common.readOnlyConnection") : undefined,
@@ -750,7 +748,7 @@ function MysqlWorkspace({
                 round: a read-only connection losing its dump button is a nuisance, and keeping its
                 restore button is the thing the flag was set to prevent. */}
             <DatabaseActions
-              kind="mysql"
+              kind={dialect.kind}
               connectionId={connectionId}
               database={selectedDb}
               disabled={tablesLoading || readOnly}
@@ -762,25 +760,25 @@ function MysqlWorkspace({
         </aside>
 
         <div
-          className="mysql-sidebar-resizer"
+          className="sql-sidebar-resizer"
           onMouseDown={handleResizeStart}
           onDoubleClick={handleResizeDoubleClick}
           role="separator"
           aria-orientation="vertical"
-          aria-label={t("mysql.resizeSidebar")}
-          title={t("mysql.resizeSidebarTooltip")}
+          aria-label={t("sql.resizeSidebar")}
+          title={t("sql.resizeSidebarTooltip")}
         />
 
-        <section className="mysql-content">
+        <section className="sql-content">
           {contentMode === "data" && !selectedTable && (
-            <p className="muted">{t("mysql.selectTablePrompt")}</p>
+            <p className="muted">{t("sql.selectTablePrompt")}</p>
           )}
           {/* Kept mounted while the other tabs are up, the same as the two below: the page of rows
               read, what is selected in it and the conditions in the filter bar all outlive a look
               at the structure or a query written against it. A table picked while this is hidden
               costs nothing until the tab is looked at again. */}
           {selectedDb && selectedTable && (
-            <div className={contentMode === "data" ? "mysql-panel" : "mysql-panel-hidden"}>
+            <div className={contentMode === "data" ? "sql-panel" : "sql-panel-hidden"}>
               <SqlTable
                 active={active && contentMode === "data"}
                 connectionId={connectionId}
@@ -798,12 +796,12 @@ function MysqlWorkspace({
             </div>
           )}
           {contentMode === "structure" && !selectedTable && (
-            <p className="muted">{t("mysql.selectTableStructurePrompt")}</p>
+            <p className="muted">{t("sql.selectTableStructurePrompt")}</p>
           )}
           {/* Kept mounted for the same reason: the columns and indexes already read are still there
               on the way back, rather than being asked for again. */}
           {selectedDb && selectedTable && (
-            <div className={contentMode === "structure" ? "mysql-panel" : "mysql-panel-hidden"}>
+            <div className={contentMode === "structure" ? "sql-panel" : "sql-panel-hidden"}>
               <TableStructure
                 active={active && contentMode === "structure"}
                 connectionId={connectionId}
@@ -818,14 +816,14 @@ function MysqlWorkspace({
             </div>
           )}
           {contentMode === "stats" && !selectedDb && (
-            <p className="muted">{t("mysql.selectDatabaseStatsPrompt")}</p>
+            <p className="muted">{t("sql.selectDatabaseStatsPrompt")}</p>
           )}
           {/* Kept mounted while the other tabs are up, for the same reason the editor below is:
               the figures it has read stay read, so coming back to the tab costs nothing. */}
           {selectedDb && (
-            <div className={contentMode === "stats" ? "mysql-panel" : "mysql-panel-hidden"}>
+            <div className={contentMode === "stats" ? "sql-panel" : "sql-panel-hidden"}>
               <DatabaseStats
-                kind="mysql"
+                kind={dialect.kind}
                 connectionId={connectionId}
                 database={selectedDb}
                 active={active && contentMode === "stats"}
@@ -838,7 +836,7 @@ function MysqlWorkspace({
           {/* Kept mounted while the other tabs are up, and hidden rather than unmounted: a script
               being written and the results it has produced so far must survive a look at the data
               or the structure it is being written against. */}
-          <div className={contentMode === "query" ? "mysql-panel" : "mysql-panel-hidden"}>
+          <div className={contentMode === "query" ? "sql-panel" : "sql-panel-hidden"}>
             <QueryEditor
               connectionId={connectionId}
               database={selectedDb}
@@ -879,7 +877,7 @@ function MysqlWorkspace({
 
       {renamingTable !== null && (
         <NameDialog
-          title={t("mysql.renameTableTitle", { table: renamingTable })}
+          title={t("sql.renameTableTitle", { table: renamingTable })}
           ariaLabel={renamingTable}
           label={t("renameDialog.name")}
           initialName={renamingTable}
@@ -893,8 +891,8 @@ function MysqlWorkspace({
 
       {droppingTable !== null && (
         <ConfirmDialog
-          title={t("mysql.dropTableTitle")}
-          message={t("mysql.dropTableMessage", { table: droppingTable })}
+          title={t("sql.dropTableTitle")}
+          message={t("sql.dropTableMessage", { table: droppingTable })}
           confirmLabel={t("common.delete")}
           danger
           onConfirm={() => void dropTable(droppingTable)}
@@ -905,4 +903,4 @@ function MysqlWorkspace({
   );
 }
 
-export default MysqlWorkspace;
+export default SqlWorkspace;

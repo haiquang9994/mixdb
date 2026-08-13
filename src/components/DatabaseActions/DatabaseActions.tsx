@@ -6,18 +6,18 @@ import DumpDialog from "../DumpDialog";
 import { DownloadIcon, TrashIcon, UploadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
-import { toolsDownloadable, toolsInstall, toolsReady } from "../../tools";
+import { toolsDownloadable, toolsInstall, toolsReady, type ToolSuite } from "../../tools";
 import { mongoDropDatabase, mongoDump, mongoRestore } from "../../mongo/api";
 import { isMongoSystemDatabase } from "../../mongo/system";
-import { mysqlDropDatabase, mysqlDump, mysqlRestore } from "../../mysql/api";
-import { isMysqlSystemDatabase } from "../../mysql/system";
-import type { MysqlDumpMode } from "../../mysql/api";
+import { useOptionalSql } from "../../sql/context";
+import type { SqlContextValue } from "../../sql/context";
+import type { SqlDumpMode } from "../../sql/api";
 
 /** What the workspace is told happened, so it can reload what the change touched. */
 export type DatabaseChange = "restored" | "dropped";
 
 interface Props {
-  kind: "mysql" | "mongo";
+  kind: "mysql" | "postgres" | "mongo";
   connectionId: string;
   /** The database the three actions act on; empty when none is selected, which disables them. */
   database: string;
@@ -49,18 +49,31 @@ function DatabaseActions({
   onBusyChange,
 }: Props) {
   const { t } = useTranslation();
+  const optionalSql = useOptionalSql();
   const [choosingMode, setChoosingMode] = useState(false);
   const [installFor, setInstallFor] = useState<Pending | null>(null);
   const [restoreFrom, setRestoreFrom] = useState<string | null>(null);
   const [dropping, setDropping] = useState(false);
   const [running, setRunning] = useState(false);
 
-  const suite = kind;
+  /** The command-line tools this kind's dump and restore run through. One suite per kind, named
+   *  the same — see `ToolSuite`. */
+  const suite: ToolSuite = kind;
+
+  /** The SQL workspace this is rendered in. Every caller sits on a branch `kind` has already
+   *  settled, which is what makes the connection certain to be there — see {@link useOptionalSql}. */
+  function sql(): SqlContextValue {
+    if (optionalSql === null) throw new Error(`DatabaseActions: no SQL connection for "${kind}"`);
+    return optionalSql;
+  }
+
   /** A database the server keeps for itself: none of the three has anything sensible to do to one,
    * and dropping it would break the server, so all three are switched off over it. */
   const system =
     database !== "" &&
-    (kind === "mysql" ? isMysqlSystemDatabase(database) : isMongoSystemDatabase(database));
+    (kind === "mongo"
+      ? isMongoSystemDatabase(database)
+      : (optionalSql?.dialect.isSystemDatabase(database) ?? false));
   const busy = disabled || running || database === "" || system;
 
   /** The button's tooltip, replaced over a system database by what is stopping it. */
@@ -92,7 +105,8 @@ function DatabaseActions({
     try {
       if (await toolsReady(suite)) return true;
       if (!(await toolsDownloadable(suite))) {
-        onError(t("dump.noDownload"));
+        // Which packages to install differs by engine, so the message does too.
+        onError(t(kind === "postgres" ? "dump.noDownloadPostgres" : "dump.noDownload"));
         return false;
       }
     } catch (e) {
@@ -105,23 +119,23 @@ function DatabaseActions({
 
   async function startDump() {
     if (!(await toolsPresent("dump"))) return;
-    // Only MySQL has anything to decide; a mongodump archive is the whole database or nothing.
-    if (kind === "mysql") {
+    // Only a SQL dump has anything to decide; a mongodump archive is the whole database or nothing.
+    if (kind !== "mongo") {
       setChoosingMode(true);
     } else {
       await runDump("all");
     }
   }
 
-  async function runDump(mode: MysqlDumpMode) {
+  async function runDump(mode: SqlDumpMode) {
     setChoosingMode(false);
     const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
-    const extension = kind === "mysql" ? "sql" : "archive";
+    const extension = kind === "mongo" ? "archive" : "sql";
     const path = await save({
       defaultPath: `${database}-${stamp}.${extension}`,
       filters: [
         {
-          name: t(kind === "mysql" ? "dump.sqlFilter" : "dump.archiveFilter"),
+          name: t(kind === "mongo" ? "dump.archiveFilter" : "dump.sqlFilter"),
           extensions: [extension],
         },
       ],
@@ -129,21 +143,21 @@ function DatabaseActions({
     // The picker was dismissed: nothing to report, and nothing to run.
     if (typeof path !== "string") return;
     await withBusy(t("dump.dumping", { database }), () =>
-      kind === "mysql"
-        ? mysqlDump(connectionId, database, mode, path)
-        : mongoDump(connectionId, database, path),
+      kind === "mongo"
+        ? mongoDump(connectionId, database, path)
+        : sql().api.dump(connectionId, database, mode, path),
     );
   }
 
   async function startRestore() {
     if (!(await toolsPresent("restore"))) return;
-    const extension = kind === "mysql" ? "sql" : "archive";
+    const extension = kind === "mongo" ? "archive" : "sql";
     const path = await open({
       multiple: false,
       directory: false,
       filters: [
         {
-          name: t(kind === "mysql" ? "dump.sqlFilter" : "dump.archiveFilter"),
+          name: t(kind === "mongo" ? "dump.archiveFilter" : "dump.sqlFilter"),
           extensions: [extension],
         },
       ],
@@ -155,9 +169,9 @@ function DatabaseActions({
   async function runRestore(path: string) {
     setRestoreFrom(null);
     const ok = await withBusy(t("dump.restoring", { database }), () =>
-      kind === "mysql"
-        ? mysqlRestore(connectionId, database, path)
-        : mongoRestore(connectionId, database, path),
+      kind === "mongo"
+        ? mongoRestore(connectionId, database, path)
+        : sql().api.restore(connectionId, database, path),
     );
     // Even a failed restore may have got part of the way through, so the lists are stale either
     // way and are reloaded regardless.
@@ -177,9 +191,9 @@ function DatabaseActions({
   async function drop() {
     setDropping(false);
     const ok = await withBusy(t("dump.dropping", { database }), () =>
-      kind === "mysql"
-        ? mysqlDropDatabase(connectionId, database)
-        : mongoDropDatabase(connectionId, database),
+      kind === "mongo"
+        ? mongoDropDatabase(connectionId, database)
+        : sql().api.dropDatabase(connectionId, database),
     );
     if (ok) onChanged("dropped");
   }
@@ -224,7 +238,13 @@ function DatabaseActions({
       {installFor !== null && (
         <ConfirmDialog
           title={t("dump.installTitle")}
-          message={t(kind === "mysql" ? "dump.installMysql" : "dump.installMongo")}
+          message={t(
+            kind === "mongo"
+              ? "dump.installMongo"
+              : kind === "postgres"
+                ? "dump.installPostgres"
+                : "dump.installMysql",
+          )}
           confirmLabel={t("dump.installConfirm")}
           onConfirm={() => void install()}
           onCancel={() => setInstallFor(null)}
@@ -234,7 +254,7 @@ function DatabaseActions({
       {restoreFrom !== null && (
         <ConfirmDialog
           title={t("dump.restoreTitle", { database })}
-          message={t(kind === "mysql" ? "dump.restoreMysql" : "dump.restoreMongo", {
+          message={t(kind === "mongo" ? "dump.restoreMongo" : "dump.restoreMysql", {
             file: restoreFrom,
             database,
           })}
@@ -248,7 +268,7 @@ function DatabaseActions({
       {dropping && (
         <ConfirmDialog
           title={t("dump.dropTitle")}
-          message={t(kind === "mysql" ? "dump.dropMysqlMessage" : "dump.dropMongoMessage", {
+          message={t(kind === "mongo" ? "dump.dropMongoMessage" : "dump.dropMysqlMessage", {
             database,
           })}
           confirmLabel={t("common.delete")}

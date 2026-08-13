@@ -32,6 +32,7 @@ runs `strict`, `noUnusedLocals` and `noUnusedParameters`, so it catches most mis
 src/                 React frontend
   App.tsx            Tab bar; each tab is a ConnectionTab
   ConnectionTab.tsx  Connection form -> connects -> renders one workspace
+  sql/               The workspace every SQL engine shares, and the SqlApi/SqlDialect it works through
   <db>/              Per-database code: Workspace.tsx, api.ts, filters.ts
   components/        Shared UI, one folder per component
   i18n/              en/vi dictionaries + provider
@@ -53,6 +54,10 @@ src-tauri/src/       Rust backend
 - **A new backend command touches five places.** Follow
   [.agent/conventions/adding-a-command.md](.agent/conventions/adding-a-command.md).
 - Commit messages need a `type(scope): message` prefix (see the global rules).
+- **`PG_VERSION` in `src-tauri/src/db/tools.rs` expires every September.** `pg_dump` will not dump a
+  server newer than itself, and nothing in the build says so. Bumping it, or any other pinned
+  download, follows
+  [.agent/conventions/bumping-tool-downloads.md](.agent/conventions/bumping-tool-downloads.md).
 - **A change a user would notice gets a line in `## [Unreleased]`** in
   [CHANGELOG.md](CHANGELOG.md), under `### Added`, `### Changed` or `### Fixed`, written as part of
   the work rather than at release time. Follow

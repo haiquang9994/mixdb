@@ -1,325 +1,152 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  MysqlCollation,
-  MysqlColumnSpec,
-  MysqlIndexSpec,
-  MysqlSchemaOutline,
-  MysqlSqlProblem,
-  MysqlStatementResult,
-  MysqlTablePage,
-  MysqlTableStructure,
+  SqlCollation,
+  SqlColumnSpec,
+  SqlIndexSpec,
+  SqlProblem,
+  SqlSchemaOutline,
+  SqlStatementResult,
+  SqlTablePage,
+  SqlTableStructure,
   TableStats,
 } from "../types";
-import type { MysqlFilter } from "./filters";
-
-export function mysqlListDatabases(id: string): Promise<string[]> {
-  return invoke<string[]>("mysql_list_databases", { id });
-}
-
-export function mysqlListTables(id: string, database: string): Promise<string[]> {
-  return invoke<string[]>("mysql_list_tables", { id, database });
-}
+import type { SqlApi, SqlDumpMode, SqlPageQuery, SqlServerInfo } from "../sql/api";
 
 /**
- * What every table in the database weighs, ordered by name. Read from `information_schema`, so it
- * costs nothing whatever the tables hold — but the row counts of InnoDB tables are the estimates
- * that live there rather than exact counts, and the average row sizes follow them.
+ * MySQL's side of {@link SqlApi}: one `mysql_*` command each, and nothing else.
  *
- * Views are left out: one stores nothing of its own, and would read here as an empty table.
+ * Every method is a straight `invoke`, so what each of them means — and what it promises about
+ * ordering, privileges or atomicity — is documented once on the interface rather than again here.
+ * Anything MySQL does that another engine would not is the backend's business, not this file's.
  */
-export function mysqlTableStats(id: string, database: string): Promise<TableStats[]> {
-  return invoke<TableStats[]>("mysql_table_stats", { id, database });
-}
+export const mysqlApi: SqlApi = {
+  listDatabases(id) {
+    return invoke<string[]>("mysql_list_databases", { id });
+  },
 
-export interface MysqlServerInfo {
-  version: string;
-  os: string;
-}
+  listTables(id, database) {
+    return invoke<string[]>("mysql_list_tables", { id, database });
+  },
 
-export function mysqlServerInfo(id: string): Promise<MysqlServerInfo> {
-  return invoke<MysqlServerInfo>("mysql_server_info", { id });
-}
+  serverInfo(id) {
+    return invoke<SqlServerInfo>("mysql_server_info", { id });
+  },
+
+  tableStats(id, database) {
+    return invoke<TableStats[]>("mysql_table_stats", { id, database });
+  },
+
+  tableData(id, database, table, query: SqlPageQuery) {
+    return invoke<SqlTablePage>("mysql_table_data", { id, database, table, query });
+  },
+
+  updateRow(id, database, table, updates, key) {
+    return invoke<void>("mysql_update_row", { id, database, table, updates, key });
+  },
+
+  insertRows(id, database, table, rows) {
+    return invoke<void>("mysql_insert_rows", { id, database, table, rows });
+  },
+
+  deleteRows(id, database, table, keys, all, resetAutoIncrement) {
+    return invoke<void>("mysql_delete_rows", {
+      id,
+      database,
+      table,
+      keys,
+      all,
+      resetAutoIncrement,
+    });
+  },
+
+  tableStructure(id, database, table) {
+    return invoke<SqlTableStructure>("mysql_table_structure", { id, database, table });
+  },
+
+  schemaOutline(id, database) {
+    return invoke<SqlSchemaOutline>("mysql_schema_outline", { id, database });
+  },
+
+  collations(id) {
+    return invoke<SqlCollation[]>("mysql_collations", { id });
+  },
+
+  dump(id, database, mode: SqlDumpMode, path) {
+    return invoke<void>("mysql_dump", { id, database, mode, path });
+  },
+
+  restore(id, database, path) {
+    return invoke<void>("mysql_restore", { id, database, path });
+  },
+
+  dropDatabase(id, database) {
+    return invoke<void>("mysql_drop_database", { id, database });
+  },
+
+  createDatabase(id, name, collation) {
+    return invoke<void>("mysql_create_database", { id, name, collation });
+  },
+
+  createTable(id, database, table, collation) {
+    return invoke<void>("mysql_create_table", { id, database, table, collation });
+  },
+
+  renameTable(id, database, table, newName) {
+    return invoke<void>("mysql_rename_table", { id, database, table, newName });
+  },
+
+  dropTable(id, database, table) {
+    return invoke<void>("mysql_drop_table", { id, database, table });
+  },
+
+  addColumn(id, database, table, spec: SqlColumnSpec) {
+    return invoke<void>("mysql_add_column", { id, database, table, spec });
+  },
+
+  modifyColumn(id, database, table, name, spec: SqlColumnSpec) {
+    return invoke<void>("mysql_modify_column", { id, database, table, name, spec });
+  },
+
+  dropColumn(id, database, table, name) {
+    return invoke<void>("mysql_drop_column", { id, database, table, name });
+  },
+
+  addIndex(id, database, table, spec: SqlIndexSpec) {
+    return invoke<void>("mysql_add_index", { id, database, table, spec });
+  },
+
+  modifyIndex(id, database, table, name, spec: SqlIndexSpec) {
+    return invoke<void>("mysql_modify_index", { id, database, table, name, spec });
+  },
+
+  dropIndex(id, database, table, name) {
+    return invoke<void>("mysql_drop_index", { id, database, table, name });
+  },
+
+  runScript(id, sql, database) {
+    return invoke<SqlStatementResult[]>("mysql_run_script", { id, sql, database });
+  },
+
+  cancelQuery(id) {
+    return invoke<void>("mysql_cancel_query", { id });
+  },
+
+  validateSql(id, sql, database) {
+    return invoke<SqlProblem | null>("mysql_validate_sql", { id, sql, database });
+  },
+};
 
 /**
- * Reads one page of a table. `sortColumn` orders the whole table before the page is cut out of it,
- * so paging through a sorted table stays in that order; passing null leaves the rows in whatever
- * order MySQL returns them. `filters` narrows the table down before either happens, ANDed
- * together — the page's `total` counts what is left after them.
+ * Runs one statement and hands back its rows, keyed by column name.
+ *
+ * Outside {@link SqlApi} because nothing in the workspace goes through it: the Query tab runs
+ * scripts, and a script reports far more about each statement than its rows. Kept as the one-shot
+ * way in, for a caller that wants a single answer and can assume the column names are distinct.
  */
-export interface MysqlPageQuery {
-  page: number;
-  pageSize: number;
-  /** Ignored unless it names a real column of the table. */
-  sortColumn?: string | null;
-  sortDesc?: boolean;
-  filters?: MysqlFilter[];
-}
-
-export function mysqlTableData(
-  id: string,
-  database: string,
-  table: string,
-  query: MysqlPageQuery
-): Promise<MysqlTablePage> {
-  return invoke<MysqlTablePage>("mysql_table_data", { id, database, table, query });
-}
-
 export function mysqlQuery(
   id: string,
   sql: string,
   database?: string
 ): Promise<Record<string, unknown>[]> {
   return invoke<Record<string, unknown>[]>("mysql_query", { id, sql, database });
-}
-
-export function mysqlUpdateRow(
-  id: string,
-  database: string,
-  table: string,
-  updates: Record<string, string | null>,
-  key: Record<string, string | null>
-): Promise<void> {
-  return invoke<void>("mysql_update_row", { id, database, table, updates, key });
-}
-
-/**
- * Inserts one or more rows in a single transaction — one rejected row means none of them land.
- * Each entry maps a column to the text to write, or to null for an explicit SQL NULL; a column
- * left out of the map is left out of that row's INSERT, so the table's own default fills it.
- */
-export function mysqlInsertRows(
-  id: string,
-  database: string,
-  table: string,
-  rows: Record<string, string | null>[]
-): Promise<void> {
-  return invoke<void>("mysql_insert_rows", { id, database, table, rows });
-}
-
-/**
- * Deletes the rows matched by `keys` — or, with `all`, every row in the table regardless of what
- * `keys` holds. `resetAutoIncrement` puts the table's AUTO_INCREMENT counter back to 1 afterwards.
- */
-export function mysqlDeleteRows(
-  id: string,
-  database: string,
-  table: string,
-  keys: Record<string, string | null>[],
-  all: boolean,
-  resetAutoIncrement: boolean
-): Promise<void> {
-  return invoke<void>("mysql_delete_rows", {
-    id,
-    database,
-    table,
-    keys,
-    all,
-    resetAutoIncrement,
-  });
-}
-
-/** Reads what the table is made of: its columns in table order, and its indexes with the primary
- *  key first. Only what the connected user has privileges to see is reported. */
-export function mysqlTableStructure(
-  id: string,
-  database: string,
-  table: string
-): Promise<MysqlTableStructure> {
-  return invoke<MysqlTableStructure>("mysql_table_structure", { id, database, table });
-}
-
-/**
- * Every table and column of one database, for the Query tab's completion.
- *
- * One call covers the whole database — unlike {@link mysqlTableStructure}, which answers for a
- * single table and in the detail the Structure tab needs. Only what the connected user has
- * privileges to see is in it, so a missing table means "not visible to you", not "not there".
- */
-export function mysqlSchemaOutline(id: string, database: string): Promise<MysqlSchemaOutline> {
-  return invoke<MysqlSchemaOutline>("mysql_schema_outline", { id, database });
-}
-
-/** Every collation this server supports, ordered by character set. A property of the server and not
- *  of a table, so one read per connection covers every column editor opened on it. */
-export function mysqlCollations(id: string): Promise<MysqlCollation[]> {
-  return invoke<MysqlCollation[]>("mysql_collations", { id });
-}
-
-/** What of a database a dump carries. */
-export type MysqlDumpMode = "structure" | "data" | "all";
-
-/**
- * Writes the database to `path` as SQL, by running mysqldump against the same server this
- * connection is on (through the same SSH tunnel, when there is one).
- *
- * The file carries no `CREATE DATABASE` or `USE`, only the tables — so it restores into whichever
- * database it is pointed at rather than insisting on the one it came from.
- */
-export function mysqlDump(
-  id: string,
-  database: string,
-  mode: MysqlDumpMode,
-  path: string
-): Promise<void> {
-  return invoke<void>("mysql_dump", { id, database, mode, path });
-}
-
-/** Replays a SQL file through the mysql client, into `database` — which is where a dump written
- *  here lands, since such a dump names no database of its own. */
-export function mysqlRestore(id: string, database: string, path: string): Promise<void> {
-  return invoke<void>("mysql_restore", { id, database, path });
-}
-
-/** Drops a database and every table in it. */
-export function mysqlDropDatabase(id: string, database: string): Promise<void> {
-  return invoke<void>("mysql_drop_database", { id, database });
-}
-
-/** Creates a database. `collation` is its default collation, or null to inherit the server's — the
- *  character set follows from the collation, so it is not asked for separately. */
-export function mysqlCreateDatabase(
-  id: string,
-  name: string,
-  collation: string | null
-): Promise<void> {
-  return invoke<void>("mysql_create_database", { id, name, collation });
-}
-
-/**
- * Creates an empty table, with an `id int(11) unsigned AUTO_INCREMENT` primary key for its one
- * column — every other column is added from the Structure tab afterwards.
- *
- * `collation` names the table's default collation, or null to inherit the database's. The character
- * set follows from the collation, so it is not asked for separately.
- */
-export function mysqlCreateTable(
-  id: string,
-  database: string,
-  table: string,
-  collation: string | null
-): Promise<void> {
-  return invoke<void>("mysql_create_table", { id, database, table, collation });
-}
-
-/** Renames a table within its database. Atomic: nothing ever sees both names, or neither. */
-export function mysqlRenameTable(
-  id: string,
-  database: string,
-  table: string,
-  newName: string
-): Promise<void> {
-  return invoke<void>("mysql_rename_table", { id, database, table, newName });
-}
-
-/** Drops a table and every row in it. */
-export function mysqlDropTable(id: string, database: string, table: string): Promise<void> {
-  return invoke<void>("mysql_drop_table", { id, database, table });
-}
-
-export function mysqlAddColumn(
-  id: string,
-  database: string,
-  table: string,
-  spec: MysqlColumnSpec
-): Promise<void> {
-  return invoke<void>("mysql_add_column", { id, database, table, spec });
-}
-
-/** Redefines the column currently called `name` — the spec's own name is what it will be called
- *  afterwards, so this is also how a column is renamed. */
-export function mysqlModifyColumn(
-  id: string,
-  database: string,
-  table: string,
-  name: string,
-  spec: MysqlColumnSpec
-): Promise<void> {
-  return invoke<void>("mysql_modify_column", { id, database, table, name, spec });
-}
-
-export function mysqlDropColumn(
-  id: string,
-  database: string,
-  table: string,
-  name: string
-): Promise<void> {
-  return invoke<void>("mysql_drop_column", { id, database, table, name });
-}
-
-export function mysqlAddIndex(
-  id: string,
-  database: string,
-  table: string,
-  spec: MysqlIndexSpec
-): Promise<void> {
-  return invoke<void>("mysql_add_index", { id, database, table, spec });
-}
-
-/** Replaces the index called `name`. MySQL cannot alter one in place, so it is dropped and rebuilt
- *  in a single ALTER TABLE — the table never spends any time without it. */
-export function mysqlModifyIndex(
-  id: string,
-  database: string,
-  table: string,
-  name: string,
-  spec: MysqlIndexSpec
-): Promise<void> {
-  return invoke<void>("mysql_modify_index", { id, database, table, name, spec });
-}
-
-export function mysqlDropIndex(
-  id: string,
-  database: string,
-  table: string,
-  name: string
-): Promise<void> {
-  return invoke<void>("mysql_drop_index", { id, database, table, name });
-}
-
-/**
- * Runs user-authored SQL, statement by statement, and reports each statement's outcome. Everything
- * runs on one connection, so a `USE`, a `SET` or a transaction from one statement still holds for
- * the next; a statement that fails stops the script, and the results before it still come back.
- *
- * `database` is applied as a `USE` first, so unqualified table names resolve the way they do
- * everywhere else in the workspace.
- */
-export function mysqlRunScript(
-  id: string,
-  sql: string,
-  database?: string
-): Promise<MysqlStatementResult[]> {
-  return invoke<MysqlStatementResult[]>("mysql_run_script", { id, sql, database });
-}
-
-/**
- * Stops the script this connection is running, by asking the server to kill the statement in
- * flight (`KILL QUERY`, which leaves the session and everything it has set up intact).
- *
- * The killed statement comes back through {@link mysqlRunScript} as a failed one, carrying the
- * server's own "Query execution was interrupted" — so the results of the statements before it are
- * still shown. Cancelling when nothing is running does nothing and reports no error.
- */
-export function mysqlCancelQuery(id: string): Promise<void> {
-  return invoke<void>("mysql_cancel_query", { id });
-}
-
-/**
- * Asks MySQL what it makes of one statement, without running it.
- *
- * The statement is prepared and the plan immediately thrown away, so nothing it says would happen
- * happens — this is safe to call on a half-typed `DELETE`. `null` means the server had nothing to
- * say about it.
- *
- * The check runs on its own pooled connection, not on the session a script runs on. So anything
- * the script itself would have set up first — a temporary table, a `USE`, a `SET` — is invisible
- * here, which is why almost everything that comes back is a `warning`: only the server refusing to
- * parse the text is certain.
- */
-export function mysqlValidateSql(
-  id: string,
-  sql: string,
-  database?: string
-): Promise<MysqlSqlProblem | null> {
-  return invoke<MysqlSqlProblem | null>("mysql_validate_sql", { id, sql, database });
 }

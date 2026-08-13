@@ -5456,6 +5456,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -5523,6 +5524,7 @@ dependencies = [
  "sqlx-core",
  "thiserror 2.0.19",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -5559,6 +5561,7 @@ dependencies = [
  "stringprep",
  "thiserror 2.0.19",
  "tracing",
+ "uuid",
  "whoami",
 ]
 
@@ -5585,6 +5588,7 @@ dependencies = [
  "thiserror 2.0.19",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]

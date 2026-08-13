@@ -8,7 +8,7 @@ import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
 import { mongoCollectionStats } from "../../mongo/api";
-import { mysqlTableStats } from "../../mysql/api";
+import { useOptionalSql } from "../../sql/context";
 import type { TableStats } from "../../types";
 import styles from "./DatabaseStats.module.css";
 
@@ -107,7 +107,7 @@ const STATS_CACHE_LIMIT = 20;
 const DEFAULT_SORT: Sort = { column: "dataSize", desc: true };
 
 interface Props {
-  kind: "mysql" | "mongo";
+  kind: "mysql" | "postgres" | "mongo";
   connectionId: string;
   /** The database being measured. Never empty: the workspace shows a prompt instead of mounting
    *  this until one is selected. */
@@ -141,10 +141,11 @@ interface Props {
  * or the app itself has changed the database, and either while the tab is hidden waits until it is
  * looked at again before costing anything.
  *
- * Both databases report the same four numbers, so one grid serves them; only what the columns are
- * called changes, since MySQL counts rows in tables and MongoDB documents in collections. Neither
- * count is read by counting: MySQL's comes from `information_schema` (an estimate, on InnoDB) and
- * MongoDB's from the collection's own metadata, so this costs the server nothing to answer.
+ * Every database reports the same four numbers, so one grid serves them all; only what the columns
+ * are called changes, since the SQL engines count rows in tables and MongoDB documents in
+ * collections. None of the counts is read by counting: MySQL's comes from `information_schema` (an
+ * estimate, on InnoDB), PostgreSQL's from the planner's own estimate, and MongoDB's from the
+ * collection's metadata — so this costs the server nothing to answer.
  */
 function DatabaseStats({
   kind,
@@ -156,6 +157,7 @@ function DatabaseStats({
   schemaToken,
 }: Props) {
   const { t } = useTranslation();
+  const optionalSql = useOptionalSql();
   const [loading, setLoading] = useState(false);
   /** Bumped whenever the cache is written to, since a Map is the same object before and after and
    *  nothing would re-render off it on its own. */
@@ -186,10 +188,18 @@ function DatabaseStats({
     if (!active || stats !== null) return;
     let cancelled = false;
     setLoading(true);
-    const read =
-      kind === "mysql"
-        ? mysqlTableStats(connectionId, database)
-        : mongoCollectionStats(connectionId, database);
+    // `kind` is what decides, and a SQL workspace is what puts `optionalSql` above this component —
+    // so on that branch it is there. Missing, this throws rather than quietly reading the figures
+    // the other way round: a Mongo call down a SQL connection would come back as a puzzling error
+    // from the server instead of naming what is actually wrong. See `useOptionalSql`.
+    let read: Promise<TableStats[]>;
+    if (kind === "mongo") {
+      read = mongoCollectionStats(connectionId, database);
+    } else if (optionalSql === null) {
+      throw new Error(`DatabaseStats: no SQL connection for "${kind}"`);
+    } else {
+      read = optionalSql.api.tableStats(connectionId, database);
+    }
     read
       .then((result) => {
         if (cancelled) return;
@@ -216,7 +226,7 @@ function DatabaseStats({
     // `schemaToken` is in here so that a change made while a read is still out drops that read
     // rather than letting it land: figures filed under the shape before are turned down when read
     // back, and with nothing else moving there would be nothing left to ask for them again.
-  }, [kind, connectionId, database, active, stats, schemaToken, onError]);
+  }, [kind, optionalSql, connectionId, database, active, stats, schemaToken, onError]);
 
   /** Drops this database's figures, which is what makes the effect above read them again. The order
    *  they were in stays: it is the user's choice, not something the server said. */
@@ -289,9 +299,9 @@ function DatabaseStats({
     );
   }
 
-  const nameLabel = t(kind === "mysql" ? "dbStats.colTable" : "dbStats.colCollection");
-  const countLabel = t(kind === "mysql" ? "dbStats.colRows" : "dbStats.colDocuments");
-  const averageLabel = t(kind === "mysql" ? "dbStats.colAvgRow" : "dbStats.colAvgDocument");
+  const nameLabel = t(kind !== "mongo" ? "dbStats.colTable" : "dbStats.colCollection");
+  const countLabel = t(kind !== "mongo" ? "dbStats.colRows" : "dbStats.colDocuments");
+  const averageLabel = t(kind !== "mongo" ? "dbStats.colAvgRow" : "dbStats.colAvgDocument");
 
   /** One sortable header. The chevron is always in the flow, empty when the column is not the one
    *  being sorted by, so the header does not change width as the sort moves between columns. */
@@ -319,7 +329,7 @@ function DatabaseStats({
     <div className={styles.stats}>
       <header className={styles.panelHeader}>
         <h4 className={styles.panelTitle}>
-          {t(kind === "mysql" ? "dbStats.tablesTitle" : "dbStats.collectionsTitle", { database })}
+          {t(kind !== "mongo" ? "dbStats.tablesTitle" : "dbStats.collectionsTitle", { database })}
         </h4>
         <ActionBar
           actions={[
@@ -439,14 +449,14 @@ function DatabaseStats({
             still out, and after one that failed — neither is an empty database. */}
         {!loading && stats?.length === 0 && (
           <p className="muted">
-            {t(kind === "mysql" ? "dbStats.noTables" : "dbStats.noCollections")}
+            {t(kind !== "mongo" ? "dbStats.noTables" : "dbStats.noCollections")}
           </p>
         )}
       </div>
 
       {/* MySQL's row counts are sampled rather than counted, and saying so once under the grid is
           better than a tooltip on every cell that carries one. */}
-      {kind === "mysql" && sorted.length > 0 && (
+      {kind !== "mongo" && sorted.length > 0 && (
         <p className={styles.note}>{t("dbStats.estimateNote")}</p>
       )}
 

@@ -15,10 +15,22 @@ import {
 import type { ToolStage, ToolStatus, ToolSuite } from "../../tools";
 import styles from "./SettingsModal.module.css";
 
-/** The two suites, and what each one is called where it is downloaded from. */
-const SUITES: { suite: ToolSuite; labelKey: "tools.mysqlSuite" | "tools.mongoSuite" }[] = [
-  { suite: "mysql", labelKey: "tools.mysqlSuite" },
-  { suite: "mongo", labelKey: "tools.mongoSuite" },
+/** The three suites, what each one is called where it is downloaded from, and what to say instead
+ * of a download button where there is nothing to download — which names the packages to install,
+ * and so differs per engine. */
+const SUITES: {
+  suite: ToolSuite;
+  labelKey: "tools.mysqlSuite" | "tools.postgresSuite" | "tools.mongoSuite";
+  noDownloadKey: "tools.noDownload" | "tools.noDownloadPostgres";
+}[] = [
+  { suite: "mysql", labelKey: "tools.mysqlSuite", noDownloadKey: "tools.noDownload" },
+  {
+    suite: "postgres",
+    labelKey: "tools.postgresSuite",
+    // Names the PostgreSQL packages rather than MySQL's, where there is nothing to fetch.
+    noDownloadKey: "tools.noDownloadPostgres",
+  },
+  { suite: "mongo", labelKey: "tools.mongoSuite", noDownloadKey: "tools.noDownload" },
 ];
 
 /** What each way of finding a tool is called. Spelled out rather than built from the value, so
@@ -193,7 +205,7 @@ function ToolsSection() {
         </p>
       )}
 
-      {SUITES.map(({ suite, labelKey }) => {
+      {SUITES.map(({ suite, labelKey, noDownloadKey }) => {
         const members = tools.filter((tool) => tool.suite === suite);
         // Only a copy MixDB downloaded can be removed; what was already on the machine is not
         // MixDB's to delete.
@@ -238,7 +250,7 @@ function ToolsSection() {
               </div>
             </div>
 
-            {!downloadable && <p className={styles.hint}>{t("tools.noDownload")}</p>}
+            {!downloadable && <p className={styles.hint}>{t(noDownloadKey)}</p>}
 
             {fetching && installProgress(suite)}
 

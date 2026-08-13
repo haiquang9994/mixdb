@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { mysqlDeleteRows, mysqlInsertRows, mysqlTableData, mysqlUpdateRow } from "../../mysql/api";
 import ActionBar from "../ActionBar";
 import ConfirmDialog from "../ConfirmDialog";
 import ContextMenu from "../ContextMenu";
@@ -12,7 +11,7 @@ import { ChevronDownIcon, ChevronUpIcon, CopyIcon, PlusIcon, ReloadIcon, TrashIc
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { copyText } from "../../clipboard";
-import { isBinary, isGenerated } from "../../mysql/columns";
+import { useSqlApi, useSqlDialect } from "../../sql/context";
 import { IS_MAC, hasPrimaryModifier } from "../../platform";
 import { isTextEntry } from "../../textEntry";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
@@ -21,8 +20,8 @@ import {
   FILTER_OPERATORS,
   operatorArity,
   type FilterOperator,
-  type MysqlFilter,
-} from "../../mysql/filters";
+  type SqlFilter,
+} from "../../sql/filters";
 import {
   columnEdges,
   gridStyle,
@@ -40,7 +39,7 @@ import {
   type TableRequest,
 } from "./request";
 import { csvText, insertStatements, spreadsheetText } from "./rowText";
-import type { MysqlColumnMeta } from "../../types";
+import type { SqlColumnMeta } from "../../types";
 import styles from "./SqlTable.module.css";
 
 /** Where handing the browser the whole page stops being the cheap thing to do. Below this the rows
@@ -131,7 +130,7 @@ function tableCacheKey(db: string, table: string): string {
  * that were actually running against the grid. */
 export interface RememberedFilters {
   rows: FilterRow<FilterOperator>[];
-  applied: MysqlFilter[];
+  applied: SqlFilter[];
   /** Which shape of the database the conditions were written against — see {@link Props.schemaToken}. */
   schemaToken: number;
 }
@@ -211,6 +210,8 @@ function SqlTable({
   readOnly = false,
 }: Props) {
   const { t } = useTranslation();
+  const api = useSqlApi();
+  const dialect = useSqlDialect();
   const tableKey = tableCacheKey(selectedDb, selectedTable);
   // Everything below opens on what this table was last left showing, when it has been here before.
   // A grid mounted afresh — the connection reopened, another database picked and this one come back
@@ -220,7 +221,7 @@ function SqlTable({
   const [pageSize, setPageSize] = useState(restored?.request.pageSize ?? DEFAULT_PAGE_SIZE);
   const [rows, setRows] = useState<Record<string, unknown>[]>(restored?.rows ?? []);
   const [columns, setColumns] = useState<string[]>(restored?.columns ?? []);
-  const [columnMeta, setColumnMeta] = useState<Record<string, MysqlColumnMeta>>(
+  const [columnMeta, setColumnMeta] = useState<Record<string, SqlColumnMeta>>(
     restored?.columnMeta ?? {},
   );
   const [primaryKey, setPrimaryKey] = useState<string[]>(restored?.primaryKey ?? []);
@@ -240,7 +241,7 @@ function SqlTable({
   const [filterRows, setFilterRows] = useState<FilterRow<FilterOperator>[]>(
     () => rememberedFilters(filterCache, tableKey, schemaToken)?.rows ?? []
   );
-  const [appliedFilters, setAppliedFilters] = useState<MysqlFilter[]>(
+  const [appliedFilters, setAppliedFilters] = useState<SqlFilter[]>(
     () => rememberedFilters(filterCache, tableKey, schemaToken)?.applied ?? []
   );
   // The table whose columns the bar was last seeded from. The seed needs the column list, which
@@ -711,7 +712,7 @@ function SqlTable({
     const table = selectedTable;
     let cancelled = false;
     setLoading(true);
-    mysqlTableData(connectionId, db, table, {
+    api.tableData(connectionId, db, table, {
       page,
       pageSize,
       sortColumn: sort?.column ?? null,
@@ -809,7 +810,7 @@ function SqlTable({
       key[c] = c in pending.original ? normalizeCellValue(pending.original[c]) : normalizeCellValue(row[c]);
     }
     try {
-      await mysqlUpdateRow(connectionId, dbAtFlush, tableAtFlush, pending.changes, key);
+      await api.updateRow(connectionId, dbAtFlush, tableAtFlush, pending.changes, key);
     } catch (e) {
       onError(errorMessage(t, e));
       // The value MySQL refused is on screen and may already be filed away: the grid is put away as
@@ -938,7 +939,7 @@ function SqlTable({
   /** Hands the form's rows to the server. Errors are left to reject so the form can show them
    * and stay open with the typed values still in it. */
   async function submitInsert(newRows: Record<string, string | null>[]) {
-    await mysqlInsertRows(connectionId, selectedDb, selectedTable, newRows);
+    await api.insertRows(connectionId, selectedDb, selectedTable, newRows);
     setInsertMode(null);
     focusGrid();
     setReloadToken((n) => n + 1);
@@ -963,7 +964,7 @@ function SqlTable({
     focusGrid();
     setDeleting(true);
     try {
-      await mysqlDeleteRows(
+      await api.deleteRows(
         connectionId,
         selectedDb,
         selectedTable,
@@ -1280,9 +1281,9 @@ function SqlTable({
   const insertableColumns = useMemo(
     () => columns.filter((c) => {
       const meta = columnMeta[c];
-      return meta === undefined || !isGenerated(meta);
+      return meta === undefined || !dialect.isGenerated(meta);
     }),
-    [columns, columnMeta],
+    [columns, columnMeta, dialect],
   );
 
   /** The columns whose values came over base64-encoded, and which a copied `INSERT` therefore has
@@ -1290,9 +1291,9 @@ function SqlTable({
   const binaryColumns = useMemo(
     () => new Set(columns.filter((c) => {
       const meta = columnMeta[c];
-      return meta !== undefined && isBinary(meta);
+      return meta !== undefined && dialect.isBinary(meta);
     })),
-    [columns, columnMeta],
+    [columns, columnMeta, dialect],
   );
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));

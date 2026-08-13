@@ -1,23 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { mysqlCancelQuery, mysqlRunScript, mysqlValidateSql } from "../../mysql/api";
-import { columnDetail, completionSchema } from "../../mysql/completion";
+import { columnDetail, completionSchema } from "../../sql/completion";
 import {
   AUTO_LIMIT,
   unguardedWrites,
   withAutoLimits,
   writingStatements,
   type UnguardedWrite,
-} from "../../mysql/guard";
-import { lintScript, problemRange } from "../../mysql/lint";
+} from "../../sql/guard";
+import { lintScript, problemRange } from "../../sql/lint";
+import { useSqlDialect } from "../../sql/context";
 import { referenceAt, type SqlReference } from "../../mysql/reference";
-import { invalidateSchemaOutline, useSchemaOutline } from "../../mysql/schemaCache";
+import { invalidateSchemaOutline, useSchemaOutline } from "../../sql/schemaCache";
+import { useSqlApi } from "../../sql/context";
 import {
   changesSchema,
   splitStatements,
   statementAt,
   type SqlStatement,
-} from "../../mysql/statements";
+} from "../../sql/statements";
 import ActionBar from "../ActionBar";
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
@@ -51,7 +52,7 @@ import { RELOAD_SHORTCUT, useReloadShortcut } from "../../reload";
 import { loadDraft, saveDraft, saveDraftNow } from "../../queryDrafts";
 import { recordQuery } from "../../queryHistory";
 import { useQuerySnippets } from "../../querySnippets";
-import type { MysqlStatementResult } from "../../types";
+import type { SqlStatementResult } from "../../types";
 import styles from "./QueryEditor.module.css";
 
 /** How many of a table's columns the hover tooltip lists before it stops and counts the rest. A
@@ -122,6 +123,8 @@ function QueryEditor({
   onDatabaseChanged,
 }: Props) {
   const { t } = useTranslation();
+  const api = useSqlApi();
+  const dialect = useSqlDialect();
   const snippets = useQuerySnippets();
   /** The script, held in a ref rather than in state.
    *
@@ -135,7 +138,7 @@ function QueryEditor({
   /** Whether the script has anything in it — the only thing about it the buttons ask about, and so
    *  the only thing worth a render. It changes twice per script, not once per keystroke. */
   const [hasSql, setHasSql] = useState(false);
-  const [results, setResults] = useState<MysqlStatementResult[] | null>(null);
+  const [results, setResults] = useState<SqlStatementResult[] | null>(null);
   const [running, setRunning] = useState(false);
   /** Set once the server has been asked to stop the statement, until the script comes back. */
   const [cancelling, setCancelling] = useState(false);
@@ -173,7 +176,7 @@ function QueryEditor({
     if (active) setShown(true);
   }, [active]);
 
-  const outline = useSchemaOutline(connectionId, database, active);
+  const outline = useSchemaOutline(api, connectionId, database, active);
   const schema = useMemo(() => completionSchema(outline), [outline]);
 
   /** The saved queries, as something the editor can offer. The detail is the query itself on one
@@ -233,7 +236,7 @@ function QueryEditor({
   const split = useRef<{ doc: string; statements: SqlStatement[] } | null>(null);
 
   function statementsOf(doc: string): SqlStatement[] {
-    if (split.current?.doc !== doc) split.current = { doc, statements: splitStatements(doc) };
+    if (split.current?.doc !== doc) split.current = { doc, statements: splitStatements(doc, dialect.syntax) };
     return split.current.statements;
   }
 
@@ -259,7 +262,7 @@ function QueryEditor({
   const lint = useMemo<LintSources>(
     () => ({
       quick: (doc) =>
-        lintScript(statementsOf(doc), outline).map((finding) => ({
+        lintScript(statementsOf(doc), outline, dialect).map((finding) => ({
           from: finding.from,
           to: finding.to,
           severity: finding.severity,
@@ -280,7 +283,7 @@ function QueryEditor({
         if (database === "" || busy.current) return [];
         const statement = statementAt(doc, statementsOf(doc), pos);
         if (!statement) return [];
-        const problem = await mysqlValidateSql(connectionId, statement.text, database);
+        const problem = await api.validateSql(connectionId, statement.text, database);
         if (!problem) return [];
         return [
           {
@@ -294,7 +297,7 @@ function QueryEditor({
         ];
       },
     }),
-    [outline, connectionId, database, t]
+    [outline, api, connectionId, database, t]
   );
 
   /**
@@ -306,7 +309,7 @@ function QueryEditor({
    * because this is the layer that knows which language the app is set to.
    */
   const lookup = useMemo<EditorLookup>(() => {
-    const find = (doc: string, pos: number) => referenceAt(statementsOf(doc), pos, outline);
+    const find = (doc: string, pos: number) => referenceAt(statementsOf(doc), pos, outline, dialect);
 
     function describe(reference: SqlReference): EditorHover {
       const at = { from: reference.from, to: reference.to };
@@ -403,10 +406,10 @@ function QueryEditor({
    */
   function requestRun(text: string) {
     if (text.trim() === "" || running) return;
-    const statements = splitStatements(text);
+    const statements = splitStatements(text, dialect.syntax);
 
     if (readOnly) {
-      const writes = writingStatements(statements);
+      const writes = writingStatements(statements, dialect);
       if (writes.length > 0) {
         setResults(null);
         setError(t("query.readOnlyBlocked", { verb: writes[0].verb }));
@@ -416,7 +419,7 @@ function QueryEditor({
       }
     }
 
-    const writes = unguardedWrites(statements);
+    const writes = unguardedWrites(statements, dialect);
     if (writes.length > 0) {
       setPending({ text, writes });
       return;
@@ -449,7 +452,7 @@ function QueryEditor({
     setError("");
     // What is sent, which is not always what is on screen: a `SELECT` with no ceiling of its own
     // gets one, and the results say how many statements that happened to.
-    const { sql: sent, added } = withAutoLimits(text, statements, AUTO_LIMIT);
+    const { sql: sent, added } = withAutoLimits(text, statements, AUTO_LIMIT, dialect);
     setLimitsAdded(added);
 
     const startedAt = Date.now();
@@ -467,7 +470,7 @@ function QueryEditor({
       });
 
     try {
-      const produced = await mysqlRunScript(connectionId, sent, database || undefined);
+      const produced = await api.runScript(connectionId, sent, database || undefined);
       setResults(produced);
       // The last result set is the one on screen when the script finishes, so it is the one worth
       // counting. A statement that failed stops the script, so at most the last carries a reason.
@@ -490,7 +493,7 @@ function QueryEditor({
       if (database !== "" && changesSchema(statements)) {
         invalidateSchemaOutline(connectionId, database);
         onDatabaseChanged?.("schema");
-      } else if (database !== "" && writingStatements(statements).length > 0) {
+      } else if (database !== "" && writingStatements(statements, dialect).length > 0) {
         onDatabaseChanged?.("rows");
       }
     } catch (e) {
@@ -536,7 +539,7 @@ function QueryEditor({
     if (!running || cancelling) return;
     setCancelling(true);
     try {
-      await mysqlCancelQuery(connectionId);
+      await api.cancelQuery(connectionId);
     } catch (e) {
       setError(errorMessage(t, e));
       setCancelling(false);
@@ -643,6 +646,7 @@ function QueryEditor({
               onChange={editorChanged}
               schema={schema}
               database={database}
+              dialect={dialect.cmDialect}
               statementRange={statementRange}
               lint={lint}
               lookup={lookup}
@@ -686,7 +690,7 @@ function QueryEditor({
           onConfirm={() => {
             const { text } = pending;
             setPending(null);
-            void run(text, splitStatements(text));
+            void run(text, splitStatements(text, dialect.syntax));
           }}
           onCancel={() => setPending(null)}
         />

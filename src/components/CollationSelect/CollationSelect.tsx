@@ -3,7 +3,7 @@ import Input from "../Input";
 import Select from "../Select";
 import type { SelectOption } from "../Select";
 import { useTranslation } from "../../i18n";
-import type { MysqlCollation } from "../../types";
+import type { SqlCollation } from "../../types";
 import styles from "./CollationSelect.module.css";
 
 /** The character sets a column or table is realistically declared in, most likely first. Everything
@@ -21,7 +21,7 @@ interface Props {
   value: string;
   /** What this server supports. Empty — a server that would not say, or a list still on its way —
    *  leaves this a text box, which is what it was before there was a list. */
-  collations: MysqlCollation[];
+  collations: SqlCollation[];
   /** What the empty choice reads as: whose default is inherited by leaving this alone. */
   placeholder: string;
   ariaLabel: string;
