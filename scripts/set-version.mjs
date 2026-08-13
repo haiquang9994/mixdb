@@ -1,5 +1,5 @@
 /**
- * Sets MixDB's version in the four files that carry it, and cuts the changelog for it.
+ * Sets MixDB's version in the five files that carry it, and cuts the changelog for it.
  *
  *   node scripts/set-version.mjs 0.2.0
  *   node scripts/set-version.mjs 0.2.0 --no-notes    # a release with nothing user-facing in it
@@ -9,8 +9,10 @@
  * binary, and a `Cargo.lock` left behind fails any build run with `--locked`, which CI is. Bumping
  * them by hand means one of them is eventually forgotten, and the symptom of that — an app that
  * announces an update to the version it is already running — only shows up after a release.
+ * README.md's "Phiên bản mới nhất" line is the fifth: nothing depends on it, but it is the first
+ * thing anyone reads about the project, so a stale one is a claim rather than a missing update.
  *
- * CHANGELOG.md is the fifth: its `## [Unreleased]` section becomes `## [0.2.0] - <today>` here,
+ * CHANGELOG.md is the sixth: its `## [Unreleased]` section becomes `## [0.2.0] - <today>` here,
  * and release.yml reads that section back out to fill in the draft release's notes. An empty
  * `## [Unreleased]` stops the bump rather than passing silently, since a release nobody can read
  * the notes of is the thing that file exists to prevent — `--no-notes` is the way past it for a
@@ -22,6 +24,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+// The date the version is cut, in local time: the changelog and the README are read by people, and
+// a UTC date is a day off for anyone who cuts a release in the evening east of Greenwich. `sv-SE`
+// is the shortest way to ask for ISO 8601.
+const today = new Date().toLocaleDateString("sv-SE");
 
 const args = process.argv.slice(2);
 const allowEmptyNotes = args.includes("--no-notes");
@@ -64,6 +71,9 @@ patch(
   `$1"${version}"`,
 );
 
+// The one line in the README that names a version, date and all.
+patch("README.md", /(Phiên bản mới nhất: \*\*)[^*]*(\*\* \()[^)]*(\))/, `$1${version}$2${today}$3`);
+
 /**
  * Turns `## [Unreleased]` into `## [<version>] - <today>` and opens a fresh empty one above it.
  *
@@ -100,10 +110,6 @@ function cutChangelog() {
     process.exit(1);
   }
 
-  // The date the version was cut, in local time: the changelog is read by people, and a UTC date
-  // is a day off for anyone who cuts a release in the evening east of Greenwich. `sv-SE` is the
-  // shortest way to ask for ISO 8601.
-  const today = new Date().toLocaleDateString("sv-SE");
   const cut = `## [Unreleased]\n\n## [${version}] - ${today}\n\n${body === "" ? "Nothing user-facing." : body}\n`;
 
   writeFileSync(path, `${before.slice(0, start)}${cut}${tail === "" ? "" : `\n${tail}`}`);

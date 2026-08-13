@@ -6,7 +6,7 @@ relevant file there before changing anything in that area.
 ## What this is
 
 MixDB is a desktop database client built with **Tauri 2 + React 19 + TypeScript** (frontend) and
-**Rust** (backend). It manages MySQL, MongoDB and Redis connections, optionally through an SSH
+**Rust** (backend). It manages MySQL, PostgreSQL, MongoDB and Redis connections, optionally through an SSH
 tunnel, and remembers saved connections.
 
 ## Commands
@@ -19,7 +19,7 @@ tunnel, and remembers saved connections.
 | `npm run build` | Typecheck + build frontend (`tsc && vite build`) — the fastest check |
 | `npm run build:app` | Full production bundle into `src-tauri/target/release/bundle/` |
 | `npm run notes` | Commits since the last tag, grouped — a draft for `## [Unreleased]` |
-| `npm run set-version <v>` | Bump the five files that carry the version and cut the changelog |
+| `npm run set-version <v>` | Bump the six files that carry the version and cut the changelog |
 
 Releasing is [docs/RELEASING.md](docs/RELEASING.md); the steps are the first section of it.
 

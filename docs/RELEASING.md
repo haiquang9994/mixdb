@@ -6,7 +6,7 @@ signature and — once the user says so — installs it and restarts.
 
 ## The steps
 
-The whole thing, for when the rest of this page is more than you need. `0.2.0` stands in for the
+The whole thing, for when the rest of this page is more than you need. `0.0.4` stands in for the
 version being cut.
 
 ```bash
@@ -17,13 +17,13 @@ npm run notes                        # the commits since the last tag, as a draf
 # 2. The check. There is no test suite; this is it.
 npm run build                        # tsc + vite build
 
-# 3. The bump. Five files, and it refuses if ## [Unreleased] is empty.
-npm run set-version 0.2.0
+# 3. The bump. Six files, and it refuses if ## [Unreleased] is empty.
+npm run set-version 0.0.4
 
 # 4. The push, then the tag. The tag is what starts the build.
-git commit -am "chore(release): 0.2.0"
+git commit -am "chore(release): 0.0.4"
 git push
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.0.4 && git push origin v0.0.4
 ```
 
 Then wait 15–25 minutes for the three build jobs, and **on GitHub**:
@@ -57,15 +57,15 @@ about.
 ## Cutting a release
 
 ```bash
-npm run set-version 0.2.0          # package.json, tauri.conf.json, Cargo.toml, Cargo.lock, CHANGELOG.md
-git commit -am "chore(release): 0.2.0"
+npm run set-version 0.0.4          # package.json, tauri.conf.json, Cargo.toml, Cargo.lock, README.md, CHANGELOG.md
+git commit -am "chore(release): 0.0.4"
 git push
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.0.4 && git push origin v0.0.4
 ```
 
-`set-version` also cuts `## [Unreleased]` into `## [0.2.0] - <today>` and opens a fresh empty one
+`set-version` also cuts `## [Unreleased]` into `## [0.0.4] - <today>` and opens a fresh empty one
 above it. It **refuses to bump** when `## [Unreleased]` is empty, before it has touched any of the
-other four files — a release whose notes nobody wrote is the thing this is all for. A version that
+other five files — a release whose notes nobody wrote is the thing this is all for. A version that
 genuinely has nothing to tell users passes `--no-notes`.
 
 The tag starts [`.github/workflows/release.yml`](../.github/workflows/release.yml), which builds on
