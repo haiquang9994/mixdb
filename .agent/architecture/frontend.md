@@ -25,9 +25,9 @@ A workspace receives `connectionId` and renders everything from it. It never kno
 connection was made.
 
 **Adding a database kind** means: a `DbKind` in `src/types.ts` *and* `src-tauri/src/models.rs`, a
-default port in `DEFAULT_PORTS`, a badge in `ConnectionTab`'s `KIND_BADGE`, a branch in its
-workspace switch, the new folder, and the backend side (see
-[backend.md](backend.md)).
+default port in `DEFAULT_PORTS`, a name in `ConnectionTab`'s `KIND_LABEL`, its logo in
+`icons/brands.tsx` with the matching `.kind-<kind>` colours in `App.css`, a branch in its workspace
+switch, the new folder, and the backend side (see [backend.md](backend.md)).
 
 ## Components
 

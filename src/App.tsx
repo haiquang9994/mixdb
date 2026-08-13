@@ -3,7 +3,8 @@ import ConnectionTab from "./ConnectionTab";
 import GlassFilter from "./components/GlassFilter";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
-import { CloseIcon, LockIcon, PlusIcon, SettingsIcon } from "./icons";
+import { CloseIcon, DatabaseIcon, LockIcon, PlusIcon, SettingsIcon } from "./icons";
+import type { DbKind } from "./types";
 import { hasPrimaryModifier } from "./platform";
 import { isBlockedReload } from "./reload";
 import { useScrollAcceleration } from "./scroll";
@@ -22,6 +23,9 @@ interface TabInfo {
   /** Set while this tab holds a connection saved as read-only, so the tab bar can say so — the
    *  sidebar that carried the mark is gone once you are connected. */
   readOnly?: boolean;
+  /** Which engine the tab is connected to, once it is. Same reason as the lock: the sidebar row
+   *  that showed the logo is behind the workspace from then on. */
+  kind?: DbKind;
 }
 
 function App() {
@@ -62,6 +66,10 @@ function App() {
     setTabs((prev) =>
       prev.map((t) => (t.id === id ? { ...t, readOnly: readOnly || undefined } : t)),
     );
+  }
+
+  function markTabKind(id: string, kind: DbKind | undefined) {
+    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, kind } : t)));
   }
 
   // Keeps activeId pointing at a real tab whenever the active one disappears
@@ -134,6 +142,14 @@ function App() {
                 a statement is typed, not after the connection has been identified. The tab is not
                 a control with a name of its own, so the word travels with the lock for anyone
                 who can't see it. */}
+            {/* The engine's logo, first of all: which server a tab is on is what you are looking
+                for when there are five of them open, and the shape answers it before the name
+                does — which is often truncated to a word or two by then anyway. */}
+            {tab.kind && (
+              <span className={`tab-kind kind-${tab.kind}`}>
+                <DatabaseIcon kind={tab.kind} size={14} />
+              </span>
+            )}
             {tab.readOnly && (
               <span className="tab-lock" title={t("common.readOnlyConnection")}>
                 <LockIcon size={12} />
@@ -169,6 +185,7 @@ function App() {
               active={tab.id === activeId}
               onTitleChange={(title) => renameTab(tab.id, title)}
               onReadOnlyChange={(readOnly) => markTabReadOnly(tab.id, readOnly)}
+              onKindChange={(kind) => markTabKind(tab.id, kind)}
             />
           </div>
         ))}

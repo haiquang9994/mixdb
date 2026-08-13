@@ -24,7 +24,7 @@ import ConfirmDialog from "./components/ConfirmDialog";
 import ContextMenu from "./components/ContextMenu";
 import Button from "./components/Button";
 import Input from "./components/Input";
-import { EyeIcon, EyeOffIcon, LockIcon, PinIcon } from "./icons";
+import { DatabaseIcon, EyeIcon, EyeOffIcon, LockIcon, PinIcon } from "./icons";
 import { IS_MAC, IS_WINDOWS } from "./platform";
 import { useTranslation, type TranslationKey } from "./i18n";
 import { errorMessage } from "./errors";
@@ -37,16 +37,13 @@ interface Props {
   /** Whether the tab bar should mark this tab read-only. Reported rather than worked out up there:
    *  only this tab knows which saved connection it was opened from. */
   onReadOnlyChange: (readOnly: boolean) => void;
+  /** Which engine this tab is connected to, so its tab can carry the logo — `undefined` until it
+   *  is connected, when the tab is still a form that may end up on any of them. */
+  onKindChange: (kind: DbKind | undefined) => void;
 }
 
-const KIND_BADGE: Record<DbKind, string> = {
-  mysql: "SQL",
-  postgres: "PG",
-  mongo: "MDB",
-  redis: "RDS",
-};
-
-/** What each kind is called on the tab that picks it. */
+/** What each kind is called on the tab that picks it, and — read aloud — beside its logo in the
+ *  saved list, where the logo itself says nothing to a screen reader. */
 const KIND_LABEL: Record<DbKind, TranslationKey> = {
   mysql: "connection.kindMysql",
   postgres: "connection.kindPostgres",
@@ -175,7 +172,7 @@ interface TunnelStatus {
   message: string;
 }
 
-function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
+function ConnectionTab({ active, onTitleChange, onReadOnlyChange, onKindChange }: Props) {
   const { t, lang } = useTranslation();
   const [kind, setKind] = useState<DbKind>("mysql");
   const [host, setHost] = useState("127.0.0.1");
@@ -247,6 +244,14 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
   useEffect(() => {
     onReadOnlyChange(activeReadOnly);
   }, [activeReadOnly]);
+
+  /* Same rule as the lock above: the kind only reaches the tab bar once there is a connection
+     behind it. While the form is open the picker on it is the thing that says which engine is
+     being set up, and it changes with every click. */
+  const activeKind = connectionId ? kind : undefined;
+  useEffect(() => {
+    onKindChange(activeKind);
+  }, [activeKind]);
 
   function changeKind(next: DbKind) {
     setKind(next);
@@ -584,9 +589,12 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
               type="button"
               role="tab"
               aria-selected={kind === k}
-              className={`method-tab${kind === k ? " method-tab-active" : ""}`}
+              className={`method-tab kind-${k}${kind === k ? " method-tab-active" : ""}`}
               onClick={() => changeKind(k)}
             >
+              {/* Logo before the name, not instead of it: the tabs are the one place the kinds are
+                  read side by side, so the word stays and the mark only makes it quicker to find. */}
+              <DatabaseIcon kind={k} className="method-tab-icon" size="1.05em" />
               {t(KIND_LABEL[k])}
             </button>
           ))}
@@ -841,8 +849,13 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange }: Props) {
                   onContextMenu={(e) => openContextMenu(e, c.id)}
                   title={t("connection.savedItemTooltip")}
                 >
+                  {/* The engine's own logo, in its own colour: the row is recognised by a shape
+                      the user already knows from everywhere else, rather than by an abbreviation
+                      this app made up. The name it stands for is carried in text beside it for
+                      anyone the shape says nothing to. */}
                   <span className={`saved-item-icon kind-${c.config.kind}`}>
-                    {KIND_BADGE[c.config.kind]}
+                    <DatabaseIcon kind={c.config.kind} size="1.05rem" />
+                    <span className="visually-hidden">{t(KIND_LABEL[c.config.kind])}</span>
                   </span>
                   <strong>{c.name}</strong>
                   {/* Read-only is about what the row will let you do, so it says the word rather

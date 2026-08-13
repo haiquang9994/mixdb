@@ -378,7 +378,9 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.45rem 0.5rem 0.45rem 0.9rem;
+  /* Less on the left than it used to take: the logo now leads the row and needs that room, and a
+     mark reads better close to the edge than a word would. */
+  padding: 0.45rem 0.5rem 0.45rem 0.65rem;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: transparent;
   box-shadow: none;
@@ -398,8 +400,18 @@ body {
   white-space: nowrap;
 }
 
-/* A tab is too small for the badge the sidebar row carries, so only the lock travels here — and it
-   keeps the same colour, which is what makes the two read as one mark rather than two marks. */
+/* The same logo the sidebar row carries, without the tinted tile around it: a tab has no room for
+   a badge, and the mark alone is what has to be recognised. The brand colour still comes from the
+   `.kind-*` class beside this one, so the two places read as one mark. */
+.tab-kind {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--kind);
+}
+
+/* Marked in its own colour rather than the engine's, and kept beside the logo: the lock is about
+   what this tab will let you do, which has nothing to do with which server it is on. */
 .tab-lock {
   display: inline-flex;
   align-items: center;
@@ -624,38 +636,88 @@ body {
   white-space: nowrap;
 }
 
+/* Square, because what sits in it is a logo rather than the two or three letters it used to hold —
+   a shape reads as itself in a box that doesn't stretch one way. */
 .saved-item-icon {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  min-width: 2.2rem;
-  height: 1.6rem;
-  padding: 0 0.3rem;
-  border-radius: 4px;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 5px;
+  background: rgb(var(--kind-rgb) / 0.16);
+  color: var(--kind);
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.02em;
 }
 
+/* Each engine's brand colour, handed over as custom properties rather than set as `background` and
+   `color` here: the same four classes dress a tinted tile in the saved list and a bare logo on a
+   form tab, which want that one colour in different places. */
 .kind-mysql {
-  background: rgba(0, 117, 143, 0.18);
-  color: #00758f;
+  --kind: #00758f;
+  --kind-rgb: 0 117 143;
 }
 
 .kind-postgres {
-  background: rgba(51, 103, 145, 0.18);
-  color: #336791;
+  --kind: #336791;
+  --kind-rgb: 51 103 145;
 }
 
 .kind-mongo {
-  background: rgba(77, 179, 61, 0.18);
-  color: #4db33d;
+  --kind: #47a248;
+  --kind-rgb: 71 162 72;
 }
 
 .kind-redis {
-  background: rgba(211, 47, 47, 0.18);
-  color: #d32f2f;
+  --kind: #c6302b;
+  --kind-rgb: 198 48 43;
+}
+
+/* The brand hues are set for a white page and go muddy on a dark one, so the dark theme carries
+   its own cast of all four — the same lift the accent palette takes further down this file. */
+:root[data-theme="dark"] .kind-mysql {
+  --kind: #5bbfd6;
+  --kind-rgb: 91 191 214;
+}
+
+:root[data-theme="dark"] .kind-postgres {
+  --kind: #7ea9d6;
+  --kind-rgb: 126 169 214;
+}
+
+:root[data-theme="dark"] .kind-mongo {
+  --kind: #6fcf76;
+  --kind-rgb: 111 207 118;
+}
+
+:root[data-theme="dark"] .kind-redis {
+  --kind: #f0665e;
+  --kind-rgb: 240 102 94;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .kind-mysql {
+    --kind: #5bbfd6;
+    --kind-rgb: 91 191 214;
+  }
+
+  :root:not([data-theme]) .kind-postgres {
+    --kind: #7ea9d6;
+    --kind-rgb: 126 169 214;
+  }
+
+  :root:not([data-theme]) .kind-mongo {
+    --kind: #6fcf76;
+    --kind-rgb: 111 207 118;
+  }
+
+  :root:not([data-theme]) .kind-redis {
+    --kind: #f0665e;
+    --kind-rgb: 240 102 94;
+  }
 }
 
 /* The entry that creates something rather than selecting one, at the head of a picker's list. Set
@@ -684,9 +746,11 @@ body {
   }
 }
 
+/* The one entry in the list that isn't an engine, so it borrows the accent through the same two
+   properties the four brand colours are handed over in. */
 .kind-new {
-  background: rgb(var(--accent-rgb) / 0.15);
-  color: var(--accent-text);
+  --kind: var(--accent-text);
+  --kind-rgb: var(--accent-rgb);
   font-size: 0.95rem;
 }
 
@@ -884,14 +948,24 @@ fieldset .row input {
 }
 
 .method-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
   border-radius: 6px 6px 0 0;
   border: none;
   box-shadow: none;
   background: transparent;
-  padding: 0.5em 1.1em;
+  /* Tighter than it was: the logo now takes room the four tabs have to share on a narrow window. */
+  padding: 0.5em 0.85em;
   margin-bottom: -1px;
   border-bottom: 2px solid transparent;
   opacity: 0.65;
+}
+
+/* Only the logo is brand-coloured; the name beside it stays in the text colour, so a row of four
+   tabs reads as one control rather than four coloured words. */
+.method-tab-icon {
+  color: var(--kind);
 }
 
 .method-tab:hover {
