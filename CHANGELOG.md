@@ -41,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.11] - 2026-08-14
+
 ### Added
 
 - Connect to PostgreSQL: browse and edit its rows, change tables and indexes, run queries with completion, and dump or restore with pg_dump and psql — which MixDB can now download for you on Windows and macOS, or find wherever PostgreSQL is already installed.
