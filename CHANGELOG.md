@@ -41,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.12] - 2026-08-15
+
 ### Added
 
 - The Structure tab searches a table's columns by name.
