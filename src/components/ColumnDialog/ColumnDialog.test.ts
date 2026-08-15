@@ -89,3 +89,29 @@ describe("MySQL types survive being opened and saved", () => {
     expect(mysql("int unsigned zerofill")).toBe("int unsigned zerofill");
   });
 });
+
+describe("a type that cannot be written without a length takes the one it suggests", () => {
+  const blank = (types: readonly SqlTypeSpec[], typeName: string) =>
+    composeType(types, { typeName, typeArg: "", unsigned: false, typeTail: "" } as Parameters<
+      typeof composeType
+    >[1]);
+
+  /** The box shows `255` as a placeholder, so an empty box has to mean 255 rather than an error. */
+  it.each([
+    ["varchar", "varchar(255)"],
+    ["varbinary", "varbinary(255)"],
+  ])("%s", (typeName, expected) => {
+    expect(blank(mysqlEditing.columnTypes, typeName)).toBe(expected);
+  });
+
+  /** An `enum`'s suggestion is a sample of the shape, not values to store: nothing is filled in for
+   *  it here, and the dialog refuses to save it empty instead. */
+  it.each(["enum", "set"])("%s is left empty", (typeName) => {
+    expect(blank(mysqlEditing.columnTypes, typeName)).toBe(typeName);
+  });
+
+  /** PostgreSQL's `character varying` is valid with no length at all, so nothing is added. */
+  it("leaves a type that is valid without one alone", () => {
+    expect(blank(postgresEditing.columnTypes, "character varying")).toBe("character varying");
+  });
+});

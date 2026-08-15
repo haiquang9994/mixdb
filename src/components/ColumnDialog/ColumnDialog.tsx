@@ -23,6 +23,19 @@ function typeSpec(types: readonly SqlTypeSpec[], name: string): SqlTypeSpec | un
 const NUMERIC_ARGUMENT = /^\d+(\s*,\s*\d+)?$/;
 
 /**
+ * The argument a type is actually declared with. For a type that cannot be written without one, the
+ * suggestion in the box's placeholder is what an empty box means: leaving `varchar` blank gets the
+ * `255` shown there rather than an error.
+ *
+ * `enum` and `set` are the exception. Their suggestion is a sample of the shape — `'a','b'` — and
+ * storing it would be storing values nobody asked for, so those still have to be filled in.
+ */
+function typeArgOrDefault(spec: SqlTypeSpec | undefined, arg: string): string {
+  if (arg !== "") return arg;
+  return spec?.required === true && spec.list !== true ? (spec.arg ?? "") : "";
+}
+
+/**
  * Splits a declared type into the parts the form edits. `varchar(255)` is a name and an argument,
  * `int unsigned` a name and a flag, and anything else trailing (`zerofill`, a character set) is
  * kept verbatim so that editing a column cannot quietly drop it.
@@ -69,8 +82,8 @@ export function parseType(
 export function composeType(types: readonly SqlTypeSpec[], draft: Draft): string {
   const name = draft.typeName.trim();
   if (name === "") return "";
-  const arg = draft.typeArg.trim();
   const spec = typeSpec(types, name);
+  const arg = typeArgOrDefault(spec, draft.typeArg.trim());
   // `[]` binds tight to the type it makes an array of, so it goes back on the name rather than
   // being joined to it with a space. It arrives in the tail as a word of its own — a
   // `character varying(255)[]` is split at the `)`, leaving the brackets on the far side of the
@@ -266,7 +279,8 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
     const arg = draft.typeArg.trim();
     if (draft.typeName === "") {
       messages.push(t("columnDialog.errorType"));
-    } else if (selectedType?.required && arg === "") {
+      // Only a list has nothing to fall back on; a length the box merely suggests is taken as given.
+    } else if (selectedType?.required && selectedType.list === true && arg === "") {
       messages.push(t("columnDialog.errorTypeArg", { type: draft.typeName }));
       // Only the numeric arguments are checked. An enum's values are the user's own literals, and
       // a type this list doesn't carry is left alone entirely — MySQL is what judges those.

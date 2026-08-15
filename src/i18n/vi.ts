@@ -262,7 +262,7 @@ const vi: TranslationDict = {
       "CURRENT_TIMESTAMP và NOW() được nhận ra sẵn; tích vào đây cho các biểu thức khác, ví dụ uuid().",
     errorName: "Cột cần có tên.",
     errorType: "Cột cần có kiểu dữ liệu.",
-    errorTypeArg: "{{type}} cần có độ dài hoặc danh sách giá trị.",
+    errorTypeArg: "{{type}} cần có danh sách giá trị, ví dụ 'a','b'.",
     errorTypeArgNumber: "Độ dài phải là số, ví dụ 255 hoặc 10,2.",
     submitAdd: "Thêm cột",
     submitEdit: "Lưu thay đổi",

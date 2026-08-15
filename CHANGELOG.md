@@ -52,6 +52,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - Column defaults read correctly on MariaDB, which showed them quoted and made every nullable column look as though it defaulted to NULL.
 - MariaDB's `uca1400_*` collations say which character sets they cover instead of showing a blank.
 - A new row on MariaDB no longer stores the text of an expression default, such as `uuid()`, as the value itself.
+- A `varchar` column left with an empty length box is created with the 255 the box suggests, instead of refusing to save.
 
 ## [0.0.11] - 2026-08-14
 

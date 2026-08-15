@@ -267,7 +267,7 @@ const en = {
       "CURRENT_TIMESTAMP and NOW() are recognised on their own; tick this for any other expression, e.g. uuid().",
     errorName: "The column needs a name.",
     errorType: "The column needs a type.",
-    errorTypeArg: "{{type}} needs a length or a list of values.",
+    errorTypeArg: "{{type}} needs a list of values, e.g. 'a','b'.",
     errorTypeArgNumber: "The length must be a number, e.g. 255 or 10,2.",
     submitAdd: "Add column",
     submitEdit: "Save changes",

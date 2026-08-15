@@ -7,9 +7,11 @@ import type { SqlSyntax } from "./syntax";
 export interface SqlTypeSpec {
   name: string;
   /** What to suggest for the argument: `null` for a type that takes none (the box is then closed),
-   *  and `""` for one that accepts an argument no column really needs to give. */
+   *  and `""` for one that accepts an argument no column really needs to give. On a `required` type
+   *  this is more than a suggestion — an empty box is declared with it. */
   arg: string | null;
-  /** Not valid without an argument: `varchar` has no length of its own to fall back on. */
+  /** Not valid without an argument: `varchar` has no length of its own to fall back on, so an empty
+   *  box takes `arg`. Except on a `list` type, where `arg` is only a sample and has to be filled. */
   required?: boolean;
   /** The argument is a list of values rather than a number, so it is not checked as one. */
   list?: boolean;
