@@ -108,7 +108,8 @@ pub async fn connect_db(
                 "MySQL",
             )
             .await?;
-            (DbHandle::Mysql(pool), Some((host, port)), tunnel)
+            let mariadb = mysql::detect_mariadb(&pool).await;
+            (DbHandle::Mysql { pool, mariadb }, Some((host, port)), tunnel)
         }
         DbKind::Postgres => {
             let (host, port, tunnel) = resolve_endpoint(&config, &app_data).await?;
@@ -210,8 +211,17 @@ async fn handle(state: &State<'_, AppState>, id: &str) -> Result<DbHandle, AppEr
 }
 
 async fn mysql_pool(state: &State<'_, AppState>, id: &str) -> Result<sqlx::MySqlPool, AppError> {
+    mysql_connection(state, id).await.map(|(pool, _)| pool)
+}
+
+/// The MySQL pool for `id`, and whether the server it reaches is MariaDB — for the handful of
+/// reads whose answer depends on which of the two answered.
+async fn mysql_connection(
+    state: &State<'_, AppState>,
+    id: &str,
+) -> Result<(sqlx::MySqlPool, bool), AppError> {
     match handle(state, id).await? {
-        DbHandle::Mysql(pool) => Ok(pool),
+        DbHandle::Mysql { pool, mariadb } => Ok((pool, mariadb)),
         _ => Err(err!("error.wrongConnectionKind", kind = "MySQL")),
     }
 }
@@ -317,8 +327,8 @@ pub async fn mysql_table_data(
     table: String,
     query: mysql::PageQuery,
 ) -> Result<mysql::TablePage, AppError> {
-    let pool = mysql_pool(&state, &id).await?;
-    mysql::table_data(&pool, &database, &table, &query).await
+    let (pool, mariadb) = mysql_connection(&state, &id).await?;
+    mysql::table_data(&pool, mariadb, &database, &table, &query).await
 }
 
 #[tauri::command]
@@ -367,8 +377,8 @@ pub async fn mysql_table_structure(
     database: String,
     table: String,
 ) -> Result<mysql_structure::TableStructure, AppError> {
-    let pool = mysql_pool(&state, &id).await?;
-    mysql_structure::table_structure(&pool, &database, &table).await
+    let (pool, mariadb) = mysql_connection(&state, &id).await?;
+    mysql_structure::table_structure(&pool, mariadb, &database, &table).await
 }
 
 /// Every table and column of one database, for the Query tab's completion. One read covers the
@@ -417,7 +427,7 @@ async fn sql_endpoint(
     let connections = state.connections.lock().await;
     let connection = connections.get(id).ok_or_else(|| err!("error.unknownConnection"))?;
     let matches = match kind {
-        DbKind::Mysql => matches!(connection.handle, DbHandle::Mysql(_)),
+        DbKind::Mysql => matches!(connection.handle, DbHandle::Mysql { .. }),
         DbKind::Postgres => matches!(connection.handle, DbHandle::Postgres(_)),
         _ => false,
     };
@@ -582,11 +592,14 @@ pub async fn mysql_dump(
     let pool = mysql_pool(&state, &id).await?;
     let charset = mysql_structure::dump_charset(&pool, &database).await?;
     let version = mysql::server_info(&pool).await.map(|info| info.version);
-    // Only 8.0 and up has the histogram table an 8.0 mysqldump reads by default. A version that
-    // could not be read is treated as old, which costs a dump nothing but the histograms.
+    // Only MySQL 8.0 and up has the histogram table an 8.0 mysqldump reads by default. MariaDB has
+    // it at no version — it numbers itself 10.x and 11.x, so it cannot be told from a modern MySQL
+    // by the number alone — and asking it for one is an error that stops the dump outright. A
+    // version that could not be read is treated as old, which costs a dump nothing but the
+    // histograms.
     let column_statistics = version
         .as_deref()
-        .is_ok_and(|version| !version.starts_with('5'));
+        .is_ok_and(|version| !mysql::is_mariadb(version) && !version.starts_with('5'));
     // What each table weighs, for the progress the dump reports. A server that will not say —
     // `information_schema` shows a user only what they have privileges on — leaves the dump to run
     // with a bar that moves without a number, which is not worth refusing to dump over.

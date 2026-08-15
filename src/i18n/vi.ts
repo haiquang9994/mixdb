@@ -206,6 +206,10 @@ const vi: TranslationDict = {
   // Ô chọn collation, dùng chung cho mọi nơi khai báo collation — của một cột hay của cả bảng.
   collation: {
     charsetDefault: "{{charset}} · mặc định",
+    // Hiện bên cạnh nhóm collation `uca1400_*` của MariaDB, vốn không thuộc charset nào cả: chúng
+    // đại diện cho cả một họ, và server tự khớp theo charset của cột — `uca1400_ai_ci` trên cột
+    // utf8mb4 sẽ thành `utf8mb4_uca1400_ai_ci`.
+    anyCharset: "mọi charset Unicode",
     search: "Tìm collation...",
   },
   // Tạo cơ sở dữ liệu, mở từ ô chọn database của cả hai workspace. Chỉ popup của MySQL có thêm

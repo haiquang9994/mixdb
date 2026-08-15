@@ -147,6 +147,29 @@ pub async fn server_info(pool: &MySqlPool) -> Result<ServerInfo, AppError> {
     Ok(ServerInfo { version, os })
 }
 
+/// Whether a server that speaks the MySQL protocol is in fact MariaDB.
+///
+/// The two share a wire protocol and nearly all of their SQL, but they do not describe a column's
+/// DEFAULT the same way, and MariaDB has none of the histogram tables an 8.0 `mysqldump` reads by
+/// default — so which one is on the other end has to be known before either is touched. The
+/// version string is the only place MariaDB says so: `11.8.8-MariaDB-ubu2404`.
+pub fn is_mariadb(version: &str) -> bool {
+    version.to_ascii_lowercase().contains("mariadb")
+}
+
+/// Asks the server which of the two it is.
+///
+/// Read once, when the connection is opened: it cannot change under a live connection, and it is
+/// needed on paths — reading a table's structure — that have no other reason to ask the server
+/// about itself. A server that will not answer is taken for MySQL, which is what this client
+/// assumed before it asked at all.
+pub async fn detect_mariadb(pool: &MySqlPool) -> bool {
+    sqlx::query_scalar::<_, String>("SELECT VERSION()")
+        .fetch_one(pool)
+        .await
+        .is_ok_and(|version| is_mariadb(&version))
+}
+
 pub async fn list_databases(pool: &MySqlPool) -> Result<Vec<String>, AppError> {
     let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
     let rows = sqlx::query("SHOW DATABASES")
@@ -386,8 +409,12 @@ pub struct TablePage {
 ///
 /// `query.filters` narrows the table down first, ANDed together; `total` counts what is left after
 /// them, so the pager measures the filtered table rather than the whole one.
+/// `mariadb` says which of the two servers answered: only MySQL marks an expression default in
+/// `Extra`, and a row started off without that marker is written with the expression's text in it —
+/// see [`super::mysql_structure::mariadb_expression_defaults`].
 pub async fn table_data(
     pool: &MySqlPool,
+    mariadb: bool,
     database: &str,
     table: &str,
     query: &PageQuery,
@@ -409,19 +436,37 @@ pub async fn table_data(
     let mut foreign_keys = foreign_keys(&mut conn, database, table)
         .await
         .unwrap_or_default();
+    // Swallowed like the foreign keys above, and for the same reason: a second reading of the same
+    // table's metadata that fails where the first succeeded is not worth the rows themselves.
+    let expression_defaults = if mariadb {
+        super::mysql_structure::mariadb_expression_defaults(&mut conn, database, table)
+            .await
+            .unwrap_or_default()
+    } else {
+        Default::default()
+    };
 
     let column_meta: BTreeMap<String, ColumnMeta> = column_rows
         .iter()
         .map(|r| {
             let field = r.get::<String, _>("Field");
             let foreign_key = foreign_keys.remove(&field);
+            let mut extra = r.get::<String, _>("Extra");
+            // The marker MariaDB does not write, put where MySQL would have written it, so that
+            // everything downstream reads one vocabulary.
+            if expression_defaults.contains(&field) {
+                if !extra.is_empty() {
+                    extra.push(' ');
+                }
+                extra.push_str("DEFAULT_GENERATED");
+            }
             (
                 field,
                 ColumnMeta {
                     data_type: r.get::<String, _>("Type"),
                     nullable: r.get::<String, _>("Null") == "YES",
                     default_value: r.try_get::<Option<String>, _>("Default").unwrap_or(None),
-                    extra: r.get::<String, _>("Extra"),
+                    extra,
                     foreign_key,
                 },
             )

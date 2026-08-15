@@ -46,6 +46,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - The Structure tab searches a table's columns by name.
 - The Statistics tab searches a database's tables by name, and totals what the search leaves.
 
+### Fixed
+
+- Dumping a MariaDB database no longer fails as soon as it starts.
+- Column defaults read correctly on MariaDB, which showed them quoted and made every nullable column look as though it defaulted to NULL.
+- MariaDB's `uca1400_*` collations say which character sets they cover instead of showing a blank.
+- A new row on MariaDB no longer stores the text of an expression default, such as `uuid()`, as the value itself.
+
 ## [0.0.11] - 2026-08-14
 
 ### Added

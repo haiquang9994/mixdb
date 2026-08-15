@@ -211,6 +211,10 @@ const en = {
   // The collation picker, wherever one is declared — a column's or a whole table's.
   collation: {
     charsetDefault: "{{charset}} · default",
+    // Shown beside MariaDB's `uca1400_*` collations, which name no character set of their own:
+    // they stand for a whole family, and the server resolves one to the column's own character set
+    // — `uca1400_ai_ci` on a utf8mb4 column becomes `utf8mb4_uca1400_ai_ci`.
+    anyCharset: "any Unicode charset",
     search: "Search collations...",
   },
   // Creating a database, from either workspace's picker. Only MySQL's dialog has a collation in it;

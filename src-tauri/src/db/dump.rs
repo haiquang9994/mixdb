@@ -552,6 +552,40 @@ impl Tracker {
     }
 }
 
+/// Whether the dump tool at `tool` is MariaDB's own rather than MySQL's.
+///
+/// Not the same question as which server is being dumped, and it has to be asked separately: a
+/// machine with MariaDB installed has a `mysqldump` on it too — MariaDB ships the old name pointing
+/// at `mariadb-dump` — so the name this was found under says nothing. Two of the flags below exist
+/// only in MySQL's tool, and MariaDB's does not ignore what it does not know:
+///
+/// ```text
+/// $ mariadb-dump ... --set-gtid-purged=OFF --column-statistics=0 demo
+/// mariadb-dump: unknown variable 'set-gtid-purged=OFF'
+/// mariadb-dump: unknown variable 'column-statistics=0'
+/// $ echo $?
+/// 7
+/// ```
+///
+/// Neither has anything to answer for on MariaDB: it writes no `GTID_PURGED` to be turned off, and
+/// has no histograms to be skipped. So the two are dropped rather than translated. A tool that will
+/// not say what it is keeps them, which is how every dump ran before this asked.
+fn is_mariadb_tool(tool: &Path) -> bool {
+    let mut command = Command::new(tool);
+    command.arg("--version").stdin(Stdio::null()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command.output().is_ok_and(|out| {
+        String::from_utf8_lossy(&out.stdout)
+            .to_ascii_lowercase()
+            .contains("mariadb")
+    })
+}
+
 /// Writes `database` to `path` as SQL.
 ///
 /// `charset` is the character set the dump is transferred in — see `mysql_structure::dump_charset`
@@ -604,12 +638,16 @@ pub fn mysql_dump(
         // they come back byte for byte.
         "--hex-blob".to_string(),
         "--force".to_string(),
+    ];
+    // Both are MySQL's tool's alone, and MariaDB's refuses the whole run over either — see
+    // [`is_mariadb_tool`].
+    if !is_mariadb_tool(tool) {
         // Otherwise an 8.0 mysqldump writes a `SET @@GLOBAL.GTID_PURGED` the restoring server
         // usually refuses, and which has nothing to do with the data being carried across.
-        "--set-gtid-purged=OFF".to_string(),
-    ];
-    if !column_statistics {
-        args.push("--column-statistics=0".to_string());
+        args.push("--set-gtid-purged=OFF".to_string());
+        if !column_statistics {
+            args.push("--column-statistics=0".to_string());
+        }
     }
     match mode {
         DumpMode::Structure => {

@@ -10,7 +10,7 @@ use super::mysql::quote_ident;
 use serde::{Deserialize, Serialize};
 use sqlx::mysql::MySqlRow;
 use sqlx::{MySqlPool, Row};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Reads a text column that `information_schema` may hand over as bytes rather than as characters
 /// (`COLUMN_DEFAULT` is a blob-backed column on some servers), and reports an absent value as
@@ -43,7 +43,8 @@ pub struct StructureColumn {
     pub default_value: Option<String>,
     /// Whether the default above is an expression (`uuid()`) rather than a literal. MySQL 8 is
     /// what reports this; on 5.7 only the `CURRENT_TIMESTAMP` family is recognisable, and that
-    /// one is recognised from the text itself.
+    /// one is recognised from the text itself. MariaDB reports it nowhere, and is read a different
+    /// way entirely — see [`mariadb_default`].
     pub default_is_expression: bool,
     pub auto_increment: bool,
     pub on_update_current_timestamp: bool,
@@ -167,6 +168,115 @@ pub struct IndexSpec {
 /// Wraps text as a SQL string literal, escaping what would otherwise end it early.
 fn quote_string(value: &str) -> String {
     format!("'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
+}
+
+/// Reads a SQL string literal back to the text it stands for, or `None` when the value is not one.
+///
+/// The inverse of [`quote_string`], and then some: this reads what a server wrote rather than what
+/// this app did, so a quote inside the literal may arrive doubled (`''`) or backslash-escaped, and
+/// the rest of MySQL's backslash escapes may appear alongside it.
+fn unquote_string(value: &str) -> Option<String> {
+    let inner = value.strip_prefix('\'')?.strip_suffix('\'')?;
+    let mut out = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            // The closing quote is already gone, so a quote in here can only be the first half of
+            // a doubled one.
+            '\'' => {
+                chars.next();
+                out.push('\'');
+            }
+            '\\' => match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('r') => out.push('\r'),
+                Some('t') => out.push('\t'),
+                Some('0') => out.push('\0'),
+                Some('b') => out.push('\u{8}'),
+                Some('Z') => out.push('\u{1a}'),
+                // `\\`, `\'`, `\"` — and anything else, which is MySQL's own rule for an escape
+                // it does not recognise: the character stands for itself.
+                Some(other) => out.push(other),
+                None => out.push('\\'),
+            },
+            _ => out.push(c),
+        }
+    }
+    Some(out)
+}
+
+/// What MariaDB means by the text in `COLUMN_DEFAULT`, which is not what MySQL means by it.
+///
+/// MySQL reports the default's *value* — `abc` for `DEFAULT 'abc'`, SQL NULL for a column with no
+/// default — and puts `DEFAULT_GENERATED` in `EXTRA` when that value is really an expression.
+/// MariaDB reports the default's *source text* instead, as it would be written in the DDL, and
+/// marks nothing in `EXTRA`:
+///
+/// | declared          | MariaDB reports          |
+/// | ----------------- | ------------------------ |
+/// | `DEFAULT 'abc'`   | `'abc'`                  |
+/// | `DEFAULT 'a''b'`  | `'a''b'`                 |
+/// | `DEFAULT 'NULL'`  | `'NULL'`                 |
+/// | `DEFAULT 7`       | `7`                      |
+/// | `DEFAULT (1 + 1)` | `(1 + 1)`                |
+/// | `DEFAULT NULL`    | `NULL`                   |
+/// | no default        | `NULL`, the same text    |
+///
+/// So a quoted literal is unquoted back to its value, the bare word `NULL` is read as no default —
+/// the two rows it stands for mean the same thing to a nullable column, and a column that is not
+/// nullable reports SQL NULL instead — and whatever is left is an expression, which is the same
+/// distinction `DEFAULT_GENERATED` draws on MySQL. Taken untranslated, every one of these would
+/// reach the Structure tab wrong: a default of `'abc'` with the quotes in it, and a `NULL` shown
+/// on every nullable column that has no default at all.
+fn mariadb_default(reported: Option<String>) -> (Option<String>, bool) {
+    let Some(reported) = reported else {
+        return (None, false);
+    };
+    let trimmed = reported.trim();
+    if trimmed == "NULL" {
+        return (None, false);
+    }
+    if let Some(literal) = unquote_string(trimmed) {
+        return (Some(literal), false);
+    }
+    // A number is the only other literal MariaDB writes unquoted, so anything left that is not one
+    // is an expression.
+    if trimmed.parse::<f64>().is_ok() {
+        return (Some(trimmed.to_string()), false);
+    }
+    (Some(trimmed.to_string()), true)
+}
+
+/// Which of `table`'s columns default to an expression rather than to a literal, on MariaDB.
+///
+/// The grid reads a column's default from `SHOW COLUMNS`, which both servers answer the same way —
+/// already unquoted, the value itself. What only MySQL adds is `DEFAULT_GENERATED` in `EXTRA`,
+/// saying that what it just reported is an expression to be evaluated rather than text to be
+/// stored. Without it a column declared `DEFAULT (uuid())` starts a new row off at the six
+/// characters `uuid()`, and the row is written with them — the wrong value, and no error to say
+/// so. `information_schema` is the only place MariaDB still distinguishes the two, in the source
+/// text [`mariadb_default`] reads, so it is read alongside and the marker put in by hand.
+pub async fn mariadb_expression_defaults(
+    conn: &mut sqlx::MySqlConnection,
+    database: &str,
+    table: &str,
+) -> Result<HashSet<String>, AppError> {
+    let rows = sqlx::query(
+        "SELECT COLUMN_NAME, COLUMN_DEFAULT
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+    )
+    .bind(database)
+    .bind(table)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|e| err!("error.mysql", message = e))?;
+
+    Ok(rows
+        .iter()
+        .filter(|row| mariadb_default(text(row, "COLUMN_DEFAULT")).1)
+        .map(|row| text_or_empty(row, "COLUMN_NAME"))
+        .collect())
 }
 
 /// The functions a DEFAULT may name without being parenthesised — the only expressions a server
@@ -376,8 +486,11 @@ async fn execute(pool: &MySqlPool, sql: String) -> Result<(), AppError> {
         .map_err(|e| err!("error.mysql", message = e))
 }
 
+/// `mariadb` says which of the two servers answered, because a column's DEFAULT is the one thing
+/// they report differently — see [`mariadb_default`].
 pub async fn table_structure(
     pool: &MySqlPool,
+    mariadb: bool,
     database: &str,
     table: &str,
 ) -> Result<TableStructure, AppError> {
@@ -405,15 +518,24 @@ pub async fn table_structure(
         .map(|row| {
             let extra = text_or_empty(row, "EXTRA");
             let extra_lower = extra.to_lowercase();
+            // `DEFAULT_GENERATED` is MySQL 8's marker for an expression default. The
+            // `CURRENT_TIMESTAMP` family carries it too, but is recognised from its own text
+            // wherever it appears, so it needs nothing from here. MariaDB marks nothing at all and
+            // says it in the default's own text instead.
+            let (default_value, default_is_expression) = if mariadb {
+                mariadb_default(text(row, "COLUMN_DEFAULT"))
+            } else {
+                (
+                    text(row, "COLUMN_DEFAULT"),
+                    extra_lower.contains("default_generated"),
+                )
+            };
             StructureColumn {
                 name: text_or_empty(row, "COLUMN_NAME"),
                 data_type: text_or_empty(row, "COLUMN_TYPE"),
                 nullable: text_or_empty(row, "IS_NULLABLE").eq_ignore_ascii_case("YES"),
-                default_value: text(row, "COLUMN_DEFAULT"),
-                // `DEFAULT_GENERATED` is MySQL 8's marker for an expression default. The
-                // `CURRENT_TIMESTAMP` family carries it too, but is recognised from its own text
-                // wherever it appears, so it needs nothing from here.
-                default_is_expression: extra_lower.contains("default_generated"),
+                default_value,
+                default_is_expression,
                 auto_increment: extra_lower.contains("auto_increment"),
                 on_update_current_timestamp: extra_lower.contains("on update current_timestamp"),
                 // Matched on the two full phrases rather than on "generated" alone, which
@@ -930,4 +1052,71 @@ pub async fn drop_index(
         ),
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The values MariaDB 11.8 actually reports for these declarations, read off a live server.
+    /// Each is the source text of the default rather than its value, which is the whole difference
+    /// from MySQL.
+    #[test]
+    fn a_mariadb_default_is_read_as_the_literal_it_is() {
+        // A quoted literal comes back as its value, with the quoting undone.
+        assert_eq!(mariadb_default(Some("'abc'".into())), (Some("abc".into()), false));
+        assert_eq!(mariadb_default(Some("'a''b'".into())), (Some("a'b".into()), false));
+        // A backslash in the value arrives doubled, the way the server would have to write it.
+        assert_eq!(mariadb_default(Some(r"'a\\b'".into())), (Some(r"a\b".into()), false));
+        // And a single one is an escape, which is what doubling it is there to avoid: `\b` is a
+        // backspace to MySQL and to MariaDB alike.
+        assert_eq!(mariadb_default(Some(r"'a\b'".into())), (Some("a\u{8}".into()), false));
+        assert_eq!(mariadb_default(Some("''".into())), (Some(String::new()), false));
+        // A string that reads like NULL is still a string: it arrives quoted.
+        assert_eq!(mariadb_default(Some("'NULL'".into())), (Some("NULL".into()), false));
+        // And a number stays the number it is, rather than becoming an expression.
+        assert_eq!(mariadb_default(Some("7".into())), (Some("7".into()), false));
+        assert_eq!(mariadb_default(Some("-3".into())), (Some("-3".into()), false));
+        assert_eq!(mariadb_default(Some("1.50".into())), (Some("1.50".into()), false));
+    }
+
+    /// The bare word, which MariaDB writes both for `DEFAULT NULL` and for no default at all. Read
+    /// as no default either way — on a nullable column the two mean the same thing, and a column
+    /// that is not nullable reports SQL NULL instead.
+    #[test]
+    fn a_mariadb_null_default_is_no_default() {
+        assert_eq!(mariadb_default(Some("NULL".into())), (None, false));
+        assert_eq!(mariadb_default(None), (None, false));
+    }
+
+    /// What is neither quoted nor a number can only be an expression — which is the distinction
+    /// MySQL draws with `DEFAULT_GENERATED` in `EXTRA`, and MariaDB does not draw at all.
+    #[test]
+    fn a_mariadb_expression_default_is_marked_as_one() {
+        assert_eq!(
+            mariadb_default(Some("current_timestamp()".into())),
+            (Some("current_timestamp()".into()), true)
+        );
+        assert_eq!(mariadb_default(Some("uuid()".into())), (Some("uuid()".into()), true));
+        assert_eq!(mariadb_default(Some("(1 + 1)".into())), (Some("(1 + 1)".into()), true));
+    }
+
+    /// Whatever is read out of a default has to survive being written back into one, or editing a
+    /// column would rewrite the default it was only meant to leave alone.
+    ///
+    /// `'NULL'` is left out, and not because MariaDB is any trouble: it is read back correctly
+    /// here, but [`default_clause`] writes the four characters out as SQL NULL by design — typing
+    /// `NULL` into the default box is how a user asks for SQL NULL. MySQL loses that default in
+    /// exactly the same way, so it is nothing this reading introduced.
+    #[test]
+    fn a_default_read_from_mariadb_goes_back_the_way_it_came() {
+        for reported in ["'abc'", "'a''b'", "''", "7", "current_timestamp()", "(1 + 1)"] {
+            let (value, is_expression) = mariadb_default(Some(reported.into()));
+            let value = value.expect("none of these is an absent default");
+            let clause = default_clause(&value, is_expression, "varchar(32)");
+            // Re-reading the clause the way MariaDB would report it again lands on the same value.
+            let (again, _) = mariadb_default(Some(clause));
+            assert_eq!(again.as_deref(), Some(value.as_str()), "{reported}");
+        }
+    }
 }

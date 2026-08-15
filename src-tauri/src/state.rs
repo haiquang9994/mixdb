@@ -11,7 +11,13 @@ use tokio::sync::Mutex;
 /// `commands::handle`.
 #[derive(Clone)]
 pub enum DbHandle {
-    Mysql(sqlx::MySqlPool),
+    /// The pool, and whether the server it reaches is MariaDB rather than MySQL. The flavour
+    /// travels with the pool because it is a property of that one server and is read once, when
+    /// the connection is opened — see `db::mysql::detect_mariadb`.
+    Mysql {
+        pool: sqlx::MySqlPool,
+        mariadb: bool,
+    },
     /// One pool per database rather than one for the server: a PostgreSQL connection is bound to
     /// the database it was opened on, so selecting another in the sidebar dials again. Behind an
     /// `Arc` because the set of them grows as databases are opened — see `db::postgres::Pools`.

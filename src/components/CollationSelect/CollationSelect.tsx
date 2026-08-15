@@ -62,9 +62,11 @@ function CollationSelect({ value, collations, placeholder, ariaLabel, disabled, 
           <span className={styles.option}>
             <span>{collation.name}</span>
             <span className={styles.charset}>
-              {collation.isDefault
-                ? t("collation.charsetDefault", { charset: collation.charset })
-                : collation.charset}
+              {collation.charset === ""
+                ? t("collation.anyCharset")
+                : collation.isDefault
+                  ? t("collation.charsetDefault", { charset: collation.charset })
+                  : collation.charset}
             </span>
           </span>
         ),
