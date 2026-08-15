@@ -130,6 +130,8 @@ const en = {
     editColumn: "Edit this column",
     dropColumn: "Drop this column",
     noColumns: "No columns.",
+    filterColumns: "Search columns...",
+    noColumnsMatch: "No column matches this search.",
     colName: "Name",
     colType: "Type",
     colNullable: "Null",

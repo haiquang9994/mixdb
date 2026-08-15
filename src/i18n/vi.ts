@@ -127,6 +127,8 @@ const vi: TranslationDict = {
     editColumn: "Sửa cột này",
     dropColumn: "Xóa cột này",
     noColumns: "Không có cột nào.",
+    filterColumns: "Tìm cột...",
+    noColumnsMatch: "Không có cột nào khớp.",
     colName: "Tên",
     colType: "Kiểu",
     colNullable: "Null",

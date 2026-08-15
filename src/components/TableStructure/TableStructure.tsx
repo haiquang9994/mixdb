@@ -5,6 +5,7 @@ import ActionBar from "../ActionBar";
 import ColumnDialog from "../ColumnDialog";
 import ConfirmDialog from "../ConfirmDialog";
 import IndexDialog, { indexKind } from "../IndexDialog";
+import Input from "../Input";
 import LoadingOverlay from "../LoadingOverlay";
 import { PencilIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
@@ -151,6 +152,9 @@ function TableStructure({
   const [indexDialog, setIndexDialog] = useState<IndexDialogState | null>(null);
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null);
   const [collations, setCollations] = useState<SqlCollation[]>([]);
+  /** What the columns grid is narrowed to, as typed. A wide table is the one nobody can read down,
+   *  and it is also the one where the column being looked for has a name already in mind. */
+  const [columnFilter, setColumnFilter] = useState("");
 
   // Read once per connection rather than per table: the list belongs to the server, and every
   // column dialog opened on it picks from the same one.
@@ -215,18 +219,43 @@ function TableStructure({
   const indexes = structure?.indexes ?? [];
   const busy = loading || saving;
 
+  // Emptied whenever another table is put on screen: a filter left over from the last one would
+  // hide most of this table's columns while reading as if the table simply had that few.
+  useEffect(() => {
+    setColumnFilter("");
+  }, [tableKey]);
+
+  /** The columns on screen, each with the place it holds in the table — the `#` column counts
+   *  positions in the table rather than in what the filter left, so a column keeps the number it
+   *  had whether or not anything is being searched for. */
+  const needle = columnFilter.trim().toLowerCase();
+  const shownColumns = useMemo(() => {
+    const all = columns.map((column, position) => ({ column, position }));
+    return needle ? all.filter((e) => e.column.name.toLowerCase().includes(needle)) : all;
+  }, [columns, needle]);
+
   // Each grid holds only the rows on screen once it is worth it. Everything either grid does — the
   // edit and drop buttons, the reload, the dialogs — works off `columns` and `indexes` rather than
   // off what is drawn, so none of it notices.
   const columnScroll = useRef<HTMLDivElement>(null);
   const indexScroll = useRef<HTMLDivElement>(null);
-  const columnsVirtual = columns.length >= VIRTUAL_FROM;
+  const columnsVirtual = shownColumns.length >= VIRTUAL_FROM;
   const indexesVirtual = indexes.length >= VIRTUAL_FROM;
   const columnView = useVirtualRows(columnScroll, {
-    total: columns.length,
+    total: shownColumns.length,
     rowHeight: ROW_HEIGHT,
     enabled: columnsVirtual,
   });
+
+  /** Narrows the columns grid, and puts it back to the top as it does: the matches are a new set of
+   *  rows, and the offset the last set was read at says nothing about them. Written straight to the
+   *  box rather than left to an effect, so the window of rows — which is worked out from the box —
+   *  is already the top of the results in the frame the typing lands in. */
+  function filterColumns(value: string) {
+    const box = columnScroll.current;
+    if (box) box.scrollTop = 0;
+    setColumnFilter(value);
+  }
   const indexView = useVirtualRows(indexScroll, {
     total: indexes.length,
     rowHeight: ROW_HEIGHT,
@@ -238,7 +267,7 @@ function TableStructure({
    *  between them the same way it picks between real rows. */
   const widestColumn = useMemo(
     () =>
-      widestValues(columns, 8, (column, c) =>
+      widestValues(shownColumns, 8, ({ column }, c) =>
         [
           "",
           column.name,
@@ -250,13 +279,19 @@ function TableStructure({
           column.comment,
         ][c]
       ),
-    [columns, t]
+    [shownColumns, t]
   );
   /** Whether any column carries badges beside its name, and how many at once — the widest name has
    *  to leave room for them, and a table with none of them should not be given the room. */
   const columnBadges = useMemo(
-    () => Math.max(0, ...columns.map((c) => (c.key === "" ? 0 : 1) + (c.autoIncrement ? 1 : 0))),
-    [columns]
+    () =>
+      Math.max(
+        0,
+        ...shownColumns.map(
+          ({ column }) => (column.key === "" ? 0 : 1) + (column.autoIncrement ? 1 : 0)
+        )
+      ),
+    [shownColumns]
   );
   const widestIndex = useMemo(
     () =>
@@ -361,6 +396,30 @@ function TableStructure({
       <section className={styles.panel}>
         <header className={styles.panelHeader}>
           <h4 className={styles.panelTitle}>{t("structure.columnsTitle")}</h4>
+          {/* How much of the table is being looked at, but only while that is not all of it —
+              numbers alone, since there is nothing to say about them in any language. */}
+          {needle !== "" && (
+            <span className={styles.matchCount}>
+              {shownColumns.length}/{columns.length}
+            </span>
+          )}
+          <Input
+            size="small"
+            className={styles.filter}
+            placeholder={t("structure.filterColumns")}
+            aria-label={t("structure.filterColumns")}
+            value={columnFilter}
+            onChange={(e) => filterColumns(e.target.value)}
+            // Escape empties the box rather than leaving the pane, which is where every other
+            // search in the app puts it. Held here while there is something to clear, so it is not
+            // taken from whatever else in the workspace answers to it.
+            onKeyDown={(e) => {
+              if (e.key !== "Escape" || columnFilter === "") return;
+              e.preventDefault();
+              e.stopPropagation();
+              filterColumns("");
+            }}
+          />
           <ActionBar
             actions={[
               {
@@ -488,13 +547,12 @@ function TableStructure({
                   <td colSpan={9} />
                 </tr>
               )}
-              {columns.slice(columnView.first, columnView.last).map((column, offset) => {
-                // The index into the whole list rather than into what is drawn, since it is what
-                // the `#` column counts.
-                const i = columnView.first + offset;
+              {shownColumns.slice(columnView.first, columnView.last).map(({ column, position }) => {
                 return (
                   <tr key={column.name}>
-                    <td className={styles.rowNumber}>{i + 1}</td>
+                    {/* Where the column sits in the table, which is not where it sits in a filtered
+                        list — a search for one name should not renumber it. */}
+                    <td className={styles.rowNumber}>{position + 1}</td>
                     <td>
                       <span className={styles.name}>{column.name}</span>
                       {column.key === "PRI" && (
@@ -577,7 +635,11 @@ function TableStructure({
               )}
             </tbody>
           </table>
-          {!loading && columns.length === 0 && <p className="muted">{t("structure.noColumns")}</p>}
+          {!loading && shownColumns.length === 0 && (
+            <p className="muted">
+              {t(columns.length === 0 ? "structure.noColumns" : "structure.noColumnsMatch")}
+            </p>
+          )}
         </div>
       </section>
 
