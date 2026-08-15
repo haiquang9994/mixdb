@@ -24,6 +24,23 @@
   opacity: 0.8;
 }
 
+/* How many of the database's tables the search left, beside the heading that names it. */
+.matchCount {
+  font-size: 0.8em;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.55;
+}
+
+/* Beside the heading, over the column of names it searches, and carrying the header's slack on its
+   right — which is what puts the reload button after it against the far edge. It never grows past
+   what a table name needs, and shrinks rather than pushing the button off a narrow pane. */
+.filter {
+  flex: 0 1 14rem;
+  min-width: 5rem;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
 .gridWrap {
   flex: 1;
   min-width: 0;

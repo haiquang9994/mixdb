@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fileInto } from "../../paneCache";
 import { gridStyle, useVirtualRows, widestValues } from "../../virtualRows";
 import ActionBar from "../ActionBar";
+import Input from "../Input";
 import LoadingOverlay from "../LoadingOverlay";
 import { ChevronDownIcon, ChevronUpIcon, ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
@@ -162,6 +163,15 @@ function DatabaseStats({
   /** Bumped whenever the cache is written to, since a Map is the same object before and after and
    *  nothing would re-render off it on its own. */
   const [, setCacheToken] = useState(0);
+  /** What the grid is narrowed to, as typed. Not filed with the figures: the sort is the user's
+   *  standing choice about a database, while a search is about the question being asked right now. */
+  const [filter, setFilter] = useState("");
+
+  // Emptied whenever another database is put on screen, so its tables are not hidden by a search
+  // typed against the one before — which would read as a database with almost nothing in it.
+  useEffect(() => {
+    setFilter("");
+  }, [database]);
 
   /** What is filed for the database now selected. Read plainly rather than memoised: it is one map
    *  lookup, and a memo would only add a list of dependencies to get wrong. */
@@ -260,11 +270,22 @@ function DatabaseStats({
     return rows;
   }, [stats, sort]);
 
-  /** What the footer adds up. The average is the database's own — total bytes over total records,
-   *  not the mean of the per-table averages, which would weigh a tiny table like a huge one. */
+  /** The rows on screen, each with the place it holds in the order — the `#` column counts positions
+   *  in the whole database, so the heaviest table is the first one whether or not it is what was
+   *  searched for, and a match keeps the rank that says how it compares to everything else. */
+  const needle = filter.trim().toLowerCase();
+  const shown = useMemo(() => {
+    const all = sorted.map((row, position) => ({ row, position }));
+    return needle ? all.filter((e) => e.row.name.toLowerCase().includes(needle)) : all;
+  }, [sorted, needle]);
+
+  /** What the footer adds up — the rows on screen, which under a search is what was searched for:
+   *  the weight of one family of tables is most of the reason to narrow the grid at all. The average
+   *  is their own, total bytes over total records, not the mean of the per-table averages, which
+   *  would weigh a tiny table like a huge one. */
   const totals = useMemo(() => {
-    const sum = sorted.reduce(
-      (acc, row) => ({
+    const sum = shown.reduce(
+      (acc, { row }) => ({
         rows: acc.rows + row.rows,
         dataSize: acc.dataSize + row.dataSize,
         indexSize: acc.indexSize + row.indexSize,
@@ -272,22 +293,35 @@ function DatabaseStats({
       { rows: 0, dataSize: 0, indexSize: 0 },
     );
     return { ...sum, avgRecordSize: sum.rows > 0 ? sum.dataSize / sum.rows : 0 };
-  }, [sorted]);
+  }, [shown]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   // Only the rows on screen are built into the DOM past a certain size. Sorting, the totals in the
-  // footer and the reload all work off `sorted` rather than off what is drawn, so none of them
+  // footer and the reload all work off the whole set rather than off what is drawn, so none of them
   // notices.
-  const virtual = sorted.length >= VIRTUAL_FROM;
+  const virtual = shown.length >= VIRTUAL_FROM;
   const view = useVirtualRows(scrollRef, {
-    total: sorted.length,
+    total: shown.length,
     rowHeight: ROW_HEIGHT,
     enabled: virtual,
   });
 
+  /** Narrows the grid, and puts it back to the top as it does: the matches are a new set of rows,
+   *  and the offset the last set was read at says nothing about them. Written straight to the box
+   *  rather than left to an effect, so the window of rows — which is worked out from the box — is
+   *  already the top of the results in the frame the typing lands in. */
+  function search(value: string) {
+    const box = scrollRef.current;
+    if (box) box.scrollTop = 0;
+    setFilter(value);
+  }
+
   /** The widest few values of each column, for the sizer row below. Three rather than one because
    *  length is only an approximation of width — all three go in, and the browser picks. */
-  const widest = useMemo(() => widestValues(sorted, 6, cellText), [sorted]);
+  const widest = useMemo(
+    () => widestValues(shown, 6, ({ row }, column) => cellText(row, column)),
+    [shown]
+  );
 
   /** Moves the clicked column to its next sort state: a new column opens on the order that reads
    *  it best — biggest first for a number, A to Z for a name — and clicking it again reverses. */
@@ -302,6 +336,7 @@ function DatabaseStats({
   const nameLabel = t(kind !== "mongo" ? "dbStats.colTable" : "dbStats.colCollection");
   const countLabel = t(kind !== "mongo" ? "dbStats.colRows" : "dbStats.colDocuments");
   const averageLabel = t(kind !== "mongo" ? "dbStats.colAvgRow" : "dbStats.colAvgDocument");
+  const searchLabel = t(kind !== "mongo" ? "dbStats.searchTables" : "dbStats.searchCollections");
 
   /** One sortable header. The chevron is always in the flow, empty when the column is not the one
    *  being sorted by, so the header does not change width as the sort moves between columns. */
@@ -331,6 +366,30 @@ function DatabaseStats({
         <h4 className={styles.panelTitle}>
           {t(kind !== "mongo" ? "dbStats.tablesTitle" : "dbStats.collectionsTitle", { database })}
         </h4>
+        {/* How much of the database is being looked at, but only while that is not all of it —
+            numbers alone, since there is nothing to say about them in any language. */}
+        {needle !== "" && (
+          <span className={styles.matchCount}>
+            {shown.length}/{sorted.length}
+          </span>
+        )}
+        <Input
+          size="small"
+          className={styles.filter}
+          placeholder={searchLabel}
+          aria-label={searchLabel}
+          value={filter}
+          onChange={(e) => search(e.target.value)}
+          // Escape empties the box rather than leaving the pane, which is where every other search
+          // in the app puts it. Held here while there is something to clear, so it is not taken
+          // from whatever else in the workspace answers to it.
+          onKeyDown={(e) => {
+            if (e.key !== "Escape" || filter === "") return;
+            e.preventDefault();
+            e.stopPropagation();
+            search("");
+          }}
+        />
         <ActionBar
           actions={[
             {
@@ -401,13 +460,12 @@ function DatabaseStats({
                 <td colSpan={6} />
               </tr>
             )}
-            {sorted.slice(view.first, view.last).map((row, offset) => {
-              // The index into the whole list, not into what is drawn: it is what the `#` column
-              // counts, and it has to go on counting from one.
-              const i = view.first + offset;
+            {shown.slice(view.first, view.last).map(({ row, position }) => {
               return (
                 <tr key={row.name}>
-                  <td className={styles.rowNumber}>{i + 1}</td>
+                  {/* Where the table stands in the order, which is not where it stands in what a
+                      search left — the rank is what says how it compares to the rest. */}
+                  <td className={styles.rowNumber}>{position + 1}</td>
                   <td>
                     <span className={styles.name}>{row.name}</span>
                   </td>
@@ -432,11 +490,15 @@ function DatabaseStats({
               </tr>
             )}
           </tbody>
-          {sorted.length > 0 && (
+          {shown.length > 0 && (
             <tfoot>
               <tr>
                 <td className={styles.rowNumber} />
-                <td className={styles.name}>{t("dbStats.total")}</td>
+                {/* Says so when it is adding up a search rather than the database: a figure this
+                    much smaller than the one that was there a keystroke ago has to name itself. */}
+                <td className={styles.name}>
+                  {t(needle === "" ? "dbStats.total" : "dbStats.totalShown")}
+                </td>
                 <td className={styles.numeric}>{formatCount(totals.rows)}</td>
                 <td className={styles.numeric}>{formatSize(totals.dataSize)}</td>
                 <td className={styles.numeric}>{formatSize(totals.indexSize)}</td>
@@ -447,16 +509,18 @@ function DatabaseStats({
         </table>
         {/* Only once something has actually been read: `stats` is null while the first read is
             still out, and after one that failed — neither is an empty database. */}
-        {!loading && stats?.length === 0 && (
+        {!loading && stats !== null && shown.length === 0 && (
           <p className="muted">
-            {t(kind !== "mongo" ? "dbStats.noTables" : "dbStats.noCollections")}
+            {stats.length === 0
+              ? t(kind !== "mongo" ? "dbStats.noTables" : "dbStats.noCollections")
+              : t(kind !== "mongo" ? "dbStats.noTablesMatch" : "dbStats.noCollectionsMatch")}
           </p>
         )}
       </div>
 
       {/* MySQL's row counts are sampled rather than counted, and saying so once under the grid is
           better than a tooltip on every cell that carries one. */}
-      {kind !== "mongo" && sorted.length > 0 && (
+      {kind !== "mongo" && shown.length > 0 && (
         <p className={styles.note}>{t("dbStats.estimateNote")}</p>
       )}
 

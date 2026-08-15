@@ -44,6 +44,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 ### Added
 
 - The Structure tab searches a table's columns by name.
+- The Statistics tab searches a database's tables by name, and totals what the search leaves.
 
 ## [0.0.11] - 2026-08-14
 
