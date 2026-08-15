@@ -146,6 +146,7 @@ const en = {
     uniqueTooltip: "The leading column of a unique index",
     indexTooltip: "The leading column of an index",
     autoIncrementTooltip: "The server assigns this value itself",
+    expressionTooltip: "An expression the server runs for each new row, not text it stores",
     generatedTooltip:
       "A generated column — its expression is not read here, so it can only be dropped",
     dropColumnTitle: "Drop column?",

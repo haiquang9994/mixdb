@@ -40,6 +40,11 @@ export interface SqlEditing {
   /** A database or a table carries a collation of its own. On PostgreSQL only a column does: a
    *  database's is a locale of the host rather than a name off a list, and a table has none. */
   objectCollation: boolean;
+  /** A default is either an expression or a literal, and which one it is is worth saying in the
+   *  column grid: `uuid()` and the text `uuid()` are stored the same way there and read alike.
+   *  PostgreSQL keeps every default as an expression and reports it cast — `'new'::text` — so
+   *  there the mark would sit on every row and set nothing apart. */
+  markExpressionDefaults: boolean;
   /** The index kinds on offer, in the order they are shown. */
   indexKinds: readonly SqlIndexKind[];
   /** The access methods an index may be built with, upper-cased. */

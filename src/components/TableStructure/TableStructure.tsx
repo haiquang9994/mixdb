@@ -12,6 +12,7 @@ import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
 import { useSqlApi, useSqlDialect } from "../../sql/context";
+import type { SqlEditing } from "../../sql/dialect";
 import type {
   SqlCollation,
   SqlColumnSpec,
@@ -38,6 +39,17 @@ const INDEX_KIND_LABEL = {
 function indexMethod(index: SqlTableIndex, methods: readonly string[]): string {
   const type = index.indexType.toUpperCase();
   return methods.includes(type) ? type : "";
+}
+
+/** What marks a default the server evaluates rather than stores. `f(x)` rather than a pair of
+ * letters like the badges beside a name: those abbreviate a phrase, and this says what the value
+ * beside it is. */
+const EXPRESSION_BADGE = "f(x)";
+
+/** Whether a column's default is one the server works out for each new row rather than a value it
+ * keeps — and whether that is a distinction this engine draws at all. */
+function isExpressionDefault(column: SqlStructureColumn, offers: SqlEditing): boolean {
+  return offers.markExpressionDefaults && column.defaultIsExpression && column.defaultValue !== null;
 }
 
 /** An index over an expression rather than over columns. Its expression is not read here, so such
@@ -281,6 +293,13 @@ function TableStructure({
       ),
     [shownColumns, t]
   );
+  /** Whether the Default column carries a badge at all: the width it is given has to leave room for
+   *  one, and a table whose defaults are all values it stores should not be given the room. */
+  const defaultBadge = useMemo(
+    () => shownColumns.some(({ column }) => isExpressionDefault(column, offers)),
+    [shownColumns, offers]
+  );
+
   /** Whether any column carries badges beside its name, and how many at once — the widest name has
    *  to leave room for them, and a table with none of them should not be given the room. */
   const columnBadges = useMemo(
@@ -506,7 +525,14 @@ function TableStructure({
                   <td className={styles.mono}>
                     <div className={styles.sizer}>
                       {widestColumn[4].map((value) => (
-                        <div key={value}>{value}</div>
+                        <div key={value}>
+                          {value}
+                          {defaultBadge && (
+                            <span className={`${styles.badge} ${styles.badgeExpression}`}>
+                              {EXPRESSION_BADGE}
+                            </span>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </td>
@@ -585,6 +611,17 @@ function TableStructure({
                     </td>
                     <td className={column.defaultValue === null ? styles.muted : styles.mono}>
                       {column.defaultValue ?? t("structure.none")}
+                      {/* An expression is what the server runs for each new row, not text it
+                          stores: `uuid()` here means a different value every time, and reads
+                          exactly like the six characters `uuid()` would without this. */}
+                      {isExpressionDefault(column, offers) && (
+                        <span
+                          className={`${styles.badge} ${styles.badgeExpression}`}
+                          title={t("structure.expressionTooltip")}
+                        >
+                          {EXPRESSION_BADGE}
+                        </span>
+                      )}
                     </td>
                     <td className={styles.muted} title={column.extra}>
                       {column.extra || t("structure.none")}

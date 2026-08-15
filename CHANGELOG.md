@@ -46,6 +46,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - The Structure tab searches a table's columns by name.
 - The Statistics tab searches a database's tables by name, and totals what the search leaves.
 
+### Changed
+
+- The Structure tab marks a default the server evaluates, such as `uuid()`, with an `f(x)` badge, so it no longer reads as stored text.
+
 ### Fixed
 
 - Dumping a MariaDB database no longer fails as soon as it starts.

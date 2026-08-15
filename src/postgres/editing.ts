@@ -71,6 +71,7 @@ export const postgresEditing: SqlEditing = {
   columnPosition: false,
   onUpdateCurrentTimestamp: false,
   objectCollation: false,
+  markExpressionDefaults: false,
   indexKinds: ["index", "unique", "primary"],
   indexMethods: ["BTREE", "HASH", "GIN", "GIST", "SPGIST", "BRIN"],
   indexPrefix: false,

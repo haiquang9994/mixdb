@@ -50,6 +50,7 @@ export const mysqlEditing: SqlEditing = {
   columnPosition: true,
   onUpdateCurrentTimestamp: true,
   objectCollation: true,
+  markExpressionDefaults: true,
   indexKinds: ["index", "unique", "primary", "fulltext", "spatial"],
   indexMethods: ["BTREE", "HASH"],
   indexPrefix: true,

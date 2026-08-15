@@ -246,6 +246,16 @@
   opacity: 1;
 }
 
+/* The badge on a default the server evaluates. Tinted rather than plain: it is the one badge that
+   changes what the value beside it means, and a grey one reads as a note about the column. */
+.badgeExpression {
+  border-color: rgb(var(--accent-rgb) / 0.45);
+  color: var(--accent-text);
+  background: rgb(var(--accent-rgb) / 0.1);
+  font-family: system-ui, sans-serif;
+  opacity: 1;
+}
+
 /* The Kind cell's badge names a kind rather than abbreviating one: it stands alone in its cell,
    with nothing to its left to be spaced from, and is not a tooltip target. */
 .kindBadge {

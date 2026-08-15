@@ -143,6 +143,7 @@ const vi: TranslationDict = {
     uniqueTooltip: "Cột đầu tiên của một unique index",
     indexTooltip: "Cột đầu tiên của một index",
     autoIncrementTooltip: "Máy chủ tự gán giá trị này",
+    expressionTooltip: "Biểu thức máy chủ chạy cho mỗi dòng mới, không phải chuỗi được lưu",
     generatedTooltip: "Cột generated — biểu thức của nó không được đọc ở đây, nên chỉ có thể xóa",
     dropColumnTitle: "Xóa cột?",
     dropColumnMessage: "Xóa {{column}} cùng toàn bộ dữ liệu trong đó? Thao tác này không thể hoàn tác.",
