@@ -1,0 +1,372 @@
+//! Connecting, disconnecting, and everything the per-engine command files are built on.
+//!
+//! The helpers below stay private on purpose: a child module sees its parent's private items, so
+//! `commands/mysql.rs` reaches them through `use super::...` while nothing outside `commands` can.
+//!
+//! The drivers are reached through `drivers::` here rather than imported by name, because
+//! `pub mod mysql;` below and a `use ...drivers::mysql;` would be the same name in this one module.
+
+use crate::error::AppError;
+use serde::Serialize;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::sync::Mutex;
+use uuid::Uuid;
+
+use crate::modules::db::drivers;
+use crate::modules::db::models::{ConnectionConfig, DbKind};
+use crate::modules::db::state::{ActiveConnection, DbHandle, DbState};
+use crate::ssh::{self, SshConfig};
+
+pub mod mongo;
+pub mod mysql;
+pub mod postgres;
+pub mod redis;
+pub mod tools;
+
+
+const DB_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Where the settings screen listens for how far a tool download has got. Named here and in
+/// `src/tools.ts`, which are the only two places that need to agree on it.
+const TOOLS_PROGRESS_EVENT: &str = "tools://progress";
+
+/// Where the workspace listens for how far a dump or a restore has got. Named here and in
+/// `src/transfer.ts`.
+const TRANSFER_PROGRESS_EVENT: &str = "transfer://progress";
+
+/// One reading of a running transfer, with the connection it belongs to: two tabs can be dumping at
+/// once, and neither overlay has any business showing the other's figures.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransferProgress {
+    id: String,
+    #[serde(flatten)]
+    progress: drivers::dump::Progress,
+}
+
+/// Hands every reading of one connection's transfer to the window, on [`TRANSFER_PROGRESS_EVENT`].
+fn reporter(app: &AppHandle, id: &str) -> impl Fn(drivers::dump::Progress) {
+    let app = app.clone();
+    let id = id.to_string();
+    move |progress| {
+        // A dropped reading is not worth failing a transfer over: the next one is a quarter of a
+        // second away, and the last word comes from the command's own result.
+        let _ = app.emit(
+            TRANSFER_PROGRESS_EVENT,
+            TransferProgress { id: id.clone(), progress },
+        );
+    }
+}
+
+async fn with_timeout<T>(
+    fut: impl std::future::Future<Output = Result<T, AppError>>,
+    kind: &'static str,
+) -> Result<T, AppError> {
+    match tokio::time::timeout(DB_CONNECT_TIMEOUT, fut).await {
+        Ok(result) => result,
+        Err(_) => Err(err!("error.connectTimeout", kind = kind, seconds = DB_CONNECT_TIMEOUT.as_secs())),
+    }
+}
+
+#[tauri::command]
+pub async fn test_ssh_tunnel(app: AppHandle, ssh: SshConfig) -> Result<(), AppError> {
+    ssh::test_connection(&ssh, &app_data_dir(&app)?).await
+}
+
+/// The address to dial and, when the connection goes through SSH, the tunnel that has to stay
+/// alive for it to keep working. A caller that gives up before storing the tunnel drops it, which
+/// closes the forward again rather than leaving it running unattended.
+async fn resolve_endpoint(
+    config: &ConnectionConfig,
+    app_data: &std::path::Path,
+) -> Result<(String, u16, Option<ssh::Tunnel>), AppError> {
+    match &config.ssh {
+        Some(ssh) => {
+            let (local_port, tunnel) =
+                ssh::open_tunnel(ssh, &config.host, config.port, app_data).await?;
+            Ok(("127.0.0.1".to_string(), local_port, Some(tunnel)))
+        }
+        None => Ok((config.host.clone(), config.port, None)),
+    }
+}
+
+#[tauri::command]
+pub async fn connect_db(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    config: ConnectionConfig,
+) -> Result<String, AppError> {
+    let app_data = app_data_dir(&app)?;
+    let (handle, endpoint, tunnel) = match config.kind {
+        DbKind::Mysql => {
+            let (host, port, tunnel) = resolve_endpoint(&config, &app_data).await?;
+            let username = config.username.clone().unwrap_or_default();
+            let password = config.password.clone().unwrap_or_default();
+            let pool = with_timeout(
+                drivers::mysql::connect(
+                    &host,
+                    port,
+                    &username,
+                    &password,
+                    config.database.as_deref(),
+                    config.use_ssl,
+                ),
+                "MySQL",
+            )
+            .await?;
+            let mariadb = drivers::mysql::detect_mariadb(&pool).await;
+            (DbHandle::Mysql { pool, mariadb }, Some((host, port)), tunnel)
+        }
+        DbKind::Postgres => {
+            let (host, port, tunnel) = resolve_endpoint(&config, &app_data).await?;
+            let username = config.username.clone().unwrap_or_default();
+            let password = config.password.clone().unwrap_or_default();
+            let pools = with_timeout(
+                drivers::postgres::connect(
+                    &host,
+                    port,
+                    &username,
+                    &password,
+                    config.database.as_deref(),
+                    config.use_ssl,
+                ),
+                "PostgreSQL",
+            )
+            .await?;
+            (
+                DbHandle::Postgres(Arc::new(pools)),
+                Some((host, port)),
+                tunnel,
+            )
+        }
+        // MongoDB is configured as a whole connection string rather than host/port/user/password,
+        // so the endpoint lives inside the URI. Tunneling therefore has to read the host back out
+        // of it and then override it, instead of going through `resolve_endpoint`.
+        DbKind::Mongo => {
+            let uri = config.uri.as_deref().unwrap_or_default().trim();
+            if uri.is_empty() {
+                return Err(err!("error.mongoUriRequired"));
+            }
+            let (endpoint, tunnel) = match &config.ssh {
+                Some(ssh) => {
+                    let (host, port) = drivers::mongo::first_endpoint(uri).await?;
+                    let (local_port, task) = ssh::open_tunnel(ssh, &host, port, &app_data).await?;
+                    (Some(("127.0.0.1".to_string(), local_port)), Some(task))
+                }
+                None => (None, None),
+            };
+            let client =
+                with_timeout(drivers::mongo::connect(uri, endpoint.clone()), "MongoDB").await?;
+            (DbHandle::Mongo(client), endpoint, tunnel)
+        }
+        DbKind::Redis => {
+            let (host, port, tunnel) = resolve_endpoint(&config, &app_data).await?;
+            let db_index = config.database.as_deref().and_then(|d| d.parse().ok()).unwrap_or(0);
+            let conn = with_timeout(
+                drivers::redis::connect(
+                    &host,
+                    port,
+                    config.username.as_deref(),
+                    config.password.as_deref(),
+                    db_index,
+                ),
+                "Redis",
+            )
+            .await?;
+            (
+                DbHandle::Redis(Arc::new(Mutex::new(conn))),
+                Some((host, port)),
+                tunnel,
+            )
+        }
+    };
+
+    let id = Uuid::new_v4().to_string();
+    state.connections.lock().await.insert(
+        id.clone(),
+        ActiveConnection {
+            handle,
+            config,
+            endpoint,
+            tunnel,
+        },
+    );
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn disconnect_db(state: State<'_, DbState>, id: String) -> Result<(), AppError> {
+    state.connections.lock().await.remove(&id);
+    Ok(())
+}
+
+/// The handle `id` names, cloned out of the connection map so that the map is unlocked again
+/// before the command runs anything on it.
+///
+/// This is what `DbHandle` is cheap to clone for. Awaiting a query while holding the map would
+/// turn that lock into a queue for the whole app: a slow `SELECT` in one tab would stop a key
+/// listing in another, and stop the Disconnect button meant to put an end to it.
+async fn handle(state: &State<'_, DbState>, id: &str) -> Result<DbHandle, AppError> {
+    state
+        .connections
+        .lock()
+        .await
+        .get(id)
+        .map(|connection| connection.handle.clone())
+        .ok_or_else(|| err!("error.unknownConnection"))
+}
+
+async fn mysql_pool(state: &State<'_, DbState>, id: &str) -> Result<sqlx::MySqlPool, AppError> {
+    mysql_connection(state, id).await.map(|(pool, _)| pool)
+}
+
+/// The MySQL pool for `id`, and whether the server it reaches is MariaDB — for the handful of
+/// reads whose answer depends on which of the two answered.
+async fn mysql_connection(
+    state: &State<'_, DbState>,
+    id: &str,
+) -> Result<(sqlx::MySqlPool, bool), AppError> {
+    match handle(state, id).await? {
+        DbHandle::Mysql { pool, mariadb } => Ok((pool, mariadb)),
+        _ => Err(err!("error.wrongConnectionKind", kind = "MySQL")),
+    }
+}
+
+/// The pool for one database of a PostgreSQL connection, opening it if this is the first time that
+/// database has been asked for. `database` empty means the one the connection was opened on.
+///
+/// Every PostgreSQL command goes through this rather than through a pool of its own, because that
+/// is the whole difference from MySQL: there is no `USE`, so which database a command runs against
+/// is decided by which pool it is handed.
+async fn postgres_pool(
+    state: &State<'_, DbState>,
+    id: &str,
+    database: &str,
+) -> Result<sqlx::PgPool, AppError> {
+    match handle(state, id).await? {
+        DbHandle::Postgres(pools) => pools.pool(Some(database)).await,
+        _ => Err(err!("error.wrongConnectionKind", kind = "PostgreSQL")),
+    }
+}
+
+/// The whole PostgreSQL connection rather than one of its pools — for `DROP DATABASE`, which has
+/// to close the pool on the database it is dropping before the server will allow it.
+async fn postgres_pools(
+    state: &State<'_, DbState>,
+    id: &str,
+) -> Result<Arc<drivers::postgres::Pools>, AppError> {
+    match handle(state, id).await? {
+        DbHandle::Postgres(pools) => Ok(pools),
+        _ => Err(err!("error.wrongConnectionKind", kind = "PostgreSQL")),
+    }
+}
+
+async fn mongo_client(state: &State<'_, DbState>, id: &str) -> Result<mongodb::Client, AppError> {
+    match handle(state, id).await? {
+        DbHandle::Mongo(client) => Ok(client),
+        _ => Err(err!("error.wrongConnectionKind", kind = "MongoDB")),
+    }
+}
+
+/// The Redis connection `id` names. Locked by the caller for the length of one command, which is
+/// as long as anything needs it: the lock is this connection's own, so two tabs no longer wait on
+/// each other.
+async fn redis_connection(
+    state: &State<'_, DbState>,
+    id: &str,
+) -> Result<Arc<Mutex<drivers::redis::Connection>>, AppError> {
+    match handle(state, id).await? {
+        DbHandle::Redis(conn) => Ok(conn),
+        _ => Err(err!("error.wrongConnectionKind", kind = "Redis")),
+    }
+}
+
+/// What a dump or restore needs to dial the server itself: the address actually in use (the
+/// tunnel's local end, when there is one) and the credentials that opened the connection.
+///
+/// Read out of the connection and returned by value on purpose — the tools run for as long as the
+/// database is big, and holding the connection lock across that would stop every other command in
+/// the app until the dump finished.
+struct SqlEndpoint {
+    host: String,
+    port: u16,
+    user: String,
+    password: String,
+}
+
+/// The endpoint of a MySQL or PostgreSQL connection, checking on the way that it is the kind the
+/// caller expects — the tools of one engine cannot be pointed at the other's server.
+async fn sql_endpoint(
+    state: &State<'_, DbState>,
+    id: &str,
+    kind: DbKind,
+) -> Result<SqlEndpoint, AppError> {
+    let connections = state.connections.lock().await;
+    let connection = connections.get(id).ok_or_else(|| err!("error.unknownConnection"))?;
+    let matches = match kind {
+        DbKind::Mysql => matches!(connection.handle, DbHandle::Mysql { .. }),
+        DbKind::Postgres => matches!(connection.handle, DbHandle::Postgres(_)),
+        _ => false,
+    };
+    if !matches {
+        let name = if kind == DbKind::Postgres { "PostgreSQL" } else { "MySQL" };
+        return Err(err!("error.wrongConnectionKind", kind = name));
+    }
+    let (host, port) = connection
+        .endpoint
+        .clone()
+        .ok_or_else(|| err!("error.noDumpAddress"))?;
+    Ok(SqlEndpoint {
+        host,
+        port,
+        user: connection.config.username.clone().unwrap_or_default(),
+        password: connection.config.password.clone().unwrap_or_default(),
+    })
+}
+
+/// The MongoDB connection string to hand the tools, and the tunnel endpoint to point it at.
+async fn mongo_endpoint(
+    state: &State<'_, DbState>,
+    id: &str,
+) -> Result<(String, Option<(String, u16)>), AppError> {
+    let connections = state.connections.lock().await;
+    let connection = connections.get(id).ok_or_else(|| err!("error.unknownConnection"))?;
+    if !matches!(connection.handle, DbHandle::Mongo(_)) {
+        return Err(err!("error.wrongConnectionKind", kind = "MongoDB"));
+    }
+    let uri = connection
+        .config
+        .uri
+        .clone()
+        .filter(|uri| !uri.trim().is_empty())
+        .ok_or_else(|| err!("error.noDumpUri"))?;
+    Ok((uri, connection.endpoint.clone()))
+}
+
+/// Runs one of the command-line tools off the async runtime: they block for as long as the dump
+/// takes, which is not something an async worker should be spending itself on.
+async fn in_background<T, F>(work: F) -> Result<T, AppError>
+where
+    F: FnOnce() -> Result<T, AppError> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| err!("error.backgroundTaskFailed", message = e))?
+}
+
+/// Where MixDB keeps what it remembers between runs: the tools it downloaded, and the SSH host
+/// keys it has seen.
+fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
+    app.path()
+        .app_data_dir()
+        .map_err(|e| err!("error.noAppDataDir", message = e))
+}
+
+/// Where MixDB keeps the tools it downloaded for itself.
+fn tools_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
+    app_data_dir(app).map(|dir| dir.join("tools"))
+}

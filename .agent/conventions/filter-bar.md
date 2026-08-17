@@ -1,10 +1,10 @@
 # Filter bar
 
 The condition bar above a table (MySQL) or document list (Mongo) is split in two: the
-database-agnostic mechanics in `src/filters.ts`, and one operator list per database in
+database-agnostic mechanics in `src/modules/db/filters.ts`, and one operator list per database in
 `src/<db>/filters.ts`.
 
-## The shared half — `src/filters.ts`
+## The shared half — `src/modules/db/filters.ts`
 
 - `FilterArity` — how many values an operator reads out of its single text box: `"none"`
   (`IS NULL`, box disabled), `"one"`, `"list"` (comma-separated, for `IN`), `"pair"` (`min,max`,
@@ -25,7 +25,7 @@ duty, and adding an operator means touching all three:
 2. Its label in **both** `en.ts` and `vi.ts` — under `sqlTable.op.*` for MySQL, `noSqlTable.op.*`
    for Mongo.
 3. The matching arm in the backend's WHERE builder — `build_where` in
-   `src-tauri/src/db/mysql.rs`, with value splitting from `src-tauri/src/db/filters.rs`.
+   `src-tauri/src/modules/db/drivers/mysql.rs`, with value splitting from `src-tauri/src/modules/db/drivers/filters.rs`.
 
 An id present in the frontend list but missing from the backend match silently drops the condition;
 missing from the dictionaries it shows as the raw id.

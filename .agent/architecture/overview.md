@@ -4,41 +4,64 @@ MixDB is a Tauri 2 desktop app: a React webview for the UI, a Rust process for e
 touches a network or a disk.
 
 ```
-React webview                    Rust process
-─────────────                    ────────────
-ConnectionTab  ──invoke────────► commands.rs ──► db/{mysql,mongo,redis}.rs ──► server
-<db>/api.ts    ◄─JSON result───              └─► ssh_tunnel.rs (optional hop)
+React webview                              Rust process
+─────────────                              ────────────
+shell/App.tsx    tab bar, no module        lib.rs           plugins, per-module state
+  └─ registry ──► modules/db/DbTab.tsx     modules/mod.rs   handler(): every command
+        └─ <db>/api.ts ──invoke──────────► modules/db/commands/<engine>.rs
+                       ◄─JSON result─────    └─► drivers/{mysql,postgres,mongo,redis}.rs ──► server
+                                             └─► ssh/ (optional hop, shared)
 ```
 
 The split is strict: **no database driver, credential handling or network call exists in the
 frontend**. The webview only ever sends a command name plus JSON arguments and renders what comes
 back.
 
+## The shell and its modules
+
+Above database sits a module layer. The shell owns the tab bar, the keyboard shortcuts and the
+Settings dialog, and knows only what [`shell/module.ts`](../../src/shell/module.ts) declares:
+
+- `ModuleDefinition` — an id, an icon, a label, and the component a tab renders.
+- `ModuleTabProps` — what that component is handed: `active`, `onTitleChange`, `onBadgesChange`.
+- `TabBadge` — a mark the module wants drawn on its own tab. The shell draws it without knowing
+  what it means. The engine logo and the read-only lock are two of these; before the split they
+  were `tab.kind` and `tab.readOnly`, which put `DbKind` into the tab bar.
+
+The contract deliberately has **no lifecycle hooks, no persistence API and no event bus**. A module
+cleans up in its own `useEffect` and saves through its own store, and a shell that guesses at needs
+nobody has yet is harder to add to than the thing it replaced.
+
+[`shell/registry.ts`](../../src/shell/registry.ts) lists the modules and is the only file outside
+`src/modules/` that names one.
+
 ## Tabs and connections
 
-`App.tsx` owns a list of tabs. Each tab renders one `ConnectionTab`, and every tab is kept mounted
-(hidden with `display: none`) so switching tabs never loses a connection or scroll position.
-`Ctrl/Cmd+T` opens a tab, `Ctrl/Cmd+W` closes one; closing the last tab spawns a fresh one.
+`shell/App.tsx` owns a list of tabs — `{ id, moduleId, title, badges }`. Each renders the `Tab`
+component its module supplies, and every tab is kept mounted (hidden with `display: none`) so
+switching tabs never loses a connection or scroll position. `Ctrl/Cmd+T` opens a tab of
+`DEFAULT_MODULE_ID`, `Ctrl/Cmd+W` closes one; closing the last tab spawns a fresh one. With more
+than one module registered, `[+]` opens a menu instead of a tab.
 
-A `ConnectionTab` starts as a form. On connect it calls `connect_db` with a `ConnectionConfig`,
-gets back a **connection id** (a UUID string), and swaps itself for the workspace matching the
-database kind. That id is the first argument of every subsequent command — the backend looks the
-live handle up by it in `AppState.connections`.
+A `DbTab` starts as a form. On connect it calls `connect_db` with a `ConnectionConfig`, gets back a
+**connection id** (a UUID string), and swaps itself for the workspace matching the database kind.
+That id is the first argument of every subsequent command — the backend looks the live handle up by
+it in `DbState.connections`.
 
 ## Connection lifecycle
 
-1. `connect_db(config)` — if `config.ssh` is set, `ssh_tunnel::open_tunnel` first opens a local
+1. `connect_db(config)` — if `config.ssh` is set, `ssh::open_tunnel` first opens a local
    listener that forwards to the real host, and the driver is pointed at `127.0.0.1:<local_port>`
    instead. All three kinds are wrapped in a 10s timeout.
 2. The resulting handle (`MySqlPool`, `mongodb::Client` or a `redis::Connection`) is stored in
-   `AppState.connections` under a new UUID, together with the `Tunnel`.
+   `DbState.connections` under a new UUID, together with the `Tunnel`.
 3. Every later command takes that `id` and calls one of `commands::{mysql_pool, mongo_client,
-   redis_connection}`, which lock the map, **clone the handle out, and release the lock** before
+   redis_connection}` in `modules/db/commands/mod.rs`, which lock the map, **clone the handle out, and release the lock** before
    anything is run on it, erroring with `"Connection is not a … connection"` on a kind mismatch.
    Never hold `connections` across an `await` on a query: the map is one lock for the whole app,
    and a query awaited under it stops every other tab.
 4. `disconnect_db(id)` removes the entry, which drops the handle and with it the `Tunnel`, whose
-   own `Drop` aborts the forward. `ConnectionTab` calls it both from the Disconnect button and
+   own `Drop` aborts the forward. `DbTab` calls it both from the Disconnect button and
    from an unmount cleanup — closing a tab is a disconnect, and the backend hears about it no
    other way.
 
@@ -60,7 +83,7 @@ Mongo is configured as a single connection string, not host/port/user/password �
 
 ## Persistence
 
-- **Saved connections** — split in two by [src/savedConnections.ts](../../src/savedConnections.ts),
+- **Saved connections** — split in two by [src/modules/db/savedConnections.ts](../../src/modules/db/savedConnections.ts),
   which is the only module that knows about the split:
   - What a connection *is* (host, port, user, database, sidebar width) — `tauri-plugin-store`,
     file `connections.json`, key `saved`. Plain text on purpose.
@@ -72,11 +95,14 @@ Mongo is configured as a single connection string, not host/port/user/password �
 
   A connection saved by an older build, with its password still in the file, is moved across the
   first time it is read and the file rewritten without it.
+- **Query history, drafts and snippets** — `tauri-plugin-store`, one file each
+  (`query-history.json`, `query-drafts.json`, `query-snippets.json`). The database module's, like
+  the connections: a module picks its own store files, and nothing generalises persistence.
 - **Theme** (`mixdb-theme`) and **language** (`mixdb-lang`) — `localStorage`, not the store.
 
 ## Security posture
 
-`ssh_tunnel.rs` verifies host keys on a trust-on-first-use basis: a server never seen before is
+[`ssh/`](../../src-tauri/src/ssh/mod.rs) verifies host keys on a trust-on-first-use basis: a server never seen before is
 accepted and its SHA-256 fingerprint written to `known_hosts.json` in the app data directory, and
 a later connection offering a different key is refused with both fingerprints in the message. Its
 own file, not OpenSSH's `~/.ssh/known_hosts`. Accepting a rebuilt server's new key means deleting
@@ -84,7 +110,7 @@ its entry there.
 
 One deliberate tradeoff, marked in the code:
 
-- `mysql.rs` runs user-authored SQL through `sqlx::AssertSqlSafe`, opting out of sqlx's injection
+- `drivers/mysql.rs` runs user-authored SQL through `sqlx::AssertSqlSafe`, opting out of sqlx's injection
   guard. This is a database client — arbitrary SQL is the product, not a bug. Identifiers the app
   itself interpolates (database/table/column names) still go through `quote_ident`.
 

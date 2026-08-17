@@ -57,7 +57,7 @@ it catches nothing at all. Silence is the cheap failure here.
 - **The two share one `linter()`.** CodeMirror applies one lint configuration to every linter in an
   editor, so two delays are not available. Instead the single source returns the client's findings
   immediately and remembers the server's against the exact text they were about — see
-  [`SqlEditor/lint.ts`](../../src/components/SqlEditor/lint.ts).
+  [`SqlEditor/lint.ts`](../../src/modules/db/components/SqlEditor/lint.ts).
 
 - **`forceLinting` is not how you show a late answer, and the mistake is silent.** It only brings
   forward a run that is *already scheduled*; once a run has finished there is no timer, and the call

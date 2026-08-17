@@ -4,7 +4,7 @@ import Button from "../Button";
 import Input from "../Input";
 import { useDialogExit } from "../dialogMotion";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
+import { errorMessage } from "../../core/errors";
 import styles from "./NameDialog.module.css";
 
 interface Props {

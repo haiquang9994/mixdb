@@ -56,6 +56,39 @@ pub fn delete(id: &str) -> Result<(), AppError> {
     }
 }
 
+/// Runs one credential-store call off the async runtime.
+///
+/// Its own rather than borrowed from a module's command file: every function above blocks, and on
+/// macOS opening the store may put a prompt on screen — which is not something to hold a runtime
+/// worker for. Nothing here may depend on a module, so the helper lives with what needs it.
+async fn in_background<T, F>(work: F) -> Result<T, AppError>
+where
+    F: FnOnce() -> Result<T, AppError> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| err!("error.backgroundTaskFailed", message = e))?
+}
+
+/// Writes a saved connection's secrets to the OS credential store, replacing what was there.
+#[tauri::command]
+pub async fn secrets_save(id: String, secrets: Secrets) -> Result<(), AppError> {
+    in_background(move || save(&id, &secrets)).await
+}
+
+/// A saved connection's secrets, or nothing when it has none stored.
+#[tauri::command]
+pub async fn secrets_load(id: String) -> Result<Secrets, AppError> {
+    in_background(move || load(&id)).await
+}
+
+/// Forgets a saved connection's secrets, for when the connection itself is deleted.
+#[tauri::command]
+pub async fn secrets_delete(id: String) -> Result<(), AppError> {
+    in_background(move || delete(&id)).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::{delete, load, save, Secrets};

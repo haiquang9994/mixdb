@@ -221,7 +221,11 @@ pub mod db;
 ///
 /// One list, because Tauri takes exactly one `invoke_handler` and `generate_handler!` needs its
 /// paths written out — but split into blocks by owner, and each block is that module's to edit.
-pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+///
+/// Fixed to `tauri::Wry` rather than generic over the runtime: a command that takes an `AppHandle`
+/// takes `AppHandle<Wry>`, which satisfies `CommandArg` for that one runtime and not for an
+/// unknown `R`. `lib.rs` builds on `Wry` too, so nothing is given up by saying so here.
+pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         // ── shared ──
         crate::secrets::secrets_save,
@@ -399,7 +403,18 @@ pub fn run() {
 Run: `cargo check --manifest-path src-tauri/Cargo.toml`
 Expected: PASS.
 
-**Nếu `modules::handler()` không biên dịch** (chữ ký `impl Fn(tauri::ipc::Invoke<R>) -> bool` không khớp phiên bản Tauri đang dùng): đọc kiểu thật mà `cargo check` báo và sửa chữ ký cho khớp. Nếu vẫn không được, phương án lùi: bỏ `modules/mod.rs::handler()`, để `tauri::generate_handler![…]` nguyên trong `lib.rs` với đúng các khối và tiền tố `modules::db::commands::` như trên. Mọi phần khác của task giữ nguyên. Ghi lại lựa chọn này trong commit message.
+**Đã xảy ra, đã xử lý:** bản generic `handler<R: tauri::Runtime>()` **không** biên dịch — 13 lỗi `E0277: the trait bound 'AppHandle: CommandArg<'_, R>' is not satisfied`, vì mọi command nhận `AppHandle` là nhận `AppHandle<Wry>`, thoả `CommandArg` cho đúng một runtime chứ không cho `R` bất kỳ. Chốt chữ ký vào `tauri::Wry` như đoạn mã ở Step 3 là đủ; không phải dùng phương án lùi.
+
+**Nếu vẫn không được** (phiên bản Tauri khác): phương án lùi là bỏ `modules/mod.rs::handler()`, để `tauri::generate_handler![…]` nguyên trong `lib.rs` với đúng các khối và tiền tố `modules::db::commands::` như trên. Mọi phần khác của task giữ nguyên. Ghi lại lựa chọn này trong commit message.
+
+Thay cho bước đếm ở Task 3, chỗ này kiểm chắc hơn — đối chiếu **tập tên** command trước và sau:
+
+```bash
+git show HEAD:src-tauri/src/lib.rs | grep -oE '(commands|secrets)::[a-z_0-9]+' | sed 's/.*:://' | sort > /tmp/old_cmds.txt
+grep -oE '(commands|secrets)::[a-z_0-9]+' src-tauri/src/modules/mod.rs | sed 's/.*:://' | sort > /tmp/new_cmds.txt
+diff /tmp/old_cmds.txt /tmp/new_cmds.txt
+```
+Expected: 91 dòng mỗi bên, `diff` rỗng.
 
 - [ ] **Step 8: Smoke test**
 
@@ -1331,17 +1346,40 @@ Trong 23 folder vừa chuyển: `"../../types"` thành `"../../types"` (đúng l
 
 Trong `modules/db/DbTab.tsx`, `sql/`, `mongo/`, `redis/`: các import trỏ tới 23 folder này rút ngắn, ví dụ `"../../components/SqlTable"` thành `"./components/SqlTable"` trong `DbTab.tsx` và `"../components/SqlTable"` trong `sql/SqlWorkspace.tsx`.
 
-- [ ] **Step 3: `npm run build` cho tới khi xanh**
+- [ ] **Step 3: Sửa `composes` trong CSS Module — `tsc` không bắt được**
+
+Sáu file trong số 23 folder chuyển đi có `composes … from "../dialogMotion.module.css"`, và đường dẫn đó `tsc` **không** kiểm: nó chỉ vỡ ở `vite build`, dưới dạng `[postcss] The returned path from the "fileResolve" option must be absolute` với vị trí `undefined:NaN` — không phải "file not found", nên đọc thoáng dễ tưởng là lỗi cấu hình. Task 4 đã gặp đúng lỗi này một lần với `SettingsModal.module.css`.
+
+```bash
+sed -i 's|from "\.\./dialogMotion\.module\.css"|from "../../../../components/dialogMotion.module.css"|g' \
+  src/modules/db/components/ColumnDialog/ColumnDialog.module.css \
+  src/modules/db/components/DumpDialog/DumpDialog.module.css \
+  src/modules/db/components/IndexDialog/IndexDialog.module.css \
+  src/modules/db/components/InsertDocumentsDialog/InsertDocumentsDialog.module.css \
+  src/modules/db/components/InsertRowsDialog/InsertRowsDialog.module.css \
+  src/modules/db/components/QueryEditor/QueryEditor.module.css
+```
+
+Rồi kiểm không còn sót:
+
+```powershell
+Select-String -Path src/modules/db/components/*/*.css -Pattern 'from "\.\./dialogMotion'
+```
+Expected: không dòng nào.
+
+`TransferOverlay.module.css` dùng `composes: glass-scrim from global` và `glass-sheet from global` — không phải đường dẫn nên không phải sửa, nhưng ghi nhận: hai class đó được định nghĩa trong `glass.css` của shell (dòng 119–160). Đó là một phụ thuộc thật của module db vào stylesheet của shell, và nó **được phép**: `glass-*` là bộ mặt vật liệu dùng chung, đúng loại thứ shell cung cấp cho mọi module — như `.tab-badge` hay `.context-menu`. Task 9 phải để chúng ở `shell/glass.css`.
+
+- [ ] **Step 4: `npm run build` cho tới khi xanh**
 
 Run: `npm run build`
 Expected: FAIL rồi PASS. Đây là task nhiều đường dẫn nhất; đi theo lỗi, đừng đoán trước.
 
-- [ ] **Step 4: `npm test`**
+- [ ] **Step 5: `npm test`**
 
 Run: `npm test`
 Expected: PASS. Bốn test đã chuyển chỗ: `ColumnDialog.test.ts`, `NoSqlTable/request.test.ts`, `SqlTable/request.test.ts`, `SqlTable/rowText.test.ts`.
 
-- [ ] **Step 5: Kiểm biên giới**
+- [ ] **Step 6: Kiểm biên giới**
 
 ```powershell
 Get-ChildItem -Recurse src/components,src/core,src/icons,src/i18n -Include *.ts,*.tsx | Select-String "modules/db"
@@ -1353,7 +1391,7 @@ Get-ChildItem -Recurse src/shell -Include *.ts,*.tsx | Select-String "modules/db
 ```
 Expected: đúng **một** dòng, `src/shell/registry.ts`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```powershell
 git add -A src

@@ -2,7 +2,7 @@
 
 MixDB fetches `mysqldump`/`mysql`, `pg_dump`/`psql` and `mongodump`/`mongorestore` from their
 vendors when a machine has none. Each download is pinned twice in
-[`src-tauri/src/db/tools.rs`](../../src-tauri/src/db/tools.rs): a version constant that builds the
+[`src-tauri/src/modules/db/drivers/tools.rs`](../../src-tauri/src/modules/db/drivers/tools.rs): a version constant that builds the
 URL, and a SHA-256 in `archive_source` that the file has to hash to before anything is unpacked.
 Both change together — a version bumped without its checksum fails every install with
 `error.checksumMismatch`.
