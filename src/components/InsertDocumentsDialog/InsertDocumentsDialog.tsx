@@ -5,7 +5,7 @@ import Document from "../Document";
 import { useDialogExit } from "../dialogMotion";
 import { PlusIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
+import { errorMessage } from "../../core/errors";
 import type { TypedDocument, TypedValue } from "../../modules/db/mongo/bsonTypes";
 import styles from "./InsertDocumentsDialog.module.css";
 

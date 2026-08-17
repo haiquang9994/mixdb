@@ -6,7 +6,7 @@ import "@fontsource/fira-code/600.css";
 import "@fontsource/fira-code/700.css";
 import App from "./shell/App";
 import { I18nProvider } from "./i18n";
-import { blockNativeContextMenu } from "./nativeContextMenu";
+import { blockNativeContextMenu } from "./core/nativeContextMenu";
 
 blockNativeContextMenu();
 

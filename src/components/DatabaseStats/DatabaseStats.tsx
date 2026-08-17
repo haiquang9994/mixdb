@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fileInto } from "../../paneCache";
-import { gridStyle, useVirtualRows, widestValues } from "../../virtualRows";
+import { fileInto } from "../../core/paneCache";
+import { gridStyle, useVirtualRows, widestValues } from "../../core/virtualRows";
 import ActionBar from "../ActionBar";
 import Input from "../Input";
 import LoadingOverlay from "../LoadingOverlay";
 import { ChevronDownIcon, ChevronUpIcon, ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
-import { useReloadShortcut, withReloadShortcut } from "../../reload";
+import { errorMessage } from "../../core/errors";
+import { useReloadShortcut, withReloadShortcut } from "../../core/reload";
 import { mongoCollectionStats } from "../../modules/db/mongo/api";
 import { useOptionalSql } from "../../modules/db/sql/context";
 import type { TableStats } from "../../modules/db/types";

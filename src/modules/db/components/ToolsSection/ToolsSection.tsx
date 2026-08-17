@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "../../../../i18n";
 import type { TranslationKey } from "../../../../i18n";
 import { CheckIcon } from "../../../../icons";
-import { errorMessage } from "../../../../errors";
+import { errorMessage } from "../../../../core/errors";
 import {
   subscribeToolInstall,
   toolInstallState,

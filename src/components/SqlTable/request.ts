@@ -1,5 +1,5 @@
 import type { SqlFilter } from "../../modules/db/sql/filters";
-import { fileInto } from "../../paneCache";
+import { fileInto } from "../../core/paneCache";
 import type { SqlColumnMeta } from "../../modules/db/types";
 
 /** Which column the grid is ordered by, and which way. Only ever one at a time: clicking a header

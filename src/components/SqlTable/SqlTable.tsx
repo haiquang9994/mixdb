@@ -9,12 +9,12 @@ import Pagination from "../Pagination";
 import Tooltip from "../Tooltip";
 import { ChevronDownIcon, ChevronUpIcon, CopyIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
-import { copyText } from "../../clipboard";
+import { errorMessage } from "../../core/errors";
+import { copyText } from "../../core/clipboard";
 import { useSqlApi, useSqlDialect } from "../../modules/db/sql/context";
-import { IS_MAC, hasPrimaryModifier } from "../../platform";
-import { isTextEntry } from "../../textEntry";
-import { useReloadShortcut, withReloadShortcut } from "../../reload";
+import { IS_MAC, hasPrimaryModifier } from "../../core/platform";
+import { isTextEntry } from "../../core/textEntry";
+import { useReloadShortcut, withReloadShortcut } from "../../core/reload";
 import { filterRowFor, initialFilterRows, toQueryFilters, type FilterRow } from "../../modules/db/filters";
 import {
   FILTER_OPERATORS,
@@ -29,7 +29,7 @@ import {
   useVirtualColumns,
   useVirtualRows,
   widestValues,
-} from "../../virtualRows";
+} from "../../core/virtualRows";
 import {
   fileTable,
   rememberedTable,

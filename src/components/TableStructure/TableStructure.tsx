@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fileInto } from "../../paneCache";
-import { gridStyle, useVirtualRows, widestValues } from "../../virtualRows";
+import { fileInto } from "../../core/paneCache";
+import { gridStyle, useVirtualRows, widestValues } from "../../core/virtualRows";
 import ActionBar from "../ActionBar";
 import ColumnDialog from "../ColumnDialog";
 import ConfirmDialog from "../ConfirmDialog";
@@ -9,8 +9,8 @@ import Input from "../Input";
 import LoadingOverlay from "../LoadingOverlay";
 import { PencilIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
-import { useReloadShortcut, withReloadShortcut } from "../../reload";
+import { errorMessage } from "../../core/errors";
+import { useReloadShortcut, withReloadShortcut } from "../../core/reload";
 import { useSqlApi, useSqlDialect } from "../../modules/db/sql/context";
 import type { SqlEditing } from "../../modules/db/sql/dialect";
 import type {

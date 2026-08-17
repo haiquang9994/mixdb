@@ -18,7 +18,7 @@ import RedisValue from "../../../components/RedisValue";
 import keyListStyles from "../../../components/RedisKeyList/RedisKeyList.module.css";
 import { ReloadIcon } from "../../../icons";
 import { useTranslation } from "../../../i18n";
-import { errorMessage } from "../../../errors";
+import { errorMessage } from "../../../core/errors";
 
 interface Props {
   connectionId: string;

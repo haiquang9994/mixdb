@@ -7,7 +7,7 @@ import LoadingOverlay from "../LoadingOverlay";
 import RedisTypeBadge from "../RedisTypeBadge";
 import { CloseIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
+import { errorMessage } from "../../core/errors";
 import styles from "./RedisGroupKeys.module.css";
 
 interface Props {

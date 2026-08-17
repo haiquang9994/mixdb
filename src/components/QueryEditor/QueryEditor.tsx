@@ -46,9 +46,9 @@ import {
   PlayIcon,
 } from "../../icons";
 import { useTranslation, type TranslationKey } from "../../i18n";
-import { errorMessage } from "../../errors";
-import { MODIFIER_LABEL, shortcutLabel } from "../../platform";
-import { RELOAD_SHORTCUT, useReloadShortcut } from "../../reload";
+import { errorMessage } from "../../core/errors";
+import { MODIFIER_LABEL, shortcutLabel } from "../../core/platform";
+import { RELOAD_SHORTCUT, useReloadShortcut } from "../../core/reload";
 import { loadDraft, saveDraft, saveDraftNow } from "../../modules/db/queryDrafts";
 import { recordQuery } from "../../modules/db/queryHistory";
 import { useQuerySnippets } from "../../modules/db/querySnippets";

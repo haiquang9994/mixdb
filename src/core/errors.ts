@@ -1,4 +1,4 @@
-import type { TranslationKey } from "./i18n";
+import type { TranslationKey } from "../i18n";
 
 /**
  * Turning what a failed command threw into the sentence the user reads.

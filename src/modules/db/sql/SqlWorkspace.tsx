@@ -27,9 +27,9 @@ import ItemList from "../../../components/ItemList";
 import type { ItemAction } from "../../../components/ItemList";
 import itemListStyles from "../../../components/ItemList/ItemList.module.css";
 import { PlusIcon, ReloadIcon } from "../../../icons";
-import { useSidebarKeyboard } from "../../../sidebarKeyboard";
+import { useSidebarKeyboard } from "../../../core/sidebarKeyboard";
 import { useTranslation } from "../../../i18n";
-import { errorMessage } from "../../../errors";
+import { errorMessage } from "../../../core/errors";
 import type { SqlCollation } from "../types";
 
 interface Props {

@@ -23,8 +23,8 @@ import LoadingOverlay from "../LoadingOverlay";
 import Pagination from "../Pagination";
 import { PlusIcon, ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
-import { useReloadShortcut, withReloadShortcut } from "../../reload";
+import { errorMessage } from "../../core/errors";
+import { useReloadShortcut, withReloadShortcut } from "../../core/reload";
 import { initialFilterRows, toQueryFilters, type FilterRow } from "../../modules/db/filters";
 import {
   fileDocuments,

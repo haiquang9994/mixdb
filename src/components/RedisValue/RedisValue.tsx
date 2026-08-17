@@ -12,7 +12,7 @@ import JsonView from "../JsonView";
 import LoadingOverlay from "../LoadingOverlay";
 import { ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
+import { errorMessage } from "../../core/errors";
 import styles from "./RedisValue.module.css";
 
 interface Props {

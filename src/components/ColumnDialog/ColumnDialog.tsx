@@ -7,7 +7,7 @@ import Select from "../Select";
 import type { SelectOption } from "../Select";
 import { useDialogExit } from "../dialogMotion";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
+import { errorMessage } from "../../core/errors";
 import type { SqlCollation, SqlColumnSpec, SqlStructureColumn } from "../../modules/db/types";
 import type { SqlTypeSpec } from "../../modules/db/sql/dialect";
 import { useSqlDialect } from "../../modules/db/sql/context";

@@ -6,7 +6,7 @@ import Select from "../Select";
 import { useDialogExit } from "../dialogMotion";
 import { MinusIcon, PlusIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
+import { errorMessage } from "../../core/errors";
 import type { SqlIndexKind, SqlIndexSpec, SqlTableIndex } from "../../modules/db/types";
 import { useSqlDialect } from "../../modules/db/sql/context";
 import styles from "./IndexDialog.module.css";

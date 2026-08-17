@@ -6,7 +6,7 @@ import {
   hoverTooltip,
   type DecorationSet,
 } from "@codemirror/view";
-import { hasPrimaryModifier } from "../../platform";
+import { hasPrimaryModifier } from "../../core/platform";
 import { docText } from "./extensions";
 import styles from "./SqlEditor.module.css";
 

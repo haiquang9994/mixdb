@@ -1,15 +1,15 @@
-import { useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
+import type { RefObject } from "react";
 
-import type { ItemListHandle } from "./components/ItemList";
+import type { ItemListHandle } from "../components/ItemList";
 
 /**
- * The keyboard of a workspace's sidebar: the search box, and the list of tables or collections
- * under it.
+ * The keyboard of a sidebar: the search box, and the list under it.
  *
- * Both workspaces want the same thing of it — open a database and the caret is in the box, `↓`
- * hands the keyboard to the list, `↑` off the top row hands it back — and they had it written out
- * twice, which is two places for the same rule to drift apart in. What differs between them is only
- * what the list holds, and that is the caller's own business either way.
+ * Callers want the same thing of it — open a group and the caret is in the box, `↓` hands the
+ * keyboard to the list, `↑` off the top row hands it back — and they had it written out twice, which
+ * is two places for the same rule to drift apart in. What differs between them is only what the
+ * list holds, and that is the caller's own business either way.
  */
 export interface SidebarKeyboard {
   /** Goes on the sidebar's search `Input`, which passes it down to the element. */
@@ -23,35 +23,36 @@ export interface SidebarKeyboard {
 }
 
 /**
- * Wires that keyboard up for a workspace whose picker currently reads `selectedDb`.
+ * Wires that keyboard up for a sidebar whose picker currently reads `selectedGroup` — a database for
+ * the SQL and Mongo workspaces, and whatever a later module's sidebar groups its list by.
  *
- * `active` is what keeps the focus-taking to the tab being looked at: a database can be chosen — or
+ * `active` is what keeps the focus-taking to the tab being looked at: a group can be chosen — or
  * arrive with the connection — while this tab is behind another, and every background tab would
  * otherwise pull the keyboard off whatever the user was actually typing into.
  */
-export function useSidebarKeyboard(active: boolean, selectedDb: string): SidebarKeyboard {
+export function useSidebarKeyboard(active: boolean, selectedGroup: string): SidebarKeyboard {
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<ItemListHandle>(null);
 
   /**
-   * The database the search box was last focused for — what keeps the focus to the one moment a
-   * database is opened, rather than to every render or every return to the tab.
+   * The group the search box was last focused for — what keeps the focus to the one moment a group
+   * is opened, rather than to every render or every return to the tab.
    */
-  const focusedDb = useRef<string | null>(null);
+  const focusedGroup = useRef<string | null>(null);
 
-  // A database opened leaves the keyboard in the search box, which is where the next thing the user
+  // A group opened leaves the keyboard in the search box, which is where the next thing the user
   // does with this sidebar starts: type a few letters, then `ArrowDown` into the list.
   useEffect(() => {
-    if (selectedDb === "") {
-      // The picker is empty again — a database dropped, or one that stopped being listed. Coming
-      // back to the same name later is opening it afresh, and the box is due the keyboard again.
-      focusedDb.current = null;
+    if (selectedGroup === "") {
+      // The picker is empty again — a group dropped, or one that stopped being listed. Coming back
+      // to the same name later is opening it afresh, and the box is due the keyboard again.
+      focusedGroup.current = null;
       return;
     }
-    if (!active || focusedDb.current === selectedDb) return;
-    focusedDb.current = selectedDb;
+    if (!active || focusedGroup.current === selectedGroup) return;
+    focusedGroup.current = selectedGroup;
     searchRef.current?.focus();
-  }, [active, selectedDb]);
+  }, [active, selectedGroup]);
 
   /** `ArrowDown` hands the keyboard to the list, where the arrows walk the rows and Enter opens the
    *  one they are on. Nothing on show to walk and the caret stays here. */

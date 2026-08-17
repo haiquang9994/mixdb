@@ -26,9 +26,9 @@ import Button from "../../components/Button";
 import Input from "../../components/Input";
 import { EyeIcon, EyeOffIcon, LockIcon, PinIcon } from "../../icons";
 import { DatabaseIcon } from "./icons";
-import { IS_MAC, IS_WINDOWS } from "../../platform";
+import { IS_MAC, IS_WINDOWS } from "../../core/platform";
 import { useTranslation, type TranslationKey } from "../../i18n";
-import { errorMessage } from "../../errors";
+import { errorMessage } from "../../core/errors";
 import type { ModuleTabProps, TabBadge } from "../../shell/module";
 import { dbBadgeMarks } from "./badges";
 

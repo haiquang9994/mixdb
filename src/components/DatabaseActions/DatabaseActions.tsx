@@ -5,7 +5,7 @@ import ConfirmDialog from "../ConfirmDialog";
 import DumpDialog from "../DumpDialog";
 import { DownloadIcon, TrashIcon, UploadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
+import { errorMessage } from "../../core/errors";
 import { toolsDownloadable, toolsInstall, toolsReady, type ToolSuite } from "../../modules/db/tools";
 import { mongoDropDatabase, mongoDump, mongoRestore } from "../../modules/db/mongo/api";
 import { isMongoSystemDatabase } from "../../modules/db/mongo/system";

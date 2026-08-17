@@ -5,7 +5,7 @@ import {
   measureColumns,
   useVirtualRows,
   widestValues,
-} from "../../virtualRows";
+} from "../../core/virtualRows";
 import styles from "./QueryEditor.module.css";
 
 /** How long a cell value has to be before it is worth a tooltip. Cells are cut off at 320px, which

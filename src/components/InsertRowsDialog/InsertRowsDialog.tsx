@@ -4,7 +4,7 @@ import Button from "../Button";
 import { useDialogExit } from "../dialogMotion";
 import { PlusIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { errorMessage } from "../../errors";
+import { errorMessage } from "../../core/errors";
 import { useSqlDialect } from "../../modules/db/sql/context";
 import type { SqlDialect } from "../../modules/db/sql/dialect";
 import type { SqlColumnMeta } from "../../modules/db/types";
