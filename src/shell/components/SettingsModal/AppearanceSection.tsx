@@ -1,8 +1,8 @@
 import type { CSSProperties } from "react";
 import type { AccentColor, ThemeMode } from "../../theme";
 import { ACCENT_COLORS } from "../../theme";
-import type { Language, TranslationKey } from "../../i18n";
-import { useTranslation } from "../../i18n";
+import type { Language, TranslationKey } from "../../../i18n";
+import { useTranslation } from "../../../i18n";
 import styles from "./SettingsModal.module.css";
 
 interface Props {

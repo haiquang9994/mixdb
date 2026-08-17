@@ -1,21 +1,21 @@
 import { useEffect, useLayoutEffect, useState } from "react";
-import ConnectionTab from "./ConnectionTab";
+import ConnectionTab from "../ConnectionTab";
 import GlassFilter from "./components/GlassFilter";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
-import { CloseIcon, DatabaseIcon, LockIcon, PlusIcon, SettingsIcon } from "./icons";
-import type { DbKind } from "./types";
-import { hasPrimaryModifier } from "./platform";
-import { isBlockedReload } from "./reload";
-import { useScrollAcceleration } from "./scroll";
-import { isTextEntry } from "./textEntry";
+import { CloseIcon, DatabaseIcon, LockIcon, PlusIcon, SettingsIcon } from "../icons";
+import type { DbKind } from "../types";
+import { hasPrimaryModifier } from "../platform";
+import { isBlockedReload } from "../reload";
+import { useScrollAcceleration } from "../scroll";
+import { isTextEntry } from "../textEntry";
 import { useAccent, useGlass, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
-import { useTranslation } from "./i18n";
-import "./App.css";
+import { useTranslation } from "../i18n";
+import "../App.css";
 /* After App.css, so the glass surfaces override the plain ones they replace rather than the other
    way round. */
-import "./glass.css";
+import "../glass.css";
 
 interface TabInfo {
   id: string;

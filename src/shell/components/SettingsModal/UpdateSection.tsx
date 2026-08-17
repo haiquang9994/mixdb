@@ -1,4 +1,4 @@
-import { useTranslation } from "../../i18n";
+import { useTranslation } from "../../../i18n";
 import type { UpdateCheck } from "../../update";
 import styles from "./SettingsModal.module.css";
 

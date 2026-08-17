@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useTranslation } from "../../i18n";
-import type { TranslationKey } from "../../i18n";
-import { CheckIcon } from "../../icons";
-import { errorMessage } from "../../errors";
+import { useTranslation } from "../../../i18n";
+import type { TranslationKey } from "../../../i18n";
+import { CheckIcon } from "../../../icons";
+import { errorMessage } from "../../../errors";
 import {
   subscribeToolInstall,
   toolInstallState,
@@ -11,8 +11,8 @@ import {
   toolsSetPath,
   toolsStatus,
   toolsUninstall,
-} from "../../tools";
-import type { ToolStage, ToolStatus, ToolSuite } from "../../tools";
+} from "../../../tools";
+import type { ToolStage, ToolStatus, ToolSuite } from "../../../tools";
 import styles from "./SettingsModal.module.css";
 
 /** The three suites, what each one is called where it is downloaded from, and what to say instead

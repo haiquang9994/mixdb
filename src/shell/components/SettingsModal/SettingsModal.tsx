@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import type { ComponentType } from "react";
 import type { AccentColor, ThemeMode } from "../../theme";
-import type { TranslationKey } from "../../i18n";
-import type { IconProps } from "../../icons";
-import { CloseIcon, DownloadIcon, PaletteIcon, WrenchIcon } from "../../icons";
-import { useTranslation } from "../../i18n";
+import type { TranslationKey } from "../../../i18n";
+import type { IconProps } from "../../../icons";
+import { CloseIcon, DownloadIcon, PaletteIcon, WrenchIcon } from "../../../icons";
+import { useTranslation } from "../../../i18n";
 import type { UpdateCheck } from "../../update";
-import { useDialogExit } from "../dialogMotion";
+import { useDialogExit } from "../../../components/dialogMotion";
 import AppearanceSection from "./AppearanceSection";
 import ToolsSection from "./ToolsSection";
 import UpdateSection from "./UpdateSection";

@@ -1,5 +1,5 @@
-import { CloseIcon, DownloadIcon, ReloadIcon } from "../../icons";
-import { useTranslation } from "../../i18n";
+import { CloseIcon, DownloadIcon, ReloadIcon } from "../../../icons";
+import { useTranslation } from "../../../i18n";
 import type { UpdateCheck } from "../../update";
 import styles from "./UpdateToast.module.css";
 
