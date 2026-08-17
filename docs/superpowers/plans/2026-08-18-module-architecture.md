@@ -1346,17 +1346,40 @@ Trong 23 folder vừa chuyển: `"../../types"` thành `"../../types"` (đúng l
 
 Trong `modules/db/DbTab.tsx`, `sql/`, `mongo/`, `redis/`: các import trỏ tới 23 folder này rút ngắn, ví dụ `"../../components/SqlTable"` thành `"./components/SqlTable"` trong `DbTab.tsx` và `"../components/SqlTable"` trong `sql/SqlWorkspace.tsx`.
 
-- [ ] **Step 3: `npm run build` cho tới khi xanh**
+- [ ] **Step 3: Sửa `composes` trong CSS Module — `tsc` không bắt được**
+
+Sáu file trong số 23 folder chuyển đi có `composes … from "../dialogMotion.module.css"`, và đường dẫn đó `tsc` **không** kiểm: nó chỉ vỡ ở `vite build`, dưới dạng `[postcss] The returned path from the "fileResolve" option must be absolute` với vị trí `undefined:NaN` — không phải "file not found", nên đọc thoáng dễ tưởng là lỗi cấu hình. Task 4 đã gặp đúng lỗi này một lần với `SettingsModal.module.css`.
+
+```bash
+sed -i 's|from "\.\./dialogMotion\.module\.css"|from "../../../../components/dialogMotion.module.css"|g' \
+  src/modules/db/components/ColumnDialog/ColumnDialog.module.css \
+  src/modules/db/components/DumpDialog/DumpDialog.module.css \
+  src/modules/db/components/IndexDialog/IndexDialog.module.css \
+  src/modules/db/components/InsertDocumentsDialog/InsertDocumentsDialog.module.css \
+  src/modules/db/components/InsertRowsDialog/InsertRowsDialog.module.css \
+  src/modules/db/components/QueryEditor/QueryEditor.module.css
+```
+
+Rồi kiểm không còn sót:
+
+```powershell
+Select-String -Path src/modules/db/components/*/*.css -Pattern 'from "\.\./dialogMotion'
+```
+Expected: không dòng nào.
+
+`TransferOverlay.module.css` dùng `composes: glass-scrim from global` và `glass-sheet from global` — không phải đường dẫn nên không phải sửa, nhưng ghi nhận: hai class đó được định nghĩa trong `glass.css` của shell (dòng 119–160). Đó là một phụ thuộc thật của module db vào stylesheet của shell, và nó **được phép**: `glass-*` là bộ mặt vật liệu dùng chung, đúng loại thứ shell cung cấp cho mọi module — như `.tab-badge` hay `.context-menu`. Task 9 phải để chúng ở `shell/glass.css`.
+
+- [ ] **Step 4: `npm run build` cho tới khi xanh**
 
 Run: `npm run build`
 Expected: FAIL rồi PASS. Đây là task nhiều đường dẫn nhất; đi theo lỗi, đừng đoán trước.
 
-- [ ] **Step 4: `npm test`**
+- [ ] **Step 5: `npm test`**
 
 Run: `npm test`
 Expected: PASS. Bốn test đã chuyển chỗ: `ColumnDialog.test.ts`, `NoSqlTable/request.test.ts`, `SqlTable/request.test.ts`, `SqlTable/rowText.test.ts`.
 
-- [ ] **Step 5: Kiểm biên giới**
+- [ ] **Step 6: Kiểm biên giới**
 
 ```powershell
 Get-ChildItem -Recurse src/components,src/core,src/icons,src/i18n -Include *.ts,*.tsx | Select-String "modules/db"
@@ -1368,7 +1391,7 @@ Get-ChildItem -Recurse src/shell -Include *.ts,*.tsx | Select-String "modules/db
 ```
 Expected: đúng **một** dòng, `src/shell/registry.ts`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```powershell
 git add -A src
