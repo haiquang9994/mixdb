@@ -27,6 +27,9 @@ const en = {
     closeTab: "Close tab",
     newConnectionTab: "New connection tab",
     newConnectionTitle: "New Connection",
+    /* The database module's name in the `[+]` menu, which only appears once a second module
+       exists — see `shell/registry.ts`. */
+    moduleDatabase: "Database",
   },
   connection: {
     selectPrivateKeyDialogTitle: "Select private key",

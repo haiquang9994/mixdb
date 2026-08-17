@@ -25,6 +25,7 @@ const vi: TranslationDict = {
     closeTab: "Đóng tab",
     newConnectionTab: "Tab kết nối mới",
     newConnectionTitle: "Kết nối mới",
+    moduleDatabase: "Database",
   },
   connection: {
     selectPrivateKeyDialogTitle: "Chọn private key",

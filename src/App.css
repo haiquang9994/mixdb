@@ -400,22 +400,24 @@ body {
   white-space: nowrap;
 }
 
+/* One mark on a tab, whatever it says. The layout is all the shell knows about it: what colour it
+   takes, and whether it takes one, is the module's own class beside this one. */
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
 /* The same logo the sidebar row carries, without the tinted tile around it: a tab has no room for
    a badge, and the mark alone is what has to be recognised. The brand colour still comes from the
    `.kind-*` class beside this one, so the two places read as one mark. */
 .tab-kind {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
   color: var(--kind);
 }
 
 /* Marked in its own colour rather than the engine's, and kept beside the logo: the lock is about
    what this tab will let you do, which has nothing to do with which server it is on. */
 .tab-lock {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
   color: var(--readonly);
 }
 

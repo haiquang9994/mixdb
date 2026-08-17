@@ -6,41 +6,31 @@ import {
   removeConnection,
   updateConnection,
   useSavedConnections,
-} from "./savedConnectionsStore";
-import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
-import SqlWorkspace from "./sql/SqlWorkspace";
-import { SqlProvider } from "./sql/context";
-import type { SqlApi } from "./sql/api";
-import type { SqlDialect } from "./sql/dialect";
-import { mysqlApi } from "./mysql/api";
-import { mysqlDialect } from "./mysql/dialect";
-import { postgresApi } from "./postgres/api";
-import { postgresDialect } from "./postgres/dialect";
-import MongoWorkspace from "./mongo/MongoWorkspace";
-import RedisWorkspace from "./redis/RedisWorkspace";
-import Select from "./components/Select";
-import ErrorBanner from "./components/ErrorBanner";
-import ConfirmDialog from "./components/ConfirmDialog";
-import ContextMenu from "./components/ContextMenu";
-import Button from "./components/Button";
-import Input from "./components/Input";
-import { DatabaseIcon, EyeIcon, EyeOffIcon, LockIcon, PinIcon } from "./icons";
-import { IS_MAC, IS_WINDOWS } from "./platform";
-import { useTranslation, type TranslationKey } from "./i18n";
-import { errorMessage } from "./errors";
+} from "../../savedConnectionsStore";
+import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "../../types";
+import SqlWorkspace from "../../sql/SqlWorkspace";
+import { SqlProvider } from "../../sql/context";
+import type { SqlApi } from "../../sql/api";
+import type { SqlDialect } from "../../sql/dialect";
+import { mysqlApi } from "../../mysql/api";
+import { mysqlDialect } from "../../mysql/dialect";
+import { postgresApi } from "../../postgres/api";
+import { postgresDialect } from "../../postgres/dialect";
+import MongoWorkspace from "../../mongo/MongoWorkspace";
+import RedisWorkspace from "../../redis/RedisWorkspace";
+import Select from "../../components/Select";
+import ErrorBanner from "../../components/ErrorBanner";
+import ConfirmDialog from "../../components/ConfirmDialog";
+import ContextMenu from "../../components/ContextMenu";
+import Button from "../../components/Button";
+import Input from "../../components/Input";
+import { DatabaseIcon, EyeIcon, EyeOffIcon, LockIcon, PinIcon } from "../../icons";
+import { IS_MAC, IS_WINDOWS } from "../../platform";
+import { useTranslation, type TranslationKey } from "../../i18n";
+import { errorMessage } from "../../errors";
+import type { ModuleTabProps, TabBadge } from "../../shell/module";
+import { dbBadgeMarks } from "./badges";
 
-interface Props {
-  /** Whether this is the tab the tab bar is showing. Every other one stays mounted behind it, so
-   *  the panes below need telling which of them a keyboard shortcut is meant for. */
-  active: boolean;
-  onTitleChange: (title: string) => void;
-  /** Whether the tab bar should mark this tab read-only. Reported rather than worked out up there:
-   *  only this tab knows which saved connection it was opened from. */
-  onReadOnlyChange: (readOnly: boolean) => void;
-  /** Which engine this tab is connected to, so its tab can carry the logo — `undefined` until it
-   *  is connected, when the tab is still a form that may end up on any of them. */
-  onKindChange: (kind: DbKind | undefined) => void;
-}
 
 /** What each kind is called on the tab that picks it, and — read aloud — beside its logo in the
  *  saved list, where the logo itself says nothing to a screen reader. */
@@ -172,7 +162,7 @@ interface TunnelStatus {
   message: string;
 }
 
-function ConnectionTab({ active, onTitleChange, onReadOnlyChange, onKindChange }: Props) {
+function DbTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
   const { t, lang } = useTranslation();
   const [kind, setKind] = useState<DbKind>("mysql");
   const [host, setHost] = useState("127.0.0.1");
@@ -241,17 +231,43 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange, onKindChange }
   const activeReadOnly = Boolean(
     connectionId && savedConnections.find((c) => c.id === editingId)?.readOnly,
   );
-  useEffect(() => {
-    onReadOnlyChange(activeReadOnly);
-  }, [activeReadOnly]);
 
-  /* Same rule as the lock above: the kind only reaches the tab bar once there is a connection
-     behind it. While the form is open the picker on it is the thing that says which engine is
-     being set up, and it changes with every click. */
-  const activeKind = connectionId ? kind : undefined;
+  /**
+   * The marks this tab asks the tab bar for: the engine's logo, and the lock when the connection
+   * behind it is read-only.
+   *
+   * The shell is told what to draw rather than what this tab is — it has no `DbKind` and no notion
+   * of read-only. Which marks a given state calls for is {@link dbBadgeMarks}; turning them into
+   * icons and sentences is here, because this is the side that has a `t`.
+   */
+  const badges = useMemo<TabBadge[]>(
+    () =>
+      dbBadgeMarks(connectionId ? kind : undefined, activeReadOnly).map((mark) =>
+        mark.type === "kind"
+          ? {
+              id: "kind",
+              // The same logo the sidebar row carries, without the tinted tile around it: a tab has
+              // no room for a badge, and the mark alone is what has to be recognised.
+              icon: <DatabaseIcon kind={mark.kind} size={14} />,
+              label: t(KIND_LABEL[mark.kind]),
+              className: `tab-kind kind-${mark.kind}`,
+            }
+          : {
+              id: "readOnly",
+              icon: <LockIcon size={12} />,
+              label: t("common.readOnly"),
+              title: t("common.readOnlyConnection"),
+              className: "tab-lock",
+              // The bar along the top of the open tab goes amber, which is the one thing on screen
+              // that says so no matter which pane of the workspace is showing.
+              tabClassName: "tab-readonly",
+            },
+      ),
+    [connectionId, kind, activeReadOnly, t],
+  );
   useEffect(() => {
-    onKindChange(activeKind);
-  }, [activeKind]);
+    onBadgesChange(badges);
+  }, [badges]);
 
   function changeKind(next: DbKind) {
     setKind(next);
@@ -995,4 +1011,4 @@ function ConnectionTab({ active, onTitleChange, onReadOnlyChange, onKindChange }
   );
 }
 
-export default ConnectionTab;
+export default DbTab;

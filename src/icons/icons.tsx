@@ -99,6 +99,19 @@ export function CopyIcon(props: IconProps) {
   );
 }
 
+/** A database with no engine's brand on it: the database *module* rather than any one connection,
+ * which is what the `[+]` menu names. Three platters — the stack a database has been drawn as since
+ * disk packs, and the one shape that reads as "database" without borrowing a logo. */
+export function DatabaseGenericIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3c3.9 0 7 1.1 7 2.5S15.9 8 12 8 5 6.9 5 5.5 8.1 3 12 3z" />
+      <path d="M19 5.5v13c0 1.4-3.1 2.5-7 2.5s-7-1.1-7-2.5v-13" />
+      <path d="M19 12c0 1.4-3.1 2.5-7 2.5S5 13.4 5 12" />
+    </Icon>
+  );
+}
+
 /** Open something for editing — a column, an index. Drawn as a pencil laid across the grid, its
  * tip at the bottom left, with the ferrule as the short stroke that tells the two ends apart. */
 export function PencilIcon(props: IconProps) {

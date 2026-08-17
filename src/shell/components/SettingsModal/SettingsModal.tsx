@@ -3,12 +3,12 @@ import type { ComponentType } from "react";
 import type { AccentColor, ThemeMode } from "../../theme";
 import type { TranslationKey } from "../../../i18n";
 import type { IconProps } from "../../../icons";
-import { CloseIcon, DownloadIcon, PaletteIcon, WrenchIcon } from "../../../icons";
+import { CloseIcon, DownloadIcon, PaletteIcon } from "../../../icons";
 import { useTranslation } from "../../../i18n";
 import type { UpdateCheck } from "../../update";
+import { MODULES } from "../../registry";
 import { useDialogExit } from "../../../components/dialogMotion";
 import AppearanceSection from "./AppearanceSection";
-import ToolsSection from "./ToolsSection";
 import UpdateSection from "./UpdateSection";
 import styles from "./SettingsModal.module.css";
 
@@ -23,14 +23,19 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-type SectionId = "appearance" | "tools" | "update";
+/** A module's pane is identified by its module id, so this cannot be a closed union. */
+type SectionId = string;
 
-/** The panes, in the order they are listed: the one a user changes often first, the errands after
- *  it. Each names itself with the heading its own content used to carry, so nothing is said twice
- *  once the list is on screen. */
+/** The panes, in the order they are listed: the one a user changes often first, then whatever the
+ *  modules contribute, then the errands. Each names itself with the heading its own content used to
+ *  carry, so nothing is said twice once the list is on screen.
+ *
+ *  A module names its own pane — the shell does not know that "Tools" means `mysqldump`. */
 const SECTIONS: { id: SectionId; labelKey: TranslationKey; icon: ComponentType<IconProps> }[] = [
   { id: "appearance", labelKey: "settings.appearance", icon: PaletteIcon },
-  { id: "tools", labelKey: "tools.title", icon: WrenchIcon },
+  ...MODULES.flatMap((m) =>
+    m.settings ? [{ id: m.id, labelKey: m.settings.labelKey, icon: m.settings.Icon }] : [],
+  ),
   { id: "update", labelKey: "update.title", icon: DownloadIcon },
 ];
 
@@ -123,15 +128,20 @@ function SettingsModal({
               onGlassChange={onGlassChange}
             />
           </div>
-          <div
-            className={styles.panel}
-            role="tabpanel"
-            id="settings-panel-tools"
-            aria-labelledby="settings-tab-tools"
-            hidden={section !== "tools"}
-          >
-            <ToolsSection />
-          </div>
+          {MODULES.map((m) =>
+            m.settings ? (
+              <div
+                key={m.id}
+                className={styles.panel}
+                role="tabpanel"
+                id={`settings-panel-${m.id}`}
+                aria-labelledby={`settings-tab-${m.id}`}
+                hidden={section !== m.id}
+              >
+                <m.settings.Section />
+              </div>
+            ) : null,
+          )}
           <div
             className={styles.panel}
             role="tabpanel"

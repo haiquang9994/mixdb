@@ -9,6 +9,7 @@ export {
   ChevronUpIcon,
   CloseIcon,
   CopyIcon,
+  DatabaseGenericIcon,
   DotIcon,
   DownloadIcon,
   ExpandIcon,
