@@ -8,14 +8,14 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::db::{
+use crate::modules::db::drivers::{
     dump, mongo, mysql, mysql_script, mysql_structure, postgres, postgres_ddl, postgres_script,
     postgres_structure,
     redis as redis_db, tools,
 };
-use crate::models::{ConnectionConfig, DbKind};
+use crate::modules::db::models::{ConnectionConfig, DbKind};
+use crate::modules::db::state::{ActiveConnection, DbHandle, DbState};
 use crate::ssh::{self, SshConfig};
-use crate::state::{ActiveConnection, AppState, DbHandle};
 
 const DB_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -86,7 +86,7 @@ async fn resolve_endpoint(
 #[tauri::command]
 pub async fn connect_db(
     app: AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     config: ConnectionConfig,
 ) -> Result<String, AppError> {
     let app_data = app_data_dir(&app)?;
@@ -188,7 +188,7 @@ pub async fn connect_db(
 }
 
 #[tauri::command]
-pub async fn disconnect_db(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+pub async fn disconnect_db(state: State<'_, DbState>, id: String) -> Result<(), AppError> {
     state.connections.lock().await.remove(&id);
     Ok(())
 }
@@ -199,7 +199,7 @@ pub async fn disconnect_db(state: State<'_, AppState>, id: String) -> Result<(),
 /// This is what `DbHandle` is cheap to clone for. Awaiting a query while holding the map would
 /// turn that lock into a queue for the whole app: a slow `SELECT` in one tab would stop a key
 /// listing in another, and stop the Disconnect button meant to put an end to it.
-async fn handle(state: &State<'_, AppState>, id: &str) -> Result<DbHandle, AppError> {
+async fn handle(state: &State<'_, DbState>, id: &str) -> Result<DbHandle, AppError> {
     state
         .connections
         .lock()
@@ -209,14 +209,14 @@ async fn handle(state: &State<'_, AppState>, id: &str) -> Result<DbHandle, AppEr
         .ok_or_else(|| err!("error.unknownConnection"))
 }
 
-async fn mysql_pool(state: &State<'_, AppState>, id: &str) -> Result<sqlx::MySqlPool, AppError> {
+async fn mysql_pool(state: &State<'_, DbState>, id: &str) -> Result<sqlx::MySqlPool, AppError> {
     mysql_connection(state, id).await.map(|(pool, _)| pool)
 }
 
 /// The MySQL pool for `id`, and whether the server it reaches is MariaDB — for the handful of
 /// reads whose answer depends on which of the two answered.
 async fn mysql_connection(
-    state: &State<'_, AppState>,
+    state: &State<'_, DbState>,
     id: &str,
 ) -> Result<(sqlx::MySqlPool, bool), AppError> {
     match handle(state, id).await? {
@@ -232,7 +232,7 @@ async fn mysql_connection(
 /// is the whole difference from MySQL: there is no `USE`, so which database a command runs against
 /// is decided by which pool it is handed.
 async fn postgres_pool(
-    state: &State<'_, AppState>,
+    state: &State<'_, DbState>,
     id: &str,
     database: &str,
 ) -> Result<sqlx::PgPool, AppError> {
@@ -245,7 +245,7 @@ async fn postgres_pool(
 /// The whole PostgreSQL connection rather than one of its pools — for `DROP DATABASE`, which has
 /// to close the pool on the database it is dropping before the server will allow it.
 async fn postgres_pools(
-    state: &State<'_, AppState>,
+    state: &State<'_, DbState>,
     id: &str,
 ) -> Result<Arc<postgres::Pools>, AppError> {
     match handle(state, id).await? {
@@ -254,7 +254,7 @@ async fn postgres_pools(
     }
 }
 
-async fn mongo_client(state: &State<'_, AppState>, id: &str) -> Result<mongodb::Client, AppError> {
+async fn mongo_client(state: &State<'_, DbState>, id: &str) -> Result<mongodb::Client, AppError> {
     match handle(state, id).await? {
         DbHandle::Mongo(client) => Ok(client),
         _ => Err(err!("error.wrongConnectionKind", kind = "MongoDB")),
@@ -265,7 +265,7 @@ async fn mongo_client(state: &State<'_, AppState>, id: &str) -> Result<mongodb::
 /// as long as anything needs it: the lock is this connection's own, so two tabs no longer wait on
 /// each other.
 async fn redis_connection(
-    state: &State<'_, AppState>,
+    state: &State<'_, DbState>,
     id: &str,
 ) -> Result<Arc<Mutex<redis_db::Connection>>, AppError> {
     match handle(state, id).await? {
@@ -276,7 +276,7 @@ async fn redis_connection(
 
 #[tauri::command]
 pub async fn mysql_query(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     sql: String,
     database: Option<String>,
@@ -286,20 +286,20 @@ pub async fn mysql_query(
 }
 
 #[tauri::command]
-pub async fn mysql_list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, AppError> {
+pub async fn mysql_list_databases(state: State<'_, DbState>, id: String) -> Result<Vec<String>, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql::list_databases(&pool).await
 }
 
 #[tauri::command]
-pub async fn mysql_server_info(state: State<'_, AppState>, id: String) -> Result<mysql::ServerInfo, AppError> {
+pub async fn mysql_server_info(state: State<'_, DbState>, id: String) -> Result<mysql::ServerInfo, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql::server_info(&pool).await
 }
 
 #[tauri::command]
 pub async fn mysql_list_tables(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
 ) -> Result<Vec<String>, AppError> {
@@ -310,7 +310,7 @@ pub async fn mysql_list_tables(
 /// What every table in the database weighs, for the workspace's Statistics tab.
 #[tauri::command]
 pub async fn mysql_table_stats(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
 ) -> Result<Vec<mysql_structure::TableStats>, AppError> {
@@ -320,7 +320,7 @@ pub async fn mysql_table_stats(
 
 #[tauri::command]
 pub async fn mysql_table_data(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -332,7 +332,7 @@ pub async fn mysql_table_data(
 
 #[tauri::command]
 pub async fn mysql_update_row(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -345,7 +345,7 @@ pub async fn mysql_update_row(
 
 #[tauri::command]
 pub async fn mysql_insert_rows(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -357,7 +357,7 @@ pub async fn mysql_insert_rows(
 
 #[tauri::command]
 pub async fn mysql_delete_rows(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -371,7 +371,7 @@ pub async fn mysql_delete_rows(
 
 #[tauri::command]
 pub async fn mysql_table_structure(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -384,7 +384,7 @@ pub async fn mysql_table_structure(
 /// whole database, so the editor never asks per table as the Structure tab does.
 #[tauri::command]
 pub async fn mysql_schema_outline(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
 ) -> Result<mysql_structure::SchemaOutline, AppError> {
@@ -396,7 +396,7 @@ pub async fn mysql_schema_outline(
 /// than of any one table, so the frontend reads it once per connection.
 #[tauri::command]
 pub async fn mysql_collations(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
 ) -> Result<Vec<mysql_structure::Collation>, AppError> {
     let pool = mysql_pool(&state, &id).await?;
@@ -419,7 +419,7 @@ struct SqlEndpoint {
 /// The endpoint of a MySQL or PostgreSQL connection, checking on the way that it is the kind the
 /// caller expects — the tools of one engine cannot be pointed at the other's server.
 async fn sql_endpoint(
-    state: &State<'_, AppState>,
+    state: &State<'_, DbState>,
     id: &str,
     kind: DbKind,
 ) -> Result<SqlEndpoint, AppError> {
@@ -448,7 +448,7 @@ async fn sql_endpoint(
 
 /// The MongoDB connection string to hand the tools, and the tunnel endpoint to point it at.
 async fn mongo_endpoint(
-    state: &State<'_, AppState>,
+    state: &State<'_, DbState>,
     id: &str,
 ) -> Result<(String, Option<(String, u16)>), AppError> {
     let connections = state.connections.lock().await;
@@ -557,7 +557,7 @@ pub async fn tools_install(app: AppHandle, suite: String) -> Result<(), AppError
 #[tauri::command]
 pub async fn mysql_dump(
     app: AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     mode: String,
@@ -618,7 +618,7 @@ pub async fn mysql_dump(
 #[tauri::command]
 pub async fn mysql_restore(
     app: AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     path: String,
@@ -648,7 +648,7 @@ pub async fn mysql_restore(
 #[tauri::command]
 pub async fn mongo_dump(
     app: AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
     path: String,
@@ -685,7 +685,7 @@ pub async fn mongo_dump(
 #[tauri::command]
 pub async fn mongo_restore(
     app: AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
     path: String,
@@ -710,7 +710,7 @@ pub async fn mongo_restore(
 /// Drops a database and every table in it.
 #[tauri::command]
 pub async fn mysql_drop_database(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
 ) -> Result<(), AppError> {
@@ -721,7 +721,7 @@ pub async fn mysql_drop_database(
 /// Drops a database and every collection in it.
 #[tauri::command]
 pub async fn mongo_drop_database(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
 ) -> Result<(), AppError> {
@@ -732,7 +732,7 @@ pub async fn mongo_drop_database(
 /// Creates a database, for the header's database picker.
 #[tauri::command]
 pub async fn mysql_create_database(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     name: String,
     collation: Option<String>,
@@ -744,7 +744,7 @@ pub async fn mysql_create_database(
 /// Creates an empty table — one `id` column and its primary key — for the sidebar's add button.
 #[tauri::command]
 pub async fn mysql_create_table(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -757,7 +757,7 @@ pub async fn mysql_create_table(
 /// Renames a table, for the sidebar's context menu.
 #[tauri::command]
 pub async fn mysql_rename_table(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -770,7 +770,7 @@ pub async fn mysql_rename_table(
 /// Drops a table and everything in it, for the sidebar's context menu.
 #[tauri::command]
 pub async fn mysql_drop_table(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -781,7 +781,7 @@ pub async fn mysql_drop_table(
 
 #[tauri::command]
 pub async fn mysql_add_column(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -793,7 +793,7 @@ pub async fn mysql_add_column(
 
 #[tauri::command]
 pub async fn mysql_modify_column(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -806,7 +806,7 @@ pub async fn mysql_modify_column(
 
 #[tauri::command]
 pub async fn mysql_drop_column(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -818,7 +818,7 @@ pub async fn mysql_drop_column(
 
 #[tauri::command]
 pub async fn mysql_add_index(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -830,7 +830,7 @@ pub async fn mysql_add_index(
 
 #[tauri::command]
 pub async fn mysql_modify_index(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -843,7 +843,7 @@ pub async fn mysql_modify_index(
 
 #[tauri::command]
 pub async fn mysql_drop_index(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -858,7 +858,7 @@ pub async fn mysql_drop_index(
 /// workspace resolves them.
 #[tauri::command]
 pub async fn mysql_run_script(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     sql: String,
     database: Option<String>,
@@ -887,7 +887,7 @@ pub async fn mysql_run_script(
 /// warning rather than an error.
 #[tauri::command]
 pub async fn mysql_validate_sql(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     sql: String,
     database: Option<String>,
@@ -902,7 +902,7 @@ pub async fn mysql_validate_sql(
 /// results are on their way back often enough, and the user's intent — that it not still be
 /// running — is satisfied either way.
 #[tauri::command]
-pub async fn mysql_cancel_query(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+pub async fn mysql_cancel_query(state: State<'_, DbState>, id: String) -> Result<(), AppError> {
     let thread = state.running_queries.lock().unwrap().get(&id).copied();
     let Some(thread) = thread else {
         return Ok(());
@@ -911,20 +911,20 @@ pub async fn mysql_cancel_query(state: State<'_, AppState>, id: String) -> Resul
 }
 
 #[tauri::command]
-pub async fn mongo_list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, AppError> {
+pub async fn mongo_list_databases(state: State<'_, DbState>, id: String) -> Result<Vec<String>, AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::list_databases(&client).await
 }
 
 #[tauri::command]
-pub async fn mongo_server_info(state: State<'_, AppState>, id: String) -> Result<mongo::ServerInfo, AppError> {
+pub async fn mongo_server_info(state: State<'_, DbState>, id: String) -> Result<mongo::ServerInfo, AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::server_info(&client).await
 }
 
 #[tauri::command]
 pub async fn mongo_list_collections(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
 ) -> Result<Vec<String>, AppError> {
@@ -935,7 +935,7 @@ pub async fn mongo_list_collections(
 /// What every collection in the database weighs, for the workspace's Statistics tab.
 #[tauri::command]
 pub async fn mongo_collection_stats(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
 ) -> Result<Vec<mongo::CollectionStats>, AppError> {
@@ -946,7 +946,7 @@ pub async fn mongo_collection_stats(
 /// Creates an empty collection, for the sidebar's add button.
 #[tauri::command]
 pub async fn mongo_create_collection(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
     collection: String,
@@ -958,7 +958,7 @@ pub async fn mongo_create_collection(
 /// Renames a collection, for the sidebar's context menu.
 #[tauri::command]
 pub async fn mongo_rename_collection(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
     collection: String,
@@ -971,7 +971,7 @@ pub async fn mongo_rename_collection(
 /// Drops a collection and every document in it, for the sidebar's context menu.
 #[tauri::command]
 pub async fn mongo_drop_collection(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
     collection: String,
@@ -982,7 +982,7 @@ pub async fn mongo_drop_collection(
 
 #[tauri::command]
 pub async fn mongo_find(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
     collection: String,
@@ -995,7 +995,7 @@ pub async fn mongo_find(
 
 #[tauri::command]
 pub async fn mongo_collection_page(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
     collection: String,
@@ -1010,7 +1010,7 @@ pub async fn mongo_collection_page(
 
 #[tauri::command]
 pub async fn mongo_next_ids(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
     collection: String,
@@ -1022,7 +1022,7 @@ pub async fn mongo_next_ids(
 
 #[tauri::command]
 pub async fn mongo_insert_documents(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
     collection: String,
@@ -1034,7 +1034,7 @@ pub async fn mongo_insert_documents(
 
 #[tauri::command]
 pub async fn mongo_update_document(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
     collection: String,
@@ -1047,7 +1047,7 @@ pub async fn mongo_update_document(
 
 #[tauri::command]
 pub async fn mongo_delete_document(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     db: String,
     collection: String,
@@ -1059,7 +1059,7 @@ pub async fn mongo_delete_document(
 
 #[tauri::command]
 pub async fn redis_command(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     args: Vec<String>,
 ) -> Result<Value, AppError> {
@@ -1070,7 +1070,7 @@ pub async fn redis_command(
 
 #[tauri::command]
 pub async fn redis_server_info(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
 ) -> Result<redis_db::ServerInfo, AppError> {
     let conn = redis_connection(&state, &id).await?;
@@ -1080,7 +1080,7 @@ pub async fn redis_server_info(
 
 #[tauri::command]
 pub async fn redis_list_databases(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
 ) -> Result<Vec<redis_db::DbInfo>, AppError> {
     let conn = redis_connection(&state, &id).await?;
@@ -1090,7 +1090,7 @@ pub async fn redis_list_databases(
 
 #[tauri::command]
 pub async fn redis_select_db(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     index: i64,
 ) -> Result<(), AppError> {
@@ -1101,7 +1101,7 @@ pub async fn redis_select_db(
 
 #[tauri::command]
 pub async fn redis_scan_keys(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     pattern: String,
     cursor: String,
@@ -1114,7 +1114,7 @@ pub async fn redis_scan_keys(
 
 #[tauri::command]
 pub async fn redis_key_value(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     key: String,
     cursor: Option<String>,
@@ -1127,7 +1127,7 @@ pub async fn redis_key_value(
 
 #[tauri::command]
 pub async fn redis_delete_keys(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     keys: Vec<String>,
 ) -> Result<i64, AppError> {
@@ -1146,7 +1146,7 @@ pub async fn redis_delete_keys(
 
 #[tauri::command]
 pub async fn postgres_list_databases(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
 ) -> Result<Vec<String>, AppError> {
     let pool = postgres_pool(&state, &id, "").await?;
@@ -1155,7 +1155,7 @@ pub async fn postgres_list_databases(
 
 #[tauri::command]
 pub async fn postgres_server_info(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
 ) -> Result<postgres::ServerInfo, AppError> {
     let pool = postgres_pool(&state, &id, "").await?;
@@ -1164,7 +1164,7 @@ pub async fn postgres_server_info(
 
 #[tauri::command]
 pub async fn postgres_list_tables(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
 ) -> Result<Vec<String>, AppError> {
@@ -1174,7 +1174,7 @@ pub async fn postgres_list_tables(
 
 #[tauri::command]
 pub async fn postgres_table_stats(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
 ) -> Result<Vec<postgres_structure::TableStats>, AppError> {
@@ -1184,7 +1184,7 @@ pub async fn postgres_table_stats(
 
 #[tauri::command]
 pub async fn postgres_table_data(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1196,7 +1196,7 @@ pub async fn postgres_table_data(
 
 #[tauri::command]
 pub async fn postgres_update_row(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1209,7 +1209,7 @@ pub async fn postgres_update_row(
 
 #[tauri::command]
 pub async fn postgres_insert_rows(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1223,7 +1223,7 @@ pub async fn postgres_insert_rows(
 /// checkbox; what it resets here is the table's identity or `serial` sequence.
 #[tauri::command]
 pub async fn postgres_delete_rows(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1237,7 +1237,7 @@ pub async fn postgres_delete_rows(
 
 #[tauri::command]
 pub async fn postgres_table_structure(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1248,7 +1248,7 @@ pub async fn postgres_table_structure(
 
 #[tauri::command]
 pub async fn postgres_collations(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
 ) -> Result<Vec<postgres_structure::Collation>, AppError> {
     let pool = postgres_pool(&state, &id, "").await?;
@@ -1257,7 +1257,7 @@ pub async fn postgres_collations(
 
 #[tauri::command]
 pub async fn postgres_query(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     sql: String,
     database: Option<String>,
@@ -1268,7 +1268,7 @@ pub async fn postgres_query(
 
 #[tauri::command]
 pub async fn postgres_schema_outline(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
 ) -> Result<postgres_structure::SchemaOutline, AppError> {
@@ -1278,7 +1278,7 @@ pub async fn postgres_schema_outline(
 
 #[tauri::command]
 pub async fn postgres_run_script(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     sql: String,
     database: Option<String>,
@@ -1297,7 +1297,7 @@ pub async fn postgres_run_script(
 /// Asks PostgreSQL to parse one statement without running it, for the editor's error checking.
 #[tauri::command]
 pub async fn postgres_validate_sql(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     sql: String,
     database: Option<String>,
@@ -1312,7 +1312,7 @@ pub async fn postgres_validate_sql(
 /// the same database, because a backend pid is only cancellable from the server it belongs to.
 #[tauri::command]
 pub async fn postgres_cancel_query(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: Option<String>,
 ) -> Result<(), AppError> {
@@ -1328,7 +1328,7 @@ pub async fn postgres_cancel_query(
 /// `postgres_ddl::create_database`.
 #[tauri::command]
 pub async fn postgres_create_database(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     name: String,
     #[allow(unused_variables)] collation: Option<String>,
@@ -1341,7 +1341,7 @@ pub async fn postgres_create_database(
 /// pool on the database being dropped is what has to be closed first.
 #[tauri::command]
 pub async fn postgres_drop_database(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
 ) -> Result<(), AppError> {
@@ -1353,7 +1353,7 @@ pub async fn postgres_drop_database(
 /// `collation` is accepted and ignored: a PostgreSQL table has none of its own.
 #[tauri::command]
 pub async fn postgres_create_table(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1365,7 +1365,7 @@ pub async fn postgres_create_table(
 
 #[tauri::command]
 pub async fn postgres_rename_table(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1377,7 +1377,7 @@ pub async fn postgres_rename_table(
 
 #[tauri::command]
 pub async fn postgres_drop_table(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1388,7 +1388,7 @@ pub async fn postgres_drop_table(
 
 #[tauri::command]
 pub async fn postgres_add_column(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1400,7 +1400,7 @@ pub async fn postgres_add_column(
 
 #[tauri::command]
 pub async fn postgres_modify_column(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1413,7 +1413,7 @@ pub async fn postgres_modify_column(
 
 #[tauri::command]
 pub async fn postgres_drop_column(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1425,7 +1425,7 @@ pub async fn postgres_drop_column(
 
 #[tauri::command]
 pub async fn postgres_add_index(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1437,7 +1437,7 @@ pub async fn postgres_add_index(
 
 #[tauri::command]
 pub async fn postgres_modify_index(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1450,7 +1450,7 @@ pub async fn postgres_modify_index(
 
 #[tauri::command]
 pub async fn postgres_drop_index(
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     table: String,
@@ -1468,7 +1468,7 @@ pub async fn postgres_drop_index(
 #[tauri::command]
 pub async fn postgres_dump(
     app: AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     mode: String,
@@ -1511,7 +1511,7 @@ pub async fn postgres_dump(
 #[tauri::command]
 pub async fn postgres_restore(
     app: AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, DbState>,
     id: String,
     database: String,
     path: String,

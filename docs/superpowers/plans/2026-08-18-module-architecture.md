@@ -221,7 +221,11 @@ pub mod db;
 ///
 /// One list, because Tauri takes exactly one `invoke_handler` and `generate_handler!` needs its
 /// paths written out — but split into blocks by owner, and each block is that module's to edit.
-pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+///
+/// Fixed to `tauri::Wry` rather than generic over the runtime: a command that takes an `AppHandle`
+/// takes `AppHandle<Wry>`, which satisfies `CommandArg` for that one runtime and not for an
+/// unknown `R`. `lib.rs` builds on `Wry` too, so nothing is given up by saying so here.
+pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         // ── shared ──
         crate::secrets::secrets_save,
@@ -399,7 +403,18 @@ pub fn run() {
 Run: `cargo check --manifest-path src-tauri/Cargo.toml`
 Expected: PASS.
 
-**Nếu `modules::handler()` không biên dịch** (chữ ký `impl Fn(tauri::ipc::Invoke<R>) -> bool` không khớp phiên bản Tauri đang dùng): đọc kiểu thật mà `cargo check` báo và sửa chữ ký cho khớp. Nếu vẫn không được, phương án lùi: bỏ `modules/mod.rs::handler()`, để `tauri::generate_handler![…]` nguyên trong `lib.rs` với đúng các khối và tiền tố `modules::db::commands::` như trên. Mọi phần khác của task giữ nguyên. Ghi lại lựa chọn này trong commit message.
+**Đã xảy ra, đã xử lý:** bản generic `handler<R: tauri::Runtime>()` **không** biên dịch — 13 lỗi `E0277: the trait bound 'AppHandle: CommandArg<'_, R>' is not satisfied`, vì mọi command nhận `AppHandle` là nhận `AppHandle<Wry>`, thoả `CommandArg` cho đúng một runtime chứ không cho `R` bất kỳ. Chốt chữ ký vào `tauri::Wry` như đoạn mã ở Step 3 là đủ; không phải dùng phương án lùi.
+
+**Nếu vẫn không được** (phiên bản Tauri khác): phương án lùi là bỏ `modules/mod.rs::handler()`, để `tauri::generate_handler![…]` nguyên trong `lib.rs` với đúng các khối và tiền tố `modules::db::commands::` như trên. Mọi phần khác của task giữ nguyên. Ghi lại lựa chọn này trong commit message.
+
+Thay cho bước đếm ở Task 3, chỗ này kiểm chắc hơn — đối chiếu **tập tên** command trước và sau:
+
+```bash
+git show HEAD:src-tauri/src/lib.rs | grep -oE '(commands|secrets)::[a-z_0-9]+' | sed 's/.*:://' | sort > /tmp/old_cmds.txt
+grep -oE '(commands|secrets)::[a-z_0-9]+' src-tauri/src/modules/mod.rs | sed 's/.*:://' | sort > /tmp/new_cmds.txt
+diff /tmp/old_cmds.txt /tmp/new_cmds.txt
+```
+Expected: 91 dòng mỗi bên, `diff` rỗng.
 
 - [ ] **Step 8: Smoke test**
 

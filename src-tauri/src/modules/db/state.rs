@@ -1,4 +1,4 @@
-use crate::models::ConnectionConfig;
+use crate::modules::db::models::ConnectionConfig;
 use crate::ssh::Tunnel;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -21,11 +21,11 @@ pub enum DbHandle {
     /// One pool per database rather than one for the server: a PostgreSQL connection is bound to
     /// the database it was opened on, so selecting another in the sidebar dials again. Behind an
     /// `Arc` because the set of them grows as databases are opened — see `db::postgres::Pools`.
-    Postgres(Arc<crate::db::postgres::Pools>),
+    Postgres(Arc<crate::modules::db::drivers::postgres::Pools>),
     Mongo(mongodb::Client),
     /// Behind a lock of its own: unlike the others, a Redis connection is used through `&mut`,
     /// and selecting a database replaces it outright.
-    Redis(Arc<Mutex<crate::db::redis::Connection>>),
+    Redis(Arc<Mutex<crate::modules::db::drivers::redis::Connection>>),
 }
 
 pub struct ActiveConnection {
@@ -45,7 +45,7 @@ pub struct ActiveConnection {
 }
 
 #[derive(Default)]
-pub struct AppState {
+pub struct DbState {
     /// Every open connection, by the id handed to the frontend.
     ///
     /// The lock guards the map and nothing else. It is taken to look a connection up and released
