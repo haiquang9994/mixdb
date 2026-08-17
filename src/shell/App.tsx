@@ -13,10 +13,10 @@ import { useUpdateCheck } from "./update";
 import { useTranslation } from "../i18n";
 import type { TabBadge } from "./module";
 import { DEFAULT_MODULE_ID, MODULES, moduleById } from "./registry";
-import "../App.css";
+import "./App.css";
 /* After App.css, so the glass surfaces override the plain ones they replace rather than the other
    way round. */
-import "../glass.css";
+import "./glass.css";
 
 interface TabInfo {
   id: string;

@@ -244,22 +244,4 @@
       inset 1px 1px 1.5px -0.5px var(--glass-rim-lit),
       inset 0 0 0 1px var(--glass-rim-hairline);
   }
-
-  /* The same rim, with the bar amber. Written out rather than left to the rule above, which the
-     read-only tab would otherwise lose its whole box-shadow to — the mark stating that MixDB will
-     not write to this connection is not something a decoration may switch off. */
-  :root[data-glass="on"] .tab-readonly.tab-active {
-    box-shadow:
-      inset 0 2px 0 var(--readonly),
-      inset 1px 1px 1.5px -0.5px var(--glass-rim-lit),
-      inset 0 0 0 1px var(--glass-rim-hairline);
-  }
-
-  /* A rail like the grids': the connection cards scroll under this heading, so it frosts them
-     rather than hiding them behind a slab of a colour the page no longer is. */
-  :root[data-glass="on"] .saved-list-header {
-    background: var(--rail-bg);
-    -webkit-backdrop-filter: var(--rail-filter);
-    backdrop-filter: var(--rail-filter);
-  }
 }

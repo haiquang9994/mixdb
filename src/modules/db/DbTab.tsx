@@ -31,6 +31,9 @@ import { useTranslation, type TranslationKey } from "../../i18n";
 import { errorMessage } from "../../core/errors";
 import type { ModuleTabProps, TabBadge } from "../../shell/module";
 import { dbBadgeMarks } from "./badges";
+/* The module's own global stylesheet: the connection form, the saved list and the three
+   workspaces. Component-scoped rules live in each component's CSS Module. */
+import "./db.css";
 
 
 /** What each kind is called on the tab that picks it, and — read aloud — beside its logo in the
