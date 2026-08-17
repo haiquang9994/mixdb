@@ -21,7 +21,7 @@ So the outline is affordable even on a large 5.7 schema, and splitting only star
 scripts of half a megabyte. The same read on MySQL 8.4.8 (port 3308) returns the same shape — only
 the type spellings differ (`int unsigned` against 5.7's `int(10) unsigned`).
 
-Today's editor is [QueryEditor.tsx](../../src/components/QueryEditor/QueryEditor.tsx): a plain
+Today's editor is [QueryEditor.tsx](../../src/modules/db/components/QueryEditor/QueryEditor.tsx): a plain
 textarea with two behaviours — `Tab` inserts two spaces, `Ctrl+Enter` runs. No highlighting, no
 completion, no error checking. The backend side is already the strong half: `mysql_script::run`
 splits a script, runs it statement by statement on one connection, and `mysql_cancel_query` kills a
@@ -47,7 +47,7 @@ The goal: a script written here reads and behaves like one written in a real SQL
 
 ### New component
 
-`src/components/SqlEditor/` — a CodeMirror wrapper with no knowledge of MySQL commands or results.
+`src/modules/db/components/SqlEditor/` — a CodeMirror wrapper with no knowledge of MySQL commands or results.
 It takes `value`, `onChange`, `schema`, `onRun`, `onRunAll` and renders an editor.
 
 | File | Role |
@@ -77,14 +77,14 @@ names, data types, nullability, key flags, and the foreign keys pointing out of 
 on first use of the tab.
 
 Frontend cache in `src/mysql/schemaCache.ts`, keyed by `connectionId + database`, shaped like
-[savedConnectionsStore.ts](../../src/savedConnectionsStore.ts) (external store + `useSyncExternalStore`)
+[savedConnectionsStore.ts](../../src/modules/db/savedConnectionsStore.ts) (external store + `useSyncExternalStore`)
 so several tabs share one copy. Invalidate when the workspace runs DDL or the user hits refresh.
 
 ### Statement splitting on the client
 
 Running the statement under the caret, and highlighting it, needs the same split the backend does.
 Port `split_statements` from
-[mysql_script.rs](../../src-tauri/src/db/mysql_script.rs) to `src/mysql/statements.ts`, returning
+[mysql_script.rs](../../src-tauri/src/modules/db/drivers/mysql_script.rs) to `src/mysql/statements.ts`, returning
 `{ text, verb, from, to }` ranges rather than just text.
 
 > The two splitters must stay in sync. If the Rust one learns something (a `DELIMITER` directive,
@@ -233,7 +233,7 @@ that from mattering.
   and a shortcut to re-run the last one.
 - **Snippets** — named saved queries, insertable from completion by typing their name.
 
-`src/queryDrafts.ts` and `src/queryHistory.ts`, both external stores like `savedConnectionsStore`.
+`src/modules/db/queryDrafts.ts` and `src/modules/db/queryHistory.ts`, both external stores like `savedConnectionsStore`.
 
 ## Phase 3 — what makes it stand out
 
@@ -243,13 +243,13 @@ that from mattering.
   `mysql_explain(id, database, sql, analyze)`.
 - ~~**Hover docs.**~~ **Shipped 2026-08-11.** Hovering a table shows its columns and their types;
   hovering a column shows its type, nullability, key and foreign key; hovering a built-in function
-  shows its signature from [functions.ts](../../src/mysql/functions.ts). Two departures from the
+  shows its signature from [functions.ts](../../src/modules/db/mysql/functions.ts). Two departures from the
   plan. *No indexes and no row count* — `schema_outline` reads neither, as P2 already found out, and
   widening it for a tooltip is a cost paid on every database opened for a thing looked at
   occasionally. *Signatures only, no prose*: a sentence per function would have to be written in
   both languages and kept correct, and the signature is the part someone actually stops to check.
 
-  What resolves the name is [reference.ts](../../src/mysql/reference.ts), and it shares
+  What resolves the name is [reference.ts](../../src/modules/db/mysql/reference.ts), and it shares
   `lint.ts`'s tokeniser and its scope reader — which was pulled out of `checkStatement` into
   `readScope` for the purpose. That sharing is the point: the tooltip over `u.id` and the warning
   under it cannot disagree about which table `u` is. Where the checks go quiet on what they cannot
@@ -286,7 +286,7 @@ that from mattering.
   our own escaper.
 - **Result grid work**: sort by column, find within results, hide columns, expand one cell as
   formatted JSON/text, and copy or export as CSV, JSON or `INSERT` statements. Follow whatever
-  [SqlTable](../../src/components/SqlTable/SqlTable.tsx) already does rather than inventing a
+  [SqlTable](../../src/modules/db/components/SqlTable/SqlTable.tsx) already does rather than inventing a
   second grid.
 - **Transaction bar**: `BEGIN` / `COMMIT` / `ROLLBACK` buttons with an indicator when the session is
   inside a transaction. The script already runs on one connection, so this works as-is.
@@ -299,7 +299,7 @@ Found while reviewing the pane rework of 2026-08-11 and left standing — both a
 driving a control to its limit, and neither loses any work.
 
 - **The divider can push the footer bar out of view.** `MIN_EDITOR` in
-  [resultsPane.ts](../../src/components/QueryEditor/resultsPane.ts) reserves 150px, but measures it
+  [resultsPane.ts](../../src/modules/db/components/QueryEditor/resultsPane.ts) reserves 150px, but measures it
   against `tabRef` — the whole tab, toolbar and footer bar included — while `.editorPane` has a
   `min-height` of `6rem` it will not shrink past and `.queryEditor` has no `overflow: hidden` to
   clip what overflows. Drag the divider all the way up and the bar goes off the bottom edge. The fix
