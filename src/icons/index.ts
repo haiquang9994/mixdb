@@ -1,5 +1,4 @@
 export { Icon, type IconProps } from "./Icon";
-export { DatabaseIcon, type DatabaseIconProps } from "./brands";
 export {
   BookmarkIcon,
   CheckIcon,

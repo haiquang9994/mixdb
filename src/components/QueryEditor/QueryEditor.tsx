@@ -1,24 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { columnDetail, completionSchema } from "../../sql/completion";
+import { columnDetail, completionSchema } from "../../modules/db/sql/completion";
 import {
   AUTO_LIMIT,
   unguardedWrites,
   withAutoLimits,
   writingStatements,
   type UnguardedWrite,
-} from "../../sql/guard";
-import { lintScript, problemRange } from "../../sql/lint";
-import { useSqlDialect } from "../../sql/context";
-import { referenceAt, type SqlReference } from "../../mysql/reference";
-import { invalidateSchemaOutline, useSchemaOutline } from "../../sql/schemaCache";
-import { useSqlApi } from "../../sql/context";
+} from "../../modules/db/sql/guard";
+import { lintScript, problemRange } from "../../modules/db/sql/lint";
+import { useSqlDialect } from "../../modules/db/sql/context";
+import { referenceAt, type SqlReference } from "../../modules/db/mysql/reference";
+import { invalidateSchemaOutline, useSchemaOutline } from "../../modules/db/sql/schemaCache";
+import { useSqlApi } from "../../modules/db/sql/context";
 import {
   changesSchema,
   splitStatements,
   statementAt,
   type SqlStatement,
-} from "../../sql/statements";
+} from "../../modules/db/sql/statements";
 import ActionBar from "../ActionBar";
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
@@ -49,10 +49,10 @@ import { useTranslation, type TranslationKey } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { MODIFIER_LABEL, shortcutLabel } from "../../platform";
 import { RELOAD_SHORTCUT, useReloadShortcut } from "../../reload";
-import { loadDraft, saveDraft, saveDraftNow } from "../../queryDrafts";
-import { recordQuery } from "../../queryHistory";
-import { useQuerySnippets } from "../../querySnippets";
-import type { SqlStatementResult } from "../../types";
+import { loadDraft, saveDraft, saveDraftNow } from "../../modules/db/queryDrafts";
+import { recordQuery } from "../../modules/db/queryHistory";
+import { useQuerySnippets } from "../../modules/db/querySnippets";
+import type { SqlStatementResult } from "../../modules/db/types";
 import styles from "./QueryEditor.module.css";
 
 /** How many of a table's columns the hover tooltip lists before it stops and counts the rest. A

@@ -4,8 +4,8 @@ import {
   redisKeyValue,
   type RedisValueItem,
   type RedisValuePage,
-} from "../../redis/api";
-import { parseJsonDocument } from "../../redis/json";
+} from "../../modules/db/redis/api";
+import { parseJsonDocument } from "../../modules/db/redis/json";
 import ActionBar from "../ActionBar";
 import ConfirmDialog from "../ConfirmDialog";
 import JsonView from "../JsonView";

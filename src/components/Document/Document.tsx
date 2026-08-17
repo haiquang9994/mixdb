@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DocUpdateOps } from "../../mongo/api";
-import { deleteAtPath, getAtPath, renameKeyAtPath, setAtPath } from "../../mongo/docOps";
-import { isWrapper, type TypedDocument, type TypedValue } from "../../mongo/bsonTypes";
+import type { DocUpdateOps } from "../../modules/db/mongo/api";
+import { deleteAtPath, getAtPath, renameKeyAtPath, setAtPath } from "../../modules/db/mongo/docOps";
+import { isWrapper, type TypedDocument, type TypedValue } from "../../modules/db/mongo/bsonTypes";
 import DocumentNode, { ValueEditor, type DocumentEditMode } from "../DocumentNode";
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, DotIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";

@@ -5,9 +5,9 @@ import { useDialogExit } from "../dialogMotion";
 import { PlusIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
-import { useSqlDialect } from "../../sql/context";
-import type { SqlDialect } from "../../sql/dialect";
-import type { SqlColumnMeta } from "../../types";
+import { useSqlDialect } from "../../modules/db/sql/context";
+import type { SqlDialect } from "../../modules/db/sql/dialect";
+import type { SqlColumnMeta } from "../../modules/db/types";
 import styles from "./InsertRowsDialog.module.css";
 
 /** One cell of a row waiting to be inserted. `isNull` is a mode rather than a value: writing SQL

@@ -8,17 +8,17 @@ import {
   type RedisDbInfo,
   type RedisKeyInfo,
 } from "./api";
-import Select from "../components/Select";
-import ErrorBanner from "../components/ErrorBanner";
-import Input from "../components/Input";
-import ActionBar from "../components/ActionBar";
-import RedisGroupKeys from "../components/RedisGroupKeys";
-import RedisKeyList from "../components/RedisKeyList";
-import RedisValue from "../components/RedisValue";
-import keyListStyles from "../components/RedisKeyList/RedisKeyList.module.css";
-import { ReloadIcon } from "../icons";
-import { useTranslation } from "../i18n";
-import { errorMessage } from "../errors";
+import Select from "../../../components/Select";
+import ErrorBanner from "../../../components/ErrorBanner";
+import Input from "../../../components/Input";
+import ActionBar from "../../../components/ActionBar";
+import RedisGroupKeys from "../../../components/RedisGroupKeys";
+import RedisKeyList from "../../../components/RedisKeyList";
+import RedisValue from "../../../components/RedisValue";
+import keyListStyles from "../../../components/RedisKeyList/RedisKeyList.module.css";
+import { ReloadIcon } from "../../../icons";
+import { useTranslation } from "../../../i18n";
+import { errorMessage } from "../../../errors";
 
 interface Props {
   connectionId: string;

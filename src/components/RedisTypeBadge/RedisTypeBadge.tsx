@@ -1,4 +1,4 @@
-import type { RedisKeyType } from "../../redis/api";
+import type { RedisKeyType } from "../../modules/db/redis/api";
 import styles from "./RedisTypeBadge.module.css";
 
 /** The types with a colour of their own; anything else falls back to the neutral badge. */

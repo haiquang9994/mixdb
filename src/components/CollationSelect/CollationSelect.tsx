@@ -3,7 +3,7 @@ import Input from "../Input";
 import Select from "../Select";
 import type { SelectOption } from "../Select";
 import { useTranslation } from "../../i18n";
-import type { SqlCollation } from "../../types";
+import type { SqlCollation } from "../../modules/db/types";
 import styles from "./CollationSelect.module.css";
 
 /** The character sets a column or table is realistically declared in, most likely first. Everything

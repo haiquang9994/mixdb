@@ -19,7 +19,7 @@
 import type { SQLDialect } from "@codemirror/lang-sql";
 import type { SqlDialect } from "./dialect";
 import { dollarTag, type SqlSyntax } from "./syntax";
-import type { TranslationKey } from "../i18n";
+import type { TranslationKey } from "../../../i18n";
 import type { SqlSchemaOutline } from "../types";
 import type { SqlStatement } from "../sql/statements";
 

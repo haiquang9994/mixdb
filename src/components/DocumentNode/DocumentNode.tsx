@@ -13,7 +13,7 @@ import {
   type CreatableType,
   type TypedValue,
   type TypedWrapper,
-} from "../../mongo/bsonTypes";
+} from "../../modules/db/mongo/bsonTypes";
 import styles from "./DocumentNode.module.css";
 
 const CHILDREN_PREVIEW_COUNT = 3;

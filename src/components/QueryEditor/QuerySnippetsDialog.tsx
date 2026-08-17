@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { CloseIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import { removeSnippet, saveSnippet, useQuerySnippets } from "../../querySnippets";
+import { removeSnippet, saveSnippet, useQuerySnippets } from "../../modules/db/querySnippets";
 import Button from "../Button";
 import Input from "../Input";
 import { useDialogExit } from "../dialogMotion";

@@ -10,26 +10,26 @@ import {
   mongoServerInfo,
 } from "./api";
 import { isMongoSystemDatabase } from "./system";
-import Select from "../components/Select";
-import ConfirmDialog from "../components/ConfirmDialog";
-import DatabaseActions from "../components/DatabaseActions";
-import type { DatabaseChange } from "../components/DatabaseActions";
-import DatabaseStats from "../components/DatabaseStats";
-import type { StatsCache } from "../components/DatabaseStats";
-import TransferOverlay from "../components/TransferOverlay";
-import ErrorBanner from "../components/ErrorBanner";
-import Input from "../components/Input";
-import NameDialog from "../components/NameDialog";
-import NoSqlTable from "../components/NoSqlTable";
-import type { DocumentCache, FilterCache } from "../components/NoSqlTable";
-import ActionBar from "../components/ActionBar";
-import ItemList from "../components/ItemList";
-import type { ItemAction } from "../components/ItemList";
-import itemListStyles from "../components/ItemList/ItemList.module.css";
-import { PlusIcon, ReloadIcon } from "../icons";
-import { useSidebarKeyboard } from "../sidebarKeyboard";
-import { useTranslation } from "../i18n";
-import { errorMessage } from "../errors";
+import Select from "../../../components/Select";
+import ConfirmDialog from "../../../components/ConfirmDialog";
+import DatabaseActions from "../../../components/DatabaseActions";
+import type { DatabaseChange } from "../../../components/DatabaseActions";
+import DatabaseStats from "../../../components/DatabaseStats";
+import type { StatsCache } from "../../../components/DatabaseStats";
+import TransferOverlay from "../../../components/TransferOverlay";
+import ErrorBanner from "../../../components/ErrorBanner";
+import Input from "../../../components/Input";
+import NameDialog from "../../../components/NameDialog";
+import NoSqlTable from "../../../components/NoSqlTable";
+import type { DocumentCache, FilterCache } from "../../../components/NoSqlTable";
+import ActionBar from "../../../components/ActionBar";
+import ItemList from "../../../components/ItemList";
+import type { ItemAction } from "../../../components/ItemList";
+import itemListStyles from "../../../components/ItemList/ItemList.module.css";
+import { PlusIcon, ReloadIcon } from "../../../icons";
+import { useSidebarKeyboard } from "../../../sidebarKeyboard";
+import { useTranslation } from "../../../i18n";
+import { errorMessage } from "../../../errors";
 
 interface Props {
   /** Whether this connection's tab is the one on show. Passed straight through to the content

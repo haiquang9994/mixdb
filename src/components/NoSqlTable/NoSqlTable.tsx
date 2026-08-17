@@ -6,15 +6,15 @@ import {
   mongoNextIds,
   mongoUpdateDocument,
   type DocUpdateOps,
-} from "../../mongo/api";
-import type { TypedDocument, TypedValue } from "../../mongo/bsonTypes";
+} from "../../modules/db/mongo/api";
+import type { TypedDocument, TypedValue } from "../../modules/db/mongo/bsonTypes";
 import {
   mergeDocumentFields,
   MONGO_FILTER_OPERATORS,
   mongoOperatorArity,
   type MongoFilter,
   type MongoFilterOperator,
-} from "../../mongo/filters";
+} from "../../modules/db/mongo/filters";
 import ActionBar from "../ActionBar";
 import Document from "../Document";
 import FilterBar from "../FilterBar";
@@ -25,7 +25,7 @@ import { PlusIcon, ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
-import { initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
+import { initialFilterRows, toQueryFilters, type FilterRow } from "../../modules/db/filters";
 import {
   fileDocuments,
   rememberedDocuments,

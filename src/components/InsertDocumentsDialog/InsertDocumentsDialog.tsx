@@ -6,7 +6,7 @@ import { useDialogExit } from "../dialogMotion";
 import { PlusIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
-import type { TypedDocument, TypedValue } from "../../mongo/bsonTypes";
+import type { TypedDocument, TypedValue } from "../../modules/db/mongo/bsonTypes";
 import styles from "./InsertDocumentsDialog.module.css";
 
 /** One document being composed. The data itself lives in the card — `seed` is only what the

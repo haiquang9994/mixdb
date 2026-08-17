@@ -7,7 +7,7 @@ import {
   removeQueryHistoryEntry,
   useQueryHistory,
   type QueryHistoryEntry,
-} from "../../queryHistory";
+} from "../../modules/db/queryHistory";
 import Button from "../Button";
 import Input from "../Input";
 import { useDialogExit } from "../dialogMotion";

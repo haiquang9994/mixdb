@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
-import type { DbKind } from "../types";
-import styles from "./Icon.module.css";
+import type { DbKind } from "./types";
+import styles from "../../icons/Icon.module.css";
 
 /* The logo of each database engine, kept apart from the line icons in `icons.tsx` on purpose.
  * Those are this app's own drawings — one stroke weight, one grid, `currentColor` — and a brand

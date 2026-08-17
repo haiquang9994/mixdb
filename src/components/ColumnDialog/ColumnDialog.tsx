@@ -8,9 +8,9 @@ import type { SelectOption } from "../Select";
 import { useDialogExit } from "../dialogMotion";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
-import type { SqlCollation, SqlColumnSpec, SqlStructureColumn } from "../../types";
-import type { SqlTypeSpec } from "../../sql/dialect";
-import { useSqlDialect } from "../../sql/context";
+import type { SqlCollation, SqlColumnSpec, SqlStructureColumn } from "../../modules/db/types";
+import type { SqlTypeSpec } from "../../modules/db/sql/dialect";
+import { useSqlDialect } from "../../modules/db/sql/context";
 import styles from "./ColumnDialog.module.css";
 
 /** What is known about a type name, or undefined for one the engine's list doesn't carry — a column

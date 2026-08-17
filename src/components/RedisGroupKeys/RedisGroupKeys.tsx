@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { redisDeleteKeys, type RedisKeyInfo } from "../../redis/api";
+import { redisDeleteKeys, type RedisKeyInfo } from "../../modules/db/redis/api";
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
 import Input from "../Input";

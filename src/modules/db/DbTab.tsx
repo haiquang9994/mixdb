@@ -6,25 +6,26 @@ import {
   removeConnection,
   updateConnection,
   useSavedConnections,
-} from "../../savedConnectionsStore";
-import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "../../types";
-import SqlWorkspace from "../../sql/SqlWorkspace";
-import { SqlProvider } from "../../sql/context";
-import type { SqlApi } from "../../sql/api";
-import type { SqlDialect } from "../../sql/dialect";
-import { mysqlApi } from "../../mysql/api";
-import { mysqlDialect } from "../../mysql/dialect";
-import { postgresApi } from "../../postgres/api";
-import { postgresDialect } from "../../postgres/dialect";
-import MongoWorkspace from "../../mongo/MongoWorkspace";
-import RedisWorkspace from "../../redis/RedisWorkspace";
+} from "./savedConnectionsStore";
+import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
+import SqlWorkspace from "./sql/SqlWorkspace";
+import { SqlProvider } from "./sql/context";
+import type { SqlApi } from "./sql/api";
+import type { SqlDialect } from "./sql/dialect";
+import { mysqlApi } from "./mysql/api";
+import { mysqlDialect } from "./mysql/dialect";
+import { postgresApi } from "./postgres/api";
+import { postgresDialect } from "./postgres/dialect";
+import MongoWorkspace from "./mongo/MongoWorkspace";
+import RedisWorkspace from "./redis/RedisWorkspace";
 import Select from "../../components/Select";
 import ErrorBanner from "../../components/ErrorBanner";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import ContextMenu from "../../components/ContextMenu";
 import Button from "../../components/Button";
 import Input from "../../components/Input";
-import { DatabaseIcon, EyeIcon, EyeOffIcon, LockIcon, PinIcon } from "../../icons";
+import { EyeIcon, EyeOffIcon, LockIcon, PinIcon } from "../../icons";
+import { DatabaseIcon } from "./icons";
 import { IS_MAC, IS_WINDOWS } from "../../platform";
 import { useTranslation, type TranslationKey } from "../../i18n";
 import { errorMessage } from "../../errors";
@@ -143,7 +144,7 @@ function maskMongoUri(uri: string): string {
  * someone looking for `~/.ssh` on a Mac. It stays out of the dictionaries because a path is not
  * language: it follows the machine the app runs on, not the language it was asked to speak.
  *
- * Which machine this is comes from {@link ../platform}. Linux is the fallback rather than a third
+ * Which machine this is comes from {@link ../../platform}. Linux is the fallback rather than a third
  * test: WebKitGTK spells its system several ways (`X11`, `Wayland`, `Linux`), and every remaining
  * desktop puts home directories under `/home`.
  */

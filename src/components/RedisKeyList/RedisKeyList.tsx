@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { RedisKeyInfo } from "../../redis/api";
+import type { RedisKeyInfo } from "../../modules/db/redis/api";
 import {
   ancestorPaths,
   buildKeyTree,
@@ -7,7 +7,7 @@ import {
   resolveTreeKey,
   TREE_NAV_KEYS,
   visibleRows,
-} from "../../redis/keyTree";
+} from "../../modules/db/redis/keyTree";
 import ContextMenu from "../ContextMenu";
 import RedisTypeBadge from "../RedisTypeBadge";
 import { ChevronDownIcon, ChevronRightIcon, FolderIcon } from "../../icons";

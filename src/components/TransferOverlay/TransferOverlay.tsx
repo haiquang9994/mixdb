@@ -1,5 +1,5 @@
 import { useTranslation } from "../../i18n";
-import type { TransferProgress } from "../../transfer";
+import type { TransferProgress } from "../../modules/db/transfer";
 import styles from "./TransferOverlay.module.css";
 
 interface Props {

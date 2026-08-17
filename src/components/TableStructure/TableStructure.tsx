@@ -11,8 +11,8 @@ import { PencilIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
-import { useSqlApi, useSqlDialect } from "../../sql/context";
-import type { SqlEditing } from "../../sql/dialect";
+import { useSqlApi, useSqlDialect } from "../../modules/db/sql/context";
+import type { SqlEditing } from "../../modules/db/sql/dialect";
 import type {
   SqlCollation,
   SqlColumnSpec,
@@ -20,7 +20,7 @@ import type {
   SqlStructureColumn,
   SqlTableIndex,
   SqlTableStructure,
-} from "../../types";
+} from "../../modules/db/types";
 import styles from "./TableStructure.module.css";
 
 /** What the Kind column says an index is — the same reading of it the edit dialog opens on. */

@@ -10,9 +10,9 @@
 
 import { describe, expect, it } from "vitest";
 import { composeType, parseType } from "./ColumnDialog";
-import { mysqlEditing } from "../../mysql/editing";
-import { postgresEditing } from "../../postgres/editing";
-import type { SqlTypeSpec } from "../../sql/dialect";
+import { mysqlEditing } from "../../modules/db/mysql/editing";
+import { postgresEditing } from "../../modules/db/postgres/editing";
+import type { SqlTypeSpec } from "../../modules/db/sql/dialect";
 
 /** Opens a declared type in the dialog and saves it again without touching anything. */
 function roundTrip(types: readonly SqlTypeSpec[], dataType: string): string {

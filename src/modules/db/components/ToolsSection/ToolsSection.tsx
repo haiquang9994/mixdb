@@ -11,8 +11,8 @@ import {
   toolsSetPath,
   toolsStatus,
   toolsUninstall,
-} from "../../../../tools";
-import type { ToolStage, ToolStatus, ToolSuite } from "../../../../tools";
+} from "../../tools";
+import type { ToolStage, ToolStatus, ToolSuite } from "../../tools";
 import styles from "./ToolsSection.module.css";
 
 /** The three suites, what each one is called where it is downloaded from, and what to say instead

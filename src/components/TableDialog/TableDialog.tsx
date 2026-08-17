@@ -2,8 +2,8 @@ import { useState } from "react";
 import CollationSelect from "../CollationSelect";
 import NameDialog, { fieldClassName } from "../NameDialog";
 import { useTranslation } from "../../i18n";
-import type { SqlCollation } from "../../types";
-import { useSqlDialect } from "../../sql/context";
+import type { SqlCollation } from "../../modules/db/types";
+import { useSqlDialect } from "../../modules/db/sql/context";
 
 interface Props {
   /** The database the table is to be created in — named in the title, since the sidebar's own

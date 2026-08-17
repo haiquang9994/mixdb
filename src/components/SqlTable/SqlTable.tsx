@@ -11,17 +11,17 @@ import { ChevronDownIcon, ChevronUpIcon, CopyIcon, PlusIcon, ReloadIcon, TrashIc
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { copyText } from "../../clipboard";
-import { useSqlApi, useSqlDialect } from "../../sql/context";
+import { useSqlApi, useSqlDialect } from "../../modules/db/sql/context";
 import { IS_MAC, hasPrimaryModifier } from "../../platform";
 import { isTextEntry } from "../../textEntry";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
-import { filterRowFor, initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
+import { filterRowFor, initialFilterRows, toQueryFilters, type FilterRow } from "../../modules/db/filters";
 import {
   FILTER_OPERATORS,
   operatorArity,
   type FilterOperator,
   type SqlFilter,
-} from "../../sql/filters";
+} from "../../modules/db/sql/filters";
 import {
   columnEdges,
   gridStyle,
@@ -39,7 +39,7 @@ import {
   type TableRequest,
 } from "./request";
 import { csvText, insertStatements, spreadsheetText } from "./rowText";
-import type { SqlColumnMeta } from "../../types";
+import type { SqlColumnMeta } from "../../modules/db/types";
 import styles from "./SqlTable.module.css";
 
 /** Where handing the browser the whole page stops being the cheap thing to do. Below this the rows

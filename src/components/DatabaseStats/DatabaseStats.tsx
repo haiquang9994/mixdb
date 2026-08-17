@@ -8,9 +8,9 @@ import { ChevronDownIcon, ChevronUpIcon, ReloadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
 import { useReloadShortcut, withReloadShortcut } from "../../reload";
-import { mongoCollectionStats } from "../../mongo/api";
-import { useOptionalSql } from "../../sql/context";
-import type { TableStats } from "../../types";
+import { mongoCollectionStats } from "../../modules/db/mongo/api";
+import { useOptionalSql } from "../../modules/db/sql/context";
+import type { TableStats } from "../../modules/db/types";
 import styles from "./DatabaseStats.module.css";
 
 /** The columns the grid can be ordered by — every field of a row, the name included. */

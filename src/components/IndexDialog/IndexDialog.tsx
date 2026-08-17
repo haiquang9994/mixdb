@@ -7,8 +7,8 @@ import { useDialogExit } from "../dialogMotion";
 import { MinusIcon, PlusIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
-import type { SqlIndexKind, SqlIndexSpec, SqlTableIndex } from "../../types";
-import { useSqlDialect } from "../../sql/context";
+import type { SqlIndexKind, SqlIndexSpec, SqlTableIndex } from "../../modules/db/types";
+import { useSqlDialect } from "../../modules/db/sql/context";
 import styles from "./IndexDialog.module.css";
 
 /** One column of the index being built. `prefixLength` is text rather than a number so a

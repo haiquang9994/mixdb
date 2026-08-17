@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import Button from "../Button";
 import { useDialogExit } from "../dialogMotion";
 import { useTranslation } from "../../i18n";
-import type { SqlDumpMode } from "../../sql/api";
+import type { SqlDumpMode } from "../../modules/db/sql/api";
 import styles from "./DumpDialog.module.css";
 
 /** The three choices, in the order they are offered: the whole thing first, since that is what a

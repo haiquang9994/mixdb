@@ -2,7 +2,7 @@ import { memo } from "react";
 import ResultGrid from "./ResultGrid";
 import { TerminalIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
-import type { SqlStatementResult } from "../../types";
+import type { SqlStatementResult } from "../../modules/db/types";
 import styles from "./QueryEditor.module.css";
 
 interface Props {

@@ -6,12 +6,12 @@ import DumpDialog from "../DumpDialog";
 import { DownloadIcon, TrashIcon, UploadIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../errors";
-import { toolsDownloadable, toolsInstall, toolsReady, type ToolSuite } from "../../tools";
-import { mongoDropDatabase, mongoDump, mongoRestore } from "../../mongo/api";
-import { isMongoSystemDatabase } from "../../mongo/system";
-import { useOptionalSql } from "../../sql/context";
-import type { SqlContextValue } from "../../sql/context";
-import type { SqlDumpMode } from "../../sql/api";
+import { toolsDownloadable, toolsInstall, toolsReady, type ToolSuite } from "../../modules/db/tools";
+import { mongoDropDatabase, mongoDump, mongoRestore } from "../../modules/db/mongo/api";
+import { isMongoSystemDatabase } from "../../modules/db/mongo/system";
+import { useOptionalSql } from "../../modules/db/sql/context";
+import type { SqlContextValue } from "../../modules/db/sql/context";
+import type { SqlDumpMode } from "../../modules/db/sql/api";
 
 /** What the workspace is told happened, so it can reload what the change touched. */
 export type DatabaseChange = "restored" | "dropped";

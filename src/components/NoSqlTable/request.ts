@@ -1,5 +1,5 @@
-import type { MongoFilter } from "../../mongo/filters";
-import type { TypedDocument } from "../../mongo/bsonTypes";
+import type { MongoFilter } from "../../modules/db/mongo/filters";
+import type { TypedDocument } from "../../modules/db/mongo/bsonTypes";
 import { fileInto } from "../../paneCache";
 
 /** Everything one page of documents is read with — what makes two reads the same read. */

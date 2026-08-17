@@ -9,7 +9,7 @@ import {
   createFilterRow,
   type FilterOperatorSpec,
   type FilterRow,
-} from "../../filters";
+} from "../../modules/db/filters";
 import styles from "./FilterBar.module.css";
 
 /** What the pane above can ask the bar to do — see {@link Props.ref}. */
