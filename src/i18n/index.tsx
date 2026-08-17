@@ -1,11 +1,11 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import en from "./en";
-import vi from "./vi";
+import { EN, VI } from "./dicts";
 
-export type TranslationDict = typeof en;
+/** Every module's strings and the shared ones, as one object — see {@link ./dicts}. */
+export type TranslationDict = typeof EN;
 export type Language = "en" | "vi";
 
-const DICTS: Record<Language, TranslationDict> = { en, vi };
+const DICTS: Record<Language, TranslationDict> = { en: EN, vi: VI };
 const STORAGE_KEY = "mixdb-lang";
 
 type DotPaths<T, Prefix extends string = ""> = {
