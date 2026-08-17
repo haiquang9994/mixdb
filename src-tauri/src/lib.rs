@@ -6,7 +6,7 @@ mod commands;
 mod db;
 mod models;
 mod secrets;
-mod ssh_tunnel;
+mod ssh;
 mod state;
 
 use state::AppState;
@@ -100,9 +100,9 @@ pub fn run() {
             commands::postgres_drop_index,
             commands::postgres_dump,
             commands::postgres_restore,
-            commands::secrets_save,
-            commands::secrets_load,
-            commands::secrets_delete,
+            secrets::secrets_save,
+            secrets::secrets_load,
+            secrets::secrets_delete,
             commands::mongo_list_databases,
             commands::mongo_server_info,
             commands::mongo_list_collections,

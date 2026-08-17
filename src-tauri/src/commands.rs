@@ -13,9 +13,8 @@ use crate::db::{
     postgres_structure,
     redis as redis_db, tools,
 };
-use crate::models::{ConnectionConfig, DbKind, SshConfig};
-use crate::secrets;
-use crate::ssh_tunnel;
+use crate::models::{ConnectionConfig, DbKind};
+use crate::ssh::{self, SshConfig};
 use crate::state::{ActiveConnection, AppState, DbHandle};
 
 const DB_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -64,7 +63,7 @@ async fn with_timeout<T>(
 
 #[tauri::command]
 pub async fn test_ssh_tunnel(app: AppHandle, ssh: SshConfig) -> Result<(), AppError> {
-    ssh_tunnel::test_connection(&ssh, &app_data_dir(&app)?).await
+    ssh::test_connection(&ssh, &app_data_dir(&app)?).await
 }
 
 /// The address to dial and, when the connection goes through SSH, the tunnel that has to stay
@@ -73,11 +72,11 @@ pub async fn test_ssh_tunnel(app: AppHandle, ssh: SshConfig) -> Result<(), AppEr
 async fn resolve_endpoint(
     config: &ConnectionConfig,
     app_data: &std::path::Path,
-) -> Result<(String, u16, Option<ssh_tunnel::Tunnel>), AppError> {
+) -> Result<(String, u16, Option<ssh::Tunnel>), AppError> {
     match &config.ssh {
         Some(ssh) => {
             let (local_port, tunnel) =
-                ssh_tunnel::open_tunnel(ssh, &config.host, config.port, app_data).await?;
+                ssh::open_tunnel(ssh, &config.host, config.port, app_data).await?;
             Ok(("127.0.0.1".to_string(), local_port, Some(tunnel)))
         }
         None => Ok((config.host.clone(), config.port, None)),
@@ -144,7 +143,7 @@ pub async fn connect_db(
             let (endpoint, tunnel) = match &config.ssh {
                 Some(ssh) => {
                     let (host, port) = mongo::first_endpoint(uri).await?;
-                    let (local_port, task) = ssh_tunnel::open_tunnel(ssh, &host, port, &app_data).await?;
+                    let (local_port, task) = ssh::open_tunnel(ssh, &host, port, &app_data).await?;
                     (Some(("127.0.0.1".to_string(), local_port)), Some(task))
                 }
                 None => (None, None),
@@ -476,27 +475,6 @@ where
     tokio::task::spawn_blocking(work)
         .await
         .map_err(|e| err!("error.backgroundTaskFailed", message = e))?
-}
-
-/// Writes a saved connection's secrets to the OS credential store, replacing what was there.
-///
-/// Off the async runtime: the credential stores are blocking, and on macOS opening one may put a
-/// prompt on screen — which is not something to hold a runtime worker for.
-#[tauri::command]
-pub async fn secrets_save(id: String, secrets: secrets::Secrets) -> Result<(), AppError> {
-    in_background(move || secrets::save(&id, &secrets)).await
-}
-
-/// A saved connection's secrets, or nothing when it has none stored.
-#[tauri::command]
-pub async fn secrets_load(id: String) -> Result<secrets::Secrets, AppError> {
-    in_background(move || secrets::load(&id)).await
-}
-
-/// Forgets a saved connection's secrets, for when the connection itself is deleted.
-#[tauri::command]
-pub async fn secrets_delete(id: String) -> Result<(), AppError> {
-    in_background(move || secrets::delete(&id)).await
 }
 
 /// Where MixDB keeps what it remembers between runs: the tools it downloaded, and the SSH host

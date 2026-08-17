@@ -1,5 +1,5 @@
 use crate::models::ConnectionConfig;
-use crate::ssh_tunnel::Tunnel;
+use crate::ssh::Tunnel;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;

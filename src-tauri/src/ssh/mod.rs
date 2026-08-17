@@ -1,6 +1,6 @@
 use crate::error::AppError;
-use crate::models::{SshAuth, SshConfig};
 use russh::client::{self};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -8,6 +8,25 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
+
+/// How to prove who you are to the SSH server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum SshAuth {
+    Password { password: String },
+    PrivateKey { key_path: String, passphrase: Option<String> },
+}
+
+/// The server to tunnel through. Config of this layer rather than of whatever is at the far end,
+/// which is why it lives here and not with any one module's models: a terminal opened over SSH
+/// wants the same four fields a tunnelled database connection does.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth: SshAuth,
+}
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const CHANNEL_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
