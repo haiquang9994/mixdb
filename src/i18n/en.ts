@@ -73,6 +73,18 @@ const en = {
     languageEnglish: "English",
     languageVietnamese: "Ti\u1ebfng Vi\u1ec7t",
   },
+  // The Ctrl/Cmd chords the app answers, as Settings lists them. A module's own chords are named in
+  // that module's dictionary, beside the rest of its words — see `src/i18n/dicts.ts`, which will
+  // not let two dictionaries claim the same group.
+  shortcuts: {
+    title: "Shortcuts",
+    scope: {
+      app: "App",
+    },
+    newTab: "New tab",
+    closeTab: "Close tab",
+    reload: "Reload the pane on screen",
+  },
   // Finding, fetching and installing a newer MixDB. The download runs in the background; the
   // install closes the app, so it never happens without the user pressing the button for it.
   update: {

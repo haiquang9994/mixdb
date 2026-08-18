@@ -69,6 +69,17 @@ const vi: SharedDict = {
     languageEnglish: "English",
     languageVietnamese: "Tiếng Việt",
   },
+  // Các tổ hợp Ctrl/Cmd ứng dụng nhận, đúng như Settings liệt kê. Phím riêng của một module được
+  // đặt tên trong từ điển của module đó.
+  shortcuts: {
+    title: "Phím tắt",
+    scope: {
+      app: "Ứng dụng",
+    },
+    newTab: "Tab mới",
+    closeTab: "Đóng tab",
+    reload: "Tải lại pane đang xem",
+  },
   // Tìm, tải và cài bản MixDB mới. Việc tải chạy ngầm; việc cài thì đóng ứng dụng, nên nó chỉ xảy
   // ra khi người dùng tự bấm nút.
   update: {

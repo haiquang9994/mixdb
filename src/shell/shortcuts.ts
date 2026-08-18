@@ -1,10 +1,18 @@
 import type { ShortcutGroup } from "../core/shortcuts";
 import { MODULES } from "./registry";
 
-/** The chords the app answers wherever you are — the tab bar's, and the reload every pane shares.
- *
- *  Empty until the shell's own keys are moved over. */
-export const SHELL_SHORTCUTS: ShortcutGroup[] = [];
+/** The chords the app answers wherever you are — the tab bar's, and the reload every pane shares. */
+export const SHELL_SHORTCUTS: ShortcutGroup[] = [
+  {
+    scope: "app",
+    labelKey: "shortcuts.scope.app",
+    defs: [
+      /* Not `inModal`: the pane behind a dialog is not the one in front, and a reload fired from
+         behind a confirmation acts on the very thing being asked about. */
+      { id: "pane.reload", chord: { key: "r" }, labelKey: "shortcuts.reload" },
+    ],
+  },
+];
 
 /**
  * Every chord in the app, the shell's and the modules'.
