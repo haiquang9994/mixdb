@@ -348,3 +348,17 @@ export function parseCurl(text: string, nextId: () => string): ParsedRequest | n
     body,
   };
 }
+
+/**
+ * A paste read as a request, or null when it is just text.
+ *
+ * Only a cURL command is claimed. A pasted URL is left to the webview on purpose: the URL box and
+ * the Params table are already two views of one thing, so a whole pasted URL becomes rows the moment
+ * the box changes — and claiming the paste would stop a host pasted over part of a URL from
+ * replacing it, which is what pasting into a text box is for.
+ */
+export function parsePaste(text: string, nextId: () => string): ParsedRequest | null {
+  const trimmed = text.trim();
+  if (!/^(\$\s+)?curl(\.exe)?(\s|$)/i.test(trimmed)) return null;
+  return parseCurl(trimmed.replace(/^\$\s+/, ""), nextId);
+}

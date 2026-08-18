@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCurl, splitArgs } from "./parsePaste";
+import { parseCurl, parsePaste, splitArgs } from "./parsePaste";
 
 describe("splitArgs", () => {
   it("cuts a command on whitespace", () => {
@@ -256,5 +256,38 @@ describe("parseCurl bodies", () => {
     const parsed = parseCurl("curl https://x -H 'Authorization: Bearer t' -u 'user:pass'", ids());
     expect(parsed?.headers).toHaveLength(1);
     expect(parsed?.headers[0].value).toBe("Bearer t");
+  });
+});
+
+describe("parsePaste", () => {
+  it("claims a cURL command", () => {
+    expect(parsePaste("curl https://x", ids())?.url).toBe("https://x");
+  });
+
+  it("claims one copied with the prompt in front of it", () => {
+    expect(parsePaste("$ curl https://x", ids())?.url).toBe("https://x");
+  });
+
+  it("claims the Windows spelling", () => {
+    expect(parsePaste("curl.exe https://x", ids())?.url).toBe("https://x");
+  });
+
+  it("claims one indented or broken across lines", () => {
+    const command = ["  curl \\", "  -X POST \\", "  https://x"].join("\n");
+    expect(parsePaste(command, ids())?.method).toBe("POST");
+  });
+
+  /* A URL is a field's value, not a whole request: the box and the Params table are already two
+     views of one thing, so a plain paste lands in the box and comes out as rows by itself. Claiming
+     it would break pasting a host into the middle of a URL being edited, and would gain nothing. */
+  it("leaves a plain URL to the webview", () => {
+    expect(parsePaste("https://example.com/items?a=1", ids())).toBeNull();
+  });
+
+  it("leaves anything else alone", () => {
+    expect(parsePaste("", ids())).toBeNull();
+    expect(parsePaste("   ", ids())).toBeNull();
+    expect(parsePaste("select * from users", ids())).toBeNull();
+    expect(parsePaste("curling is a sport", ids())).toBeNull();
   });
 });
