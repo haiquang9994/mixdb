@@ -7,7 +7,7 @@ import { CloseIcon, PlusIcon, SettingsIcon } from "../icons";
 import { hasPrimaryModifier } from "../core/platform";
 import { isBlockedReload } from "../core/reload";
 import { useScrollAcceleration } from "../core/scroll";
-import { useShortcutDispatcher } from "../core/shortcuts";
+import { useShortcut, useShortcutDispatcher } from "../core/shortcuts";
 import { isTextEntry } from "../core/textEntry";
 import { useAccent, useGlass, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
@@ -51,6 +51,9 @@ function App() {
 
   useScrollAcceleration();
   useShortcutDispatcher(ALL_SHORTCUTS);
+  // Always listening — the tab bar is there on every screen the app has.
+  useShortcut("app.newTab", () => openTab(), true);
+  useShortcut("app.closeTab", () => closeTab(activeId), true);
 
   function openTab(moduleId?: string) {
     const tab = newTab(moduleId);
@@ -83,18 +86,10 @@ function App() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      const shortcutKey = hasPrimaryModifier(e);
-      if (shortcutKey && e.key.toLowerCase() === "t") {
-        e.preventDefault();
-        openTab();
-      } else if (shortcutKey && e.key.toLowerCase() === "w") {
-        e.preventDefault();
-        closeTab(activeId);
-      } else if (shortcutKey && e.key.toLowerCase() === "a" && !isTextEntry(e.target)) {
+      if (hasPrimaryModifier(e) && e.key.toLowerCase() === "a" && !isTextEntry(e.target)) {
         // Outside a text field, select-all means "select the whole chrome of the app" — never
-        // something the user wants. Views that have their own notion of "everything" (the SQL grid
-        // selecting all of its rows) listen on the window as well and act on the same keystroke;
-        // all this branch does is stop the webview from taking it, which none of them mind.
+        // something the user wants. Moves onto the registry with the grid's own `Ctrl+A`, which is
+        // the other half of the same keystroke.
         e.preventDefault();
       } else if (isBlockedReload(e)) {
         // Reloading the webview takes every open connection down with it, so no keystroke is left
@@ -105,7 +100,7 @@ function App() {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeId]);
+  }, []);
 
   return (
     <main className="app">
