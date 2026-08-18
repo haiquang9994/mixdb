@@ -1,6 +1,5 @@
-import { useEffect, useRef } from "react";
-
 import { hasPrimaryModifier, shortcutLabel } from "./platform";
+import { useShortcut } from "./shortcuts";
 
 /**
  * `Ctrl+R` — `⌘R` on a Mac — taken off the webview and handed to the pane on screen.
@@ -50,29 +49,14 @@ export function withReloadShortcut(label: string): string {
  * tabs sitting in the background, the stats grid kept behind the data grid — and every one of them
  * would otherwise answer the same keystroke together.
  *
- * A dialog standing over the pane is the pane not being the one in front either, and callers pass
- * that in here as well. The keyboard belongs to whatever is on top: a reload fired blind behind a
- * form throws away what was being typed into it, and behind a question that has not been answered
- * yet it acts on the very thing that is being asked about.
+ * A dialog standing over the pane is answered centrally now: `pane.reload` is not marked `inModal`,
+ * so anything open holds the key on its own. Call sites still pass their own dialogs in, and are
+ * right to — a pane knows things about its own state that a modal count does not, and the flag
+ * reads the same as the `disabled` on the button beside it.
  *
- * `reload` is read at the moment the key is pressed rather than when the listener was bound, so it
- * may close over state freely; a pane that is mid-request checks for that inside it, exactly as its
- * button's `disabled` does.
+ * Kept as a named hook rather than a bare `useShortcut` call at each site: five panes say `Ctrl+R`
+ * reloads me, and the name is where that fact and its reasons are written down.
  */
 export function useReloadShortcut(active: boolean, reload: () => void): void {
-  // Through a ref so the listener is bound once per spell of being on screen, rather than torn down
-  // and rebound on every render that hands the hook a fresh closure.
-  const latest = useRef(reload);
-  latest.current = reload;
-
-  useEffect(() => {
-    if (!active) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (!isPaneReload(e)) return;
-      e.preventDefault();
-      latest.current();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active]);
+  useShortcut("pane.reload", reload, active);
 }

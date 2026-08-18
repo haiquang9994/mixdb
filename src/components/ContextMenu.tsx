@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { enterModal } from "../core/shortcuts";
 import { useContextMenuPosition } from "./contextMenuPosition";
 
 interface Props {
@@ -27,6 +28,10 @@ interface Props {
  */
 function ContextMenu({ x, y, onClose, children }: Props) {
   const { ref, style } = useContextMenuPosition(x, y);
+
+  /* An open menu is about to act on a selection, so it holds the keyboard the same way a dialog
+     does — which is what lets the grid stop keeping its own `menu !== null` guard for `Ctrl+A`. */
+  useEffect(() => enterModal(), []);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {

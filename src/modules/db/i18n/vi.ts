@@ -279,6 +279,8 @@ const dbVi: DbDict = {
   query: {
     run: "Chạy",
     format: "Định dạng",
+    shortcutScope: "Trình soạn truy vấn",
+    shortcutFormat: "Định dạng câu lệnh",
     running: "Đang chạy...",
     cancel: "Dừng",
     cancelling: "Đang dừng...",
@@ -408,6 +410,10 @@ const dbVi: DbDict = {
     loading: "Đang tải...",
     noRows: "Không có dòng nào.",
     reloadRows: "Tải lại dữ liệu",
+    // Đặt tên cho bảng phím tắt trong Cài đặt; bản thân tổ hợp phím lấy từ danh mục.
+    shortcutScope: "Dữ liệu bảng",
+    shortcutSelectAll: "Chọn mọi dòng trên trang",
+    shortcutFilter: "Nhảy tới thanh lọc",
     insertRows: "Thêm dòng mới",
     cloneRows: "Nhân bản các dòng đã chọn",
     deleteRows: "Xóa các dòng đã chọn",

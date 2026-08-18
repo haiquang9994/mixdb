@@ -16,7 +16,7 @@ Four directories, and the rule that separates them:
 | Directory | Holds | May import from |
 | --- | --- | --- |
 | `shell/` | Tab bar, `[+]` menu, shortcuts, Settings, theme, update, `module.ts`, `registry.ts` | `core/`, `components/`, `icons/`, `i18n/` — plus `modules/` in `registry.ts` **only** |
-| `core/` | Helpers with no module's concepts in them: `platform`, `reload`, `scroll`, `clipboard`, `textEntry`, `errors`, `nativeContextMenu`, `paneCache`, `sidebarKeyboard`, `virtualRows` | `components/`, `i18n/` |
+| `core/` | Helpers with no module's concepts in them: `platform`, `reload`, `shortcuts`, `scroll`, `clipboard`, `textEntry`, `errors`, `nativeContextMenu`, `paneCache`, `sidebarKeyboard`, `virtualRows` | `components/`, `i18n/` |
 | `components/` | Primitives any module may use | `core/`, `icons/`, `i18n/`, each other |
 | `modules/<id>/` | Everything about one module, including its own components, i18n and global CSS | anything above |
 
@@ -81,10 +81,10 @@ button claims the key for that button instead through `useReloadShortcut`.
 Two things a new pane has to get right:
 
 - **The gate is "is this the pane in front", and a dialog counts.** Every connection tab stays
-  mounted behind the one on show, so the flag is `active && <this pane's mode is selected>` — and
-  the pane's own dialogs are subtracted from it as well. A reload fired from behind a form throws
-  away what was being typed into it; from behind a confirmation it acts on the thing being asked
-  about. Each call site spells its dialogs out; there is no central modal register to lean on.
+  mounted behind the one on show, so the flag is `active && <this pane's mode is selected>`. The
+  pane's own dialogs are subtracted from it as well, which is belt and braces: anything open is
+  counted centrally now (see below), and a pane still knows things about its own state that a
+  count does not.
 - **Label the button with `withReloadShortcut`.** A shortcut nothing on screen mentions is one
   nobody has.
 
@@ -95,6 +95,45 @@ in both, so what is developed against is what ships; `F5` and the hard reload st
 > **Unverified**, and worth checking the day someone has a packaged build open: the blocking is a
 > DOM `preventDefault` in [`shell/App.tsx`](../../src/shell/App.tsx), and WebView2 handles reload as a browser
 > accelerator. If the key gets through anyway, the fix is Tauri-side rather than more JavaScript.
+
+### Every Ctrl/Cmd chord goes through one listener
+
+[`src/core/shortcuts/`](../../src/core/shortcuts/) is the whole of it: a command is a line of data
+— an id, a default chord, a label key, a group — and a pane answers one by calling `useShortcut(id,
+handler, enabled)`. There is exactly one `keydown` listener on the window, installed by the shell.
+Settings draws its shortcut table from the same catalogue the dispatcher resolves against, so the
+table cannot describe an app that does not exist.
+
+- **Ctrl/Cmd chords only.** `Escape`, the arrow keys, `Enter` and `Delete` in a grid or a dialog
+  are the widget's own and stay where they are. Nobody remaps those.
+- **A chord names no modifier.** `{ key: "a", shift: true }` and nothing else — which of `Ctrl` and
+  `⌘` counts is [`platform.ts`](../../src/core/platform.ts)'s single answer, and a registry that
+  let a chord override it would be the first place that answer got broken.
+- **`preventDefault` is central.** Whatever runs or is swallowed, the dispatcher takes the key. On
+  a Mac that is what keeps `⌘W` on the tab instead of the AppKit menu bar.
+- **A modal decides who acts, not what the webview may have.** `inModal` is asked when choosing a
+  handler; `unhandled: "swallow"` is asked of every candidate regardless. That is what keeps
+  `Ctrl+A` from painting the app blue behind an open dialog, which is what `App.tsx` used to do
+  unconditionally.
+- **Context comes from three places, none of them a guess:** `enabled` is the pane's own React
+  state, `modalDepth` is counted by [`dialogMotion`](../../src/components/dialogMotion.ts) and
+  [`ContextMenu`](../../src/components/ContextMenu.tsx), and `typing` is
+  [`textEntry`](../../src/core/textEntry.ts). No component scans the document for `[role="dialog"]`
+  any more.
+- **A module contributes chords the way it contributes a Settings pane** —
+  `ModuleDefinition.shortcuts`, collected in [`shell/shortcuts.ts`](../../src/shell/shortcuts.ts).
+  `core/shortcuts/` holds no catalogue of its own; it may not import from `shell/` or `modules/` at
+  all.
+
+> **`e.defaultPrevented` is a double-edged rule.** The dispatcher stands down for any event
+> something else already claimed, which is exactly how CodeMirror keeps `Ctrl+Shift+F`, undo,
+> search and the rest of its keymap. It also means a component that calls `preventDefault` on a
+> chord for reasons of its own will **silently** disable that shortcut app-wide. If a global key
+> stops working in one pane and nowhere else, this is the first thing to look at.
+
+All the rules live in `decide()`, a pure function with no DOM, no React and no clock, and
+`decide.test.ts` covers them; the glue around it is about fifteen lines and nothing automated
+touches it.
 
 ### The webview's right-click menu is refused
 

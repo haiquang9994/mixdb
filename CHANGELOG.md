@@ -41,6 +41,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- Settings has a Shortcuts pane listing every Ctrl/Cmd shortcut in the app.
+
 ## [0.0.12] - 2026-08-15
 
 ### Added

@@ -13,8 +13,8 @@ import { errorMessage } from "../../../../core/errors";
 import { copyText } from "../../../../core/clipboard";
 import { useSqlApi, useSqlDialect } from "../../sql/context";
 import { IS_MAC, hasPrimaryModifier } from "../../../../core/platform";
-import { isTextEntry } from "../../../../core/textEntry";
 import { useReloadShortcut, withReloadShortcut } from "../../../../core/reload";
+import { useShortcut } from "../../../../core/shortcuts";
 import { filterRowFor, initialFilterRows, toQueryFilters, type FilterRow } from "../../filters";
 import {
   FILTER_OPERATORS,
@@ -1132,60 +1132,40 @@ function SqlTable({
    * The two chords the Data tab answers from wherever the focus happens to be: `Ctrl+A` — `⌘A` on a
    * Mac — for every row on the page, and `Ctrl+F` for the filter bar.
    *
-   * On the window rather than on the scroll box, because "click the grid first" is not something the
-   * user should have to know: the tab is the one on screen, so the tab is what the chord is about.
-   * `active` is what keeps that unambiguous — every background connection tab has a grid mounted too,
-   * and each would otherwise answer the same keystroke alongside this one. See
-   * {@link useReloadShortcut}, which reads the same way for the same reasons.
+   * Answered from the window rather than from the scroll box, because "click the grid first" is not
+   * something the user should have to know: the tab is the one on screen, so the tab is what the
+   * chord is about. `active` is what keeps that unambiguous — every background connection tab has a
+   * grid mounted too, and each would otherwise answer the same keystroke alongside this one.
+   *
+   * What used to sit here as well was a guess at everything standing over the grid: a scan of the
+   * document for `[role="dialog"]`, and a check on this component's own right-click menu. Both are
+   * now the dispatcher's business, and both are counted rather than sniffed — see
+   * `src/core/shortcuts/`.
    */
-  function handleWindowShortcut(e: KeyboardEvent) {
-    if (!hasPrimaryModifier(e) || e.shiftKey || e.altKey) return;
-    const key = e.key.toLowerCase();
-    if (key !== "a" && key !== "f") return;
-    // The right-click menu is about to act on the selection, which is the very thing select-all
-    // would replace.
-    if (menu !== null) return;
-    // A modal standing over the grid holds the keyboard for as long as it is up, and not only the
-    // ones this pane opens for itself: the workspace puts up its own over the same tab — create a
-    // database, rename or drop a table — and so does the app, and this component has no state that
-    // knows about any of them. What they do share is how every dialog in the app is marked, so that
-    // is what gets asked. Without this, `Ctrl+A` behind a "Drop table?" pulls the focus out of the
-    // question and down into the grid, and `Ctrl+F` puts the caret in a bar nobody can see.
-    if (document.querySelector('[role="dialog"]') !== null) return;
-    if (key === "f") {
-      e.preventDefault();
+  useShortcut(
+    "grid.selectAll",
+    () => {
+      if (rows.length === 0) return;
+      setSelectedRows(new Set(rows.map((_, i) => i)));
+      anchorRowRef.current = 0;
+      // Delete and Escape act on the selection and are the grid's own keys, so the keyboard is
+      // handed to it — otherwise a selection made from across the pane could not be acted on
+      // without a click.
+      focusGrid();
+    },
+    active,
+  );
+
+  useShortcut(
+    "grid.focusFilter",
+    () => {
       // The grid is being left for the bar above it, so whatever cell is open goes back as it was
       // rather than being written out by the blur that follows — see {@link cancelEdit}.
       cancelEdit();
       filterBarRef.current?.focusValue();
-      return;
-    }
-    // Inside a text box, select-all is that box's own — the value being typed into the filter bar,
-    // the cell open for editing, the search above the table list. See {@link isTextEntry}.
-    if (isTextEntry(e.target)) return;
-    e.preventDefault();
-    if (rows.length === 0) return;
-    setSelectedRows(new Set(rows.map((_, i) => i)));
-    anchorRowRef.current = 0;
-    // Delete and Escape act on the selection and are the grid's own keys, so the keyboard is handed
-    // to it — otherwise a selection made from across the pane could not be acted on without a click.
-    focusGrid();
-  }
-
-  // Through a ref so the listener is bound once per spell of being on screen rather than torn down
-  // and rebound on every render, and still sees the rows and the dialogs as they are when the key is
-  // pressed — the same arrangement `useReloadShortcut` makes for `Ctrl+R`.
-  const shortcutRef = useRef(handleWindowShortcut);
-  shortcutRef.current = handleWindowShortcut;
-
-  useEffect(() => {
-    if (!active) return;
-    function onKeyDown(e: KeyboardEvent) {
-      shortcutRef.current(e);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active]);
+    },
+    active,
+  );
 
   function handleInputBlur(rowIndex: number, col: string) {
     const current = editingCellRef.current;

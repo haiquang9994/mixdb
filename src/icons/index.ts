@@ -17,6 +17,7 @@ export {
   FolderIcon,
   FormatIcon,
   HistoryIcon,
+  KeyboardIcon,
   LockIcon,
   MinusIcon,
   PaletteIcon,

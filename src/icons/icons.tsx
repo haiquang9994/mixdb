@@ -304,6 +304,18 @@ export function PaletteIcon(props: IconProps) {
   );
 }
 
+/** The shortcut table in Settings. */
+export function KeyboardIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01" />
+      <path d="M6 14h.01M18 14h.01" />
+      <path d="M9.5 14h5" />
+    </Icon>
+  );
+}
+
 /** The outside programs MixDB leans on for dumping and restoring. */
 export function WrenchIcon(props: IconProps) {
   return (
