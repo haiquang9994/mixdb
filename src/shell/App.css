@@ -255,18 +255,6 @@ body {
   text-align: left;
 }
 
-.tab-bar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0.4rem 0.5rem 0;
-  background: rgb(128 128 128 / 0.08);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  overflow-x: auto;
-  overscroll-behavior: contain;
-}
-
 /* The name of the app, and the only way into its settings. It used to be flat text at 70% opacity,
    which is how a label looks, not how a button looks — nobody had a reason to click it. It now
    carries its own surface, a hairline and a gear, so what it is stays legible from across the
@@ -374,73 +362,12 @@ body {
   }
 }
 
-.tab {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  /* Less on the left than it used to take: the logo now leads the row and needs that room, and a
-     mark reads better close to the edge than a word would. */
-  padding: 0.45rem 0.5rem 0.45rem 0.65rem;
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-  background: transparent;
-  box-shadow: none;
-  cursor: pointer;
-  white-space: nowrap;
-  max-width: 200px;
-}
-
-.tab:hover:not(.tab-active) {
-  background: var(--hover-bg);
-  border-color: transparent;
-}
-
-.tab-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* One mark on a tab, whatever it says. The layout is all the shell knows about it: what colour it
    takes, and whether it takes one, is the module's own class beside this one. */
 .tab-badge {
   display: inline-flex;
   align-items: center;
   flex: none;
-}
-
-/* The one piece of chrome that says which connection you are looking at, so it is where the accent
-   belongs most. It lifts to the surface colour and takes a bar of accent along its top edge —
-   `inset` so the bar sits inside the tab's own rounded corners.
-
-   (This rule used to read `var(--panel-bg, …)`; nothing ever defined `--panel-bg`, so every tab
-   fell back to flat grey and the active one was barely distinguishable.) */
-.tab-active {
-  background: var(--surface-bg);
-  box-shadow: inset 0 2px 0 var(--accent);
-  font-weight: 600;
-}
-
-.tab-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  box-shadow: none;
-  background: transparent;
-  padding: 0.2em 0.3em;
-  border-radius: 4px;
-  line-height: 1;
-  font-size: 0.9em;
-}
-
-.tab-new {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  box-shadow: none;
-  background: transparent;
-  padding: 0.3em 0.7em;
 }
 
 /* Deliberately unpadded: each view below pads itself instead (`--view-padding`), so that a veil

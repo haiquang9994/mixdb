@@ -3,7 +3,8 @@ import GlassFilter from "./components/GlassFilter";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
 import ContextMenu from "../components/ContextMenu";
-import { CloseIcon, PlusIcon, SettingsIcon } from "../icons";
+import { Tab, TabAction, TabStrip, TabTitle } from "../components/TabStrip";
+import { PlusIcon, SettingsIcon } from "../icons";
 import { isBlockedReload } from "../core/reload";
 import { useScrollAcceleration } from "../core/scroll";
 import { useShortcut, useShortcutDispatcher } from "../core/shortcuts";
@@ -93,7 +94,7 @@ function App() {
           outlive any one of them. Left out entirely while the setting is off, so a look nobody
           asked for costs nothing to have shipped. */}
       {glass && <GlassFilter />}
-      <div className="tab-bar">
+      <TabStrip>
         {/* The app's name is also its settings button, which nothing about a bare word at 70%
             opacity said — so it wears a surface, a border and a gear, and reads as something to
             press before it is hovered.
@@ -112,11 +113,12 @@ function App() {
           <SettingsIcon className="brand-gear" size={14} />
         </button>
         {tabs.map((tab) => (
-          <div
+          <Tab
             key={tab.id}
-            className={["tab", tab.id === activeId && "tab-active", ...tab.badges.map((b) => b.tabClassName)]
-              .filter(Boolean)
-              .join(" ")}
+            active={tab.id === activeId}
+            className={tab.badges.map((b) => b.tabClassName).filter(Boolean).join(" ")}
+            onClose={() => closeTab(tab.id)}
+            closeLabel={t("app.closeTab")}
             onClick={() => setActiveId(tab.id)}
           >
             {/* Ahead of the name, where the eye lands first: a mark is there to be seen before a
@@ -134,21 +136,10 @@ function App() {
                 <span className="visually-hidden">{badge.label}</span>
               </span>
             ))}
-            <span className="tab-title">{tab.title}</span>
-            <button
-              className="tab-close"
-              onClick={(e) => {
-                e.stopPropagation();
-                closeTab(tab.id);
-              }}
-              title={t("app.closeTab")}
-            >
-              <CloseIcon />
-            </button>
-          </div>
+            <TabTitle>{tab.title}</TabTitle>
+          </Tab>
         ))}
-        <button
-          className="tab-new"
+        <TabAction
           onClick={(e) => {
             // One module and a menu would be a list of one, so the button just opens it — which is
             // what it did before there was a registry at all.
@@ -160,10 +151,11 @@ function App() {
             setModuleMenu({ x: rect.left, y: rect.bottom });
           }}
           title={t("app.newConnectionTab")}
+          aria-label={t("app.newConnectionTab")}
         >
           <PlusIcon />
-        </button>
-      </div>
+        </TabAction>
+      </TabStrip>
 
       {/* Unreachable while `MODULES` holds one entry, and here so that adding the second is a line
           in `registry.ts` rather than a tab bar to rewrite. Which also means it has never run: the

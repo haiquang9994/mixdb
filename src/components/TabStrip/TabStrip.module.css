@@ -1,0 +1,156 @@
+/* How a strip of tabs is drawn, anywhere in the app.
+ *
+ * These rules used to live in `shell/App.css` and were then restated, with small drifts, in the
+ * REST module's request strip and again in its pane strips. Three strips two rows apart answering
+ * to three sets of rules read as three different apps. They answer to this one now. */
+
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0.4rem 0.5rem 0;
+  background: rgb(128 128 128 / 0.08);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* Less on the left than on the right: what leads a tab is a mark — a badge, a method — and a
+     mark reads better close to the edge than a word would. */
+  padding: 0.45rem 0.5rem 0.45rem 0.65rem;
+  border: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 200px;
+  /* Background only. The active tab's `box-shadow` is where the accent, the glass rim and the
+     read-only amber all land, and none of those is something to watch slide into place. */
+  transition: background-color 120ms ease;
+}
+
+.tab:hover:not(.tabActive) {
+  background: var(--hover-bg);
+  border-color: transparent;
+}
+
+/* The one piece of chrome that says which tab you are looking at, so it is where the accent
+   belongs most. It lifts to the surface colour and takes a bar of accent along its top edge —
+   `inset` so the bar sits inside the tab's own rounded corners.
+
+   The bar's colour comes from `--tab-accent`, which is this component's one public knob and the
+   reason it can be a CSS Module at all. A caller that needs a different bar sets the variable on
+   the tab and is done — `modules/db/db.css` paints a read-only connection's bar amber in one
+   line. The alternative was for callers to out-specify a class they cannot name, which is what
+   they used to do against the old global `.tab-active`, in two places, one of them a rule copied
+   out under `@supports` purely to survive the glass rim below. */
+.tabActive {
+  background: var(--surface-bg);
+  box-shadow: inset 0 2px 0 var(--tab-accent, var(--accent));
+  font-weight: 600;
+}
+
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
+  padding: 0.2em 0.3em;
+  border-radius: 4px;
+  line-height: 1;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--hover-bg);
+}
+
+/* No surface of its own, so it reads as an action on the strip rather than as another tab on it. */
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
+  padding: 0.3em 0.7em;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--hover-bg);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   THE SMALL STRIP
+
+   A strip inside a pane — Params/Body/Headers, Preview/Source/Raw. Same shape as the strips above
+   it, quieter: it sits two levels down and must not compete with the tab that says which request
+   you are reading. Every difference is on the strip, so a tab never has to know its own size. */
+
+.small {
+  padding: 0.35rem 0.5rem 0;
+  background: rgb(128 128 128 / 0.05);
+}
+
+.small .tab {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.9em;
+  opacity: 0.75;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+
+.small .tab:hover:not(.tabActive),
+.small .tabActive {
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   GLASS
+
+   The strip's share of the glass look, which used to sit in `shell/glass.css` and reached in by
+   the old global class names. It lives with the thing it draws now: the shell's stylesheet has no
+   way to name a hashed class, and that is the right pressure — how a component looks in a theme is
+   the component's business.
+
+   Only the full-size strip. A pane strip is two levels down and takes no rim: the material is for
+   the window's chrome, not for every row of words inside it. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  /* Neither the strip nor its tabs has anything behind it but the page, so neither takes a filter;
+     what they take is the direction — the strip was a *darker* band on the page, which is the one
+     thing the material never is. Turned around, the strip becomes the ground and the open tab a
+     pane raised out of it. */
+  :global(:root[data-glass="on"]) .strip:not(.small) {
+    background: var(--glass-chrome-tint);
+  }
+
+  /* The open tab, lifted: the accent bar it already carries, plus the rim that says the surface it
+     is drawn on is the same one the menus and dialogs are cut from. */
+  :global(:root[data-glass="on"]) .strip:not(.small) .tabActive {
+    box-shadow:
+      inset 0 2px 0 var(--tab-accent, var(--accent)),
+      inset 1px 1px 1.5px -0.5px var(--glass-rim-lit),
+      inset 0 0 0 1px var(--glass-rim-hairline);
+  }
+}

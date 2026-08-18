@@ -39,45 +39,6 @@
   flex: 1;
 }
 
-/* The tabs inside a pane — Params/Body/Headers, and Preview/Source/Raw/Headers. Same shape as the
-   request strip above them and as the app's tab bar above that: one way of saying "this is the one
-   you are looking at", used at all three depths. */
-.rest-pane-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0.35rem 0.5rem 0;
-  background: rgb(128 128 128 / 0.05);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.rest-pane-tab {
-  padding: 0.35rem 0.6rem;
-  border: none;
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-  background: transparent;
-  box-shadow: none;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.9em;
-  white-space: nowrap;
-  opacity: 0.75;
-  transition: background-color 120ms ease, opacity 120ms ease;
-}
-
-.rest-pane-tab:hover:not(.rest-pane-tab-active) {
-  background: var(--hover-bg);
-  opacity: 1;
-}
-
-.rest-pane-tab-active {
-  background: var(--surface-bg);
-  box-shadow: inset 0 2px 0 var(--accent);
-  font-weight: 600;
-  opacity: 1;
-}
-
 .rest-pane-body {
   flex: 1;
   min-height: 0;
