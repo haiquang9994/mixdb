@@ -441,3 +441,56 @@ describe("the round trip", () => {
     roundTrip(request({ url: "{{baseUrl}}/items" }));
   });
 });
+
+/* The commands people actually paste. Not another unit of the walk above — these are the two shapes
+   a real copy arrives in, whole, and they are what catches a flag read one argument out of step. */
+describe("a command copied out of a browser", () => {
+  it("reads the whole thing", () => {
+    const command = [
+      `curl 'https://api.example.com/v2/items?page=2&per_page=50' \\`,
+      `  -X 'POST' \\`,
+      `  -H 'accept: application/json, text/plain, */*' \\`,
+      `  -H 'accept-language: en-GB,en;q=0.9' \\`,
+      `  -H 'authorization: Bearer eyJhbGciOi.abc' \\`,
+      `  -H 'content-type: application/json' \\`,
+      `  -b 'session=deadbeef; theme=dark' \\`,
+      `  -H 'user-agent: Mozilla/5.0' \\`,
+      `  --data-raw '{"name":"Ann","tags":["a","b"]}' \\`,
+      `  --compressed`,
+    ].join("\n");
+
+    const parsed = parsePaste(command, ids());
+    expect(parsed?.method).toBe("POST");
+    expect(parsed?.url).toBe("https://api.example.com/v2/items?page=2&per_page=50");
+    expect(parsed?.params.map((row) => [row.key, row.value])).toEqual([
+      ["page", "2"],
+      ["per_page", "50"],
+    ]);
+    // The cookie is not a header row — it is a flag whose value must not be read as anything else.
+    expect(parsed?.headers.map((row) => row.key)).toEqual([
+      "accept",
+      "accept-language",
+      "authorization",
+      "content-type",
+      "user-agent",
+    ]);
+    expect(parsed?.body).toEqual({
+      kind: "raw",
+      language: "json",
+      text: '{"name":"Ann","tags":["a","b"]}',
+    });
+  });
+
+  it("reads the Windows spelling of the same thing", () => {
+    const command = [
+      `curl.exe "https://api.example.com/v2/items" ^`,
+      `  -H "content-type: application/json" ^`,
+      `  --data-raw "{\\"name\\":\\"Ann\\"}"`,
+    ].join("\n");
+
+    const parsed = parsePaste(command, ids());
+    expect(parsed?.method).toBe("POST");
+    expect(parsed?.url).toBe("https://api.example.com/v2/items");
+    expect(parsed?.body).toEqual({ kind: "raw", language: "json", text: '{"name":"Ann"}' });
+  });
+});
