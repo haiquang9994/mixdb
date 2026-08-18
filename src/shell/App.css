@@ -470,7 +470,13 @@ body {
   }
 }
 
+/* A row, not a line of text: an entry that leads with a mark — the module icons in the `[+]` menu —
+   needs the gap between mark and word set here, or the two run together. An entry that is only
+   words is laid out the same way and reads no differently for it. */
 .context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   border: none;
   box-shadow: none;
   background: transparent;

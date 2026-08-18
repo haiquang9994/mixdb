@@ -45,6 +45,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 - REST client tabs: compose a request, send it, and read the response as a preview, a tree or raw bytes.
 - Settings has a Shortcuts pane listing every Ctrl/Cmd shortcut in the app.
+- Ctrl/Cmd+1 opens a Database tab and Ctrl/Cmd+2 a REST tab.
 
 ## [0.0.12] - 2026-08-15
 

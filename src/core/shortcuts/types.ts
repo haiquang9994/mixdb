@@ -22,6 +22,10 @@ export interface ShortcutDef {
   id: string;
   chord: Chord;
   labelKey: TranslationKey;
+  /** What goes in `labelKey`'s blanks, as translation keys resolved where the label is drawn. A
+   *  catalogue is static data with no `t` of its own, so a chord named after something the app
+   *  already has a word for — a module — says which word rather than repeating it. */
+  labelVars?: Record<string, TranslationKey>;
   /** Left alone where the user is typing — see `core/textEntry.ts`. Select-all inside the filter
    *  bar is that field's own, not the grid's. */
   whenTyping?: "ignore";

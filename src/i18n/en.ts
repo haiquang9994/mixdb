@@ -83,6 +83,8 @@ const en = {
       app: "App",
     },
     newTab: "New tab",
+    // One row per module, filled from the module's own name — see `shell/shortcuts.ts`.
+    newModuleTab: "New {{module}} tab",
     closeTab: "Close tab",
     reload: "Reload the pane on screen",
   },

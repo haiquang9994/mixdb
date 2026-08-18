@@ -78,6 +78,7 @@ const vi: SharedDict = {
       app: "Ứng dụng",
     },
     newTab: "Tab mới",
+    newModuleTab: "Tab {{module}} mới",
     closeTab: "Đóng tab",
     reload: "Tải lại pane đang xem",
   },

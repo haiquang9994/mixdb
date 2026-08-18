@@ -1,5 +1,5 @@
 import { shortcutLabel } from "../../../core/platform";
-import type { Chord } from "../../../core/shortcuts";
+import type { Chord, ShortcutDef } from "../../../core/shortcuts";
 import { useTranslation } from "../../../i18n";
 import { ALL_SHORTCUTS } from "../../shortcuts";
 import styles from "./SettingsModal.module.css";
@@ -20,6 +20,14 @@ function chordLabel(chord: Chord): string {
 function ShortcutsSection() {
   const { t } = useTranslation();
 
+  /** The row's words. A chord may name its label's blanks after other strings — a module's own name
+   *  is the case there is — and here is where there is a `t` to fill them in with. */
+  function defLabel(def: ShortcutDef): string {
+    if (!def.labelVars) return t(def.labelKey);
+    const vars = Object.entries(def.labelVars).map(([name, key]) => [name, t(key)]);
+    return t(def.labelKey, Object.fromEntries(vars));
+  }
+
   return (
     <>
       {ALL_SHORTCUTS.map((group) => (
@@ -27,7 +35,7 @@ function ShortcutsSection() {
           <span className={styles.sectionLabel}>{t(group.labelKey)}</span>
           {group.defs.map((def) => (
             <div key={def.id} className={styles.shortcutRow}>
-              <span>{t(def.labelKey)}</span>
+              <span>{defLabel(def)}</span>
               <kbd className={styles.shortcutKey}>{chordLabel(def.chord)}</kbd>
             </div>
           ))}

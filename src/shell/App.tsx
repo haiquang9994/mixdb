@@ -14,7 +14,7 @@ import { useTranslation } from "../i18n";
 import type { TabBadge } from "./module";
 import { rebadgeTab, retitleTab, type TabInfo } from "./tabs";
 import { DEFAULT_MODULE_ID, MODULES, moduleById } from "./registry";
-import { ALL_SHORTCUTS } from "./shortcuts";
+import { ALL_SHORTCUTS, MODULE_TAB_SHORTCUTS } from "./shortcuts";
 import "./App.css";
 /* After App.css, so the glass surfaces override the plain ones they replace rather than the other
    way round. */
@@ -44,6 +44,13 @@ function App() {
   // Always listening — the tab bar is there on every screen the app has.
   useShortcut("app.newTab", () => openTab(), true);
   useShortcut("app.closeTab", () => closeTab(activeId), true);
+  /* One number key per module — `Ctrl/Cmd+1` for the first in the registry, `2` for the second.
+     Hooks in a loop, which is safe here and only here: `MODULE_TAB_SHORTCUTS` is a module-level
+     constant, so the count and the order are fixed for the life of the app. Reading the list rather
+     than naming the modules is what keeps this file from being the second place that knows them. */
+  for (const { moduleId, def } of MODULE_TAB_SHORTCUTS) {
+    useShortcut(def.id, () => openTab(moduleId), true);
+  }
 
   function openTab(moduleId?: string) {
     const tab = newTab(moduleId);
