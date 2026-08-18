@@ -41,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-08-19
+
 ### Added
 
 - REST client tabs: compose a request, send it, and read the response as a preview, a tree or raw bytes.
