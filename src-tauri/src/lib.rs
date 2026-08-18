@@ -30,6 +30,7 @@ pub fn run() {
     // Each module puts its own state in; the list of commands they add up to is
     // `modules::handler`.
     let builder = modules::db::register(builder);
+    let builder = modules::rest::register(builder);
 
     builder
         .invoke_handler(modules::handler())

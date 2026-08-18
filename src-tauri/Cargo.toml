@@ -38,6 +38,15 @@ chrono = "0.4.45"
 tauri-plugin-dialog = "2.7.2"
 keyring = { version = "3.6", features = ["windows-native", "apple-native", "sync-secret-service"] }
 
+# The HTTP client the REST module sends through. `native-tls` rather than rustls so the app carries
+# one TLS stack, not two — sqlx already builds against it. Default features are off to keep the
+# blocking client, cookies and JSON out; the content encodings are on because a body that arrives
+# gzipped and is shown as bytes is a bug report nobody can read.
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "multipart", "stream", "gzip", "brotli", "deflate", "http2"] }
+# `CancellationToken` for the Cancel button, and `ReaderStream` for sending a file without reading
+# all of it into memory first.
+tokio-util = { version = "0.7", features = ["io"] }
+
 # The updater downloads and runs an installer, and restarting means replacing the running process —
 # neither exists on mobile, so both plugins are desktop-only and `lib.rs` guards them with `cfg`.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

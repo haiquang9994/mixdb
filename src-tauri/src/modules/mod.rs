@@ -1,6 +1,7 @@
 //! The modules MixDB is made of. One folder each, and one block of the list below each.
 
 pub mod db;
+pub mod rest;
 
 /// Every command of every module.
 ///
@@ -106,5 +107,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         db::commands::tools::tools_install,
         db::commands::tools::tools_uninstall,
         db::commands::tools::tools_set_path,
+        // ── rest ──
+        rest::commands::rest_send,
+        rest::commands::rest_cancel,
     ]
 }
