@@ -4,9 +4,11 @@ import ConfirmDialog from "../../../../components/ConfirmDialog";
 import ContextMenu from "../../../../components/ContextMenu";
 import Input from "../../../../components/Input";
 import NameDialog from "../../../../components/NameDialog";
-import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from "../../../../icons";
+import { copyText } from "../../../../core/clipboard";
+import { ChevronDownIcon, ChevronRightIcon, PinIcon, PlusIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import { shortUrl } from "../../format";
+import { toCurl } from "../../parsePaste";
 import { RECENT_LIMIT } from "../../requests";
 import type { RequestLists, RestRequest } from "../../types";
 import styles from "./RequestList.module.css";
@@ -19,11 +21,16 @@ interface Props {
   /** A request with something changed — a rename. */
   onSave: (request: RestRequest) => void;
   onDuplicate: (request: RestRequest) => void;
+  /** Recent only: keep this request for good. */
+  onPin: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
+type Group = "saved" | "recent";
+
 interface MenuState {
   request: RestRequest;
+  group: Group;
   x: number;
   y: number;
 }
@@ -36,7 +43,16 @@ interface MenuState {
  * ten-request ceiling is visible before it is hit, and an explanation reads better than a group
  * that appears out of nowhere the first time a cURL command is pasted.
  */
-function RequestList({ lists, activeId, onOpen, onNew, onSave, onDuplicate, onDelete }: Props) {
+function RequestList({
+  lists,
+  activeId,
+  onOpen,
+  onNew,
+  onSave,
+  onDuplicate,
+  onPin,
+  onDelete,
+}: Props) {
   const { t } = useTranslation();
   const [filter, setFilter] = useState("");
   const [openGroups, setOpenGroups] = useState({ saved: true, recent: true });
@@ -56,37 +72,58 @@ function RequestList({ lists, activeId, onOpen, onNew, onSave, onDuplicate, onDe
     // `label` is rebuilt each render and depends only on `t`, so the filter follows the language.
   }, [filter, t]);
 
-  function rows(list: RestRequest[], emptyMessage: string) {
+  /** Deleting from Recent asks nothing: the group empties itself anyway, and the row came from a
+   *  paste rather than from a decision. Saved is asked about, as before. */
+  function remove(request: RestRequest, group: Group) {
+    if (group === "recent") onDelete(request.id);
+    else setDeleting(request);
+  }
+
+  function rows(list: RestRequest[], emptyMessage: string, group: Group) {
     const shown = list.filter(match);
     if (shown.length === 0) return <p className={`${styles.empty} muted`}>{emptyMessage}</p>;
     return shown.map((request) => (
-      <button
-        key={request.id}
-        type="button"
-        className={`${styles.row}${request.id === activeId ? ` ${styles.rowActive}` : ""}`}
-        onClick={() => onOpen(request.id)}
-        /* Delete on the row the keyboard is on. Backspace too: it is what the finger reaches for
-           on a laptop, and this row is not a text field where it would mean anything else. The
-           same dialog as the menu's Delete — the key is a shortcut to the question, not past it. */
-        onKeyDown={(e) => {
-          if (e.key !== "Delete" && e.key !== "Backspace") return;
-          e.preventDefault();
-          setDeleting(request);
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setMenu({ request, x: e.clientX, y: e.clientY });
-        }}
-      >
-        <span className={`${styles.method} rest-method rest-method-${request.method}`}>
-          {request.method}
-        </span>
-        <span className={styles.name}>{label(request)}</span>
-      </button>
+      /* The row is a button, and a button cannot hold another — so the pin sits beside it in a
+         wrapper, which is also what carries the hover. */
+      <div key={request.id} className={styles.rowWrap}>
+        <button
+          type="button"
+          className={`${styles.row}${request.id === activeId ? ` ${styles.rowActive}` : ""}`}
+          onClick={() => onOpen(request.id)}
+          /* Delete on the row the keyboard is on. Backspace too: it is what the finger reaches for
+             on a laptop, and this row is not a text field where it would mean anything else. The
+             same route as the menu's Delete — the key is a shortcut to it, not past it. */
+          onKeyDown={(e) => {
+            if (e.key !== "Delete" && e.key !== "Backspace") return;
+            e.preventDefault();
+            remove(request, group);
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenu({ request, group, x: e.clientX, y: e.clientY });
+          }}
+        >
+          <span className={`${styles.method} rest-method rest-method-${request.method}`}>
+            {request.method}
+          </span>
+          <span className={styles.name}>{label(request)}</span>
+        </button>
+        {group === "recent" && (
+          <button
+            type="button"
+            className={styles.pin}
+            aria-label={t("rest.pin")}
+            title={t("rest.pinHint")}
+            onClick={() => onPin(request.id)}
+          >
+            <PinIcon size="0.9em" />
+          </button>
+        )}
+      </div>
     ));
   }
 
-  function group(key: "saved" | "recent", heading: string, list: RestRequest[], empty: string) {
+  function group(key: Group, heading: string, list: RestRequest[], empty: string) {
     const open = openGroups[key];
     return (
       <>
@@ -99,7 +136,7 @@ function RequestList({ lists, activeId, onOpen, onNew, onSave, onDuplicate, onDe
           {open ? <ChevronDownIcon size="0.9em" /> : <ChevronRightIcon size="0.9em" />}
           {heading}
         </button>
-        {open && rows(list, empty)}
+        {open && rows(list, empty, key)}
       </>
     );
   }
@@ -134,6 +171,17 @@ function RequestList({ lists, activeId, onOpen, onNew, onSave, onDuplicate, onDe
 
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          {menu.group === "recent" && (
+            <button
+              type="button"
+              onClick={() => {
+                onPin(menu.request.id);
+                setMenu(null);
+              }}
+            >
+              {t("rest.pin")}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -154,11 +202,20 @@ function RequestList({ lists, activeId, onOpen, onNew, onSave, onDuplicate, onDe
           </button>
           <button
             type="button"
+            onClick={() => {
+              // A refusal is reported by `copyText`; the sidebar has no banner to put it on, so it
+              // is swallowed rather than left as an unhandled rejection — as the tree's copy is.
+              void copyText(toCurl(menu.request)).catch(() => {});
+              setMenu(null);
+            }}
+          >
+            {t("rest.copyAsCurl")}
+          </button>
+          <button
+            type="button"
             className="context-menu-delete"
             onClick={() => {
-              // A saved request is asked about; a Recent one would not be, but nothing is in
-              // Recent until Phase 2 and one branch is easier to get right than two.
-              setDeleting(menu.request);
+              remove(menu.request, menu.group);
               setMenu(null);
             }}
           >

@@ -23,6 +23,7 @@ import {
   currentLists,
   deleteRequest,
   pasteRequest,
+  pinRequest,
   saveRequest,
   useRequestLists,
 } from "./requestsStore";
@@ -293,6 +294,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
           onNew={makeRequest}
           onSave={saveRequest}
           onDuplicate={duplicate}
+          onPin={pinRequest}
           onDelete={deleteRequest}
         />
       </aside>
