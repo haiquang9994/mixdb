@@ -4,7 +4,7 @@ import { FormatIcon } from "../../../../icons";
 import { useTranslation, type TranslationKey } from "../../../../i18n";
 import { prettyJson } from "../../format";
 import { RAW_LANGUAGES, rawLanguage } from "../../types";
-import type { Body, RawLanguage } from "../../types";
+import type { Body, MultipartField, RawLanguage } from "../../types";
 import styles from "./BodyEditor.module.css";
 
 interface Props {
@@ -12,8 +12,9 @@ interface Props {
   onChange: (body: Body) => void;
 }
 
-/** What the one picker is set to: no body, or the notation the text is written in. */
-type Choice = "none" | RawLanguage;
+/** What the one picker is set to: no body, the notation the text is written in, or one of the three
+ *  kinds this pane can so far only show. */
+type Choice = "none" | RawLanguage | "form" | "multipart" | "binary";
 
 const LABELS: Record<Choice, TranslationKey> = {
   none: "rest.bodyNone",
@@ -21,7 +22,28 @@ const LABELS: Record<Choice, TranslationKey> = {
   xml: "rest.langXml",
   yaml: "rest.langYaml",
   text: "rest.langText",
+  form: "rest.bodyForm",
+  multipart: "rest.bodyMultipart",
+  binary: "rest.bodyBinary",
 };
+
+/** The kinds this pane can make and change. The other three arrive by paste, or from a file written
+ *  by a later version, and are shown rather than edited until Phase 3 gives them a table. */
+const EDITABLE: Choice[] = ["none", ...RAW_LANGUAGES];
+
+/**
+ * The rows to show for a body this pane cannot edit, or null when it can.
+ *
+ * Read as multipart fields throughout, since a plain form field is simply one without a file, and a
+ * binary body is one file with no name of its own.
+ */
+function readOnlyFields(body: Body): MultipartField[] | null {
+  if (body.kind === "form" || body.kind === "multipart") return body.fields;
+  if (body.kind === "binary") {
+    return [{ id: "file", enabled: true, key: "", value: "", file: body.filePath }];
+  }
+  return null;
+}
 
 /**
  * The Body tab.
@@ -37,10 +59,14 @@ const LABELS: Record<Choice, TranslationKey> = {
 function BodyEditor({ body, onChange }: Props) {
   const { t } = useTranslation();
 
-  const choice: Choice = body.kind === "raw" ? rawLanguage(body.language) : "none";
-  const options = (["none", ...RAW_LANGUAGES] as Choice[]).map((value) => ({
+  const choice: Choice = body.kind === "raw" ? rawLanguage(body.language) : body.kind;
+  const shown = readOnlyFields(body);
+  const options = (EDITABLE.includes(choice) ? EDITABLE : [...EDITABLE, choice]).map((value) => ({
     value,
     label: t(LABELS[value]),
+    /* The kind a pasted body turned out to be is listed so the picker is not silently wrong about
+       what is being sent, and cannot be chosen — there would be nothing to put in it. */
+    disabled: !EDITABLE.includes(value),
   }));
 
   /** Switching notation keeps the text: it is the same body, described differently. Only leaving
@@ -50,6 +76,9 @@ function BodyEditor({ body, onChange }: Props) {
       onChange({ kind: "none" });
       return;
     }
+    // The three kinds with no editor are offered as disabled options, so the picker never hands one
+    // back. Saying so out loud is also what leaves `next` as a notation below.
+    if (next === "form" || next === "multipart" || next === "binary") return;
     onChange({ kind: "raw", language: next, text: body.kind === "raw" ? body.text : "" });
   }
 
@@ -79,8 +108,20 @@ function BodyEditor({ body, onChange }: Props) {
           spellCheck={false}
           onChange={(e) => onChange({ ...body, text: e.target.value })}
         />
-      ) : (
+      ) : shown === null ? (
         <p className={`${styles.empty} muted`}>{t("rest.bodyNone")}</p>
+      ) : (
+        <div className={styles.readOnly}>
+          <p className="muted">{t("rest.bodyNotEditable")}</p>
+          <dl className={styles.fields}>
+            {shown.map((field) => (
+              <div key={field.id} className={styles.field}>
+                <dt className={styles.fieldKey}>{field.key}</dt>
+                <dd className={styles.fieldValue}>{field.file ?? field.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       )}
     </div>
   );

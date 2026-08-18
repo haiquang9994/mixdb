@@ -4,6 +4,17 @@ import { Icon, type IconProps } from "./Icon";
  * set visible as a set: adding one means matching the weight and shape of the others rather
  * than pasting in whatever a search turned up. */
 
+/** The Backspace key itself, for saying which key does something rather than what it does. */
+export function BackspaceIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9.5 5h9.5a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9.5L3 12z" />
+      <path d="M12.5 9.5l5 5" />
+      <path d="M17.5 9.5l-5 5" />
+    </Icon>
+  );
+}
+
 /** Delete: a document, a property, an item. */
 export function TrashIcon(props: IconProps) {
   return (

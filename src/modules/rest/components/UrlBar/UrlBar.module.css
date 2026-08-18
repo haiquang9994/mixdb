@@ -9,8 +9,20 @@
   box-sizing: border-box;
 }
 
+/* As wide as its longest option needs and no wider. `OPTIONS` is seven cells of Fira Code at the
+   trigger's 0.8em — 54px — and the control draws 15px of chevron, 8px of gap, 15px of padding and
+   2px of border around it, so 100px is the whole of it with a little left for a fallback font.
+   Fixed rather than sized to content, or the URL box would move sideways every time the method
+   changed. */
 .method {
-  flex: 0 0 7rem;
+  flex: 0 0 6.25rem;
+  align-self: stretch;
+}
+
+/* The picker is set a size smaller than the URL box, which is what keeps it narrow — so its height
+   is taken from the row instead of from its own text. */
+.methodTrigger {
+  height: 100%;
 }
 
 .url {

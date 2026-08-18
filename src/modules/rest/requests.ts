@@ -1,5 +1,5 @@
 import { Store } from "@tauri-apps/plugin-store";
-import type { KeyValue, RequestLists, RestRequest } from "./types";
+import type { KeyValue, Method, RequestLists, RestRequest } from "./types";
 
 /**
  * The request list on disk, and the pure reducers that shape it.
@@ -101,6 +101,100 @@ export function addSaved(lists: RequestLists, request: RestRequest): RequestList
 export function updateRequest(lists: RequestLists, request: RestRequest): RequestLists {
   const swap = (list: RestRequest[]) => list.map((r) => (r.id === request.id ? request : r));
   return { saved: swap(lists.saved), recent: swap(lists.recent) };
+}
+
+/**
+ * The Recent entry aimed at the same place, if there is one.
+ *
+ * Same method and same URL is what "the same command" means here: pasting one line twice should
+ * leave one row, not two. Saved is not searched — a request someone kept is theirs, and reordering
+ * or restamping it because a paste happened to match would be a surprise.
+ */
+export function findRecentTarget(
+  lists: RequestLists,
+  method: Method,
+  url: string,
+): RestRequest | undefined {
+  return lists.recent.find((request) => request.method === method && request.url === url);
+}
+
+/**
+ * Recent with the paste at its head and no more than {@link RECENT_LIMIT} rows in it.
+ *
+ * Recent is ordered newest paste first and evicts by `lastUsedAt` — two different orders, on
+ * purpose. What falls off is the row least recently **sent**, so a request still used every day is
+ * not pushed out by ten pastes; and `lastUsedAt` is stamped by sending, so opening a row to look at
+ * it does not save it either.
+ */
+export function addRecent(lists: RequestLists, request: RestRequest): RequestLists {
+  return { ...lists, recent: trimRecent([request, ...lists.recent]) };
+}
+
+function trimRecent(recent: RestRequest[]): RestRequest[] {
+  if (recent.length <= RECENT_LIMIT) return recent;
+  const byUse = recent.map((request, index) => ({ request, index }));
+  // Least recently used first; a tie goes to whichever sits further down, which is the older paste.
+  byUse.sort((a, b) => a.request.lastUsedAt - b.request.lastUsedAt || b.index - a.index);
+  const dropped = new Set(
+    byUse.slice(0, recent.length - RECENT_LIMIT).map((entry) => entry.request.id),
+  );
+  return recent.filter((request) => !dropped.has(request.id));
+}
+
+/** The same command pasted again: the row already there comes to the head of Recent and is stamped
+ *  as used, instead of a second copy of it appearing. */
+export function bumpRecent(lists: RequestLists, id: string, now: number): RequestLists {
+  const found = lists.recent.find((request) => request.id === id);
+  if (found === undefined) return lists;
+  return {
+    ...lists,
+    recent: [{ ...found, lastUsedAt: now }, ...lists.recent.filter((request) => request.id !== id)],
+  };
+}
+
+/**
+ * A blank request filled by a paste: out of Saved and on to the head of Recent.
+ *
+ * The row was made by pressing New, but nothing in it was ever typed — everything it now holds came
+ * from the command pasted over it, which is exactly what "a request a paste left behind" means. It
+ * keeps its id, so the tab it is open in carries on as though nothing had happened, and it is
+ * trimmed against the ceiling like any other paste.
+ *
+ * Both timestamps are stamped at the paste, which is what makes this the same row `addRecent` would
+ * have made from the same command: as a pasted request it begins now, and the husk it is written
+ * over carried the time New was pressed — an hour-old stamp would have the ceiling evict the very
+ * row that was just pasted.
+ *
+ * The other direction is {@link pinToSaved}, and the two are not symmetrical on purpose: pinning is
+ * someone saying they meant to keep this, while this is the app noticing that nothing here was
+ * theirs to begin with.
+ */
+export function moveToRecent(
+  lists: RequestLists,
+  request: RestRequest,
+  now: number,
+): RequestLists {
+  const pasted: RestRequest = { ...request, origin: "paste", createdAt: now, lastUsedAt: now };
+  return {
+    saved: lists.saved.filter((row) => row.id !== request.id),
+    recent: trimRecent([pasted, ...lists.recent.filter((row) => row.id !== request.id)]),
+  };
+}
+
+/**
+ * Pinning: out of Recent and on to the top of Saved, where nothing evicts it.
+ *
+ * `origin` changes with it, because pinning is someone saying they meant to keep this — and it is
+ * the **only** thing that moves a row between the groups. Editing a Recent request does not, which
+ * is why a half-typed one can still be dropped when Recent fills up.
+ */
+export function pinToSaved(lists: RequestLists, id: string): RequestLists {
+  const found = lists.recent.find((request) => request.id === id);
+  if (found === undefined) return lists;
+  return {
+    saved: [{ ...found, origin: "manual" }, ...lists.saved],
+    recent: lists.recent.filter((request) => request.id !== id),
+  };
 }
 
 export function removeRequest(lists: RequestLists, id: string): RequestLists {

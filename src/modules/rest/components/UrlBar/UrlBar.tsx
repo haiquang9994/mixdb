@@ -15,6 +15,9 @@ interface Props {
   sending: boolean;
   onMethodChange: (method: Method) => void;
   onUrlChange: (url: string) => void;
+  /** Handed the pasted text; returns whether it was taken as a request, in which case the box does
+   *  not also receive it. Anything else — a URL, a fragment of one, prose — pastes as text. */
+  onPasteText: (text: string) => boolean;
   onSend: () => void;
   onCancel: () => void;
 }
@@ -27,6 +30,7 @@ function UrlBar({
   sending,
   onMethodChange,
   onUrlChange,
+  onPasteText,
   onSend,
   onCancel,
 }: Props) {
@@ -36,6 +40,7 @@ function UrlBar({
     <div className={styles.bar}>
       <Select<Method>
         className={styles.method}
+        triggerClassName={styles.methodTrigger}
         value={method}
         options={METHODS.map((m) => ({ value: m, label: m }))}
         onChange={onMethodChange}
@@ -53,6 +58,11 @@ function UrlBar({
         placeholder={t("rest.urlPlaceholder")}
         aria-label={t("rest.urlPlaceholder")}
         onChange={(e) => onUrlChange(e.target.value)}
+        /* A cURL command pasted here is a whole request, not a URL: what to do with it is the
+           workspace's to decide, and this only asks and then keeps out of the way. */
+        onPaste={(e) => {
+          if (onPasteText(e.clipboardData.getData("text"))) e.preventDefault();
+        }}
         // Enter in the URL box is the oldest gesture there is for "go".
         onKeyDown={(e) => {
           if (e.key === "Enter" && !sending) onSend();

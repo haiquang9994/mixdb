@@ -28,8 +28,10 @@ function parts(url: string): Parts {
   };
 }
 
-/** A stray `%` is what someone is halfway through typing, not a reason to throw. */
-function decode(text: string): string {
+/** Decoded, with `+` read as the space a query string means by it. A stray `%` is what someone is
+ *  halfway through typing, not a reason to throw. Exported because a pasted form body is decoded by
+ *  the same rule, in `parsePaste`. */
+export function decodeComponent(text: string): string {
   try {
     return decodeURIComponent(text.replace(/\+/g, " "));
   } catch {
@@ -59,8 +61,11 @@ export function paramsFromUrl(url: string, existing: KeyValue[], nextId: () => s
     .filter((part) => part !== "")
     .map((part) => {
       const eq = part.indexOf("=");
-      if (eq === -1) return { key: decode(part), value: "" };
-      return { key: decode(part.slice(0, eq)), value: decode(part.slice(eq + 1)) };
+      if (eq === -1) return { key: decodeComponent(part), value: "" };
+      return {
+        key: decodeComponent(part.slice(0, eq)),
+        value: decodeComponent(part.slice(eq + 1)),
+      };
     });
 
   const rows: KeyValue[] = [];
