@@ -3,12 +3,13 @@ import type { ComponentType } from "react";
 import type { AccentColor, ThemeMode } from "../../theme";
 import type { TranslationKey } from "../../../i18n";
 import type { IconProps } from "../../../icons";
-import { CloseIcon, DownloadIcon, PaletteIcon } from "../../../icons";
+import { CloseIcon, DownloadIcon, KeyboardIcon, PaletteIcon } from "../../../icons";
 import { useTranslation } from "../../../i18n";
 import type { UpdateCheck } from "../../update";
 import { MODULES } from "../../registry";
 import { useDialogExit } from "../../../components/dialogMotion";
 import AppearanceSection from "./AppearanceSection";
+import ShortcutsSection from "./ShortcutsSection";
 import UpdateSection from "./UpdateSection";
 import styles from "./SettingsModal.module.css";
 
@@ -33,6 +34,7 @@ type SectionId = string;
  *  A module names its own pane — the shell does not know that "Tools" means `mysqldump`. */
 const SECTIONS: { id: SectionId; labelKey: TranslationKey; icon: ComponentType<IconProps> }[] = [
   { id: "appearance", labelKey: "settings.appearance", icon: PaletteIcon },
+  { id: "shortcuts", labelKey: "shortcuts.title", icon: KeyboardIcon },
   ...MODULES.flatMap((m) =>
     m.settings ? [{ id: m.id, labelKey: m.settings.labelKey, icon: m.settings.Icon }] : [],
   ),
@@ -127,6 +129,15 @@ function SettingsModal({
               glass={glass}
               onGlassChange={onGlassChange}
             />
+          </div>
+          <div
+            className={styles.panel}
+            role="tabpanel"
+            id="settings-panel-shortcuts"
+            aria-labelledby="settings-tab-shortcuts"
+            hidden={section !== "shortcuts"}
+          >
+            <ShortcutsSection />
           </div>
           {MODULES.map((m) =>
             m.settings ? (

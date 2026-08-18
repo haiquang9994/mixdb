@@ -176,6 +176,27 @@
   opacity: 0.6;
 }
 
+/* One shortcut: what it does on the left, the chord on the right, so the keys line up as a column
+   the eye can run down. */
+.shortcutRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 1.9rem;
+}
+
+.shortcutKey {
+  padding: 0.1em 0.4em;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-bg);
+  font-family: inherit;
+  font-size: 0.92em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 .themeOptions {
   display: flex;
   gap: 0.4rem;

@@ -287,6 +287,8 @@ const dbEn = {
   query: {
     run: "Run",
     format: "Format",
+    shortcutScope: "Query editor",
+    shortcutFormat: "Format the script",
     running: "Running...",
     cancel: "Cancel",
     cancelling: "Cancelling...",

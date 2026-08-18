@@ -32,4 +32,19 @@ export const DB_SHORTCUTS: ShortcutGroup[] = [
       { id: "grid.focusFilter", chord: { key: "f" }, labelKey: "sqlTable.shortcutFilter" },
     ],
   },
+  {
+    scope: "db.query",
+    labelKey: "query.shortcutScope",
+    defs: [
+      /* CodeMirror binds this on the editor element itself, so it answers before anything on the
+         window ever sees it. It is here to be listed — a shortcut the table left out is one the
+         user has no way to find. `owner` is what keeps the dispatcher's hands off it. */
+      {
+        id: "editor.format",
+        chord: { key: "f", shift: true },
+        labelKey: "query.shortcutFormat",
+        owner: "editor",
+      },
+    ],
+  },
 ];

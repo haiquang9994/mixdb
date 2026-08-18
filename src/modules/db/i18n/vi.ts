@@ -279,6 +279,8 @@ const dbVi: DbDict = {
   query: {
     run: "Chạy",
     format: "Định dạng",
+    shortcutScope: "Trình soạn truy vấn",
+    shortcutFormat: "Định dạng câu lệnh",
     running: "Đang chạy...",
     cancel: "Dừng",
     cancelling: "Đang dừng...",
