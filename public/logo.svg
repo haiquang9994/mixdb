@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="mixdb-logo-title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-7.75 -7.75 79.5 79.5" width="64" height="64" role="img" aria-labelledby="mixdb-logo-title">
   <title id="mixdb-logo-title">MixDB</title>
   <!-- Three data platters fanned out like a hand of cards being shuffled: several databases, one
        client. The fan is what carries the name — a square-on stack would just be the generic
@@ -6,7 +6,13 @@
 
        Drawn as an app tile rather than a bare mark. A shape on a transparent ground has no
        presence in a taskbar or a dock, and the mark here is white, so it needs a ground of its
-       own to sit on instead of borrowing the page's. -->
+       own to sit on instead of borrowing the page's.
+
+       The tile is 64 units on a canvas of 79.5, which leaves a margin of a little under 10% on
+       every side. That is the grid macOS draws its own app icons on — a rounded square filling 824
+       of 1024 points — and without it the tile ran edge to edge and sat visibly larger than every
+       neighbour in the Dock. The margin lives in the viewBox alone, so every coordinate below is
+       still in the tile's own 0-64 space. -->
   <defs>
     <linearGradient id="mixdb-tile" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#4364e0"/>
