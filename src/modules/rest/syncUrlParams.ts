@@ -37,8 +37,9 @@ function decode(text: string): string {
   }
 }
 
-/** Encoded, except for the braces of a variable — see the note at the top of the file. */
-function encode(text: string): string {
+/** Encoded, except for the braces of a variable — see the note at the top of the file. Exported
+ *  because the form-urlencoded body is encoded by the same rule, in `buildRequest`. */
+export function encodeComponent(text: string): string {
   return encodeURIComponent(text).replace(/%7B%7B/gi, "{{").replace(/%7D%7D/gi, "}}");
 }
 
@@ -87,7 +88,7 @@ export function urlWithParams(url: string, params: KeyValue[]): string {
   const { base, hash } = parts(url);
   const query = params
     .filter((row) => row.enabled && row.key !== "")
-    .map((row) => `${encode(row.key)}=${encode(row.value)}`)
+    .map((row) => `${encodeComponent(row.key)}=${encodeComponent(row.value)}`)
     .join("&");
   return query === "" ? `${base}${hash}` : `${base}?${query}${hash}`;
 }

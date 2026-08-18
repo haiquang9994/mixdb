@@ -2147,8 +2147,9 @@ const RAW_TYPES = {
   text: "text/plain",
 } as const;
 
-/** The rows that are actually sent: ticked, and with something in the key. */
-function live(rows: KeyValue[]): KeyValue[] {
+/** The rows that are actually sent: ticked, and with something in the key. Generic so a
+ *  multipart field keeps its `file` on the way through. */
+function live<T extends KeyValue>(rows: T[]): T[] {
   return rows.filter((row) => row.enabled && row.key !== "");
 }
 
