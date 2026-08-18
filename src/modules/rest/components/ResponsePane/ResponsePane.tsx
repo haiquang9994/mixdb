@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ErrorBanner from "../../../../components/ErrorBanner";
 import JsonView from "../../../../components/JsonView";
+import { Tab, TabStrip, tabKeyDown } from "../../../../components/TabStrip";
 import { useTranslation } from "../../../../i18n";
 import {
   SOURCE_MAX_BYTES,
@@ -219,30 +220,32 @@ function ResponsePane({
       <ResponseStatusBar state={state} />
       {state.error !== null && <ErrorBanner message={state.error} onDismiss={onDismissError} />}
       {tabs.length > 0 && (
-        <div className="rest-pane-tabs" role="tablist">
+        <TabStrip size="small" role="tablist">
           {tabs.map((tab) => {
             const selected = tab.key === "headers" ? headersOpen : !headersOpen && tab.key === mode;
+            const pick = () => {
+              if (tab.key === "headers") {
+                onHeadersOpenChange(true);
+                return;
+              }
+              onHeadersOpenChange(false);
+              onPreferredChange(tab.key);
+            };
             return (
-              <button
+              <Tab
                 key={tab.key}
-                type="button"
+                active={selected}
                 role="tab"
                 aria-selected={selected}
-                className={`rest-pane-tab${selected ? " rest-pane-tab-active" : ""}`}
-                onClick={() => {
-                  if (tab.key === "headers") {
-                    onHeadersOpenChange(true);
-                    return;
-                  }
-                  onHeadersOpenChange(false);
-                  onPreferredChange(tab.key);
-                }}
+                tabIndex={0}
+                onClick={pick}
+                onKeyDown={tabKeyDown(pick)}
               >
                 {tab.label}
-              </button>
+              </Tab>
             );
           })}
-        </div>
+        </TabStrip>
       )}
       {detected !== null && size > SOURCE_MAX_BYTES && !headersOpen && (
         <p className={`${styles.notice} muted`}>

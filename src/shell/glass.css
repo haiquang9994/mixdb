@@ -223,25 +223,12 @@
   /* ------------------------------------------------------------------------------------------
      THE CHROME
 
-     The tab bar and the brand chip. Neither has anything behind it but the page, so neither takes
-     a filter; what they take is the direction — the bar was a *darker* band on the page, which is
-     the one thing the material never is. Turned around, the bar becomes the ground and the open
-     tab a pane raised out of it. */
-  :root[data-glass="on"] .tab-bar {
-    background: var(--glass-chrome-tint);
-  }
-
+     The brand chip. The tab strip beside it used to be here too and is now in
+     `components/TabStrip/TabStrip.module.css`, with the rest of how a tab is drawn: a hashed class
+     is not a name this file can reach, and a component's look in a theme belongs to the
+     component. */
   :root[data-glass="on"] .brand {
     background: var(--control-bg);
     box-shadow: inset 0 0 0 1px var(--control-border), var(--glass-control-shadow);
-  }
-
-  /* The open tab, lifted: the accent bar it already carries, plus the rim that says the surface it
-     is drawn on is the same one the menus and dialogs are cut from. */
-  :root[data-glass="on"] .tab-active {
-    box-shadow:
-      inset 0 2px 0 var(--accent),
-      inset 1px 1px 1.5px -0.5px var(--glass-rim-lit),
-      inset 0 0 0 1px var(--glass-rim-hairline);
   }
 }

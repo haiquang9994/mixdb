@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Splitter, { clampRatio, clampSize } from "../../components/Splitter";
+import { Tab, TabStrip, tabKeyDown } from "../../components/TabStrip";
 import { errorMessage } from "../../core/errors";
 import { useShortcut } from "../../core/shortcuts";
 import type { ModuleTabProps } from "../../shell/module";
@@ -312,20 +313,25 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
                 onSend={() => void send()}
                 onCancel={cancel}
               />
-              <div className="rest-pane-tabs" role="tablist">
-                {paneTabs.map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={requestTab === tab.key}
-                    className={`rest-pane-tab${requestTab === tab.key ? " rest-pane-tab-active" : ""}`}
-                    onClick={() => setRequestTabs((prev) => ({ ...prev, [activeRequest.id]: tab.key }))}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              <TabStrip size="small" role="tablist">
+                {paneTabs.map((tab) => {
+                  const pick = () =>
+                    setRequestTabs((prev) => ({ ...prev, [activeRequest.id]: tab.key }));
+                  return (
+                    <Tab
+                      key={tab.key}
+                      active={requestTab === tab.key}
+                      role="tab"
+                      aria-selected={requestTab === tab.key}
+                      tabIndex={0}
+                      onClick={pick}
+                      onKeyDown={tabKeyDown(pick)}
+                    >
+                      {tab.label}
+                    </Tab>
+                  );
+                })}
+              </TabStrip>
               <div className="rest-pane-body">
                 {requestTab === "params" && (
                   <KeyValueTable rows={activeRequest.params} onChange={editParams} />

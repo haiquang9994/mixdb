@@ -21,9 +21,13 @@
 
 /* The bar along the top of the open tab is the app's largest single piece of colour. On a
    read-only connection it goes amber: the one thing on screen that says so no matter which pane
-   of the workspace is showing. */
-.tab-readonly.tab-active {
-  box-shadow: inset 0 2px 0 var(--readonly);
+   of the workspace is showing.
+
+   `--tab-accent` is the knob `components/TabStrip` puts there for exactly this. Setting it beats
+   nothing and races nothing — the glass rim picks the new colour up on its own, which is why the
+   copy of this rule that used to sit under `@supports` further down is gone. */
+.tab-readonly {
+  --tab-accent: var(--readonly);
 }
 
 .login-view {
@@ -925,21 +929,10 @@ fieldset .row label.field-connection-string {
   gap: 1rem;
 }
 
-/* The glass look of the two surfaces above that take one. The `@supports` guard is written out again
-   here rather than leaving these in the shell's `glass.css`: that is the price of no database class
-   living outside this file. Order does not matter for either -- both are more specific than the
-   shell rule they have to beat. */
+/* The glass look of the one surface above that takes one. The `@supports` guard is written out
+   again here rather than leaving it in the shell's `glass.css`: that is the price of no database
+   class living outside this file. */
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  /* The same rim, with the bar amber. Written out rather than left to the rule above, which the
-     read-only tab would otherwise lose its whole box-shadow to — the mark stating that MixDB will
-     not write to this connection is not something a decoration may switch off. */
-  :root[data-glass="on"] .tab-readonly.tab-active {
-    box-shadow:
-      inset 0 2px 0 var(--readonly),
-      inset 1px 1px 1.5px -0.5px var(--glass-rim-lit),
-      inset 0 0 0 1px var(--glass-rim-hairline);
-  }
-
   /* A rail like the grids': the connection cards scroll under this heading, so it frosts them
      rather than hiding them behind a slab of a colour the page no longer is. */
   :root[data-glass="on"] .saved-list-header {
