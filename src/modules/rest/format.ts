@@ -42,3 +42,11 @@ export function prettyJson(text: string): string {
     return text;
   }
 }
+
+/** A URL short enough for a sidebar row: no scheme, no query, no trailing slash. Only `http` and
+ *  `https` lose their scheme — anything else is unusual enough that hiding it would mislead. */
+export function shortUrl(url: string): string {
+  const withoutScheme = url.replace(/^https?:\/\//i, "");
+  const withoutQuery = withoutScheme.split(/[?#]/)[0];
+  return withoutQuery.replace(/\/$/, "");
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, hexDump, prettyJson } from "./format";
+import { formatBytes, hexDump, prettyJson, shortUrl } from "./format";
 
 describe("formatBytes", () => {
   it("counts small bodies in bytes", () => {
@@ -55,5 +55,23 @@ describe("prettyJson", () => {
   // The Preview tab shows what came back. Text that is not JSON is still what came back.
   it("hands back anything it cannot parse, untouched", () => {
     expect(prettyJson("not json")).toBe("not json");
+  });
+});
+
+describe("shortUrl", () => {
+  it("drops the scheme and the query, which is what a sidebar row has no room for", () => {
+    expect(shortUrl("https://api.example.test/v1/users?page=2")).toBe("api.example.test/v1/users");
+  });
+
+  it("keeps a scheme that is not http, since dropping it would mislead", () => {
+    expect(shortUrl("ftp://x.test/a")).toBe("ftp://x.test/a");
+  });
+
+  it("drops a trailing slash", () => {
+    expect(shortUrl("https://x.test/")).toBe("x.test");
+  });
+
+  it("has nothing to shorten in an empty URL", () => {
+    expect(shortUrl("")).toBe("");
   });
 });
