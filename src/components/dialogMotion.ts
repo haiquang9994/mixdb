@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { enterModal } from "../core/shortcuts";
 import styles from "./dialogMotion.module.css";
 
 /** Kept in step with the `.closing` animations in `dialogMotion.module.css`. */
@@ -19,6 +20,15 @@ const EXIT_MS = 130;
  * not another frame of the form they are done with.
  */
 export function useDialogExit() {
+  /* Every dialog in the app calls this hook, which makes it the one place that knows a dialog is
+     up — so it is where the count is kept. Ten dialogs, and not one of their files has to say so.
+     The count is what a global shortcut asks before acting: the keyboard belongs to whatever is on
+     top, and a reload fired blind from behind a form throws away what was being typed into it.
+
+     It stays up through the exit animation, because the dialog is still on screen for those 130ms
+     and still holds the keyboard. */
+  useEffect(() => enterModal(), []);
+
   const [closing, setClosing] = useState(false);
   const answer = useRef<(() => void) | null>(null);
 
