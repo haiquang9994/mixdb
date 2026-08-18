@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseCurl, parsePaste, splitArgs } from "./parsePaste";
+import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
+import { parseCurl, parsePaste, splitArgs, toCurl } from "./parsePaste";
+import { newRequest } from "./requests";
+import type { RestRequest } from "./types";
 
 describe("splitArgs", () => {
   it("cuts a command on whitespace", () => {
@@ -289,5 +292,152 @@ describe("parsePaste", () => {
     expect(parsePaste("   ", ids())).toBeNull();
     expect(parsePaste("select * from users", ids())).toBeNull();
     expect(parsePaste("curling is a sport", ids())).toBeNull();
+  });
+});
+
+function request(over: Partial<RestRequest> = {}): RestRequest {
+  return { ...newRequest("r", 1000), ...over };
+}
+
+/** What would go on the wire, minus the send id, which is minted fresh every time. */
+function wire(source: RestRequest) {
+  const { request_id: _ignored, ...rest } = buildRequest(source, "send", PHASE_ONE_SETTINGS);
+  return rest;
+}
+
+describe("toCurl", () => {
+  it("writes the plainest request as the plainest command", () => {
+    expect(toCurl(request({ url: "https://x/items" }))).toBe("curl 'https://x/items'");
+  });
+
+  // -X is left out only where curl would have chosen the same verb anyway. A GET with a body must
+  // still say so, or reading the command back would make it a POST.
+  it("names the method whenever curl would guess another", () => {
+    expect(toCurl(request({ method: "DELETE", url: "https://x/1" }))).toBe(
+      "curl -X DELETE 'https://x/1'",
+    );
+    const withBody = request({
+      url: "https://x",
+      body: { kind: "raw", language: "text", text: "hi" },
+    });
+    expect(toCurl(withBody).startsWith("curl -X GET ")).toBe(true);
+  });
+
+  it("folds the parameters into the URL, as sending does", () => {
+    const source = request({
+      url: "https://x/items",
+      params: [
+        { id: "p1", enabled: true, key: "page", value: "2" },
+        { id: "p2", enabled: false, key: "draft", value: "1" },
+      ],
+    });
+    expect(toCurl(source)).toBe("curl 'https://x/items?page=2'");
+  });
+
+  it("writes the content type sending would have added", () => {
+    const source = request({
+      method: "POST",
+      url: "https://x",
+      body: { kind: "raw", language: "json", text: '{"a":1}' },
+    });
+    expect(toCurl(source)).toBe(
+      [
+        "curl -X POST 'https://x' \\",
+        "  -H 'Content-Type: application/json' \\",
+        `  --data-raw '{"a":1}'`,
+      ].join("\n"),
+    );
+  });
+
+  it("survives a quote in the body", () => {
+    const source = request({
+      method: "POST",
+      url: "https://x",
+      body: { kind: "raw", language: "text", text: "it's" },
+    });
+    expect(toCurl(source)).toContain(String.raw`--data-raw 'it'\''s'`);
+  });
+
+  it("writes multipart parts as -F, files and all", () => {
+    const source = request({
+      method: "POST",
+      url: "https://x",
+      body: {
+        kind: "multipart",
+        fields: [
+          { id: "f1", enabled: true, key: "name", value: "Ann" },
+          { id: "f2", enabled: true, key: "avatar", value: "", file: "/tmp/a.png" },
+        ],
+      },
+    });
+    expect(toCurl(source)).toContain("-F 'name=Ann'");
+    expect(toCurl(source)).toContain("-F 'avatar=@/tmp/a.png'");
+  });
+});
+
+describe("the round trip", () => {
+  /** Copied out and pasted back sends the same thing. Not the same object — the row ids are new and
+   *  a content type that was added on the way out is written down in the command — but the same
+   *  method, URL, headers and body, which is what "the same request" means. */
+  function roundTrip(source: RestRequest) {
+    const back = parsePaste(toCurl(source), ids());
+    expect(back).not.toBeNull();
+    expect(wire({ ...newRequest("back", 2000), ...back! })).toEqual(wire(source));
+  }
+
+  it("a GET with parameters", () => {
+    roundTrip(
+      request({
+        url: "https://x/items?page=2",
+        params: [{ id: "p1", enabled: true, key: "page", value: "2" }],
+      }),
+    );
+  });
+
+  it("a POST with headers and a JSON body", () => {
+    roundTrip(
+      request({
+        method: "POST",
+        url: "https://x/items",
+        headers: [{ id: "h1", enabled: true, key: "X-Token", value: "abc" }],
+        body: { kind: "raw", language: "json", text: '{"name":"Ann"}' },
+      }),
+    );
+  });
+
+  it("a form body", () => {
+    roundTrip(
+      request({
+        method: "POST",
+        url: "https://x/login",
+        body: {
+          kind: "form",
+          fields: [
+            { id: "f1", enabled: true, key: "user", value: "ann" },
+            { id: "f2", enabled: true, key: "pass", value: "hunter 2" },
+          ],
+        },
+      }),
+    );
+  });
+
+  it("a multipart body with a file in it", () => {
+    roundTrip(
+      request({
+        method: "POST",
+        url: "https://x/upload",
+        body: {
+          kind: "multipart",
+          fields: [
+            { id: "f1", enabled: true, key: "name", value: "Ann" },
+            { id: "f2", enabled: true, key: "avatar", value: "", file: "/tmp/a.png" },
+          ],
+        },
+      }),
+    );
+  });
+
+  it("a URL with a variable still in it", () => {
+    roundTrip(request({ url: "{{baseUrl}}/items" }));
   });
 });

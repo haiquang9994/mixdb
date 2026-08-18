@@ -5,9 +5,18 @@
  * here reads a clock or a clipboard. That is the point — a cURL command is the most error-prone
  * input this app takes, and this is the one file where it can be got wrong under `npm test`.
  */
+import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
 import { decodeComponent, paramsFromUrl } from "./syncUrlParams";
 import { METHODS } from "./types";
-import type { Body, KeyValue, Method, MultipartField, RawLanguage } from "./types";
+import type {
+  Body,
+  KeyValue,
+  Method,
+  MultipartField,
+  RawLanguage,
+  RestRequest,
+  WireRequest,
+} from "./types";
 
 /** The characters a backslash escapes inside double quotes. Everywhere else in a double-quoted
  *  string a backslash is a literal backslash, which is what makes `"C:\path"` survive. */
@@ -361,4 +370,55 @@ export function parsePaste(text: string, nextId: () => string): ParsedRequest | 
   const trimmed = text.trim();
   if (!/^(\$\s+)?curl(\.exe)?(\s|$)/i.test(trimmed)) return null;
   return parseCurl(trimmed.replace(/^\$\s+/, ""), nextId);
+}
+
+/** A single-quoted argument. Single quotes take everything literally, so the only character that
+ *  needs care is the quote itself: close, escape one, reopen — the `'\''` every shell script has in
+ *  it somewhere. */
+function quote(text: string): string {
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The command that would send this request.
+ *
+ * Written from the `WireRequest` rather than from the request pane, so what it says is what the app
+ * would actually send: the URL with its parameters already folded in, and the content type whether
+ * it was typed by hand or added on the way out.
+ *
+ * The three send settings are deliberately absent, which is also why the parser passes over `-L`,
+ * `-k` and `--compressed`: those say how a client behaves, and in this app that is one global
+ * setting rather than a property of any one request. Which `SendSettings` is passed below therefore
+ * cannot change a character of the output.
+ *
+ * Broken across lines the way a command is written out for someone to read. `splitArgs` joins those
+ * lines back up, so a command copied out of here pastes back in.
+ */
+export function toCurl(request: RestRequest): string {
+  const wire: WireRequest = buildRequest(request, "curl", PHASE_ONE_SETTINGS);
+  const head = ["curl"];
+  // Named unless curl would have guessed the same verb from the body — see the test for this.
+  if (!(wire.method === "GET" && wire.body.kind === "none")) head.push("-X", wire.method);
+  head.push(quote(wire.url));
+
+  const lines = [head.join(" ")];
+  for (const [key, value] of wire.headers) lines.push(`-H ${quote(`${key}: ${value}`)}`);
+  switch (wire.body.kind) {
+    case "text":
+      lines.push(`--data-raw ${quote(wire.body.text)}`);
+      break;
+    case "file":
+      lines.push(`--data-binary ${quote(`@${wire.body.path}`)}`);
+      break;
+    case "multipart":
+      for (const part of wire.body.parts) {
+        const field =
+          part.path !== null ? `${part.name}=@${part.path}` : `${part.name}=${part.value ?? ""}`;
+        lines.push(`-F ${quote(field)}`);
+      }
+      break;
+    case "none":
+      break;
+  }
+  return lines.join(" \\\n  ");
 }
