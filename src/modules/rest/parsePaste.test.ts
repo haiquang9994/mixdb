@@ -14,6 +14,14 @@ describe("splitArgs", () => {
     ]);
   });
 
+  it("takes a caret as cmd's escape once the paste is caret-escaped", () => {
+    expect(splitArgs(`curl ^"https://x/?a=1^&b=2^"`)).toEqual(["curl", "https://x/?a=1&b=2"]);
+  });
+
+  it("leaves a caret alone in a command that is not caret-escaped", () => {
+    expect(splitArgs(`curl -d 'a^b' https://x`)).toEqual(["curl", "-d", "a^b", "https://x"]);
+  });
+
   it("keeps a single-quoted argument whole", () => {
     expect(splitArgs("curl -H 'Accept: application/json' https://x")).toEqual([
       "curl",
@@ -492,5 +500,55 @@ describe("a command copied out of a browser", () => {
     expect(parsed?.method).toBe("POST");
     expect(parsed?.url).toBe("https://api.example.com/v2/items");
     expect(parsed?.body).toEqual({ kind: "raw", language: "json", text: '{"name":"Ann"}' });
+  });
+
+  /* `Copy as cURL (cmd)` escapes for `cmd.exe` instead of quoting for a shell: every argument is
+     wrapped in `^"`, every character cmd would otherwise act on carries a caret, and a quote inside
+     a value comes out as `\^"`. The carets are cmd's own and none of them belong in the request. */
+  it("reads the cmd spelling, carets and all", () => {
+    const command = [
+      `curl --url ^"https://api.example.com/v1/lead?_page=1^&locale=vi^&_orderBy=id:desc^" ^`,
+      `  -H ^"Accept: application/json, text/plain, */*^" ^`,
+      `  -H ^"Authorization: Bearer eyJhbGciOi.abc^" ^`,
+      `  -H ^"sec-ch-ua: ^\\^"Chromium^\\^";v=^\\^"151^\\^"^" ^`,
+      `  -H ^"sec-ch-ua-mobile: ?0^"`,
+    ].join("\n");
+
+    const parsed = parsePaste(command, ids());
+    expect(parsed?.method).toBe("GET");
+    expect(parsed?.url).toBe("https://api.example.com/v1/lead?_page=1&locale=vi&_orderBy=id:desc");
+    expect(parsed?.params.map((row) => [row.key, row.value])).toEqual([
+      ["_page", "1"],
+      ["locale", "vi"],
+      ["_orderBy", "id:desc"],
+    ]);
+    expect(parsed?.headers.map((row) => [row.key, row.value])).toEqual([
+      ["Accept", "application/json, text/plain, */*"],
+      ["Authorization", "Bearer eyJhbGciOi.abc"],
+      ["sec-ch-ua", `"Chromium";v="151"`],
+      ["sec-ch-ua-mobile", "?0"],
+    ]);
+  });
+
+  /* A body in cmd form: the quotes around the JSON keys survive as `\^"`, and a real newline is
+     written `^` then a blank line — the caret eats the first newline and the second one is the
+     character that was in the value. */
+  it("reads a cmd body with quotes and a newline in it", () => {
+    const command = [
+      `curl ^"https://api.example.com/v2/items^" ^`,
+      `  -X POST ^`,
+      `  -H ^"content-type: application/json^" ^`,
+      `  --data-raw ^"{^\\^"note^\\^":^\\^"one^`,
+      ``,
+      `two^\\^"}^"`,
+    ].join("\n");
+
+    const parsed = parsePaste(command, ids());
+    expect(parsed?.method).toBe("POST");
+    expect(parsed?.body).toEqual({
+      kind: "raw",
+      language: "json",
+      text: '{"note":"one\ntwo"}',
+    });
   });
 });

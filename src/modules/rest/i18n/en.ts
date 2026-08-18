@@ -15,7 +15,7 @@ const restEn = {
     filterPlaceholder: "Filter requests",
     noSaved: "Nothing saved yet.",
     noRecent: "Requests you paste land here.",
-    emptyMain: "Press New request to start.",
+    emptyMain: "Paste a cURL command here, or press New request.",
     resizeSidebar: "Drag to resize the sidebar",
     resizePanes: "Drag to resize the request and response panes",
     // Request pane
@@ -82,6 +82,7 @@ const restEn = {
     pin: "Pin",
     pinHint: "Keep this request in Saved",
     delete: "Delete",
+    deleteKeyHint: "Backspace or Delete removes the request the keyboard is on.",
     deleteTitle: "Delete this request?",
     deleteMessage: "\u201c{{name}}\u201d will be gone for good.",
     copySuffix: "{{name}} copy",

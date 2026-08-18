@@ -153,6 +153,35 @@ export function bumpRecent(lists: RequestLists, id: string, now: number): Reques
 }
 
 /**
+ * A blank request filled by a paste: out of Saved and on to the head of Recent.
+ *
+ * The row was made by pressing New, but nothing in it was ever typed — everything it now holds came
+ * from the command pasted over it, which is exactly what "a request a paste left behind" means. It
+ * keeps its id, so the tab it is open in carries on as though nothing had happened, and it is
+ * trimmed against the ceiling like any other paste.
+ *
+ * Both timestamps are stamped at the paste, which is what makes this the same row `addRecent` would
+ * have made from the same command: as a pasted request it begins now, and the husk it is written
+ * over carried the time New was pressed — an hour-old stamp would have the ceiling evict the very
+ * row that was just pasted.
+ *
+ * The other direction is {@link pinToSaved}, and the two are not symmetrical on purpose: pinning is
+ * someone saying they meant to keep this, while this is the app noticing that nothing here was
+ * theirs to begin with.
+ */
+export function moveToRecent(
+  lists: RequestLists,
+  request: RestRequest,
+  now: number,
+): RequestLists {
+  const pasted: RestRequest = { ...request, origin: "paste", createdAt: now, lastUsedAt: now };
+  return {
+    saved: lists.saved.filter((row) => row.id !== request.id),
+    recent: trimRecent([pasted, ...lists.recent.filter((row) => row.id !== request.id)]),
+  };
+}
+
+/**
  * Pinning: out of Recent and on to the top of Saved, where nothing evicts it.
  *
  * `origin` changes with it, because pinning is someone saying they meant to keep this — and it is

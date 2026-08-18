@@ -44,7 +44,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 ### Added
 
 - REST client tabs: compose a request, send it, and read the response as a preview, a tree or raw bytes.
-- Pasting a cURL command into a REST request fills it in — method, URL, headers and body — and right-clicking a request copies it back out as one.
+- Pasting a cURL command into a REST tab fills a request in — method, URL, headers and body — and right-clicking a request copies it back out as one.
 - Pasted REST requests collect in the sidebar's Recent group, which holds ten and can pin one to Saved.
 - Settings has a Shortcuts pane listing every Ctrl/Cmd shortcut in the app.
 - Ctrl/Cmd+1 opens a Database tab and Ctrl/Cmd+2 a REST tab.

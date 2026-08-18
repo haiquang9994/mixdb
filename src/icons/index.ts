@@ -1,5 +1,6 @@
 export { Icon, type IconProps } from "./Icon";
 export {
+  BackspaceIcon,
   BookmarkIcon,
   CheckIcon,
   ChevronDownIcon,

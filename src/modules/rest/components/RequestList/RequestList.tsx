@@ -4,8 +4,15 @@ import ConfirmDialog from "../../../../components/ConfirmDialog";
 import ContextMenu from "../../../../components/ContextMenu";
 import Input from "../../../../components/Input";
 import NameDialog from "../../../../components/NameDialog";
+import Tooltip from "../../../../components/Tooltip";
 import { copyText } from "../../../../core/clipboard";
-import { ChevronDownIcon, ChevronRightIcon, PinIcon, PlusIcon } from "../../../../icons";
+import {
+  BackspaceIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  PinIcon,
+  PlusIcon,
+} from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import { shortUrl } from "../../format";
 import { toCurl } from "../../parsePaste";
@@ -108,6 +115,13 @@ function RequestList({
           </span>
           <span className={styles.name}>{label(request)}</span>
         </button>
+        {/* Only on the row the keyboard is already on, and only while the pointer is there too —
+            a reminder for the hand that is on this row, not another button in the list. */}
+        <span className={styles.keyHint}>
+          <Tooltip text={t("rest.deleteKeyHint")}>
+            <BackspaceIcon size="0.95em" />
+          </Tooltip>
+        </span>
         {group === "recent" && (
           <button
             type="button"

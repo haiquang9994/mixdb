@@ -7,6 +7,7 @@ import {
   findRecentTarget,
   findRequest,
   loadRequests,
+  moveToRecent,
   newRequest,
   persistRequests,
   pinToSaved,
@@ -120,6 +121,36 @@ export function pasteRequest(parsed: ParsedRequest): RestRequest {
   return existing === undefined
     ? lists.recent[0]
     : (findRequest(lists, existing.id) ?? lists.recent[0]);
+}
+
+/**
+ * A command pasted over a request nobody had typed into yet.
+ *
+ * The row keeps its id — so the tab it is open in carries on — and moves to Recent, because
+ * everything in it came from the paste. Pressing New to have somewhere to paste into is not a
+ * decision to keep the result, and a row of that kind sitting in Saved for good is not what anybody
+ * asked for.
+ *
+ * The duplicate rule is the same as pasting anywhere else: when Recent already holds that command,
+ * it is that row which comes to the head, and the husk goes. Otherwise pressing New first would be a
+ * way to make a second copy of a request already there.
+ *
+ * Returns the request whose tab should be on screen.
+ */
+export function pasteOverBlank(blank: RestRequest, parsed: ParsedRequest): RestRequest {
+  const now = Date.now();
+  const existing = findRecentTarget(snapshot, parsed.method, parsed.url);
+  if (existing !== undefined) {
+    const lists = removeRequest(bumpRecent(snapshot, existing.id, now), blank.id);
+    publish(lists);
+    persistRequests(lists);
+    return findRequest(lists, existing.id) ?? existing;
+  }
+  const filled: RestRequest = { ...blank, ...parsed };
+  const lists = moveToRecent(snapshot, filled, now);
+  publish(lists);
+  persistRequests(lists);
+  return findRequest(lists, blank.id) ?? filled;
 }
 
 /** Pinning a Recent request: it moves to Saved and stops being something that can be evicted. */

@@ -80,6 +80,25 @@
   cursor: pointer;
 }
 
+/* Which key deletes this row, said only where it can be acted on: the row has the keyboard and the
+   pointer is on it. `display: none` rather than a hidden opacity, so an invisible icon is never
+   sitting there catching the pointer and opening a tooltip over nothing. */
+.keyHint {
+  display: none;
+  flex: none;
+  align-items: center;
+  padding: 0.25rem 0.35rem;
+  opacity: 0.6;
+}
+
+.rowWrap:hover .row:focus ~ .keyHint {
+  display: flex;
+}
+
+.keyHint:hover {
+  opacity: 1;
+}
+
 /* Out of the way until the pointer or the keyboard is on the row: the list is read far more often
    than it is pinned. */
 .pin {

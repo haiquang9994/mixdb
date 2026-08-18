@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Splitter, { clampRatio, clampSize } from "../../components/Splitter";
 import { Tab, TabStrip, tabKeyDown } from "../../components/TabStrip";
 import { errorMessage } from "../../core/errors";
-import { useShortcut } from "../../core/shortcuts";
+import { modalDepth, useShortcut } from "../../core/shortcuts";
 import type { ModuleTabProps } from "../../shell/module";
 import { useTranslation } from "../../i18n";
 import { CANCELLED, decodeBase64, restCancel, restSend } from "./api";
@@ -22,6 +22,7 @@ import {
   createRequest,
   currentLists,
   deleteRequest,
+  pasteOverBlank,
   pasteRequest,
   pinRequest,
   saveRequest,
@@ -86,7 +87,17 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     () => openIds.map((id) => findRequest(lists, id)).filter((r): r is RestRequest => r !== undefined),
     [openIds, lists],
   );
-  const activeRequest = activeId === null ? undefined : findRequest(lists, activeId);
+  /**
+   * The request actually on screen, and its id.
+   *
+   * `activeId` is what was last *chosen*, and it can name a tab that has just been closed or a
+   * request that has just been deleted — for the one render before the effects below catch up.
+   * Resolving through `tabs` and falling back to the last of them means that in-between state is
+   * never drawn: without it, closing one of two untitled tabs shows the shell's tab renamed to
+   * "New request" for a frame before it settles on the neighbour.
+   */
+  const activeRequest = tabs.find((r) => r.id === activeId) ?? tabs[tabs.length - 1];
+  const currentId = activeRequest?.id ?? null;
 
   /* The shell's tab is named after whatever is open in it. Keyed on the name rather than on the
      request, because every keystroke replaces the request with an equal one. */
@@ -124,11 +135,17 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   /**
    * Closing a tab, and taking the request with it when there is nothing in it.
    *
-   * Read from the store rather than from `lists`: this may run from a shortcut whose handler was
-   * made several keystrokes ago, and what matters is the request as it stands now.
+   * Where the keyboard lands next is decided here rather than left to the effect above, so both
+   * pieces of state change in the same commit: the effect would run a render later, and that render
+   * is one whose active tab has already gone.
+   *
+   * The request is read from the store rather than from `lists`: this may run from a shortcut whose
+   * handler was made several keystrokes ago, and what matters is the request as it stands now.
    */
   function close(id: string) {
-    setOpenIds((prev) => prev.filter((openId) => openId !== id));
+    const next = openIds.filter((openId) => openId !== id);
+    setOpenIds(next);
+    if (activeId === id) setActiveId(next[next.length - 1] ?? null);
     const request = findRequest(currentLists(), id);
     if (request !== undefined && isBlank(request)) deleteRequest(id);
   }
@@ -180,22 +197,23 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   /**
    * A paste in the URL box that turned out to be a cURL command.
    *
-   * A tab nobody has put anything into is filled where it stands — it is what someone pressed New
-   * to get, and swallowing a request they were part-way through composing would be a real loss. A
-   * tab with anything in it gets a new tab beside it instead, which destroys nothing and so needs no
-   * undo. Returns whether the paste was taken, which is what stops the box also receiving it.
+   * A tab nobody has put anything into is filled where it stands, and the request moves to Recent
+   * with it — pressing New to have somewhere to paste into is not a decision to keep the result. A
+   * tab with anything in it is left alone and the paste opens a tab of its own, which destroys
+   * nothing and so needs no undo.
+   *
+   * Returns whether the paste was taken, which is what stops the box also receiving it.
    */
   function pasteInto(text: string): boolean {
     const parsed = parsePaste(text, () => crypto.randomUUID());
     if (parsed === null) return false;
-    /* Filled in place keeps the request where it is, Saved included: pressing New and pasting into
-       what it opened is not the same gesture as pasting over work, and a row someone asked for
-       should not become one that ten more pastes can evict. */
-    if (activeRequest !== undefined && isBlank(activeRequest)) {
-      saveRequest({ ...activeRequest, ...parsed });
-      return true;
-    }
-    open(pasteRequest(parsed).id);
+    const filled =
+      activeRequest !== undefined && isBlank(activeRequest)
+        ? pasteOverBlank(activeRequest, parsed)
+        : pasteRequest(parsed);
+    // The same id when the husk was filled in place; a different one when a duplicate was found in
+    // Recent, and then it is that row's tab which comes forward.
+    open(filled.id);
     return true;
   }
 
@@ -256,12 +274,43 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   }
 
   function cancel() {
-    const sendId = activeId === null ? null : sends[activeId]?.sendId;
+    const sendId = currentId === null ? null : sends[currentId]?.sendId;
     if (sendId) void restCancel(sendId);
   }
 
-  const requestTab = activeId === null ? "params" : (requestTabs[activeId] ?? "params");
-  const sendState = activeId === null ? IDLE_SEND : (sends[activeId] ?? IDLE_SEND);
+  /**
+   * The other way in: pasting a command with no request open at all.
+   *
+   * Without this the only paste target is a URL box, so a command could not be pasted without
+   * pressing New first — and since a blank request is filled where it stands, that first paste
+   * would never reach Recent. The empty screen says both ways in; this is the one it names first.
+   *
+   * Listened for on the document because nothing in an empty workspace holds the keyboard, so the
+   * event has no element of ours to fire on. Which is also why the guards are needed: a paste aimed
+   * at a text box is that box's, and a dialog or menu that is up holds the keyboard the same way it
+   * holds every shortcut.
+   */
+  useEffect(() => {
+    if (!active || activeRequest !== undefined) return;
+    function onPaste(event: ClipboardEvent) {
+      if (modalDepth() !== 0) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.closest("input, textarea") !== null)
+      ) {
+        return;
+      }
+      if (pasteInto(event.clipboardData?.getData("text") ?? "")) event.preventDefault();
+    }
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+    // `pasteInto` is remade every render but reads only `activeRequest`, which is in the list, so
+    // the handler this subscribed is never one render behind what it decides from.
+  }, [active, activeRequest]);
+
+  const requestTab = currentId === null ? "params" : (requestTabs[currentId] ?? "params");
+  const sendState = currentId === null ? IDLE_SEND : (sends[currentId] ?? IDLE_SEND);
 
   /* `active` — the prop, not the open request — is what keeps the REST tabs behind this one
      quiet: all of them stay mounted, and all of them would otherwise answer the same keystroke. */
@@ -274,8 +323,8 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   // Only while there is a request tab to close — otherwise the chord is the shell's, as before.
   useShortcut(
     "rest.closeRequest",
-    () => activeId !== null && close(activeId),
-    active && activeId !== null,
+    () => currentId !== null && close(currentId),
+    active && currentId !== null,
   );
 
   const paneTabs: { key: RequestTabKey; label: string }[] = [
@@ -289,7 +338,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
       <aside className="rest-sidebar" style={{ width }}>
         <RequestList
           lists={lists}
-          activeId={activeId}
+          activeId={currentId}
           onOpen={open}
           onNew={makeRequest}
           onSave={saveRequest}
@@ -317,7 +366,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
       <div className="rest-main">
         <RequestTabs
           tabs={tabs}
-          activeId={activeId}
+          activeId={currentId}
           onSelect={setActiveId}
           onClose={close}
           onNew={makeRequest}
@@ -406,7 +455,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
             <section className="rest-response-pane">
               <ResponsePane
                 state={sendState}
-                preferred={activeId === null ? "preview" : (preferredModes[activeId] ?? "preview")}
+                preferred={currentId === null ? "preview" : (preferredModes[currentId] ?? "preview")}
                 onPreferredChange={(mode) =>
                   setPreferredModes((prev) => ({ ...prev, [activeRequest.id]: mode }))
                 }

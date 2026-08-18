@@ -40,6 +40,7 @@ function UrlBar({
     <div className={styles.bar}>
       <Select<Method>
         className={styles.method}
+        triggerClassName={styles.methodTrigger}
         value={method}
         options={METHODS.map((m) => ({ value: m, label: m }))}
         onChange={onMethodChange}

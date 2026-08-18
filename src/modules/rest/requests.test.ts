@@ -7,6 +7,7 @@ import {
   findRecentTarget,
   findRequest,
   isBlank,
+  moveToRecent,
   newRequest,
   pinToSaved,
   removeRequest,
@@ -232,6 +233,45 @@ describe("bumpRecent", () => {
   it("changes nothing for an id that is not in Recent", () => {
     const before = lists({ saved: [newRequest("s", 1)] });
     expect(bumpRecent(before, "s", 500)).toBe(before);
+  });
+});
+
+describe("moveToRecent", () => {
+  it("takes the row out of Saved and puts it at the head of Recent, id and all", () => {
+    const husk = newRequest("h", 1);
+    const filled = { ...husk, url: "https://a/items", method: "POST" as const };
+    const after = moveToRecent(
+      lists({ saved: [husk, newRequest("other", 2)], recent: [pasted("r", "https://r", 3)] }),
+      filled,
+      500,
+    );
+    expect(after.saved.map((r) => r.id)).toEqual(["other"]);
+    expect(after.recent.map((r) => r.id)).toEqual(["h", "r"]);
+    expect(after.recent[0].url).toBe("https://a/items");
+  });
+
+  it("calls it what it is", () => {
+    const husk = newRequest("h", 1);
+    const after = moveToRecent(lists({ saved: [husk] }), { ...husk, url: "https://a" }, 500);
+    expect(after.recent[0].origin).toBe("paste");
+  });
+
+  it("dates it from the paste, not from the New it was typed over", () => {
+    const husk = newRequest("h", 1);
+    const after = moveToRecent(lists({ saved: [husk] }), { ...husk, url: "https://a" }, 500);
+    expect(after.recent[0].createdAt).toBe(500);
+    expect(after.recent[0].lastUsedAt).toBe(500);
+  });
+
+  /* The stamp is what keeps this honest: a tab left open since this morning still holds a request
+     created this morning, and the ceiling evicts by use. Without restamping, the row just pasted
+     would be the first one thrown out. */
+  it("survives a Recent that is already full", () => {
+    const husk = newRequest("h", 1);
+    const recent = [...Array(RECENT_LIMIT).keys()].map((n) => pasted(`r${n}`, `https://${n}`, 100));
+    const after = moveToRecent(lists({ saved: [husk], recent }), { ...husk, url: "https://a" }, 500);
+    expect(after.recent).toHaveLength(RECENT_LIMIT);
+    expect(after.recent[0].id).toBe("h");
   });
 });
 

@@ -28,15 +28,59 @@ function joinContinuations(text: string): string {
   return text.replace(/[\\^]\r?\n/g, " ");
 }
 
+/** What a command escaped for `cmd.exe` looks like: an argument opened with a caret before its
+ *  quote. `Copy as cURL (cmd)` writes every argument that way and a POSIX shell writes none, so a
+ *  single one of these settles which of the two spellings the whole paste is in. Read off the text
+ *  as it arrived, because once the carets are off there is nothing left to tell from. */
+const CMD_ESCAPED = /\^"/;
+
+/**
+ * A `cmd.exe` command with cmd's own escaping taken back off.
+ *
+ * A caret in cmd hands the character after it through untouched: `^&` is an ampersand rather than
+ * the start of a second command, and `^"` is a quote cmd itself does not act on — but that quote is
+ * still handed to the program, which is exactly what holds `^"a^&b^"` together as one argument. So
+ * the carets come off and everything else stays, leaving a command line in the ordinary shape the
+ * tokenizer below already reads: quotes still quoting, and `\"` still an escaped quote.
+ *
+ * A caret before a newline escapes the newline, which is how cmd continues a line — and why a
+ * newline inside a value is written as a caret and then a blank line: the caret eats the first
+ * newline, and the second one is the character that was in the value.
+ */
+function unescapeCmd(text: string): string {
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "^") {
+      out += text[i];
+      continue;
+    }
+    const next = text[i + 1];
+    // A caret with nothing after it escapes nothing; cmd drops it and so does this.
+    if (next === undefined) continue;
+    i++;
+    if (next === "\n") continue;
+    if (next === "\r") {
+      if (text[i + 1] === "\n") i++;
+      continue;
+    }
+    out += next;
+  }
+  return out;
+}
+
 /**
  * A command line cut into arguments, the way a shell would cut it.
  *
  * Single quotes take everything literally, double quotes take everything but the four characters
  * above, and a bare backslash escapes the character after it. An unterminated quote is not an
  * error: the text was pasted by a human and half of it is still worth reading.
+ *
+ * A caret-escaped command has cmd's layer taken off first, which is also where its line
+ * continuations are dealt with — so a caret that is left over from `^^` is a caret in a value and
+ * not the end of a line.
  */
 export function splitArgs(text: string): string[] {
-  const source = joinContinuations(text);
+  const source = CMD_ESCAPED.test(text) ? unescapeCmd(text) : joinContinuations(text);
   const args: string[] = [];
   let arg = "";
   /** Whether anything has been put into `arg` — including a quote that opened and closed with
