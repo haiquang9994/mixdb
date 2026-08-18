@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Splitter, { clampRatio, clampSize } from "../../components/Splitter";
 import { errorMessage } from "../../core/errors";
+import { useShortcut } from "../../core/shortcuts";
 import type { ModuleTabProps } from "../../shell/module";
 import { useTranslation } from "../../i18n";
 import { CANCELLED, decodeBase64, restCancel, restSend } from "./api";
@@ -46,7 +47,7 @@ type RequestTabKey = "params" | "body" | "headers";
  * open is the only state that lives in this component, and it is the only state the app does not
  * remember — the shell keeps no tabs either.
  */
-function RestTab({ onTitleChange }: ModuleTabProps) {
+function RestTab({ active, onTitleChange }: ModuleTabProps) {
   const { t } = useTranslation();
   const lists = useRequestLists();
   const workspace = useWorkspace();
@@ -206,6 +207,21 @@ function RestTab({ onTitleChange }: ModuleTabProps) {
 
   const requestTab = activeId === null ? "params" : (requestTabs[activeId] ?? "params");
   const sendState = activeId === null ? IDLE_SEND : (sends[activeId] ?? IDLE_SEND);
+
+  /* `active` — the prop, not the open request — is what keeps the REST tabs behind this one
+     quiet: all of them stay mounted, and all of them would otherwise answer the same keystroke. */
+  useShortcut(
+    "rest.send",
+    () => void send(),
+    active && activeRequest !== undefined && sendState.phase !== "sending",
+  );
+  useShortcut("rest.newRequest", makeRequest, active);
+  // Only while there is a request tab to close — otherwise the chord is the shell's, as before.
+  useShortcut(
+    "rest.closeRequest",
+    () => activeId !== null && close(activeId),
+    active && activeId !== null,
+  );
 
   const paneTabs: { key: RequestTabKey; label: string }[] = [
     { key: "params", label: t("rest.paramsTab") },
