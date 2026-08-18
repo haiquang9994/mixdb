@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import ErrorBanner from "../../../../components/ErrorBanner";
 import { useTranslation } from "../../../../i18n";
 import {
@@ -8,10 +8,13 @@ import {
   type DetectedBody,
   type ViewMode,
 } from "../../contentType";
+import { buildDomTree } from "../../domTree";
 import { formatBytes } from "../../format";
+import { buildJsonTree, type TreeNode } from "../../jsonTree";
 import type { RestResponse } from "../../types";
 import HexView from "../HexView";
 import ResponseStatusBar from "../ResponseStatusBar";
+import TreeView from "../TreeView";
 import styles from "./ResponsePane.module.css";
 
 /** How much of a text body is put on screen. Past this the webview spends its time laying out
@@ -25,7 +28,7 @@ const MAX_TEXT = 5 * 1024 * 1024;
  * adds `source` and Task 15 adds `preview`, one word each, and until then neither is ever offered
  * — which is what keeps every task in this plan something you can ship.
  */
-const IMPLEMENTED: ViewMode[] = ["raw"];
+const IMPLEMENTED: ViewMode[] = ["source", "raw"];
 
 export interface SendState {
   phase: "idle" | "sending" | "done" | "cancelled" | "failed";
@@ -98,6 +101,22 @@ function ResponsePane({
         ]),
   ];
 
+  /** The tree for this body, or null when it will not parse — which drops the viewer to Raw. */
+  const tree = useMemo<TreeNode | null>(() => {
+    if (detected === null || detected.text === null) return null;
+    if (detected.kind === "json") {
+      try {
+        return buildJsonTree(JSON.parse(detected.text));
+      } catch {
+        return null;
+      }
+    }
+    if (detected.kind === "html" || detected.kind === "xml") {
+      return buildDomTree(detected.text, detected.kind);
+    }
+    return null;
+  }, [detected]);
+
   function view() {
     if (headersOpen && response !== null) {
       return (
@@ -115,6 +134,12 @@ function ResponsePane({
     }
     if (bytes === null || detected === null || mode === null) {
       return <p className="rest-empty muted">{t("rest.responseEmpty")}</p>;
+    }
+    if (mode === "source") {
+      // A body that would not parse has no tree, so Raw is what is left — the same fallback the
+      // tab strip applies, arrived at one step later.
+      if (tree === null) return <p className="rest-empty muted">{t("rest.responseEmpty")}</p>;
+      return <TreeView root={tree} />;
     }
     if (mode === "raw") {
       if (detected.text === null) {
