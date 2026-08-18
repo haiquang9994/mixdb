@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  RECENT_LIMIT,
+  addRecent,
   addSaved,
+  bumpRecent,
+  findRecentTarget,
   findRequest,
   isBlank,
   newRequest,
+  pinToSaved,
   removeRequest,
   sweepBlank,
   updateRequest,
 } from "./requests";
-import type { RequestLists } from "./types";
+import type { RequestLists, RestRequest } from "./types";
 
 function lists(over: Partial<RequestLists> = {}): RequestLists {
   return { saved: [], recent: [], ...over };
@@ -150,5 +155,106 @@ describe("sweepBlank", () => {
   it("hands back the very same lists when there is nothing to drop", () => {
     const before = lists({ saved: [{ ...newRequest("real", 1), url: "https://x" }] });
     expect(sweepBlank(before)).toBe(before);
+  });
+});
+
+/** A pasted request aimed somewhere, used `at`. */
+function pasted(id: string, url: string, at: number): RestRequest {
+  return { ...newRequest(id, at), url, origin: "paste", lastUsedAt: at };
+}
+
+describe("addRecent", () => {
+  it("puts the paste at the head of Recent", () => {
+    const after = addRecent(
+      lists({ recent: [pasted("a", "https://a", 1)] }),
+      pasted("b", "https://b", 2),
+    );
+    expect(after.recent.map((r) => r.id)).toEqual(["b", "a"]);
+  });
+
+  it("leaves Saved alone", () => {
+    const saved = [newRequest("s", 1)];
+    expect(addRecent(lists({ saved }), pasted("b", "https://b", 2)).saved).toBe(saved);
+  });
+
+  it("holds ten", () => {
+    let current = lists();
+    for (let n = 0; n < RECENT_LIMIT + 3; n++) {
+      current = addRecent(current, pasted(`r${n}`, `https://${n}`, n + 1));
+    }
+    expect(current.recent).toHaveLength(RECENT_LIMIT);
+  });
+
+  /* What falls off is the one least recently *sent*, not the one added first: a request still used
+     every day has no business being pushed out by ten pastes. */
+  it("drops the one least recently used, not the oldest", () => {
+    const old = [...Array(RECENT_LIMIT).keys()].map((n) => pasted(`r${n}`, `https://${n}`, 100 + n));
+    // The very first one has been sent since; the second has not.
+    const recent = old.map((r) => (r.id === "r0" ? { ...r, lastUsedAt: 9000 } : r));
+    const after = addRecent(lists({ recent }), pasted("new", "https://new", 9001));
+    expect(after.recent.map((r) => r.id)).toContain("r0");
+    expect(after.recent.map((r) => r.id)).not.toContain("r1");
+  });
+
+  it("drops the older paste when two were used at the same moment", () => {
+    const recent = [...Array(RECENT_LIMIT).keys()].map((n) => pasted(`r${n}`, `https://${n}`, 100));
+    const after = addRecent(lists({ recent }), pasted("new", "https://new", 200));
+    // Same `lastUsedAt` all round, so the one furthest down the list — the oldest paste — goes.
+    expect(after.recent.map((r) => r.id)).not.toContain(`r${RECENT_LIMIT - 1}`);
+    expect(after.recent.map((r) => r.id)).toContain("r0");
+  });
+});
+
+describe("findRecentTarget", () => {
+  it("matches on method and URL together", () => {
+    const recent = [pasted("a", "https://a/items", 1)];
+    expect(findRecentTarget(lists({ recent }), "GET", "https://a/items")?.id).toBe("a");
+    expect(findRecentTarget(lists({ recent }), "POST", "https://a/items")).toBeUndefined();
+    expect(findRecentTarget(lists({ recent }), "GET", "https://a/other")).toBeUndefined();
+  });
+
+  /* Saved is not searched. A request someone chose to keep is theirs, and a paste has no business
+     stamping or reordering it. */
+  it("does not look in Saved", () => {
+    const saved = [{ ...newRequest("s", 1), url: "https://a/items" }];
+    expect(findRecentTarget(lists({ saved }), "GET", "https://a/items")).toBeUndefined();
+  });
+});
+
+describe("bumpRecent", () => {
+  it("moves it to the head and stamps it as used", () => {
+    const recent = [pasted("a", "https://a", 1), pasted("b", "https://b", 2)];
+    const after = bumpRecent(lists({ recent }), "b", 500);
+    expect(after.recent.map((r) => r.id)).toEqual(["b", "a"]);
+    expect(after.recent[0].lastUsedAt).toBe(500);
+  });
+
+  it("changes nothing for an id that is not in Recent", () => {
+    const before = lists({ saved: [newRequest("s", 1)] });
+    expect(bumpRecent(before, "s", 500)).toBe(before);
+  });
+});
+
+describe("pinToSaved", () => {
+  it("moves it out of Recent and on to the top of Saved", () => {
+    const recent = [pasted("a", "https://a", 1)];
+    const after = pinToSaved(lists({ saved: [newRequest("s", 1)], recent }), "a");
+    expect(after.recent).toEqual([]);
+    expect(after.saved.map((r) => r.id)).toEqual(["a", "s"]);
+  });
+
+  it("makes it a request someone meant to have", () => {
+    const after = pinToSaved(lists({ recent: [pasted("a", "https://a", 1)] }), "a");
+    expect(after.saved[0].origin).toBe("manual");
+  });
+
+  it("keeps everything else about it, half-finished edits included", () => {
+    const edited = { ...pasted("a", "https://a", 1), name: "Half typed" };
+    expect(pinToSaved(lists({ recent: [edited] }), "a").saved[0].name).toBe("Half typed");
+  });
+
+  it("changes nothing for an id that is not in Recent", () => {
+    const before = lists({ saved: [newRequest("s", 1)] });
+    expect(pinToSaved(before, "s")).toBe(before);
   });
 });
