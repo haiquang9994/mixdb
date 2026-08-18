@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ErrorBanner from "../../../../components/ErrorBanner";
+import JsonView from "../../../../components/JsonView";
 import { useTranslation } from "../../../../i18n";
 import {
   SOURCE_MAX_BYTES,
@@ -13,6 +14,7 @@ import { formatBytes } from "../../format";
 import { buildJsonTree, type TreeNode } from "../../jsonTree";
 import type { RestResponse } from "../../types";
 import HexView from "../HexView";
+import HtmlPreview from "../HtmlPreview";
 import ResponseStatusBar from "../ResponseStatusBar";
 import TreeView from "../TreeView";
 import styles from "./ResponsePane.module.css";
@@ -28,7 +30,7 @@ const MAX_TEXT = 5 * 1024 * 1024;
  * adds `source` and Task 15 adds `preview`, one word each, and until then neither is ever offered
  * — which is what keeps every task in this plan something you can ship.
  */
-const IMPLEMENTED: ViewMode[] = ["source", "raw"];
+const IMPLEMENTED: ViewMode[] = ["preview", "source", "raw"];
 
 export interface SendState {
   phase: "idle" | "sending" | "done" | "cancelled" | "failed";
@@ -117,6 +119,19 @@ function ResponsePane({
     return null;
   }, [detected]);
 
+  /** A blob URL for an image body, revoked when the body changes. Left as the empty string for
+   *  anything that is not an image — creating one for a 12 MB PDF nobody will look at is waste. */
+  const [imageUrl, setImageUrl] = useState("");
+  useEffect(() => {
+    if (detected?.kind !== "image" || bytes === null) {
+      setImageUrl("");
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([bytes], { type: detected.mime || "image/png" }));
+    setImageUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [detected, bytes]);
+
   function view() {
     if (headersOpen && response !== null) {
       return (
@@ -134,6 +149,37 @@ function ResponsePane({
     }
     if (bytes === null || detected === null || mode === null) {
       return <p className="rest-empty muted">{t("rest.responseEmpty")}</p>;
+    }
+    if (mode === "preview") {
+      if (detected.kind === "json" && detected.text !== null) {
+        try {
+          return <JsonView value={JSON.parse(detected.text)} />;
+        } catch {
+          // Called JSON, is not. The text as it came is more use than an error.
+          return <pre className={styles.raw}>{detected.text}</pre>;
+        }
+      }
+      if (detected.kind === "html" && detected.text !== null) {
+        return <HtmlPreview html={detected.text} finalUrl={response?.final_url ?? ""} />;
+      }
+      if (detected.kind === "image") {
+        return imageUrl === "" ? null : (
+          <img className={styles.image} src={imageUrl} alt={t("rest.previewTab")} />
+        );
+      }
+      // PDF and anything else binary: what it is and how big, which is all that can honestly be
+      // said without a viewer. Saving a response to a file is out of scope for this phase.
+      return (
+        <div className={styles.card}>
+          <p>
+            {t("rest.binaryBody", {
+              mime: detected.mime || t("rest.binaryHint"),
+              size: formatBytes(response?.body_size ?? bytes.length),
+            })}
+          </p>
+          <p className="muted">{t("rest.binaryHint")}</p>
+        </div>
+      );
     }
     if (mode === "source") {
       // A body that would not parse has no tree, so Raw is what is left — the same fallback the
@@ -164,7 +210,7 @@ function ResponsePane({
         </>
       );
     }
-    // Tasks 14 and 15 add the other two; until then `IMPLEMENTED` keeps them off the strip.
+    // Unreachable: `mode` is one of the three above, and `IMPLEMENTED` now holds all of them.
     return null;
   }
 
