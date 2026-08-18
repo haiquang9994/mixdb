@@ -1,0 +1,44 @@
+import type { TranslationKey } from "../../i18n";
+
+/**
+ * A chord, without the modifier that makes it one.
+ *
+ * There is no `ctrl` or `meta` here on purpose. Which of the two counts is a platform question with
+ * exactly one right answer — `⌘` on a Mac, `Ctrl` elsewhere, and the other one being held rules the
+ * chord out — and `core/platform.ts` exists to hold that answer once. A registry that let a chord
+ * name its own modifier would be the first place that rule got broken, and the remap screen after
+ * it the second.
+ */
+export interface Chord {
+  /** Lower case, compared against `e.key.toLowerCase()`. */
+  key: string;
+  shift?: boolean;
+  alt?: boolean;
+}
+
+export interface ShortcutDef {
+  /** Never changes. This is what a handler registers under, and what a remapping would be filed
+   *  against — so it outlives whatever key it happens to carry today. */
+  id: string;
+  chord: Chord;
+  labelKey: TranslationKey;
+  /** Left alone where the user is typing — see `core/textEntry.ts`. Select-all inside the filter
+   *  bar is that field's own, not the grid's. */
+  whenTyping?: "ignore";
+  /** Still answers while a modal is up. Off by default: the keyboard belongs to whatever is on
+   *  top. */
+  inModal?: true;
+  /** Take the key off the webview even when nothing is listening. Off by default, so an unclaimed
+   *  chord goes through untouched. */
+  unhandled?: "swallow";
+  /** Listed in the table, ignored by the dispatcher. For the keys CodeMirror binds itself. */
+  owner?: "editor";
+}
+
+/** One heading in the shortcut table. Grouping in the data is what makes a scope without a label
+ *  impossible to write. */
+export interface ShortcutGroup {
+  scope: string;
+  labelKey: TranslationKey;
+  defs: ShortcutDef[];
+}
