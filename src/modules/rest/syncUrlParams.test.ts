@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paramsFromUrl, urlWithParams } from "./syncUrlParams";
+import { decodeComponent, paramsFromUrl, urlWithParams } from "./syncUrlParams";
 import type { KeyValue } from "./types";
 
 /** Ids in order, so a test can say which row it means. */
@@ -112,5 +112,16 @@ describe("urlWithParams", () => {
   it("round-trips a URL through the table and back", () => {
     const url = "https://x.test/a?page=2&q=a%20b";
     expect(urlWithParams(url, paramsFromUrl(url, [], counter()))).toBe(url);
+  });
+});
+
+describe("decodeComponent", () => {
+  it("decodes an escape and reads a plus as a space", () => {
+    expect(decodeComponent("hello%20world")).toBe("hello world");
+    expect(decodeComponent("hello+world")).toBe("hello world");
+  });
+
+  it("hands back a half-typed escape rather than throwing", () => {
+    expect(decodeComponent("100%")).toBe("100%");
   });
 });

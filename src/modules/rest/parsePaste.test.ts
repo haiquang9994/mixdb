@@ -148,3 +148,113 @@ describe("parseCurl", () => {
     expect(parseCurl("curl '{{baseUrl}}/items' ", ids())?.url).toBe("{{baseUrl}}/items");
   });
 });
+
+describe("parseCurl bodies", () => {
+  // curl's own rule is that `-d` means form-urlencoded. Nobody pasting a JSON object means that,
+  // so a value that parses as JSON is read as JSON.
+  it("reads a JSON value as a JSON body, and makes the request a POST", () => {
+    const parsed = parseCurl(`curl https://x -d '{"name":"a"}'`, ids());
+    expect(parsed?.method).toBe("POST");
+    expect(parsed?.body).toEqual({ kind: "raw", language: "json", text: '{"name":"a"}' });
+  });
+
+  it("reads pairs as a form, decoded the way the Params table decodes", () => {
+    const parsed = parseCurl("curl https://x -d 'q=hello%20world&page=2'", ids());
+    expect(parsed?.body).toEqual({
+      kind: "form",
+      fields: [
+        { id: "id-1", enabled: true, key: "q", value: "hello world" },
+        { id: "id-2", enabled: true, key: "page", value: "2" },
+      ],
+    });
+  });
+
+  it("joins repeated data flags with an ampersand, as curl does", () => {
+    const parsed = parseCurl("curl https://x -d 'a=1' --data-raw 'b=2'", ids());
+    expect(parsed?.body).toEqual({
+      kind: "form",
+      fields: [
+        { id: "id-1", enabled: true, key: "a", value: "1" },
+        { id: "id-2", enabled: true, key: "b", value: "2" },
+      ],
+    });
+  });
+
+  it("falls back to plain text for a value that is neither", () => {
+    expect(parseCurl("curl https://x -d 'hello'", ids())?.body).toEqual({
+      kind: "raw",
+      language: "text",
+      text: "hello",
+    });
+  });
+
+  it("believes a declared content type over what the body looks like", () => {
+    expect(
+      parseCurl(`curl https://x -H 'Content-Type: text/plain' -d '{"a":1}'`, ids())?.body,
+    ).toEqual({ kind: "raw", language: "text", text: '{"a":1}' });
+    expect(
+      parseCurl("curl https://x -H 'Content-Type: application/xml' -d '<a/>'", ids())?.body,
+    ).toEqual({ kind: "raw", language: "xml", text: "<a/>" });
+    expect(
+      parseCurl("curl https://x -H 'Content-Type: application/vnd.api+json' -d '[1]'", ids())?.body,
+    ).toEqual({ kind: "raw", language: "json", text: "[1]" });
+  });
+
+  it("reads a declared form as a form even when the value is not pairs", () => {
+    const parsed = parseCurl(
+      "curl https://x -H 'Content-Type: application/x-www-form-urlencoded' -d 'a=1&b=2'",
+      ids(),
+    );
+    expect(parsed?.body.kind).toBe("form");
+  });
+
+  it("keeps an explicit method even where a body would have implied another", () => {
+    expect(parseCurl("curl -X GET https://x -d 'a=1'", ids())?.method).toBe("GET");
+  });
+
+  it("reads -F into multipart fields, with a file's path and without curl's type hint", () => {
+    const parsed = parseCurl(
+      "curl https://x -F 'name=Ann' -F 'avatar=@/tmp/a.png;type=image/png'",
+      ids(),
+    );
+    expect(parsed?.method).toBe("POST");
+    expect(parsed?.body).toEqual({
+      kind: "multipart",
+      fields: [
+        { id: "id-1", enabled: true, key: "name", value: "Ann" },
+        { id: "id-2", enabled: true, key: "avatar", value: "", file: "/tmp/a.png" },
+      ],
+    });
+  });
+
+  it("puts -G data in the query and leaves no body behind", () => {
+    const parsed = parseCurl("curl -G https://x/items -d 'page=2&q=a'", ids());
+    expect(parsed?.method).toBe("GET");
+    expect(parsed?.url).toBe("https://x/items?page=2&q=a");
+    expect(parsed?.body).toEqual({ kind: "none" });
+    expect(parsed?.params.map((row) => row.key)).toEqual(["page", "q"]);
+  });
+
+  it("adds -G data to a query that was already there", () => {
+    expect(parseCurl("curl -G 'https://x?a=1' -d 'b=2'", ids())?.url).toBe("https://x?a=1&b=2");
+  });
+
+  it("turns -u into an Authorization header, since nothing else would send it", () => {
+    const parsed = parseCurl("curl https://x -u 'user:pass'", ids());
+    expect(parsed?.headers).toEqual([
+      { id: "id-1", enabled: true, key: "Authorization", value: "Basic dXNlcjpwYXNz" },
+    ]);
+  });
+
+  // curl would prompt for the password. There is nobody to prompt, and an empty one is what the
+  // command as written asks for.
+  it("reads a -u with no password as an empty password", () => {
+    expect(parseCurl("curl https://x -u user", ids())?.headers[0].value).toBe("Basic dXNlcjo=");
+  });
+
+  it("leaves an Authorization header that was already given alone", () => {
+    const parsed = parseCurl("curl https://x -H 'Authorization: Bearer t' -u 'user:pass'", ids());
+    expect(parsed?.headers).toHaveLength(1);
+    expect(parsed?.headers[0].value).toBe("Bearer t");
+  });
+});
