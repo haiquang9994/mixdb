@@ -6,6 +6,75 @@
   min-width: 0;
 }
 
+.rest-sidebar {
+  flex: 0 0 auto;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+}
+
+.rest-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rest-panes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.rest-request-pane,
+.rest-response-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rest-response-pane {
+  flex: 1;
+}
+
+/* The tabs inside a pane — Params/Body/Headers, and Preview/Source/Raw/Headers. */
+.rest-pane-tabs {
+  display: flex;
+  gap: 0.15rem;
+  padding: 0.25rem 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.rest-pane-tab {
+  padding: 0.3rem 0.6rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9em;
+  opacity: 0.7;
+}
+
+.rest-pane-tab:hover {
+  opacity: 1;
+}
+
+.rest-pane-tab-active {
+  border-bottom-color: var(--accent);
+  opacity: 1;
+}
+
+.rest-pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
 .rest-empty {
   flex: 1;
   display: flex;

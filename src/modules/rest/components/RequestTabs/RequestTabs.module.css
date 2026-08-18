@@ -1,0 +1,55 @@
+.strip {
+  display: flex;
+  align-items: stretch;
+  gap: 0.15rem;
+  padding: 0.25rem 0.25rem 0;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  /* Phase 4 pins the environment dropdown to the right of this, outside the scrolling area. */
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.5rem;
+  max-width: 14rem;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tabActive {
+  border-color: var(--border);
+  background: var(--surface, rgba(127, 127, 127, 0.1));
+}
+
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 10rem;
+}
+
+.method {
+  font-size: 0.7em;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.close {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.5;
+  cursor: pointer;
+  display: flex;
+}
+
+.close:hover {
+  opacity: 1;
+}

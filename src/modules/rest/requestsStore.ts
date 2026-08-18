@@ -83,6 +83,13 @@ export function saveRequest(request: RestRequest): void {
   persistRequests(lists);
 }
 
+/** Adds a request that is not in either group yet — a duplicate, and from Phase 2 a paste. */
+export function addRequest(request: RestRequest): void {
+  const lists = addSaved(snapshot, request);
+  publish(lists);
+  persistRequests(lists);
+}
+
 export function deleteRequest(id: string): void {
   const lists = removeRequest(snapshot, id);
   publish(lists);
