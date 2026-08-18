@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Splitter, { clampRatio, clampSize } from "../../components/Splitter";
+import { errorMessage } from "../../core/errors";
 import type { ModuleTabProps } from "../../shell/module";
 import { useTranslation } from "../../i18n";
+import { CANCELLED, decodeBase64, restCancel, restSend } from "./api";
+import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
+import { detectBody, type ViewMode } from "./contentType";
 import BodyEditor from "./components/BodyEditor";
+import ResponsePane, { IDLE_SEND, type SendState } from "./components/ResponsePane";
 import KeyValueTable from "./components/KeyValueTable";
 import RequestList from "./components/RequestList";
 import RequestTabs from "./components/RequestTabs";
@@ -49,6 +54,9 @@ function RestTab({ onTitleChange }: ModuleTabProps) {
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [requestTabs, setRequestTabs] = useState<Record<string, RequestTabKey>>({});
+  const [sends, setSends] = useState<Record<string, SendState>>({});
+  const [preferredModes, setPreferredModes] = useState<Record<string, ViewMode>>({});
+  const [headersOpen, setHeadersOpen] = useState<Record<string, boolean>>({});
 
   const [width, setWidth] = useState(workspace.sidebarWidth);
   const [ratio, setRatio] = useState(workspace.splitRatio);
@@ -135,7 +143,69 @@ function RestTab({ onTitleChange }: ModuleTabProps) {
     saveRequest({ ...activeRequest, params, url: urlWithParams(activeRequest.url, params) });
   }
 
+  /**
+   * Sends the request on screen.
+   *
+   * `lastUsedAt` is stamped here and nowhere else — opening a tab to look at a request does not
+   * count as using it, which is what keeps Recent's ceiling honest from Phase 2 on.
+   */
+  async function send() {
+    if (!activeRequest) return;
+    const request = activeRequest;
+    const sendId = crypto.randomUUID();
+    const wire = buildRequest(request, sendId, PHASE_ONE_SETTINGS);
+
+    setSends((prev) => ({
+      ...prev,
+      [request.id]: {
+        ...(prev[request.id] ?? IDLE_SEND),
+        phase: "sending",
+        sendId,
+        sentUrl: wire.url,
+        error: null,
+      },
+    }));
+    saveRequest({ ...request, lastUsedAt: Date.now() });
+
+    try {
+      const response = await restSend(wire);
+      const bytes = decodeBase64(response.body_base64);
+      setSends((prev) => ({
+        ...prev,
+        [request.id]: {
+          phase: "done",
+          sendId: null,
+          sentUrl: wire.url,
+          response,
+          bytes,
+          detected: detectBody(response.headers, bytes),
+          error: null,
+        },
+      }));
+    } catch (e) {
+      // Cancelling is not a failure, and a failure leaves the previous response where it was —
+      // the banner says what happened, and the pane still holds what is being compared against.
+      const cancelled =
+        typeof e === "object" && e !== null && (e as { code?: string }).code === CANCELLED;
+      setSends((prev) => ({
+        ...prev,
+        [request.id]: {
+          ...(prev[request.id] ?? IDLE_SEND),
+          phase: cancelled ? "cancelled" : "failed",
+          sendId: null,
+          error: cancelled ? null : errorMessage(t, e),
+        },
+      }));
+    }
+  }
+
+  function cancel() {
+    const sendId = activeId === null ? null : sends[activeId]?.sendId;
+    if (sendId) void restCancel(sendId);
+  }
+
   const requestTab = activeId === null ? "params" : (requestTabs[activeId] ?? "params");
+  const sendState = activeId === null ? IDLE_SEND : (sends[activeId] ?? IDLE_SEND);
 
   const paneTabs: { key: RequestTabKey; label: string }[] = [
     { key: "params", label: t("rest.paramsTab") },
@@ -189,11 +259,11 @@ function RestTab({ onTitleChange }: ModuleTabProps) {
               <UrlBar
                 method={activeRequest.method}
                 url={activeRequest.url}
-                sending={false}
+                sending={sendState.phase === "sending"}
                 onMethodChange={(method) => edit({ method })}
                 onUrlChange={editUrl}
-                onSend={() => {}}
-                onCancel={() => {}}
+                onSend={() => void send()}
+                onCancel={cancel}
               />
               <div className="rest-pane-tabs" role="tablist">
                 {paneTabs.map((tab) => (
@@ -254,7 +324,23 @@ function RestTab({ onTitleChange }: ModuleTabProps) {
             />
 
             <section className="rest-response-pane">
-              <p className="rest-empty muted">{t("rest.responseEmpty")}</p>
+              <ResponsePane
+                state={sendState}
+                preferred={activeId === null ? "preview" : (preferredModes[activeId] ?? "preview")}
+                onPreferredChange={(mode) =>
+                  setPreferredModes((prev) => ({ ...prev, [activeRequest.id]: mode }))
+                }
+                headersOpen={headersOpen[activeRequest.id] ?? false}
+                onHeadersOpenChange={(open) =>
+                  setHeadersOpen((prev) => ({ ...prev, [activeRequest.id]: open }))
+                }
+                onDismissError={() =>
+                  setSends((prev) => ({
+                    ...prev,
+                    [activeRequest.id]: { ...(prev[activeRequest.id] ?? IDLE_SEND), error: null },
+                  }))
+                }
+              />
             </section>
           </div>
         )}
