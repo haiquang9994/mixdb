@@ -2,6 +2,8 @@ import shared from "./en";
 import sharedVi from "./vi";
 import dbEn from "../modules/db/i18n/en";
 import dbVi from "../modules/db/i18n/vi";
+import restEn from "../modules/rest/i18n/en";
+import restVi from "../modules/rest/i18n/vi";
 
 /*
  * The dictionaries, assembled from the shared half and each module's own.
@@ -19,18 +21,24 @@ import dbVi from "../modules/db/i18n/vi";
 export const EN = {
   ...shared,
   ...dbEn,
-  error: { ...shared.error, ...dbEn.error },
+  ...restEn,
+  error: { ...shared.error, ...dbEn.error, ...restEn.error },
 };
 
 export const VI = {
   ...sharedVi,
   ...dbVi,
-  error: { ...sharedVi.error, ...dbVi.error },
+  ...restVi,
+  error: { ...sharedVi.error, ...dbVi.error, ...restVi.error },
 };
 
 /* Outside `error`, no two dictionaries may name the same group: the second spread would silently
    replace the first and take every key of that group with it. This is the net — a clash stops the
-   build rather than showing up as a raw key on screen months later. */
-type Collision = Exclude<Extract<keyof typeof shared, keyof typeof dbEn>, "error">;
+   build rather than showing up as a raw key on screen months later. One term per pair of
+   dictionaries, so a third module adds three. */
+type Collision =
+  | Exclude<Extract<keyof typeof shared, keyof typeof dbEn>, "error">
+  | Exclude<Extract<keyof typeof shared, keyof typeof restEn>, "error">
+  | Exclude<Extract<keyof typeof dbEn, keyof typeof restEn>, "error">;
 const noCollision: [Collision] extends [never] ? true : never = true;
 void noCollision;

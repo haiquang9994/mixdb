@@ -1,0 +1,27 @@
+.bar {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  /* The response's status bar is set to the same height, which is what the spec asks for. */
+  min-height: 3rem;
+  box-sizing: border-box;
+}
+
+.method {
+  flex: 0 0 7rem;
+}
+
+.url {
+  flex: 1;
+  min-width: 0;
+  font-family: "Fira Code", monospace;
+}
+
+.send {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}

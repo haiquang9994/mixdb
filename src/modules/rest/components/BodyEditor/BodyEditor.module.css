@@ -1,0 +1,43 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.kind {
+  flex: 0 0 8rem;
+}
+
+.language {
+  flex: 0 0 7rem;
+}
+
+.text {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  border: none;
+  outline: none;
+  padding: 0.5rem;
+  background: transparent;
+  color: inherit;
+  font-family: "Fira Code", monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

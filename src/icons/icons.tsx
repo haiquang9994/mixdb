@@ -334,3 +334,31 @@ export function DotIcon(props: IconProps) {
     </Icon>
   );
 }
+
+/** The REST module in the `[+]` menu: something reached over the network. */
+export function GlobeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9s1.3-6.3 3.8-9z" />
+    </Icon>
+  );
+}
+
+/** Send: the one button a request pane is asking for. */
+export function SendIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 12l-16-8 6 8-6 8 16-8z" />
+    </Icon>
+  );
+}
+
+/** Cancel something already in flight — the same button as {@link SendIcon}, mid-request. */
+export function StopIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </Icon>
+  );
+}
