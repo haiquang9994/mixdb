@@ -5,6 +5,9 @@
  * here reads a clock or a clipboard. That is the point — a cURL command is the most error-prone
  * input this app takes, and this is the one file where it can be got wrong under `npm test`.
  */
+import { paramsFromUrl } from "./syncUrlParams";
+import { METHODS } from "./types";
+import type { Body, KeyValue, Method } from "./types";
 
 /** The characters a backslash escapes inside double quotes. Everywhere else in a double-quoted
  *  string a backslash is a literal backslash, which is what makes `"C:\path"` survive. */
@@ -72,4 +75,139 @@ export function splitArgs(text: string): string[] {
 
   if (started) args.push(arg);
   return args;
+}
+
+/** The part of a request a paste can know about. The rest of `RestRequest` — the id, the name, the
+ *  timestamps, which group it belongs to — is the caller's, because only the caller knows whether
+ *  this is a new row or the one already on screen. */
+export interface ParsedRequest {
+  method: Method;
+  url: string;
+  params: KeyValue[];
+  headers: KeyValue[];
+  body: Body;
+}
+
+/** Short flags that take a value, which is written either after a space or glued straight on. */
+const SHORT_WITH_VALUE = ["-X", "-H", "-d", "-F", "-u"];
+
+/** Flags whose value this client has no use for, named only so the value is not mistaken for the
+ *  URL: `curl -o out.json https://…` has two arguments that look like addresses and one that is. */
+const SKIPPED_WITH_VALUE = new Set([
+  "-o",
+  "--output",
+  "-A",
+  "--user-agent",
+  "-e",
+  "--referer",
+  "-b",
+  "--cookie",
+  "-x",
+  "--proxy",
+  "--max-time",
+  "--connect-timeout",
+  "--retry",
+]);
+
+const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+/**
+ * `-XPOST` and `--request=POST` written out as two arguments.
+ *
+ * Both spellings are what a real copied command looks like — browsers write the long one, people
+ * write the short one — and normalising here leaves the walk below with a single shape to read.
+ */
+function normalise(args: string[]): string[] {
+  const out: string[] = [];
+  for (const arg of args) {
+    const short = SHORT_WITH_VALUE.find((flag) => arg.startsWith(flag) && arg.length > flag.length);
+    if (short !== undefined) {
+      out.push(short, arg.slice(short.length));
+      continue;
+    }
+    const equals = arg.startsWith("--") ? arg.indexOf("=") : -1;
+    if (equals !== -1) {
+      out.push(arg.slice(0, equals), arg.slice(equals + 1));
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
+}
+
+/** Whether a bare argument could be the address. A scheme is the sure sign; `example.com/x`,
+ *  `localhost:3000` and `{{baseUrl}}/x` are what people write when they leave it out. */
+function looksLikeUrl(arg: string): boolean {
+  return (
+    SCHEME.test(arg) ||
+    arg.startsWith("{{") ||
+    /^localhost([:/]|$)/i.test(arg) ||
+    /^[\w-]+(\.[\w-]+)+([:/?]|$)/.test(arg)
+  );
+}
+
+/**
+ * A cURL command read into the part of a request it describes, or null when it is not one.
+ *
+ * Flags this client has nothing to do with are passed over rather than refused — `-L`, `-k` and
+ * `--compressed` say how a client behaves, which in this app is a global setting and not part of
+ * any one request, and a command full of `--silent` and `--fail` is still a request.
+ */
+export function parseCurl(text: string, nextId: () => string): ParsedRequest | null {
+  const args = normalise(splitArgs(text));
+  // `curl.exe` is what Windows copies, and a `$` prompt often comes along for the ride.
+  if (!/^(\$)?curl(\.exe)?$/i.test(args[0] ?? "")) return null;
+
+  let method: Method | null = null;
+  let flagUrl = "";
+  const bare: string[] = [];
+  const headers: KeyValue[] = [];
+
+  for (let i = 1; i < args.length; i++) {
+    const arg = args[i];
+    switch (arg) {
+      case "-X":
+      case "--request": {
+        const wanted = (args[++i] ?? "").toUpperCase();
+        if ((METHODS as string[]).includes(wanted)) method = wanted as Method;
+        break;
+      }
+      case "-H":
+      case "--header": {
+        const raw = args[++i] ?? "";
+        const colon = raw.indexOf(":");
+        // `-H 'Accept;'` is curl's way of unsetting a header it would have sent by itself. There is
+        // nothing for the table to show for it.
+        if (colon === -1) break;
+        const key = raw.slice(0, colon).trim();
+        if (key !== "") {
+          headers.push({ id: nextId(), enabled: true, key, value: raw.slice(colon + 1).trim() });
+        }
+        break;
+      }
+      case "--url":
+        flagUrl = args[++i] ?? "";
+        break;
+      default:
+        if (SKIPPED_WITH_VALUE.has(arg)) {
+          i++;
+          break;
+        }
+        if (!arg.startsWith("-")) bare.push(arg);
+        break;
+    }
+  }
+
+  const url =
+    flagUrl !== ""
+      ? flagUrl
+      : (bare.find((arg) => SCHEME.test(arg)) ?? bare.find(looksLikeUrl) ?? "");
+
+  return {
+    method: method ?? "GET",
+    url,
+    params: paramsFromUrl(url, [], nextId),
+    headers,
+    body: { kind: "none" },
+  };
 }
