@@ -416,6 +416,10 @@ const dbEn = {
     loading: "Loading...",
     noRows: "No rows.",
     reloadRows: "Reload rows",
+    // Named for the shortcut table in Settings; the chord itself is drawn from the registry.
+    shortcutScope: "Table data",
+    shortcutSelectAll: "Select every row on the page",
+    shortcutFilter: "Jump to the filter bar",
     insertRows: "Add rows",
     cloneRows: "Clone selected rows",
     deleteRows: "Delete selected rows",

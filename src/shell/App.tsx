@@ -4,11 +4,9 @@ import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
 import ContextMenu from "../components/ContextMenu";
 import { CloseIcon, PlusIcon, SettingsIcon } from "../icons";
-import { hasPrimaryModifier } from "../core/platform";
 import { isBlockedReload } from "../core/reload";
 import { useScrollAcceleration } from "../core/scroll";
 import { useShortcut, useShortcutDispatcher } from "../core/shortcuts";
-import { isTextEntry } from "../core/textEntry";
 import { useAccent, useGlass, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
 import { useTranslation } from "../i18n";
@@ -86,17 +84,13 @@ function App() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (hasPrimaryModifier(e) && e.key.toLowerCase() === "a" && !isTextEntry(e.target)) {
-        // Outside a text field, select-all means "select the whole chrome of the app" — never
-        // something the user wants. Moves onto the registry with the grid's own `Ctrl+A`, which is
-        // the other half of the same keystroke.
-        e.preventDefault();
-      } else if (isBlockedReload(e)) {
-        // Reloading the webview takes every open connection down with it, so no keystroke is left
-        // able to ask for one. What `Ctrl+R` means instead is decided by the pane on screen, which
-        // claims the key for its own reload button — see `useReloadShortcut`.
-        e.preventDefault();
-      }
+      // Reloading the webview takes every open connection down with it, so no keystroke is left
+      // able to ask for one. What `Ctrl+R` means instead is decided by the pane on screen, which
+      // claims the key for its own reload button — see `useReloadShortcut`.
+      //
+      // The last chord not on the registry, and it is not a command: nothing is being asked for
+      // here, only refused. See `isBlockedReload` for what differs between builds.
+      if (isBlockedReload(e)) e.preventDefault();
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
