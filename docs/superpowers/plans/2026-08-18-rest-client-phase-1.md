@@ -1920,7 +1920,7 @@ export function pickMode(preferred: ViewMode, available: ViewMode[]): ViewMode {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run src/modules/rest/contentType.test.ts`
-Expected: PASS, 41 tests.
+Expected: PASS, 38 tests.
 
 - [ ] **Step 5: Commit**
 
