@@ -1,9 +1,10 @@
 import type { ModuleDefinition } from "./module";
 import { dbModule } from "../modules/db";
+import { restModule } from "../modules/rest";
 
 /** Every module the app can open a tab of. Adding one is a line here — and this is the only file
  *  outside `src/modules/` that names any of them. */
-export const MODULES: ModuleDefinition[] = [dbModule];
+export const MODULES: ModuleDefinition[] = [dbModule, restModule];
 
 /** What `Ctrl+T`, and a plain click on `[+]`, opens. */
 export const DEFAULT_MODULE_ID = "db";

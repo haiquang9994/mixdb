@@ -1,0 +1,16 @@
+/* This module's layout. Component-scoped rules live in each component's CSS Module instead. */
+.rest-tab {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.rest-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+}
