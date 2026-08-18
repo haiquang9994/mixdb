@@ -11,22 +11,13 @@ import { useAccent, useGlass, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
 import { useTranslation } from "../i18n";
 import type { TabBadge } from "./module";
+import { rebadgeTab, retitleTab, type TabInfo } from "./tabs";
 import { DEFAULT_MODULE_ID, MODULES, moduleById } from "./registry";
 import { ALL_SHORTCUTS } from "./shortcuts";
 import "./App.css";
 /* After App.css, so the glass surfaces override the plain ones they replace rather than the other
    way round. */
 import "./glass.css";
-
-interface TabInfo {
-  id: string;
-  /** Which module's workspace this tab holds. Looked up in the registry to render it. */
-  moduleId: string;
-  title: string;
-  /** What the module asked the tab bar to show for it. Reported rather than worked out up here:
-   *  only the module knows what its own state means — see {@link TabBadge}. */
-  badges: TabBadge[];
-}
 
 function App() {
   const { t } = useTranslation();
@@ -67,11 +58,11 @@ function App() {
   }
 
   function renameTab(id: string, title: string) {
-    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
+    setTabs((prev) => retitleTab(prev, id, title));
   }
 
   function setTabBadges(id: string, badges: TabBadge[]) {
-    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, badges } : t)));
+    setTabs((prev) => rebadgeTab(prev, id, badges));
   }
 
   // Keeps activeId pointing at a real tab whenever the active one disappears
