@@ -39,31 +39,42 @@
   flex: 1;
 }
 
-/* The tabs inside a pane — Params/Body/Headers, and Preview/Source/Raw/Headers. */
+/* The tabs inside a pane — Params/Body/Headers, and Preview/Source/Raw/Headers. Same shape as the
+   request strip above them and as the app's tab bar above that: one way of saying "this is the one
+   you are looking at", used at all three depths. */
 .rest-pane-tabs {
   display: flex;
-  gap: 0.15rem;
-  padding: 0.25rem 0.5rem 0;
+  align-items: center;
+  gap: 2px;
+  padding: 0.35rem 0.5rem 0;
+  background: rgb(128 128 128 / 0.05);
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .rest-pane-tab {
-  padding: 0.3rem 0.6rem;
-  background: none;
+  padding: 0.35rem 0.6rem;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: transparent;
+  box-shadow: none;
   color: inherit;
   cursor: pointer;
   font-size: 0.9em;
-  opacity: 0.7;
+  white-space: nowrap;
+  opacity: 0.75;
+  transition: background-color 120ms ease, opacity 120ms ease;
 }
 
-.rest-pane-tab:hover {
+.rest-pane-tab:hover:not(.rest-pane-tab-active) {
+  background: var(--hover-bg);
   opacity: 1;
 }
 
 .rest-pane-tab-active {
-  border-bottom-color: var(--accent);
+  background: var(--surface-bg);
+  box-shadow: inset 0 2px 0 var(--accent);
+  font-weight: 600;
   opacity: 1;
 }
 
@@ -83,3 +94,22 @@
   padding: 2rem;
   text-align: center;
 }
+
+/* What a method is called and what colour it is, wherever it is named — the sidebar's rows and the
+   tab strip both. Module-global rather than copied into each component's CSS Module: the two were
+   already drifting, and a GET that is green in one list and grey in the other is a bug you cannot
+   see until they are side by side. */
+.rest-method {
+  font-size: 0.7em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  flex: none;
+}
+
+.rest-method-GET { color: #2f9e44; }
+.rest-method-POST { color: #f08c00; }
+.rest-method-PUT { color: #1971c2; }
+.rest-method-PATCH { color: #7048e8; }
+.rest-method-DELETE { color: #e03131; }
+.rest-method-HEAD,
+.rest-method-OPTIONS { color: #868e96; }

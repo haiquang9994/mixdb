@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
 import { newRequest } from "./requests";
-import type { KeyValue, RestRequest } from "./types";
+import type { Body, KeyValue, RestRequest } from "./types";
 
 function row(over: Partial<KeyValue> & { id: string }): KeyValue {
   return { enabled: true, key: "", value: "", ...over };
@@ -73,12 +73,19 @@ describe("buildRequest: bodies", () => {
   });
 
   it("declares a content type for each raw language", () => {
-    const of = (language: "json" | "xml" | "html" | "text") =>
+    const of = (language: "json" | "xml" | "yaml" | "text") =>
       header(build({ body: { kind: "raw", language, text: "x" } }), "content-type");
     expect(of("json")).toBe("application/json");
     expect(of("xml")).toBe("application/xml");
-    expect(of("html")).toBe("text/html");
+    expect(of("yaml")).toBe("application/yaml");
     expect(of("text")).toBe("text/plain");
+  });
+
+  // `html` was on the list once and is still in anyone's `rest-requests.json`. Their body is not
+  // lost and is not sent bare: it goes as text.
+  it("reads a language it no longer offers as plain text", () => {
+    const body = { kind: "raw", language: "html", text: "<p>hi</p>" } as unknown as Body;
+    expect(header(build({ body }), "content-type")).toBe("text/plain");
   });
 
   // A content type the user typed is the one they meant — a REST client that overrides it is

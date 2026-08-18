@@ -20,6 +20,7 @@ const restEn = {
     resizePanes: "Drag to resize the request and response panes",
     // Request pane
     method: "Method",
+    methodSearch: "Search methods",
     urlPlaceholder: "https://example.com/path",
     send: "Send",
     cancel: "Cancel",
@@ -35,12 +36,10 @@ const restEn = {
     noRows: "Nothing here yet \u2014 type in the last row to add one.",
     bodyKind: "Body type",
     bodyNone: "None",
-    bodyRaw: "Raw",
-    bodyLanguage: "Language",
     langJson: "JSON",
     langXml: "XML",
-    langHtml: "HTML",
-    langText: "Text",
+    langYaml: "YAML",
+    langText: "Plain text",
     bodyPlaceholder: "Request body",
     // Response pane
     responseEmpty: "Nothing sent yet.",

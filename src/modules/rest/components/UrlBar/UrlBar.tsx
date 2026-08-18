@@ -7,6 +7,8 @@ import { METHODS, type Method } from "../../types";
 import styles from "./UrlBar.module.css";
 
 interface Props {
+  /** The URL box itself, so the workspace can put the keyboard in it for a brand new request. */
+  inputRef?: React.Ref<HTMLInputElement>;
   method: Method;
   url: string;
   /** While this is true the button cancels instead of sending. */
@@ -18,7 +20,16 @@ interface Props {
 }
 
 /** The top row of the request pane: what to send, where, and the one button that does it. */
-function UrlBar({ method, url, sending, onMethodChange, onUrlChange, onSend, onCancel }: Props) {
+function UrlBar({
+  inputRef,
+  method,
+  url,
+  sending,
+  onMethodChange,
+  onUrlChange,
+  onSend,
+  onCancel,
+}: Props) {
   const { t } = useTranslation();
 
   return (
@@ -30,8 +41,13 @@ function UrlBar({ method, url, sending, onMethodChange, onUrlChange, onSend, onC
         onChange={onMethodChange}
         ariaLabel={t("rest.method")}
         size="small"
+        /* Seven options is short enough to read, but typing `de` to reach DELETE beats running
+           the eye down the list — and the same control gains a filter for free. */
+        searchable
+        searchPlaceholder={t("rest.methodSearch")}
       />
       <Input
+        ref={inputRef}
         className={styles.url}
         value={url}
         placeholder={t("rest.urlPlaceholder")}

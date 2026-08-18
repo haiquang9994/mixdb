@@ -76,11 +76,10 @@
   background: var(--surface-active, rgba(127, 127, 127, 0.2));
 }
 
+/* Only the column width belongs to this list; how a method looks is `.rest-method` in `rest.css`,
+   shared with the tab strip. */
 .method {
   flex: 0 0 3.2rem;
-  font-size: 0.7em;
-  font-weight: 600;
-  letter-spacing: 0.04em;
 }
 
 .name {
@@ -95,11 +94,3 @@
   padding: 0.4rem 0.75rem 0.8rem;
   font-size: 0.85em;
 }
-
-/* One colour class per method, so a row is recognisable before it is read. */
-.mGET { color: #2f9e44; }
-.mPOST { color: #f08c00; }
-.mPUT { color: #1971c2; }
-.mPATCH { color: #7048e8; }
-.mDELETE { color: #e03131; }
-.mHEAD, .mOPTIONS { color: #868e96; }

@@ -349,7 +349,7 @@ export function GlobeIcon(props: IconProps) {
 export function SendIcon(props: IconProps) {
   return (
     <Icon {...props}>
-      <path d="M4 12l16-8-6 8 6 8-16-8z" />
+      <path d="M20 12l-16-8 6 8-6 8 16-8z" />
     </Icon>
   );
 }

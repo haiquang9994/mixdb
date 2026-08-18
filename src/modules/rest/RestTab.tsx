@@ -14,10 +14,11 @@ import RequestList from "./components/RequestList";
 import RequestTabs from "./components/RequestTabs";
 import UrlBar from "./components/UrlBar";
 import { shortUrl } from "./format";
-import { findRequest } from "./requests";
+import { findRequest, isBlank } from "./requests";
 import {
   addRequest,
   createRequest,
+  currentLists,
   deleteRequest,
   saveRequest,
   useRequestLists,
@@ -63,6 +64,9 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   const [ratio, setRatio] = useState(workspace.splitRatio);
   const dragFrom = useRef(0);
   const panesRef = useRef<HTMLDivElement>(null);
+  const urlRef = useRef<HTMLInputElement>(null);
+  /** The request whose URL box is still owed the keyboard — set by New, cleared once given. */
+  const [focusUrlFor, setFocusUrlFor] = useState<string | null>(null);
 
   // The workspace file is read once, after the first render — so the furniture starts at its
   // defaults and moves to what was saved when it arrives.
@@ -80,14 +84,21 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   );
   const activeRequest = activeId === null ? undefined : findRequest(lists, activeId);
 
-  // The shell's tab is named after whatever is open in it.
+  /* The shell's tab is named after whatever is open in it. Keyed on the name rather than on the
+     request, because every keystroke replaces the request with an equal one. */
+  const title = activeRequest ? label(activeRequest) : t("rest.newTabTitle");
   useEffect(() => {
-    onTitleChange(activeRequest ? label(activeRequest) : t("rest.newTabTitle"));
-  }, [activeRequest, onTitleChange, t]);
+    onTitleChange(title);
+  }, [title, onTitleChange]);
 
   // A tab whose request is gone stops being open, and the keyboard lands on the one beside it.
   useEffect(() => {
-    setOpenIds((prev) => prev.filter((id) => findRequest(lists, id) !== undefined));
+    setOpenIds((prev) => {
+      const next = prev.filter((id) => findRequest(lists, id) !== undefined);
+      // `filter` always allocates; returning that would re-render the workspace on every keystroke,
+      // since every edit publishes a new list.
+      return next.length === prev.length ? prev : next;
+    });
   }, [lists]);
   useEffect(() => {
     if (activeId !== null && !openIds.includes(activeId)) {
@@ -95,17 +106,35 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     }
   }, [openIds, activeId]);
 
+  useEffect(() => {
+    if (focusUrlFor === null || activeRequest?.id !== focusUrlFor) return;
+    urlRef.current?.focus();
+    setFocusUrlFor(null);
+  }, [focusUrlFor, activeRequest]);
+
   function open(id: string) {
     setOpenIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
     setActiveId(id);
   }
 
+  /**
+   * Closing a tab, and taking the request with it when there is nothing in it.
+   *
+   * Read from the store rather than from `lists`: this may run from a shortcut whose handler was
+   * made several keystrokes ago, and what matters is the request as it stands now.
+   */
   function close(id: string) {
     setOpenIds((prev) => prev.filter((openId) => openId !== id));
+    const request = findRequest(currentLists(), id);
+    if (request !== undefined && isBlank(request)) deleteRequest(id);
   }
 
   function makeRequest() {
-    open(createRequest().id);
+    const request = createRequest();
+    open(request.id);
+    // The URL is the only thing a new request needs, so that is where the keyboard goes. Asked for
+    // by id and not done here: the box does not exist until the tab this just opened has rendered.
+    setFocusUrlFor(request.id);
   }
 
   function duplicate(request: RestRequest) {
@@ -134,7 +163,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     saveRequest({
       ...activeRequest,
       url,
-      params: paramsFromUrl(url, activeRequest.params, crypto.randomUUID),
+      params: paramsFromUrl(url, activeRequest.params, () => crypto.randomUUID()),
     });
   }
 
@@ -264,6 +293,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
           activeId={activeId}
           onSelect={setActiveId}
           onClose={close}
+          onNew={makeRequest}
           label={label}
         />
 
@@ -273,6 +303,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
           <div className="rest-panes" ref={panesRef}>
             <section className="rest-request-pane" style={{ flex: `0 0 ${ratio * 100}%` }}>
               <UrlBar
+                inputRef={urlRef}
                 method={activeRequest.method}
                 url={activeRequest.url}
                 sending={sendState.phase === "sending"}

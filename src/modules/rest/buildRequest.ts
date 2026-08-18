@@ -1,5 +1,14 @@
 import { encodeComponent, urlWithParams } from "./syncUrlParams";
-import type { Body, KeyValue, RestRequest, WireBody, WirePart, WireRequest } from "./types";
+import { rawLanguage } from "./types";
+import type {
+  Body,
+  KeyValue,
+  RawLanguage,
+  RestRequest,
+  WireBody,
+  WirePart,
+  WireRequest,
+} from "./types";
 
 /**
  * The state of the request pane, turned into the one thing Rust is given.
@@ -26,12 +35,14 @@ export const PHASE_ONE_SETTINGS: SendSettings = {
 
 const CONTENT_TYPE = "content-type";
 
-const RAW_TYPES = {
+const RAW_TYPES: Record<RawLanguage, string> = {
   json: "application/json",
   xml: "application/xml",
-  html: "text/html",
+  // RFC 9512 registered this in 2024; `text/yaml` and `application/x-yaml` are what servers saw
+  // before it, and both are still accepted by everything that accepts either.
+  yaml: "application/yaml",
   text: "text/plain",
-} as const;
+};
 
 /** The rows that are actually sent: ticked, and with something in the key. */
 function live<T extends KeyValue>(rows: T[]): T[] {
@@ -45,7 +56,10 @@ function wireBody(body: Body): { body: WireBody; contentType: string | null } {
     case "none":
       return { body: { kind: "none" }, contentType: null };
     case "raw":
-      return { body: { kind: "text", text: body.text }, contentType: RAW_TYPES[body.language] };
+      return {
+        body: { kind: "text", text: body.text },
+        contentType: RAW_TYPES[rawLanguage(body.language)],
+      };
     case "form":
       return {
         body: {

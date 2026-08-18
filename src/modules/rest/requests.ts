@@ -45,6 +45,43 @@ export function newRequest(id: string, now: number): RestRequest {
   };
 }
 
+/**
+ * A request nobody has put anything into.
+ *
+ * Pressing New opens a request that is already in the list — that is what makes every edit land
+ * without a Save button. The cost is that changing your mind leaves a husk behind, and a sidebar
+ * of them is what a hundred second thoughts look like. One is dropped when its tab closes and any
+ * left over are swept on load, so the two paths that can strand one both clear up after
+ * themselves.
+ *
+ * The bar is deliberately low: a method other than the GET it was born as, a row half typed, a
+ * body that exists at all, or one press of Send is enough to keep it. Only a request identical to
+ * a brand new one goes.
+ */
+export function isBlank(request: RestRequest): boolean {
+  const untouched = (rows: KeyValue[]) => rows.every((row) => row.key === "" && row.value === "");
+  return (
+    request.name === "" &&
+    request.url.trim() === "" &&
+    request.method === "GET" &&
+    untouched(request.params) &&
+    untouched(request.headers) &&
+    request.body.kind === "none" &&
+    request.auth.kind === "none" &&
+    // Sending stamps this; a request that has been used is a request, whatever is left in it.
+    request.lastUsedAt === request.createdAt
+  );
+}
+
+/** The lists with the husks taken out, or the lists themselves when there are none — so a load
+ *  that changes nothing does not look like a change. */
+export function sweepBlank(lists: RequestLists): RequestLists {
+  const saved = lists.saved.filter((r) => !isBlank(r));
+  const recent = lists.recent.filter((r) => !isBlank(r));
+  if (saved.length === lists.saved.length && recent.length === lists.recent.length) return lists;
+  return { saved, recent };
+}
+
 export function findRequest(lists: RequestLists, id: string): RestRequest | undefined {
   return lists.saved.find((r) => r.id === id) ?? lists.recent.find((r) => r.id === id);
 }
@@ -78,7 +115,7 @@ export function removeRequest(lists: RequestLists, id: string): RequestLists {
 export async function loadRequests(): Promise<RequestLists> {
   const store = await getStore();
   const stored = await store.get<RequestLists>(KEY);
-  return { saved: stored?.saved ?? [], recent: stored?.recent ?? [] };
+  return sweepBlank({ saved: stored?.saved ?? [], recent: stored?.recent ?? [] });
 }
 
 /** Writes the list as it now stands. Failures are swallowed: the list is still right in memory,

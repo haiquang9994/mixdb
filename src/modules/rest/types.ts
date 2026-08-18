@@ -18,7 +18,22 @@ export interface KeyValue {
   value: string;
 }
 
-export type RawLanguage = "json" | "xml" | "html" | "text";
+export type RawLanguage = "json" | "xml" | "yaml" | "text";
+
+/** In the order the body picker offers them, after None. */
+export const RAW_LANGUAGES: RawLanguage[] = ["json", "xml", "yaml", "text"];
+
+/**
+ * A stored language, read back safely.
+ *
+ * `rest-requests.json` was written by earlier versions of this module and holds whatever they
+ * allowed — `html` among them. An unrecognised language is read as plain text rather than left to
+ * fall through a lookup as `undefined`: the body is still the user's text, and sending it with no
+ * content type at all would be a worse answer than sending it as text.
+ */
+export function rawLanguage(value: string): RawLanguage {
+  return (RAW_LANGUAGES as string[]).includes(value) ? (value as RawLanguage) : "text";
+}
 
 /** A multipart field is a key/value row that may carry a file path instead of a value. */
 export interface MultipartField extends KeyValue {

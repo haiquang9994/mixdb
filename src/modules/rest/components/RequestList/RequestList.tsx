@@ -65,12 +65,22 @@ function RequestList({ lists, activeId, onOpen, onNew, onSave, onDuplicate, onDe
         type="button"
         className={`${styles.row}${request.id === activeId ? ` ${styles.rowActive}` : ""}`}
         onClick={() => onOpen(request.id)}
+        /* Delete on the row the keyboard is on. Backspace too: it is what the finger reaches for
+           on a laptop, and this row is not a text field where it would mean anything else. The
+           same dialog as the menu's Delete — the key is a shortcut to the question, not past it. */
+        onKeyDown={(e) => {
+          if (e.key !== "Delete" && e.key !== "Backspace") return;
+          e.preventDefault();
+          setDeleting(request);
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           setMenu({ request, x: e.clientX, y: e.clientY });
         }}
       >
-        <span className={`${styles.method} ${styles[`m${request.method}`]}`}>{request.method}</span>
+        <span className={`${styles.method} rest-method rest-method-${request.method}`}>
+          {request.method}
+        </span>
         <span className={styles.name}>{label(request)}</span>
       </button>
     ));
