@@ -7,12 +7,14 @@ import { CloseIcon, PlusIcon, SettingsIcon } from "../icons";
 import { hasPrimaryModifier } from "../core/platform";
 import { isBlockedReload } from "../core/reload";
 import { useScrollAcceleration } from "../core/scroll";
+import { useShortcutDispatcher } from "../core/shortcuts";
 import { isTextEntry } from "../core/textEntry";
 import { useAccent, useGlass, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
 import { useTranslation } from "../i18n";
 import type { TabBadge } from "./module";
 import { DEFAULT_MODULE_ID, MODULES, moduleById } from "./registry";
+import { ALL_SHORTCUTS } from "./shortcuts";
 import "./App.css";
 /* After App.css, so the glass surfaces override the plain ones they replace rather than the other
    way round. */
@@ -48,6 +50,7 @@ function App() {
   const update = useUpdateCheck();
 
   useScrollAcceleration();
+  useShortcutDispatcher(ALL_SHORTCUTS);
 
   function openTab(moduleId?: string) {
     const tab = newTab(moduleId);

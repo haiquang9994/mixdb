@@ -1,4 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
+import type { ShortcutGroup } from "../core/shortcuts";
 import type { IconProps } from "../icons";
 import type { TranslationKey } from "../i18n";
 
@@ -56,4 +57,8 @@ export interface ModuleDefinition {
   defaultTitleKey: TranslationKey;
   Tab: ComponentType<ModuleTabProps>;
   settings?: ModuleSettingsSection;
+  /** The Ctrl/Cmd chords this module's panes answer, for the dispatcher to resolve and for
+   *  Settings to list. Contributed exactly the way `settings` is: the shell collects them and
+   *  knows nothing about what any of them do. */
+  shortcuts?: ShortcutGroup[];
 }
