@@ -15,12 +15,14 @@ import RequestList from "./components/RequestList";
 import RequestTabs from "./components/RequestTabs";
 import UrlBar from "./components/UrlBar";
 import { shortUrl } from "./format";
+import { parsePaste } from "./parsePaste";
 import { findRequest, isBlank } from "./requests";
 import {
   addRequest,
   createRequest,
   currentLists,
   deleteRequest,
+  pasteRequest,
   saveRequest,
   useRequestLists,
 } from "./requestsStore";
@@ -175,6 +177,28 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   }
 
   /**
+   * A paste in the URL box that turned out to be a cURL command.
+   *
+   * A tab nobody has put anything into is filled where it stands — it is what someone pressed New
+   * to get, and swallowing a request they were part-way through composing would be a real loss. A
+   * tab with anything in it gets a new tab beside it instead, which destroys nothing and so needs no
+   * undo. Returns whether the paste was taken, which is what stops the box also receiving it.
+   */
+  function pasteInto(text: string): boolean {
+    const parsed = parsePaste(text, () => crypto.randomUUID());
+    if (parsed === null) return false;
+    /* Filled in place keeps the request where it is, Saved included: pressing New and pasting into
+       what it opened is not the same gesture as pasting over work, and a row someone asked for
+       should not become one that ten more pastes can evict. */
+    if (activeRequest !== undefined && isBlank(activeRequest)) {
+      saveRequest({ ...activeRequest, ...parsed });
+      return true;
+    }
+    open(pasteRequest(parsed).id);
+    return true;
+  }
+
+  /**
    * Sends the request on screen.
    *
    * `lastUsedAt` is stamped here and nowhere else — opening a tab to look at a request does not
@@ -310,6 +334,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
                 sending={sendState.phase === "sending"}
                 onMethodChange={(method) => edit({ method })}
                 onUrlChange={editUrl}
+                onPasteText={pasteInto}
                 onSend={() => void send()}
                 onCancel={cancel}
               />

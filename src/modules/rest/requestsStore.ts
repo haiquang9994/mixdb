@@ -1,9 +1,15 @@
 import { useEffect, useSyncExternalStore } from "react";
+import type { ParsedRequest } from "./parsePaste";
 import {
+  addRecent,
   addSaved,
+  bumpRecent,
+  findRecentTarget,
+  findRequest,
   loadRequests,
   newRequest,
   persistRequests,
+  pinToSaved,
   removeRequest,
   updateRequest,
 } from "./requests";
@@ -86,6 +92,39 @@ export function saveRequest(request: RestRequest): void {
 /** Adds a request that is not in either group yet — a duplicate, and from Phase 2 a paste. */
 export function addRequest(request: RestRequest): void {
   const lists = addSaved(snapshot, request);
+  publish(lists);
+  persistRequests(lists);
+}
+
+/**
+ * A pasted command, as a row in Recent — or the row that was already there.
+ *
+ * The same command pasted twice is one request: the row already aimed at that method and URL comes
+ * to the head of the group and is stamped as used, rather than a second copy of it appearing. The
+ * request to open a tab on is returned either way, so the caller does not need to know which
+ * happened.
+ */
+export function pasteRequest(parsed: ParsedRequest): RestRequest {
+  const now = Date.now();
+  const existing = findRecentTarget(snapshot, parsed.method, parsed.url);
+  const lists = existing
+    ? bumpRecent(snapshot, existing.id, now)
+    : addRecent(snapshot, {
+        ...newRequest(crypto.randomUUID(), now),
+        ...parsed,
+        origin: "paste",
+      });
+  publish(lists);
+  persistRequests(lists);
+  // After a bump the row is a new object carrying the new stamp; the one found before it is stale.
+  return existing === undefined
+    ? lists.recent[0]
+    : (findRequest(lists, existing.id) ?? lists.recent[0]);
+}
+
+/** Pinning a Recent request: it moves to Saved and stops being something that can be evicted. */
+export function pinRequest(id: string): void {
+  const lists = pinToSaved(snapshot, id);
   publish(lists);
   persistRequests(lists);
 }
