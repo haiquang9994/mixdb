@@ -1,0 +1,42 @@
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0 0.5rem 0.4rem;
+  font-size: 0.85em;
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0;
+  min-width: 0;
+}
+
+.label {
+  flex: none;
+  opacity: 0.6;
+}
+
+.url {
+  min-width: 0;
+  opacity: 0.85;
+  /* A URL has no spaces to break at, and a preview that widened the pane would move the Send
+     button out from under the pointer. */
+  overflow-wrap: anywhere;
+}
+
+.missing {
+  font-style: normal;
+  color: #e03131;
+}
+
+.blocked {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0;
+  color: #e03131;
+}

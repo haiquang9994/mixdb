@@ -8,8 +8,10 @@ import { useTranslation } from "../../i18n";
 import { CANCELLED, decodeBase64, restCancel, restSend } from "./api";
 import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
 import { detectBody, type ViewMode } from "./contentType";
-import { findEnvironment } from "./environments";
-import { useEnvironments } from "./environmentsStore";
+import { findEnvironment, previewVars, varMap } from "./environments";
+import { addVariables, useEnvironments } from "./environmentsStore";
+import { interpolate } from "./interpolate";
+import { resolveRequest } from "./resolveRequest";
 import AuthPane from "./components/AuthPane";
 import BodyEditor from "./components/BodyEditor";
 import EnvironmentDialog from "./components/EnvironmentDialog";
@@ -19,6 +21,7 @@ import KeyValueTable from "./components/KeyValueTable";
 import RequestList from "./components/RequestList";
 import RequestTabs from "./components/RequestTabs";
 import UrlBar from "./components/UrlBar";
+import UrlPreview from "./components/UrlPreview";
 import { shortUrl } from "./format";
 import { parsePaste } from "./parsePaste";
 import { findRequest, isBlank } from "./requests";
@@ -126,6 +129,25 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
    */
   const activeRequest = tabs.find((r) => r.id === activeId) ?? tabs[tabs.length - 1];
   const currentId = activeRequest?.id ?? null;
+
+  /* Resolved once per render rather than at the moment of sending, so that the line under the URL
+     box and the state of the Send button are two readings of one answer and cannot disagree. */
+  const resolved = useMemo(
+    () => (activeRequest === undefined ? null : resolveRequest(activeRequest, varMap(env))),
+    [activeRequest, env],
+  );
+  /** The URL as the line below the box shows it: secrets as dots, anything unfilled still in its
+   *  braces. Not drawn at all with no environment chosen, when it would only repeat the box. */
+  const preview = useMemo(
+    () =>
+      activeRequest === undefined || env === null
+        ? null
+        : interpolate(activeRequest.url, previewVars(env) ?? {}).text,
+    [activeRequest, env],
+  );
+  /** A request that asks for a value nobody has does not go out. Sending `{{token}}` as those nine
+   *  characters helps nobody, and a server's answer to it is not an answer to anything. */
+  const blocked = resolved !== null && (resolved.missing.length > 0 || resolved.cyclic);
 
   /* The shell's tab is named after whatever is open in it. Keyed on the name rather than on the
      request, because every keystroke replaces the request with an equal one. */
@@ -252,10 +274,10 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
    * count as using it, which is what keeps Recent's ceiling honest from Phase 2 on.
    */
   async function send() {
-    if (!activeRequest) return;
+    if (!activeRequest || resolved === null || blocked) return;
     const request = activeRequest;
     const sendId = crypto.randomUUID();
-    const wire = buildRequest(request, sendId, PHASE_ONE_SETTINGS);
+    const wire = buildRequest(resolved.request, sendId, PHASE_ONE_SETTINGS);
 
     setSends((prev) => ({
       ...prev,
@@ -267,6 +289,9 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
         error: null,
       },
     }));
+    // `request`, not `resolved.request`. What is stored keeps its variables — writing the resolved
+    // copy back would strip a request of the thing that made it portable and, the first time a
+    // secret variable was used, would put a credential into `rest-requests.json`.
     saveRequest({ ...request, lastUsedAt: Date.now() });
 
     try {
@@ -345,7 +370,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   useShortcut(
     "rest.send",
     () => void send(),
-    active && activeRequest !== undefined && sendState.phase !== "sending",
+    active && activeRequest !== undefined && sendState.phase !== "sending" && !blocked,
   );
   useShortcut("rest.newRequest", makeRequest, active);
   // Only while there is a request tab to close — otherwise the chord is the shell's, as before.
@@ -423,12 +448,25 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
                 method={activeRequest.method}
                 url={activeRequest.url}
                 sending={sendState.phase === "sending"}
+                blocked={blocked}
                 onMethodChange={(method) => edit({ method })}
                 onUrlChange={editUrl}
                 onPasteText={pasteInto}
                 onSend={() => void send()}
                 onCancel={cancel}
               />
+              {env !== null && preview !== null && resolved !== null && (
+                <UrlPreview
+                  preview={preview}
+                  missing={resolved.missing}
+                  cyclic={resolved.cyclic}
+                  envName={env.name}
+                  onAddMissing={() => {
+                    addVariables(env.id, resolved.missing);
+                    setEnvDialogOpen(true);
+                  }}
+                />
+              )}
               <TabStrip size="small" role="tablist">
                 {paneTabs.map((tab) => {
                   const pick = () =>
