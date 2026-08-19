@@ -1,6 +1,7 @@
 import { encodeComponent, urlWithParams } from "./syncUrlParams";
 import { rawLanguage } from "./types";
 import type {
+  Auth,
   Body,
   KeyValue,
   RawLanguage,
@@ -47,6 +48,52 @@ const RAW_TYPES: Record<RawLanguage, string> = {
 /** The rows that are actually sent: ticked, and with something in the key. */
 function live<T extends KeyValue>(rows: T[]): T[] {
   return rows.filter((row) => row.enabled && row.key !== "");
+}
+
+/** Base64 of a UTF-8 string. `btoa` alone throws on anything outside Latin-1, and a password with
+ *  an accent in it is a real password. */
+function base64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let latin1 = "";
+  for (const byte of bytes) latin1 += String.fromCharCode(byte);
+  return btoa(latin1);
+}
+
+/** The one place the chosen auth would put itself, or null when it would put nothing: no auth at
+ *  all, or an API key with no name to send it under. */
+function authSlot(auth: Auth): { in: "header" | "query"; name: string; value: string } | null {
+  switch (auth.kind) {
+    case "none":
+      return null;
+    case "bearer":
+      return { in: "header", name: "Authorization", value: `Bearer ${auth.token}` };
+    case "basic":
+      return {
+        in: "header",
+        name: "Authorization",
+        value: `Basic ${base64(`${auth.username}:${auth.password}`)}`,
+      };
+    case "apiKey":
+      return auth.name === "" ? null : { in: auth.in, name: auth.name, value: auth.value };
+  }
+}
+
+/**
+ * The name of the ticked row that already claims where this auth would go, or null when none does.
+ *
+ * A header or a parameter written out in a table is the one part of a request its author can see,
+ * so it wins — the same rule the body's `Content-Type` follows. The difference is that the Auth tab
+ * can sit disagreeing with a table for a long time, which is why this is exported: the pane says
+ * whose value is really being sent instead of leaving the two to differ in silence.
+ */
+export function authOverride(auth: Auth, headers: KeyValue[], params: KeyValue[]): string | null {
+  const slot = authSlot(auth);
+  if (slot === null) return null;
+  // Header names are case-insensitive and query keys are not, so they are not compared the same way.
+  const claimed = live(slot.in === "header" ? headers : params).some((row) =>
+    slot.in === "header" ? row.key.toLowerCase() === slot.name.toLowerCase() : row.key === slot.name,
+  );
+  return claimed ? slot.name : null;
 }
 
 /** The body on the wire, and the content type it implies — null where the body implies none, or
@@ -98,10 +145,22 @@ export function buildRequest(
   const declared = headers.some(([key]) => key.toLowerCase() === CONTENT_TYPE);
   if (contentType !== null && !declared) headers.push(["Content-Type", contentType]);
 
+  /* Auth goes on last, and only where nothing was typed by hand. The synthetic parameter row is
+     never seen by the Params table — it exists for the length of this fold and no longer. */
+  const carried =
+    authOverride(request.auth, request.headers, request.params) === null
+      ? authSlot(request.auth)
+      : null;
+  if (carried?.in === "header") headers.push([carried.name, carried.value]);
+  const params =
+    carried?.in === "query"
+      ? [...request.params, { id: "auth", enabled: true, key: carried.name, value: carried.value }]
+      : request.params;
+
   return {
     request_id: requestId,
     method: request.method,
-    url: urlWithParams(request.url, request.params),
+    url: urlWithParams(request.url, params),
     headers,
     body,
     timeout_ms: settings.timeoutMs,

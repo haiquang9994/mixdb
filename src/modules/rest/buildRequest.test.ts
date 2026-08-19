@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
+import { PHASE_ONE_SETTINGS, authOverride, buildRequest } from "./buildRequest";
 import { newRequest } from "./requests";
 import type { Body, KeyValue, RestRequest } from "./types";
 
@@ -147,5 +147,94 @@ describe("buildRequest: bodies", () => {
     const wire = build({ body: { kind: "binary", filePath: "C:/tmp/a.bin" } });
     expect(wire.body).toEqual({ kind: "file", path: "C:/tmp/a.bin" });
     expect(header(wire, "content-type")).toBeUndefined();
+  });
+});
+
+describe("buildRequest: auth", () => {
+  it("sends a bearer token as an Authorization header", () => {
+    expect(header(build({ auth: { kind: "bearer", token: "t0k" } }), "authorization")).toBe(
+      "Bearer t0k",
+    );
+  });
+
+  it("sends basic credentials base64-encoded", () => {
+    const wire = build({ auth: { kind: "basic", username: "ann", password: "s3cret" } });
+    expect(header(wire, "authorization")).toBe("Basic YW5uOnMzY3JldA==");
+  });
+
+  // btoa alone throws on anything outside Latin-1, and a password with an accent is a real one.
+  it("encodes a non-Latin-1 password as UTF-8 bytes", () => {
+    const wire = build({ auth: { kind: "basic", username: "ann", password: "pässwörd" } });
+    expect(header(wire, "authorization")).toBe("Basic YW5uOnDDpHNzd8O2cmQ=");
+  });
+
+  it("sends an API key as the header it names", () => {
+    const wire = build({
+      auth: { kind: "apiKey", name: "X-Api-Key", value: "abc", in: "header" },
+    });
+    expect(header(wire, "x-api-key")).toBe("abc");
+  });
+
+  it("sends an API key as a query parameter, after the ones in the table", () => {
+    const wire = build({
+      params: [row({ id: "a", key: "page", value: "2" })],
+      auth: { kind: "apiKey", name: "api_key", value: "a b", in: "query" },
+    });
+    expect(wire.url).toBe("https://x.test/a?page=2&api_key=a%20b");
+  });
+
+  it("sends nothing for an API key with no name", () => {
+    const wire = build({ auth: { kind: "apiKey", name: "", value: "abc", in: "header" } });
+    expect(wire.headers).toEqual([]);
+    expect(wire.url).toBe("https://x.test/a");
+  });
+
+  it("leaves an Authorization header typed by hand alone", () => {
+    const wire = build({
+      headers: [row({ id: "a", key: "Authorization", value: "Bearer typed" })],
+      auth: { kind: "bearer", token: "chosen" },
+    });
+    expect(wire.headers).toEqual([["Authorization", "Bearer typed"]]);
+  });
+
+  it("leaves a query parameter of the same name alone", () => {
+    const wire = build({
+      params: [row({ id: "a", key: "api_key", value: "typed" })],
+      auth: { kind: "apiKey", name: "api_key", value: "chosen", in: "query" },
+    });
+    expect(wire.url).toBe("https://x.test/a?api_key=typed");
+  });
+
+  // An unticked row is one that was parked. It is not in the request, so it claims nothing.
+  it("sends the chosen auth when the row claiming its name is unticked", () => {
+    const wire = build({
+      headers: [row({ id: "a", enabled: false, key: "Authorization", value: "Bearer typed" })],
+      auth: { kind: "bearer", token: "chosen" },
+    });
+    expect(header(wire, "authorization")).toBe("Bearer chosen");
+  });
+});
+
+describe("authOverride", () => {
+  it("is null when there is no auth to override", () => {
+    expect(authOverride({ kind: "none" }, [], [])).toBeNull();
+  });
+
+  it("names the header that won", () => {
+    const headers = [row({ id: "a", key: "authorization", value: "Bearer typed" })];
+    expect(authOverride({ kind: "bearer", token: "t" }, headers, [])).toBe("Authorization");
+  });
+
+  it("names the parameter that won", () => {
+    const params = [row({ id: "a", key: "api_key", value: "typed" })];
+    const auth = { kind: "apiKey", name: "api_key", value: "v", in: "query" } as const;
+    expect(authOverride(auth, [], params)).toBe("api_key");
+  });
+
+  // Header names are case-insensitive; query keys are not.
+  it("does not treat a parameter of another case as the same key", () => {
+    const params = [row({ id: "a", key: "API_KEY", value: "typed" })];
+    const auth = { kind: "apiKey", name: "api_key", value: "v", in: "query" } as const;
+    expect(authOverride(auth, [], params)).toBeNull();
   });
 });
