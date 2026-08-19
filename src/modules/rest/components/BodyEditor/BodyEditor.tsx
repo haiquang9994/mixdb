@@ -2,9 +2,10 @@ import Button from "../../../../components/Button";
 import Select from "../../../../components/Select";
 import { FormatIcon } from "../../../../icons";
 import { useTranslation, type TranslationKey } from "../../../../i18n";
+import { BODY_CHOICES, bodyChoice, convertBody, type BodyChoice } from "../../bodyKind";
 import { prettyJson } from "../../format";
-import { RAW_LANGUAGES, rawLanguage } from "../../types";
-import type { Body, MultipartField, RawLanguage } from "../../types";
+import type { Body, MultipartField } from "../../types";
+import KeyValueTable from "../KeyValueTable";
 import styles from "./BodyEditor.module.css";
 
 interface Props {
@@ -12,11 +13,7 @@ interface Props {
   onChange: (body: Body) => void;
 }
 
-/** What the one picker is set to: no body, the notation the text is written in, or one of the three
- *  kinds this pane can so far only show. */
-type Choice = "none" | RawLanguage | "form" | "multipart" | "binary";
-
-const LABELS: Record<Choice, TranslationKey> = {
+const LABELS: Record<BodyChoice, TranslationKey> = {
   none: "rest.bodyNone",
   json: "rest.langJson",
   xml: "rest.langXml",
@@ -27,9 +24,9 @@ const LABELS: Record<Choice, TranslationKey> = {
   binary: "rest.bodyBinary",
 };
 
-/** The kinds this pane can make and change. The other three arrive by paste, or from a file written
- *  by a later version, and are shown rather than edited until Phase 3 gives them a table. */
-const EDITABLE: Choice[] = ["none", ...RAW_LANGUAGES];
+/** The kinds this pane can make and change. It grows once per phase-3 task; when it holds all of
+ *  `BODY_CHOICES`, both it and the read-only view below go. */
+const EDITABLE: BodyChoice[] = ["none", "json", "xml", "yaml", "text", "form"];
 
 /**
  * The rows to show for a body this pane cannot edit, or null when it can.
@@ -38,7 +35,7 @@ const EDITABLE: Choice[] = ["none", ...RAW_LANGUAGES];
  * binary body is one file with no name of its own.
  */
 function readOnlyFields(body: Body): MultipartField[] | null {
-  if (body.kind === "form" || body.kind === "multipart") return body.fields;
+  if (body.kind === "multipart") return body.fields;
   if (body.kind === "binary") {
     return [{ id: "file", enabled: true, key: "", value: "", file: body.filePath }];
   }
@@ -59,33 +56,26 @@ function readOnlyFields(body: Body): MultipartField[] | null {
 function BodyEditor({ body, onChange }: Props) {
   const { t } = useTranslation();
 
-  const choice: Choice = body.kind === "raw" ? rawLanguage(body.language) : body.kind;
+  const choice = bodyChoice(body);
   const shown = readOnlyFields(body);
-  const options = (EDITABLE.includes(choice) ? EDITABLE : [...EDITABLE, choice]).map((value) => ({
+  const options = BODY_CHOICES.map((value) => ({
     value,
     label: t(LABELS[value]),
-    /* The kind a pasted body turned out to be is listed so the picker is not silently wrong about
-       what is being sent, and cannot be chosen — there would be nothing to put in it. */
+    /* A kind with no editor yet is listed so the picker is not silently wrong about what is being
+       sent, and cannot be chosen — there would be nothing to put in it. */
     disabled: !EDITABLE.includes(value),
   }));
 
-  /** Switching notation keeps the text: it is the same body, described differently. Only leaving
-   *  for None drops it, and coming back from None starts empty. */
-  function pick(next: Choice) {
-    if (next === "none") {
-      onChange({ kind: "none" });
-      return;
-    }
-    // The three kinds with no editor are offered as disabled options, so the picker never hands one
-    // back. Saying so out loud is also what leaves `next` as a notation below.
-    if (next === "form" || next === "multipart" || next === "binary") return;
-    onChange({ kind: "raw", language: next, text: body.kind === "raw" ? body.text : "" });
+  /** Changing the picker is a change of body, and `convertBody` says what survives it: text keeps
+   *  its text, a form and a multipart body keep each other's rows, and nothing else carries. */
+  function pick(next: BodyChoice) {
+    onChange(convertBody(body, next));
   }
 
   return (
     <div className={styles.editor}>
       <div className={styles.toolbar}>
-        <Select<Choice>
+        <Select<BodyChoice>
           className={styles.kind}
           size="small"
           value={choice}
@@ -107,6 +97,11 @@ function BodyEditor({ body, onChange }: Props) {
           aria-label={t("rest.bodyTab")}
           spellCheck={false}
           onChange={(e) => onChange({ ...body, text: e.target.value })}
+        />
+      ) : body.kind === "form" ? (
+        <KeyValueTable
+          rows={body.fields}
+          onChange={(fields) => onChange({ kind: "form", fields })}
         />
       ) : shown === null ? (
         <p className={`${styles.empty} muted`}>{t("rest.bodyNone")}</p>
