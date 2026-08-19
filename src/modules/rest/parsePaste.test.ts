@@ -83,6 +83,7 @@ describe("parseCurl", () => {
       params: [],
       headers: [],
       body: { kind: "none" },
+      auth: { kind: "none" },
     });
   });
 
@@ -250,23 +251,30 @@ describe("parseCurl bodies", () => {
     expect(parseCurl("curl -G 'https://x?a=1' -d 'b=2'", ids())?.url).toBe("https://x?a=1&b=2");
   });
 
-  it("turns -u into an Authorization header, since nothing else would send it", () => {
+  it("turns -u into basic auth, which is what the Auth tab is for", () => {
     const parsed = parseCurl("curl https://x -u 'user:pass'", ids());
-    expect(parsed?.headers).toEqual([
-      { id: "id-1", enabled: true, key: "Authorization", value: "Basic dXNlcjpwYXNz" },
-    ]);
+    expect(parsed?.auth).toEqual({ kind: "basic", username: "user", password: "pass" });
+    expect(parsed?.headers).toEqual([]);
   });
 
   // curl would prompt for the password. There is nobody to prompt, and an empty one is what the
   // command as written asks for.
   it("reads a -u with no password as an empty password", () => {
-    expect(parseCurl("curl https://x -u user", ids())?.headers[0].value).toBe("Basic dXNlcjo=");
+    const parsed = parseCurl("curl https://x -u user", ids());
+    expect(parsed?.auth).toEqual({ kind: "basic", username: "user", password: "" });
+  });
+
+  // A colon in a password is legal and common; only the first one separates.
+  it("splits -u on the first colon only", () => {
+    const parsed = parseCurl("curl https://x -u 'user:a:b'", ids());
+    expect(parsed?.auth).toEqual({ kind: "basic", username: "user", password: "a:b" });
   });
 
   it("leaves an Authorization header that was already given alone", () => {
     const parsed = parseCurl("curl https://x -H 'Authorization: Bearer t' -u 'user:pass'", ids());
     expect(parsed?.headers).toHaveLength(1);
     expect(parsed?.headers[0].value).toBe("Bearer t");
+    expect(parsed?.auth).toEqual({ kind: "none" });
   });
 });
 
@@ -447,6 +455,24 @@ describe("the round trip", () => {
 
   it("a URL with a variable still in it", () => {
     roundTrip(request({ url: "{{baseUrl}}/items" }));
+  });
+
+  it("basic credentials, which come back out as the header they are sent as", () => {
+    roundTrip(
+      request({
+        url: "https://x/private",
+        auth: { kind: "basic", username: "ann", password: "s3cret" },
+      }),
+    );
+  });
+
+  it("an API key in the query, which comes back out as a parameter", () => {
+    roundTrip(
+      request({
+        url: "https://x/items",
+        auth: { kind: "apiKey", name: "api_key", value: "abc", in: "query" },
+      }),
+    );
   });
 });
 
