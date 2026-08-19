@@ -132,9 +132,12 @@ function wireBody(body: Body): { body: WireBody; contentType: string | null } {
       return { body: { kind: "multipart", parts }, contentType: null };
     }
     case "binary":
-      // No default type either — a file's type is the user's to declare, and guessing it from an
-      // extension would be wrong at exactly the moment it mattered.
-      return { body: { kind: "file", path: body.filePath }, contentType: null };
+      /* No default content type — a file's type is the user's to declare, and guessing it from an
+         extension would be wrong at exactly the moment it mattered. An empty path is the picker
+         sitting on File before a file was chosen, and sends nothing rather than an error. */
+      return body.filePath === ""
+        ? { body: { kind: "none" }, contentType: null }
+        : { body: { kind: "file", path: body.filePath }, contentType: null };
   }
 }
 

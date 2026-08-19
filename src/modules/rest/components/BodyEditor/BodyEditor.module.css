@@ -42,45 +42,43 @@
   justify-content: center;
 }
 
-/* A body that arrived by paste and has no editor yet: what is in it, plainly, and nothing that
-   looks like a field waiting to be typed in. */
-.readOnly {
+/* One file, and what it is called. The whole path is the hover text; the row shows the name. */
+.file {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  padding: 0.5rem;
   font-size: 0.9em;
 }
 
-.fields {
+.fileRow {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin: 0;
-}
-
-.field {
-  display: flex;
+  align-items: center;
   gap: 0.5rem;
   min-width: 0;
 }
 
-.fieldKey {
-  flex: 0 0 30%;
+.fileName {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0.7;
+  font-family: "Fira Code", monospace;
 }
 
-.fieldValue {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-family: "Fira Code", monospace;
+.clear {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.5;
+  cursor: pointer;
+  display: flex;
+}
+
+.clear:hover {
+  opacity: 1;
+  color: var(--danger, #e5484d);
 }

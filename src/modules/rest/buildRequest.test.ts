@@ -163,6 +163,17 @@ describe("buildRequest: bodies", () => {
     expect(wire.body).toEqual({ kind: "file", path: "C:/tmp/a.bin" });
     expect(header(wire, "content-type")).toBeUndefined();
   });
+
+  it("sends a binary body as the file it names", () => {
+    const wire = build({ body: { kind: "binary", filePath: "/tmp/a.bin" } });
+    expect(wire.body).toEqual({ kind: "file", path: "/tmp/a.bin" });
+  });
+
+  // The body picker sits on File from the moment it is chosen, which is before there is a file.
+  it("sends no body at all for a binary body with no file", () => {
+    const wire = build({ body: { kind: "binary", filePath: "" } });
+    expect(wire.body).toEqual({ kind: "none" });
+  });
 });
 
 describe("buildRequest: auth", () => {
