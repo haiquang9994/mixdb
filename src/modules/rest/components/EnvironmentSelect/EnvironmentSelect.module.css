@@ -1,0 +1,5 @@
+/* No width of its own. `None` is four characters and an environment name can be twenty, and the
+   tab strip beside it would rather have the room back than keep it reserved. */
+.select {
+  min-width: 0;
+}

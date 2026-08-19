@@ -43,6 +43,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
+- REST requests take `{{variables}}` from an environment picked at the end of the tab strip, with values marked secret kept in the OS credential store instead of on disk.
 - REST requests carry credentials: a bearer token, basic auth, or an API key sent as a header or a query parameter.
 - REST bodies can now be a form, a multipart upload with files from disk, or a single file sent as it is.
 

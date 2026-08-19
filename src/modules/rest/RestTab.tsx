@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import ConfirmDialog from "../../components/ConfirmDialog";
 import Splitter, { clampRatio, clampSize } from "../../components/Splitter";
 import { Tab, TabStrip, tabKeyDown } from "../../components/TabStrip";
 import { errorMessage } from "../../core/errors";
@@ -8,13 +9,21 @@ import { useTranslation } from "../../i18n";
 import { CANCELLED, decodeBase64, restCancel, restSend } from "./api";
 import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
 import { detectBody, type ViewMode } from "./contentType";
+import { SECRET_MASK, findEnvironment, previewVars, varMap } from "./environments";
+import { addVariables, useEnvironments } from "./environmentsStore";
+import { interpolate } from "./interpolate";
+import { resolveRequest } from "./resolveRequest";
+import { findSubstitutions, substitute, type Substitution } from "./substitute";
 import AuthPane from "./components/AuthPane";
 import BodyEditor from "./components/BodyEditor";
+import EnvironmentDialog from "./components/EnvironmentDialog";
+import EnvironmentSelect from "./components/EnvironmentSelect";
 import ResponsePane, { IDLE_SEND, type SendState } from "./components/ResponsePane";
 import KeyValueTable from "./components/KeyValueTable";
 import RequestList from "./components/RequestList";
 import RequestTabs from "./components/RequestTabs";
 import UrlBar from "./components/UrlBar";
+import UrlPreview from "./components/UrlPreview";
 import { shortUrl } from "./format";
 import { parsePaste } from "./parsePaste";
 import { findRequest, isBlank } from "./requests";
@@ -36,9 +45,11 @@ import {
   MAX_SPLIT_RATIO,
   MIN_SIDEBAR_WIDTH,
   MIN_SPLIT_RATIO,
+  setLastEnvId,
   setSidebarWidth,
   setSplitRatio,
   useWorkspace,
+  workspaceLoaded,
 } from "./workspace";
 import "./rest.css";
 
@@ -58,6 +69,11 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   const { t } = useTranslation();
   const lists = useRequestLists();
   const workspace = useWorkspace();
+  const environments = useEnvironments();
+  const [envId, setEnvId] = useState<string | null>(null);
+  const [envDialogOpen, setEnvDialogOpen] = useState(false);
+  /** Whether `lastEnvId` has been taken. Once, and once only — see the note on the field. */
+  const envSeeded = useRef(false);
 
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -73,14 +89,33 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   const urlRef = useRef<HTMLInputElement>(null);
   /** The request whose URL box is still owed the keyboard — set by New, cleared once given. */
   const [focusUrlFor, setFocusUrlFor] = useState<string | null>(null);
+  /** A paste that the environment has names for, and the request it would become. Held rather
+   *  than applied: the question is put to whoever pasted it, and both answers are cheap. */
+  const [swap, setSwap] = useState<{ request: RestRequest; found: Substitution[] } | null>(null);
 
   // The workspace file is read once, after the first render — so the furniture starts at its
   // defaults and moves to what was saved when it arrives.
   useEffect(() => setWidth(workspace.sidebarWidth), [workspace.sidebarWidth]);
   useEffect(() => setRatio(workspace.splitRatio), [workspace.splitRatio]);
 
+  useEffect(() => {
+    if (envSeeded.current || !workspaceLoaded()) return;
+    envSeeded.current = true;
+    setEnvId(workspace.lastEnvId);
+  }, [workspace]);
+
   const label = (request: RestRequest) =>
     request.name !== "" ? request.name : shortUrl(request.url) || t("rest.untitled");
+
+  /* Null when nothing is chosen, and also when what was chosen has since been deleted — which is
+     the whole of what deleting an environment has to clean up. */
+  const env = findEnvironment(environments, envId);
+
+  function chooseEnv(id: string | null) {
+    setEnvId(id);
+    // Written for the next REST tab to open with; this one keeps its own choice from here.
+    setLastEnvId(id);
+  }
 
   /* The open tabs, resolved afresh from the store: a request edited anywhere shows its new name
      here, and one deleted from the sidebar takes its tab with it. */
@@ -99,6 +134,25 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
    */
   const activeRequest = tabs.find((r) => r.id === activeId) ?? tabs[tabs.length - 1];
   const currentId = activeRequest?.id ?? null;
+
+  /* Resolved once per render rather than at the moment of sending, so that the line under the URL
+     box and the state of the Send button are two readings of one answer and cannot disagree. */
+  const resolved = useMemo(
+    () => (activeRequest === undefined ? null : resolveRequest(activeRequest, varMap(env))),
+    [activeRequest, env],
+  );
+  /** The URL as the line below the box shows it: secrets as dots, anything unfilled still in its
+   *  braces. Not drawn at all with no environment chosen, when it would only repeat the box. */
+  const preview = useMemo(
+    () =>
+      activeRequest === undefined || env === null
+        ? null
+        : interpolate(activeRequest.url, previewVars(env) ?? {}).text,
+    [activeRequest, env],
+  );
+  /** A request that asks for a value nobody has does not go out. Sending `{{token}}` as those nine
+   *  characters helps nobody, and a server's answer to it is not an answer to anything. */
+  const blocked = resolved !== null && (resolved.missing.length > 0 || resolved.cyclic);
 
   /* The shell's tab is named after whatever is open in it. Keyed on the name rather than on the
      request, because every keystroke replaces the request with an equal one. */
@@ -204,6 +258,11 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
    * nothing and so needs no undo.
    *
    * Returns whether the paste was taken, which is what stops the box also receiving it.
+   *
+   * A command copied out of a browser has the host, the token and the api key written into it, and
+   * those are the very things the environment beside it exists to hold. Where they match, the
+   * offer to put the variables back is made — asked rather than done, because the values may be
+   * the whole reason this particular command was pasted.
    */
   function pasteInto(text: string): boolean {
     const parsed = parsePaste(text, () => crypto.randomUUID());
@@ -215,6 +274,10 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     // The same id when the husk was filled in place; a different one when a duplicate was found in
     // Recent, and then it is that row's tab which comes forward.
     open(filled.id);
+    if (env !== null) {
+      const found = findSubstitutions(filled, env);
+      if (found.length > 0) setSwap({ request: substitute(filled, env), found });
+    }
     return true;
   }
 
@@ -225,10 +288,10 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
    * count as using it, which is what keeps Recent's ceiling honest from Phase 2 on.
    */
   async function send() {
-    if (!activeRequest) return;
+    if (!activeRequest || resolved === null || blocked) return;
     const request = activeRequest;
     const sendId = crypto.randomUUID();
-    const wire = buildRequest(request, sendId, PHASE_ONE_SETTINGS);
+    const wire = buildRequest(resolved.request, sendId, PHASE_ONE_SETTINGS);
 
     setSends((prev) => ({
       ...prev,
@@ -240,6 +303,9 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
         error: null,
       },
     }));
+    // `request`, not `resolved.request`. What is stored keeps its variables — writing the resolved
+    // copy back would strip a request of the thing that made it portable and, the first time a
+    // secret variable was used, would put a credential into `rest-requests.json`.
     saveRequest({ ...request, lastUsedAt: Date.now() });
 
     try {
@@ -318,7 +384,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   useShortcut(
     "rest.send",
     () => void send(),
-    active && activeRequest !== undefined && sendState.phase !== "sending",
+    active && activeRequest !== undefined && sendState.phase !== "sending" && !blocked,
   );
   useShortcut("rest.newRequest", makeRequest, active);
   // Only while there is a request tab to close — otherwise the chord is the shell's, as before.
@@ -341,6 +407,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
         <RequestList
           lists={lists}
           activeId={currentId}
+          vars={varMap(env)}
           onOpen={open}
           onNew={makeRequest}
           onSave={saveRequest}
@@ -366,14 +433,25 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
       />
 
       <div className="rest-main">
-        <RequestTabs
-          tabs={tabs}
-          activeId={currentId}
-          onSelect={setActiveId}
-          onClose={close}
-          onNew={makeRequest}
-          label={label}
-        />
+        <div className="rest-tabs-row">
+          <RequestTabs
+            className="rest-tabs-strip"
+            tabs={tabs}
+            activeId={currentId}
+            onSelect={setActiveId}
+            onClose={close}
+            onNew={makeRequest}
+            label={label}
+          />
+          <div className="rest-env">
+            <EnvironmentSelect
+              environments={environments}
+              value={env?.id ?? null}
+              onChange={chooseEnv}
+              onManage={() => setEnvDialogOpen(true)}
+            />
+          </div>
+        </div>
 
         {activeRequest === undefined ? (
           <p className="rest-empty muted">{t("rest.emptyMain")}</p>
@@ -385,12 +463,25 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
                 method={activeRequest.method}
                 url={activeRequest.url}
                 sending={sendState.phase === "sending"}
+                blocked={blocked}
                 onMethodChange={(method) => edit({ method })}
                 onUrlChange={editUrl}
                 onPasteText={pasteInto}
                 onSend={() => void send()}
                 onCancel={cancel}
               />
+              {env !== null && preview !== null && resolved !== null && (
+                <UrlPreview
+                  preview={preview}
+                  missing={resolved.missing}
+                  cyclic={resolved.cyclic}
+                  envName={env.name}
+                  onAddMissing={() => {
+                    addVariables(env.id, resolved.missing);
+                    setEnvDialogOpen(true);
+                  }}
+                />
+              )}
               <TabStrip size="small" role="tablist">
                 {paneTabs.map((tab) => {
                   const pick = () =>
@@ -484,6 +575,38 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
           </div>
         )}
       </div>
+
+      {envDialogOpen && (
+        <EnvironmentDialog initialId={env?.id ?? null} onClose={() => setEnvDialogOpen(false)} />
+      )}
+
+      {swap !== null && (
+        <ConfirmDialog
+          title={t("rest.swapTitle")}
+          message={t("rest.swapMessage", { env: env?.name ?? "" })}
+          confirmLabel={t("rest.swapConfirm")}
+          cancelLabel={t("rest.swapCancel")}
+          onConfirm={() => {
+            saveRequest(swap.request);
+            setSwap(null);
+          }}
+          onCancel={() => setSwap(null)}
+        >
+          <ul className="rest-swap-list">
+            {swap.found.map((item) => (
+              <li key={item.name} className="rest-swap-row">
+                <code className="rest-swap-name">{`{{${item.name}}}`}</code>
+                {/* A secret's value is dots here for the same reason it is dots under the URL box:
+                    the question is which variable, and the answer never needs the credential. */}
+                <span className="rest-swap-value">{item.secret ? SECRET_MASK : item.value}</span>
+                <span className="rest-swap-count">
+                  {t("rest.swapCount", { count: item.count })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

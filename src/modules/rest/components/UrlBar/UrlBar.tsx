@@ -13,6 +13,9 @@ interface Props {
   url: string;
   /** While this is true the button cancels instead of sending. */
   sending: boolean;
+  /** Turns Send off for a reason that is not an empty URL: a variable the environment has no value
+   *  for. What is wrong is said under the box, by `UrlPreview`, rather than in a tooltip here. */
+  blocked?: boolean;
   onMethodChange: (method: Method) => void;
   onUrlChange: (url: string) => void;
   /** Handed the pasted text; returns whether it was taken as a request, in which case the box does
@@ -28,6 +31,7 @@ function UrlBar({
   method,
   url,
   sending,
+  blocked = false,
   onMethodChange,
   onUrlChange,
   onPasteText,
@@ -65,7 +69,7 @@ function UrlBar({
         }}
         // Enter in the URL box is the oldest gesture there is for "go".
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !sending) onSend();
+          if (e.key === "Enter" && !sending && !blocked) onSend();
         }}
       />
       <Button
@@ -73,7 +77,7 @@ function UrlBar({
         variant="primary"
         onClick={sending ? onCancel : onSend}
         // Only the URL is required. A GET with nothing else filled in is a whole request.
-        disabled={!sending && url.trim() === ""}
+        disabled={!sending && (url.trim() === "" || blocked)}
       >
         {sending ? <StopIcon size="1em" /> : <SendIcon size="1em" />}
         {sending ? t("rest.cancel") : t("rest.send")}
