@@ -39,3 +39,24 @@ export async function pickFile(): Promise<string | null> {
   const path = await open({ multiple: false, directory: false });
   return typeof path === "string" ? path : null;
 }
+
+/**
+ * The OS credential store, where a variable marked secret keeps its value.
+ *
+ * `secrets.rs` is shared and takes any string as an id, so this module writes its entries under
+ * `rest-env:<envId>` and nothing new was needed on the Rust side. Saving an empty map deletes the
+ * entry rather than storing `{}` — an environment with nothing to hide leaves nothing behind.
+ */
+export function envSecretsSave(id: string, secrets: Record<string, string>): Promise<void> {
+  return invoke("secrets_save", { id, secrets });
+}
+
+/** What is stored for an environment, or nothing when it has never had a secret in it. */
+export function envSecretsLoad(id: string): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>("secrets_load", { id });
+}
+
+/** Forgets an environment's secrets, for when the environment itself goes. */
+export function envSecretsDelete(id: string): Promise<void> {
+  return invoke("secrets_delete", { id });
+}
