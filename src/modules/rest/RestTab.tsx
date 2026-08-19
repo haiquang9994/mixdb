@@ -8,6 +8,7 @@ import { useTranslation } from "../../i18n";
 import { CANCELLED, decodeBase64, restCancel, restSend } from "./api";
 import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
 import { detectBody, type ViewMode } from "./contentType";
+import AuthPane from "./components/AuthPane";
 import BodyEditor from "./components/BodyEditor";
 import ResponsePane, { IDLE_SEND, type SendState } from "./components/ResponsePane";
 import KeyValueTable from "./components/KeyValueTable";
@@ -41,7 +42,7 @@ import {
 } from "./workspace";
 import "./rest.css";
 
-type RequestTabKey = "params" | "body" | "headers";
+type RequestTabKey = "params" | "body" | "headers" | "auth";
 
 /**
  * The REST client's workspace: the request list, the requests open on it, and the pane each one
@@ -331,6 +332,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     { key: "params", label: t("rest.paramsTab") },
     { key: "body", label: t("rest.bodyTab") },
     { key: "headers", label: t("rest.requestHeadersTab") },
+    { key: "auth", label: t("rest.authTab") },
   ];
 
   return (
@@ -417,6 +419,14 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
                 )}
                 {requestTab === "headers" && (
                   <KeyValueTable rows={activeRequest.headers} onChange={(headers) => edit({ headers })} />
+                )}
+                {requestTab === "auth" && (
+                  <AuthPane
+                    auth={activeRequest.auth}
+                    headers={activeRequest.headers}
+                    params={activeRequest.params}
+                    onChange={(auth) => edit({ auth })}
+                  />
                 )}
               </div>
             </section>

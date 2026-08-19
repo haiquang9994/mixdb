@@ -50,3 +50,10 @@ export function shortUrl(url: string): string {
   const withoutQuery = withoutScheme.split(/[?#]/)[0];
   return withoutQuery.replace(/\/$/, "");
 }
+
+/** The last segment of a path, in either slash. What a row shows for a chosen file: no column is
+ *  ever wide enough for the whole path, which is the row's hover text instead. */
+export function fileName(path: string): string {
+  const segments = path.split(/[\\/]/).filter((segment) => segment !== "");
+  return segments[segments.length - 1] ?? path;
+}

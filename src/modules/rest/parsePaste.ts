@@ -9,6 +9,7 @@ import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
 import { decodeComponent, paramsFromUrl } from "./syncUrlParams";
 import { METHODS } from "./types";
 import type {
+  Auth,
   Body,
   KeyValue,
   Method,
@@ -139,6 +140,9 @@ export interface ParsedRequest {
   params: KeyValue[];
   headers: KeyValue[];
   body: Body;
+  /** From `-u`. A command that also gives an `Authorization` header keeps the header and sets no
+   *  auth, so what the Auth tab shows and what goes on the wire never disagree. */
+  auth: Auth;
 }
 
 /** Short flags that take a value, which is written either after a space or glued straight on. */
@@ -202,15 +206,6 @@ function looksLikeUrl(arg: string): boolean {
 function headerValue(headers: KeyValue[], name: string): string | null {
   const found = headers.find((row) => row.key.toLowerCase() === name);
   return found?.value ?? null;
-}
-
-/** Base64 of a UTF-8 string. `btoa` alone throws on anything outside Latin-1, and a password with
- *  an accent in it is a real password. */
-function base64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let latin1 = "";
-  for (const byte of bytes) latin1 += String.fromCharCode(byte);
-  return btoa(latin1);
 }
 
 /** The notation a declared content type implies, or null when it names none this editor knows.
@@ -381,17 +376,18 @@ export function parseCurl(text: string, nextId: () => string): ParsedRequest | n
         ? { kind: "none" }
         : dataBody(data, headerValue(headers, "content-type"), nextId);
 
-  /* Basic credentials become a header rather than an `auth` value: nothing reads `auth` until the
-     Auth tab arrives in Phase 3, and a credential that silently goes nowhere is worse than one
-     written out where its owner can see it. */
-  if (user !== null && headerValue(headers, "authorization") === null) {
-    headers.push({
-      id: nextId(),
-      enabled: true,
-      key: "Authorization",
-      value: `Basic ${base64(user.includes(":") ? user : `${user}:`)}`,
-    });
-  }
+  /* `-u` becomes basic auth rather than a header, now that there is a tab to show it in. An
+     Authorization header given as well wins — `buildRequest` would drop the auth anyway, and a tab
+     showing credentials that are not the ones being sent is worse than no tab at all. */
+  const colon = user === null ? -1 : user.indexOf(":");
+  const auth: Auth =
+    user === null || headerValue(headers, "authorization") !== null
+      ? { kind: "none" }
+      : {
+          kind: "basic",
+          username: colon === -1 ? user : user.slice(0, colon),
+          password: colon === -1 ? "" : user.slice(colon + 1),
+        };
 
   return {
     method: method ?? implied,
@@ -399,6 +395,7 @@ export function parseCurl(text: string, nextId: () => string): ParsedRequest | n
     params: paramsFromUrl(url, [], nextId),
     headers,
     body,
+    auth,
   };
 }
 
