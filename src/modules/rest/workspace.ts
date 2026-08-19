@@ -6,13 +6,17 @@ import { Store } from "@tauri-apps/plugin-store";
  *
  * The shell remembers no tabs, so nothing here is about which requests were open — only about
  * the furniture, which is the same in every REST tab and so belongs to the app rather than to one
- * of them. Phase 4 adds `lastEnvId` here and Phase 5 the send settings.
+ * of them. Phase 5 adds the send settings here.
  */
 
 export interface Workspace {
   sidebarWidth: number;
   /** The request pane's share of the width between the two. */
   splitRatio: number;
+  /** Only a seed. A REST tab reads this once, when this file first arrives, and writes it whenever
+   *  its own choice changes — but it never reads it again, because a second tab moving to prod is
+   *  not this tab moving with it. */
+  lastEnvId: string | null;
 }
 
 export const DEFAULT_SIDEBAR_WIDTH = 260;
@@ -27,6 +31,7 @@ const KEY = "workspace";
 const DEFAULTS: Workspace = {
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   splitRatio: DEFAULT_SPLIT_RATIO,
+  lastEnvId: null,
 };
 
 let storePromise: Promise<Store> | null = null;
@@ -89,4 +94,15 @@ export function setSidebarWidth(sidebarWidth: number): void {
 
 export function setSplitRatio(splitRatio: number): void {
   write({ ...snapshot, splitRatio });
+}
+
+/** Whether the file has been read yet. A tab seeds its environment from `lastEnvId` the moment
+ *  this turns true, and never again — which is not something a defaulted value can be told apart
+ *  from a stored one. */
+export function workspaceLoaded(): boolean {
+  return loaded;
+}
+
+export function setLastEnvId(lastEnvId: string | null): void {
+  write({ ...snapshot, lastEnvId });
 }

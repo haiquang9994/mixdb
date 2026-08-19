@@ -74,3 +74,34 @@
 .rest-method-DELETE { color: #e03131; }
 .rest-method-HEAD,
 .rest-method-OPTIONS { color: #868e96; }
+
+/* The tab strip and the environment dropdown share one edge.
+ *
+ * The strip scrolls sideways when the tabs run past its width. The dropdown must not go with them:
+ * it belongs to the workspace rather than to any one request, and it has to stay reachable
+ * whatever is scrolled where. So it is a sibling of the strip, not a child of it.
+ *
+ * The row draws the background and the bottom border, and the strip inside it is told to draw
+ * neither. Two class names beat the one in `TabStrip.module.css`, which is how a module's own
+ * stylesheet wins here without a knob being added to the shared component. */
+.rest-tabs-row {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  background: rgb(128 128 128 / 0.08);
+  border-bottom: 1px solid var(--border);
+}
+
+.rest-tabs-row .rest-tabs-strip {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border-bottom: none;
+}
+
+.rest-env {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0.4rem 0.5rem 0.4rem 0.35rem;
+}

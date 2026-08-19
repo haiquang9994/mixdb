@@ -8,8 +8,12 @@ import { useTranslation } from "../../i18n";
 import { CANCELLED, decodeBase64, restCancel, restSend } from "./api";
 import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
 import { detectBody, type ViewMode } from "./contentType";
+import { findEnvironment } from "./environments";
+import { useEnvironments } from "./environmentsStore";
 import AuthPane from "./components/AuthPane";
 import BodyEditor from "./components/BodyEditor";
+import EnvironmentDialog from "./components/EnvironmentDialog";
+import EnvironmentSelect from "./components/EnvironmentSelect";
 import ResponsePane, { IDLE_SEND, type SendState } from "./components/ResponsePane";
 import KeyValueTable from "./components/KeyValueTable";
 import RequestList from "./components/RequestList";
@@ -36,9 +40,11 @@ import {
   MAX_SPLIT_RATIO,
   MIN_SIDEBAR_WIDTH,
   MIN_SPLIT_RATIO,
+  setLastEnvId,
   setSidebarWidth,
   setSplitRatio,
   useWorkspace,
+  workspaceLoaded,
 } from "./workspace";
 import "./rest.css";
 
@@ -58,6 +64,11 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   const { t } = useTranslation();
   const lists = useRequestLists();
   const workspace = useWorkspace();
+  const environments = useEnvironments();
+  const [envId, setEnvId] = useState<string | null>(null);
+  const [envDialogOpen, setEnvDialogOpen] = useState(false);
+  /** Whether `lastEnvId` has been taken. Once, and once only — see the note on the field. */
+  const envSeeded = useRef(false);
 
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -79,8 +90,24 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   useEffect(() => setWidth(workspace.sidebarWidth), [workspace.sidebarWidth]);
   useEffect(() => setRatio(workspace.splitRatio), [workspace.splitRatio]);
 
+  useEffect(() => {
+    if (envSeeded.current || !workspaceLoaded()) return;
+    envSeeded.current = true;
+    setEnvId(workspace.lastEnvId);
+  }, [workspace]);
+
   const label = (request: RestRequest) =>
     request.name !== "" ? request.name : shortUrl(request.url) || t("rest.untitled");
+
+  /* Null when nothing is chosen, and also when what was chosen has since been deleted — which is
+     the whole of what deleting an environment has to clean up. */
+  const env = findEnvironment(environments, envId);
+
+  function chooseEnv(id: string | null) {
+    setEnvId(id);
+    // Written for the next REST tab to open with; this one keeps its own choice from here.
+    setLastEnvId(id);
+  }
 
   /* The open tabs, resolved afresh from the store: a request edited anywhere shows its new name
      here, and one deleted from the sidebar takes its tab with it. */
@@ -366,14 +393,25 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
       />
 
       <div className="rest-main">
-        <RequestTabs
-          tabs={tabs}
-          activeId={currentId}
-          onSelect={setActiveId}
-          onClose={close}
-          onNew={makeRequest}
-          label={label}
-        />
+        <div className="rest-tabs-row">
+          <RequestTabs
+            className="rest-tabs-strip"
+            tabs={tabs}
+            activeId={currentId}
+            onSelect={setActiveId}
+            onClose={close}
+            onNew={makeRequest}
+            label={label}
+          />
+          <div className="rest-env">
+            <EnvironmentSelect
+              environments={environments}
+              value={env?.id ?? null}
+              onChange={chooseEnv}
+              onManage={() => setEnvDialogOpen(true)}
+            />
+          </div>
+        </div>
 
         {activeRequest === undefined ? (
           <p className="rest-empty muted">{t("rest.emptyMain")}</p>
@@ -484,6 +522,10 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
           </div>
         )}
       </div>
+
+      {envDialogOpen && (
+        <EnvironmentDialog initialId={env?.id ?? null} onClose={() => setEnvDialogOpen(false)} />
+      )}
     </div>
   );
 }

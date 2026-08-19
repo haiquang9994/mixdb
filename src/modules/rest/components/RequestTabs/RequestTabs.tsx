@@ -11,6 +11,9 @@ interface Props {
   onNew: () => void;
   /** What a request with neither name nor URL is called. */
   label: (request: RestRequest) => string;
+  /** Handed to the strip. The workspace puts the environment dropdown beside it and moves the
+   *  background and the bottom edge onto the row that holds both. */
+  className?: string;
 }
 
 /**
@@ -23,10 +26,10 @@ interface Props {
  * Closing asks nothing: there is no unsaved state to lose, because every edit is written through
  * to the request as it is made. Middle-click closes too, which is what a tab strip does.
  */
-function RequestTabs({ tabs, activeId, onSelect, onClose, onNew, label }: Props) {
+function RequestTabs({ tabs, activeId, onSelect, onClose, onNew, label, className }: Props) {
   const { t } = useTranslation();
   return (
-    <TabStrip role="tablist">
+    <TabStrip role="tablist" className={className}>
       {tabs.map((request) => (
         <Tab
           key={request.id}
