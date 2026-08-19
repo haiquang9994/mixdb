@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, hexDump, prettyJson, shortUrl } from "./format";
+import { fileName, formatBytes, hexDump, prettyJson, shortUrl } from "./format";
 
 describe("formatBytes", () => {
   it("counts small bodies in bytes", () => {
@@ -73,5 +73,27 @@ describe("shortUrl", () => {
 
   it("has nothing to shorten in an empty URL", () => {
     expect(shortUrl("")).toBe("");
+  });
+});
+
+describe("fileName", () => {
+  it("takes the last segment of a POSIX path", () => {
+    expect(fileName("/home/ann/photos/a.png")).toBe("a.png");
+  });
+
+  it("takes the last segment of a Windows path", () => {
+    expect(fileName("C:\\Users\\ann\\a.png")).toBe("a.png");
+  });
+
+  it("ignores a trailing separator", () => {
+    expect(fileName("/home/ann/photos/")).toBe("photos");
+  });
+
+  it("gives back a bare name unchanged", () => {
+    expect(fileName("a.png")).toBe("a.png");
+  });
+
+  it("gives back an empty path as it is", () => {
+    expect(fileName("")).toBe("");
   });
 });
