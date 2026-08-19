@@ -41,6 +41,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- REST requests carry credentials: a bearer token, basic auth, or an API key sent as a header or a query parameter.
+- REST bodies can now be a form, a multipart upload with files from disk, or a single file sent as it is.
+
 ## [0.0.13] - 2026-08-19
 
 ### Added
