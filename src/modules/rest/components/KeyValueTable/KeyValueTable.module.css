@@ -1,4 +1,10 @@
+/* Fills whatever height the pane below the URL has, the way the Body and Auth tabs already do:
+   the four tabs are one box that happens to show four things, and a Params tab that stopped at
+   its last row made the box change size every time the tab did. It also puts the scrolling here,
+   on the rows, rather than on the pane around them. */
 .table {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;

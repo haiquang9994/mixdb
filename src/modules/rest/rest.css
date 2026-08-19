@@ -105,3 +105,46 @@
   align-items: center;
   padding: 0.4rem 0.5rem 0.4rem 0.35rem;
 }
+
+/* The list inside the dialog a pasted cURL raises: which variable, what it matched on, and how
+   many places carry it. Three columns so the names line up and the eye can run down them; the
+   value gives way first, because a long token is the one thing here nobody needs to read. */
+.rest-swap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 40vh;
+  overflow-y: auto;
+  font-size: 0.9em;
+}
+
+.rest-swap-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.rest-swap-name {
+  flex: none;
+  font-family: "Fira Code", monospace;
+  color: var(--accent-text);
+}
+
+.rest-swap-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.7;
+}
+
+.rest-swap-count {
+  flex: none;
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}

@@ -92,9 +92,17 @@ const restEn = {
     envAddVar: "Add variable",
     envRemoveVar: "Remove variable",
     previewLabel: "Sends to",
+    previewExpand: "Show the whole line",
+    previewCollapse: "Show one line",
     missingVars: "No value for {{names}} in \u201c{{env}}\u201d.",
     addMissingVars: "Add to \u201c{{env}}\u201d",
     varCycle: "A variable in \u201c{{env}}\u201d refers back to itself.",
+    swapTitle: "Use the environment\u2019s variables?",
+    swapMessage:
+      "The command you pasted has values that \u201c{{env}}\u201d already has variables for.",
+    swapConfirm: "Use the variables",
+    swapCancel: "Keep the values",
+    swapCount: "\u00d7{{count}}",
     // Response pane
     responseEmpty: "Nothing sent yet.",
     cancelled: "Cancelled",

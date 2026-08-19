@@ -36,6 +36,11 @@ function EnvironmentSelect({ environments, value, onChange, onManage }: Props) {
       ariaLabel={t("rest.envLabel")}
       title={t("rest.envLabel")}
       optionAlign="right"
+      /* An environment is named by whoever made it, and the name is the only thing that says which
+         one a request is about to be sent against. Cut short it stops answering that — `staging`
+         and `staging-eu` end the same — so the control takes the width the name needs and gives
+         back what a short one does not. */
+      truncate={false}
       options={[
         { value: NONE, label: t("rest.envNone") },
         ...environments.map((env) => ({ value: env.id, label: env.name })),

@@ -35,6 +35,12 @@ interface SelectProps<T extends string | number> {
    * the menu spells its options out, but only once it is open. */
   title?: string;
   optionAlign?: "left" | "right" | "center";
+  /** Cuts the trigger's value with an ellipsis when it is wider than the room it has. On by
+   * default. Turn it off where the whole value matters more than a settled width: the trigger then
+   * shrinks to a short value and grows for a long one, which is wrong for anything sitting in a
+   * fixed slot beside other controls. The open menu is not affected either way — it is always as
+   * wide as its longest option, up to the edge of the window. */
+  truncate?: boolean;
   /** Puts a search box at the head of the open dropdown and narrows the list to what it matches.
    * Worth it for lists long enough to scroll — databases, columns, operators. */
   searchable?: boolean;
@@ -77,6 +83,7 @@ function Select<T extends string | number>({
   ariaLabel,
   title,
   optionAlign = "left",
+  truncate = true,
   searchable = false,
   searchPlaceholder,
 }: SelectProps<T>) {
@@ -146,11 +153,19 @@ function Select<T extends string | number>({
     const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_MARGIN;
     const spaceAbove = rect.top - VIEWPORT_MARGIN;
     const openUp = estimatedHeight > spaceBelow && spaceAbove > spaceBelow;
+    // Pinned to whichever edge of the trigger has more room beside it, and given all of it. Always
+    // grown rightwards, a menu under a control near the right of the window — the environment
+    // picker at the end of the tab strip is one — has barely the trigger's own width to live in,
+    // and every option longer than the trigger comes out as an ellipsis.
+    const spaceRight = window.innerWidth - rect.left - VIEWPORT_MARGIN;
+    const spaceLeft = rect.right - VIEWPORT_MARGIN;
+    const openLeft = spaceLeft > spaceRight;
     return {
       position: "fixed",
-      left: rect.left,
       minWidth: rect.width,
-      maxWidth: window.innerWidth - rect.left - VIEWPORT_MARGIN,
+      ...(openLeft
+        ? { right: window.innerWidth - rect.right, maxWidth: spaceLeft }
+        : { left: rect.left, maxWidth: spaceRight }),
       ...(openUp
         ? { bottom: window.innerHeight - rect.top + MENU_GAP, maxHeight: spaceAbove }
         : { top: rect.bottom + MENU_GAP, maxHeight: spaceBelow }),
@@ -171,6 +186,27 @@ function Select<T extends string | number>({
     if (!open) return;
     setMenuStyle(measureMenu());
   }, [open, options.length, searchable]);
+
+  // `width: max-content` is the widest option — until something takes a few pixels back out of it
+  // again: the frame drawn around the list, the scrollbar that appears once the list is long
+  // enough to want one. Whatever it is, the shortfall lands on the longest option and only that
+  // one, which then ends in an ellipsis inside a menu with room to spare. So it is measured
+  // instead of trusted: every row says what it would need, and the menu is widened to the widest
+  // of them. `maxWidth` still has the last word, which is what keeps it on the screen.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const menu = menuRef.current;
+    if (!open || !list || !menu) return;
+    let needed = 0;
+    for (let i = 0; i < list.children.length; i++) {
+      needed = Math.max(needed, list.children[i].scrollWidth);
+    }
+    // `scrollWidth` is a whole number and the text under it is not, so the last pixel is bought.
+    const grow = needed + 1 - list.clientWidth;
+    if (grow <= 0) return;
+    const width = menu.offsetWidth + grow;
+    setMenuStyle((prev) => ({ ...prev, width }));
+  }, [open, visible]);
 
   // A query is a fresh start each time the menu opens — reopening on last time's filtered list
   // would hide options the trigger says nothing about.
@@ -273,7 +309,7 @@ function Select<T extends string | number>({
   return (
     <div
       ref={rootRef}
-      className={`${styles.select}${disabled ? ` ${styles.disabled}` : ""}${className ? ` ${className}` : ""}`}
+      className={`${styles.select}${disabled ? ` ${styles.disabled}` : ""}${truncate ? "" : ` ${styles.fit}`}${className ? ` ${className}` : ""}`}
       title={title}
     >
       <button
@@ -296,7 +332,11 @@ function Select<T extends string | number>({
       </button>
       {open &&
         createPortal(
-          <div className={`${styles.menu} glass`} ref={menuRef} style={menuStyle}>
+          <div
+            className={`${styles.menu} glass`}
+            ref={menuRef}
+            style={menuStyle}
+          >
             {searchable && (
               <input
                 ref={searchRef}

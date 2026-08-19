@@ -76,6 +76,18 @@
   white-space: nowrap;
 }
 
+/* `truncate={false}`. The floor goes, so a short value gets a narrow control instead of eight ems
+   of empty box, and the ellipsis goes with it: the trigger is as wide as what it says, so there is
+   nothing left for an ellipsis to stand for. The menu is not part of this — it shows its options
+   in full whichever way the trigger is set. */
+.fit {
+  min-width: 0;
+}
+
+.fit .value {
+  text-overflow: clip;
+}
+
 .chevron {
   flex-shrink: 0;
   opacity: 0.6;

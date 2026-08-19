@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import ConfirmDialog from "../../components/ConfirmDialog";
 import Splitter, { clampRatio, clampSize } from "../../components/Splitter";
 import { Tab, TabStrip, tabKeyDown } from "../../components/TabStrip";
 import { errorMessage } from "../../core/errors";
@@ -8,10 +9,11 @@ import { useTranslation } from "../../i18n";
 import { CANCELLED, decodeBase64, restCancel, restSend } from "./api";
 import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
 import { detectBody, type ViewMode } from "./contentType";
-import { findEnvironment, previewVars, varMap } from "./environments";
+import { SECRET_MASK, findEnvironment, previewVars, varMap } from "./environments";
 import { addVariables, useEnvironments } from "./environmentsStore";
 import { interpolate } from "./interpolate";
 import { resolveRequest } from "./resolveRequest";
+import { findSubstitutions, substitute, type Substitution } from "./substitute";
 import AuthPane from "./components/AuthPane";
 import BodyEditor from "./components/BodyEditor";
 import EnvironmentDialog from "./components/EnvironmentDialog";
@@ -87,6 +89,9 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   const urlRef = useRef<HTMLInputElement>(null);
   /** The request whose URL box is still owed the keyboard — set by New, cleared once given. */
   const [focusUrlFor, setFocusUrlFor] = useState<string | null>(null);
+  /** A paste that the environment has names for, and the request it would become. Held rather
+   *  than applied: the question is put to whoever pasted it, and both answers are cheap. */
+  const [swap, setSwap] = useState<{ request: RestRequest; found: Substitution[] } | null>(null);
 
   // The workspace file is read once, after the first render — so the furniture starts at its
   // defaults and moves to what was saved when it arrives.
@@ -253,6 +258,11 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
    * nothing and so needs no undo.
    *
    * Returns whether the paste was taken, which is what stops the box also receiving it.
+   *
+   * A command copied out of a browser has the host, the token and the api key written into it, and
+   * those are the very things the environment beside it exists to hold. Where they match, the
+   * offer to put the variables back is made — asked rather than done, because the values may be
+   * the whole reason this particular command was pasted.
    */
   function pasteInto(text: string): boolean {
     const parsed = parsePaste(text, () => crypto.randomUUID());
@@ -264,6 +274,10 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     // The same id when the husk was filled in place; a different one when a duplicate was found in
     // Recent, and then it is that row's tab which comes forward.
     open(filled.id);
+    if (env !== null) {
+      const found = findSubstitutions(filled, env);
+      if (found.length > 0) setSwap({ request: substitute(filled, env), found });
+    }
     return true;
   }
 
@@ -393,6 +407,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
         <RequestList
           lists={lists}
           activeId={currentId}
+          vars={varMap(env)}
           onOpen={open}
           onNew={makeRequest}
           onSave={saveRequest}
@@ -563,6 +578,34 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
 
       {envDialogOpen && (
         <EnvironmentDialog initialId={env?.id ?? null} onClose={() => setEnvDialogOpen(false)} />
+      )}
+
+      {swap !== null && (
+        <ConfirmDialog
+          title={t("rest.swapTitle")}
+          message={t("rest.swapMessage", { env: env?.name ?? "" })}
+          confirmLabel={t("rest.swapConfirm")}
+          cancelLabel={t("rest.swapCancel")}
+          onConfirm={() => {
+            saveRequest(swap.request);
+            setSwap(null);
+          }}
+          onCancel={() => setSwap(null)}
+        >
+          <ul className="rest-swap-list">
+            {swap.found.map((item) => (
+              <li key={item.name} className="rest-swap-row">
+                <code className="rest-swap-name">{`{{${item.name}}}`}</code>
+                {/* A secret's value is dots here for the same reason it is dots under the URL box:
+                    the question is which variable, and the answer never needs the credential. */}
+                <span className="rest-swap-value">{item.secret ? SECRET_MASK : item.value}</span>
+                <span className="rest-swap-count">
+                  {t("rest.swapCount", { count: item.count })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </ConfirmDialog>
       )}
     </div>
   );

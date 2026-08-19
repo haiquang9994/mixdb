@@ -17,12 +17,16 @@ import { useTranslation } from "../../../../i18n";
 import { shortUrl } from "../../format";
 import { toCurl } from "../../parsePaste";
 import { RECENT_LIMIT } from "../../requests";
+import { resolveRequest } from "../../resolveRequest";
 import type { RequestLists, RestRequest } from "../../types";
 import styles from "./RequestList.module.css";
 
 interface Props {
   lists: RequestLists;
   activeId: string | null;
+  /** The chosen environment's values, or null when none is. Only *Copy as cURL* reads them: what
+   *  is copied is meant to be run somewhere else, and `{{token}}` runs nowhere but here. */
+  vars: Record<string, string> | null;
   onOpen: (id: string) => void;
   onNew: () => void;
   /** A request with something changed — a rename. */
@@ -53,6 +57,7 @@ interface MenuState {
 function RequestList({
   lists,
   activeId,
+  vars,
   onOpen,
   onNew,
   onSave,
@@ -217,9 +222,13 @@ function RequestList({
           <button
             type="button"
             onClick={() => {
+              // Resolved on the way out, secrets and all. This command is going somewhere that has
+              // never heard of this workspace — a terminal, a colleague, a bug report — and every
+              // `{{name}}` left in it is a place it would fail. Nothing is written back: what is
+              // resolved here is a string on the clipboard and the request keeps its variables.
               // A refusal is reported by `copyText`; the sidebar has no banner to put it on, so it
               // is swallowed rather than left as an unhandled rejection — as the tree's copy is.
-              void copyText(toCurl(menu.request)).catch(() => {});
+              void copyText(toCurl(resolveRequest(menu.request, vars).request)).catch(() => {});
               setMenu(null);
             }}
           >
