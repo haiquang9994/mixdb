@@ -143,6 +143,21 @@ describe("buildRequest: bodies", () => {
     expect(header(wire, "content-type")).toBeUndefined();
   });
 
+  it("leaves out a multipart row that says file and names none", () => {
+    const body: Body = {
+      kind: "multipart",
+      fields: [
+        { id: "f1", enabled: true, key: "name", value: "Ann" },
+        { id: "f2", enabled: true, key: "avatar", value: "", file: "" },
+      ],
+    };
+    const wire = build({ body });
+    expect(wire.body).toEqual({
+      kind: "multipart",
+      parts: [{ name: "name", value: "Ann", path: null }],
+    });
+  });
+
   it("sends a binary body as a path for Rust to read", () => {
     const wire = build({ body: { kind: "binary", filePath: "C:/tmp/a.bin" } });
     expect(wire.body).toEqual({ kind: "file", path: "C:/tmp/a.bin" });

@@ -118,11 +118,16 @@ function wireBody(body: Body): { body: WireBody; contentType: string | null } {
         contentType: "application/x-www-form-urlencoded",
       };
     case "multipart": {
-      const parts: WirePart[] = live(body.fields).map((field) => ({
-        name: field.key,
-        value: field.file === undefined ? field.value : null,
-        path: field.file ?? null,
-      }));
+      /* A row switched to File before a file was picked holds an empty path. It is dropped like an
+         unticked one: handing Rust an empty path buys an error naming nothing, and the row is
+         visibly unfinished in the table, which is a better place to notice. */
+      const parts: WirePart[] = live(body.fields)
+        .filter((field) => field.file !== "")
+        .map((field) => ({
+          name: field.key,
+          value: field.file === undefined ? field.value : null,
+          path: field.file ?? null,
+        }));
       // No content type: the boundary is reqwest's to generate and to announce.
       return { body: { kind: "multipart", parts }, contentType: null };
     }

@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
 import Input from "../../../../components/Input";
 import { CloseIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
+import { useDraftFocus } from "../../draftFocus";
 import type { KeyValue } from "../../types";
 import styles from "./KeyValueTable.module.css";
 
@@ -25,31 +25,7 @@ interface Props {
 function KeyValueTable({ rows, onChange, keyPlaceholder, valuePlaceholder }: Props) {
   const { t } = useTranslation();
 
-  /* Every box in the table, by row and column.
-   *
-   * Typing into the foot of the table makes a row, and the box that was typed into is not the box
-   * that row is edited in — the draft is always empty and always at the bottom. Left alone, the
-   * caret stays on the draft and the second character starts a *second* row. So the new row's
-   * matching box is handed the keyboard the moment it exists, and typing carries on into the row
-   * that was just made. */
-  const boxes = useRef(new Map<string, HTMLInputElement>());
-  const owed = useRef<string | null>(null);
-
-  const bind = (slot: string) => (el: HTMLInputElement | null) => {
-    if (el === null) boxes.current.delete(slot);
-    else boxes.current.set(slot, el);
-  };
-
-  useEffect(() => {
-    const slot = owed.current;
-    if (slot === null) return;
-    owed.current = null;
-    const box = boxes.current.get(slot);
-    if (box === undefined) return;
-    box.focus();
-    // The caret goes after the character that made the row, not before it.
-    box.setSelectionRange(box.value.length, box.value.length);
-  });
+  const { bind, owe } = useDraftFocus();
 
   function update(id: string, patch: Partial<KeyValue>) {
     onChange(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
@@ -57,7 +33,7 @@ function KeyValueTable({ rows, onChange, keyPlaceholder, valuePlaceholder }: Pro
 
   function append(column: "key" | "value", text: string) {
     const id = crypto.randomUUID();
-    owed.current = `${id}:${column}`;
+    owe(`${id}:${column}`);
     onChange([...rows, { id, enabled: true, key: "", value: "", [column]: text }]);
   }
 

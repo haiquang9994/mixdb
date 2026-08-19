@@ -6,6 +6,7 @@ import { BODY_CHOICES, bodyChoice, convertBody, type BodyChoice } from "../../bo
 import { prettyJson } from "../../format";
 import type { Body, MultipartField } from "../../types";
 import KeyValueTable from "../KeyValueTable";
+import MultipartTable from "../MultipartTable";
 import styles from "./BodyEditor.module.css";
 
 interface Props {
@@ -26,7 +27,7 @@ const LABELS: Record<BodyChoice, TranslationKey> = {
 
 /** The kinds this pane can make and change. It grows once per phase-3 task; when it holds all of
  *  `BODY_CHOICES`, both it and the read-only view below go. */
-const EDITABLE: BodyChoice[] = ["none", "json", "xml", "yaml", "text", "form"];
+const EDITABLE: BodyChoice[] = ["none", "json", "xml", "yaml", "text", "form", "multipart"];
 
 /**
  * The rows to show for a body this pane cannot edit, or null when it can.
@@ -35,7 +36,6 @@ const EDITABLE: BodyChoice[] = ["none", "json", "xml", "yaml", "text", "form"];
  * binary body is one file with no name of its own.
  */
 function readOnlyFields(body: Body): MultipartField[] | null {
-  if (body.kind === "multipart") return body.fields;
   if (body.kind === "binary") {
     return [{ id: "file", enabled: true, key: "", value: "", file: body.filePath }];
   }
@@ -102,6 +102,11 @@ function BodyEditor({ body, onChange }: Props) {
         <KeyValueTable
           rows={body.fields}
           onChange={(fields) => onChange({ kind: "form", fields })}
+        />
+      ) : body.kind === "multipart" ? (
+        <MultipartTable
+          rows={body.fields}
+          onChange={(fields) => onChange({ kind: "multipart", fields })}
         />
       ) : shown === null ? (
         <p className={`${styles.empty} muted`}>{t("rest.bodyNone")}</p>
