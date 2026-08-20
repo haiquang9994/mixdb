@@ -20,6 +20,28 @@ use crate::modules::db::models::{ConnectionConfig, DbKind};
 use crate::modules::db::state::{ActiveConnection, DbHandle, DbState};
 use crate::ssh::{self, SshConfig};
 
+/// Chạy lại một lệnh **đọc** đúng một lần, nếu lần đầu chết cùng kết nối.
+///
+/// Chỉ đọc. Một `INSERT` chạy lại sau khi mất kết nối có thể thành hai dòng — câu lệnh có thể đã
+/// tới máy chủ và chỉ có câu trả lời là mất — nên lệnh ghi báo lỗi và để người dùng quyết định.
+///
+/// Là macro chứ không phải một hàm nhận closure: một `Fn() -> impl Future` mượn `State<'_, DbState>`
+/// đưa lời gọi vào đúng loại rắc rối lifetime không đáng đánh nhau, còn macro thì chỉ là viết thân
+/// lệnh hai lần.
+///
+/// Gọi bằng `retry_read!({ ... })` — ngoặc tròn bọc block, vì một lời gọi macro mở bằng ngoặc nhọn
+/// ở vị trí câu lệnh được phân tích như một *statement macro*, không phải một biểu thức có giá trị.
+macro_rules! retry_read {
+    ($body:block) => {{
+        match async { $body }.await {
+            // Không ngủ giữa hai lần: lần thứ hai sẽ tự nằm chờ trong `acquire` của pool, sau
+            // lần mở lại phiên đang diễn ra.
+            Err(e) if e.code == "error.connectionLost" => async { $body }.await,
+            first => first,
+        }
+    }};
+}
+
 pub mod mongo;
 pub mod mysql;
 pub mod postgres;
@@ -412,4 +434,47 @@ fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
 /// Where MixDB keeps the tools it downloaded for itself.
 fn tools_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     app_data_dir(app).map(|dir| dir.join("tools"))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::error::AppError;
+    use std::cell::Cell;
+
+    /// Đúng một lần chạy lại, và chỉ khi lần đầu chết cùng kết nối. Bộ đếm là thứ nói lên điều đó:
+    /// một lệnh ghi lọt vào đây sẽ chạy hai lần, nên "chạy đúng mấy lần" là điều phải khoá lại.
+    #[tokio::test]
+    async fn a_read_runs_again_only_after_a_lost_connection() {
+        let runs = Cell::new(0);
+        let result: Result<u32, AppError> = retry_read!({
+            runs.set(runs.get() + 1);
+            if runs.get() == 1 {
+                Err(err!("error.connectionLost"))
+            } else {
+                Ok(7)
+            }
+        });
+        assert_eq!(result, Ok(7));
+        assert_eq!(runs.get(), 2);
+
+        // Lần đầu đã xong thì không có lần thứ hai.
+        let runs = Cell::new(0);
+        let result: Result<u32, AppError> = retry_read!({
+            runs.set(runs.get() + 1);
+            // Kiểu lỗi phải nói ra ở đây: thân lệnh thật được `?` ghim kiểu cho, còn một `Ok`
+            // đứng một mình trong `async` thì không có gì để suy ra `E`.
+            Ok::<u32, AppError>(1)
+        });
+        assert_eq!(result, Ok(1));
+        assert_eq!(runs.get(), 1);
+
+        // Lỗi của máy chủ không phải lý do để hỏi lại: câu SQL sai lần hai vẫn sai.
+        let runs = Cell::new(0);
+        let result: Result<u32, AppError> = retry_read!({
+            runs.set(runs.get() + 1);
+            Err(err!("error.mysql", message = "syntax"))
+        });
+        assert_eq!(result, Err(err!("error.mysql", message = "syntax")));
+        assert_eq!(runs.get(), 1);
+    }
 }

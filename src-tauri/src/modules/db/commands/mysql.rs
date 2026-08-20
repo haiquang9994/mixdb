@@ -22,14 +22,18 @@ pub async fn mysql_query(
 
 #[tauri::command]
 pub async fn mysql_list_databases(state: State<'_, DbState>, id: String) -> Result<Vec<String>, AppError> {
-    let pool = mysql_pool(&state, &id).await?;
-    mysql::list_databases(&pool).await
+    retry_read!({
+        let pool = mysql_pool(&state, &id).await?;
+        mysql::list_databases(&pool).await
+    })
 }
 
 #[tauri::command]
 pub async fn mysql_server_info(state: State<'_, DbState>, id: String) -> Result<mysql::ServerInfo, AppError> {
-    let pool = mysql_pool(&state, &id).await?;
-    mysql::server_info(&pool).await
+    retry_read!({
+        let pool = mysql_pool(&state, &id).await?;
+        mysql::server_info(&pool).await
+    })
 }
 
 #[tauri::command]
@@ -38,8 +42,10 @@ pub async fn mysql_list_tables(
     id: String,
     database: String,
 ) -> Result<Vec<String>, AppError> {
-    let pool = mysql_pool(&state, &id).await?;
-    mysql::list_tables(&pool, &database).await
+    retry_read!({
+        let pool = mysql_pool(&state, &id).await?;
+        mysql::list_tables(&pool, &database).await
+    })
 }
 
 /// What every table in the database weighs, for the workspace's Statistics tab.
@@ -49,8 +55,10 @@ pub async fn mysql_table_stats(
     id: String,
     database: String,
 ) -> Result<Vec<mysql_structure::TableStats>, AppError> {
-    let pool = mysql_pool(&state, &id).await?;
-    mysql_structure::table_stats(&pool, &database).await
+    retry_read!({
+        let pool = mysql_pool(&state, &id).await?;
+        mysql_structure::table_stats(&pool, &database).await
+    })
 }
 
 #[tauri::command]
@@ -61,8 +69,10 @@ pub async fn mysql_table_data(
     table: String,
     query: mysql::PageQuery,
 ) -> Result<mysql::TablePage, AppError> {
-    let (pool, mariadb) = mysql_connection(&state, &id).await?;
-    mysql::table_data(&pool, mariadb, &database, &table, &query).await
+    retry_read!({
+        let (pool, mariadb) = mysql_connection(&state, &id).await?;
+        mysql::table_data(&pool, mariadb, &database, &table, &query).await
+    })
 }
 
 #[tauri::command]
@@ -111,8 +121,10 @@ pub async fn mysql_table_structure(
     database: String,
     table: String,
 ) -> Result<mysql_structure::TableStructure, AppError> {
-    let (pool, mariadb) = mysql_connection(&state, &id).await?;
-    mysql_structure::table_structure(&pool, mariadb, &database, &table).await
+    retry_read!({
+        let (pool, mariadb) = mysql_connection(&state, &id).await?;
+        mysql_structure::table_structure(&pool, mariadb, &database, &table).await
+    })
 }
 
 /// Every table and column of one database, for the Query tab's completion. One read covers the
@@ -123,8 +135,10 @@ pub async fn mysql_schema_outline(
     id: String,
     database: String,
 ) -> Result<mysql_structure::SchemaOutline, AppError> {
-    let pool = mysql_pool(&state, &id).await?;
-    mysql_structure::schema_outline(&pool, &database).await
+    retry_read!({
+        let pool = mysql_pool(&state, &id).await?;
+        mysql_structure::schema_outline(&pool, &database).await
+    })
 }
 
 /// The collations this server has, for the column editor's picker. A property of the server rather
@@ -134,8 +148,10 @@ pub async fn mysql_collations(
     state: State<'_, DbState>,
     id: String,
 ) -> Result<Vec<mysql_structure::Collation>, AppError> {
-    let pool = mysql_pool(&state, &id).await?;
-    mysql_structure::collations(&pool).await
+    retry_read!({
+        let pool = mysql_pool(&state, &id).await?;
+        mysql_structure::collations(&pool).await
+    })
 }
 
 /// Writes a database out as SQL. `mode` is `structure`, `data` or `all`.
