@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
@@ -30,6 +31,46 @@ pub struct SshConfig {
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const CHANNEL_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Nhịp russh gửi một gói giữ phiên khi đường đang im.
+///
+/// 15 giây: đủ ngắn để đi trước idle timeout của một NAT gia đình (thường 300 giây) và trước
+/// `ClientAliveInterval` của sshd; đủ dài để một phiên để không cả ngày cũng chỉ tốn vài trăm byte.
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
+
+/// Số lần liên tiếp không được trả lời trước khi russh kết thúc phiên — cũng là mặc định của nó.
+/// Nhân với nhịp trên, một đường chết bị phát hiện trong khoảng 45 giây.
+const KEEPALIVE_MAX: usize = 3;
+
+/// Khoảng nghỉ tối thiểu sau một lần xác thực hỏng.
+///
+/// Không có nó, một pool đang cố mở kết nối trong lúc mạng chết sẽ bắn hàng chục lần xác thực mỗi
+/// phút vào một sshd có `MaxAuthTries` — và có thể có fail2ban.
+const RETRY_COOLDOWN: Duration = Duration::from_secs(3);
+
+/// Nhịp watcher kiểm tra phiên khi mọi thứ đang ổn.
+const WATCH_IDLE: Duration = Duration::from_secs(15);
+
+/// Nhịp ngay sau lần hỏng đầu tiên, trước khi giãn dần.
+const WATCH_MIN: Duration = Duration::from_secs(5);
+
+/// Trần của backoff: máy chủ SSH thật sự không tới được thì thử một phút một lần, không hơn.
+const WATCH_MAX: Duration = Duration::from_secs(60);
+
+/// Nhịp chờ kế tiếp của watcher.
+///
+/// So sánh bằng `==` chứ không phải `>=`: `WATCH_MAX` lớn hơn `WATCH_IDLE`, nên một điều kiện
+/// "lớn hơn hoặc bằng nhịp nghỉ" sẽ kéo cả nhịp trần về `WATCH_MIN` và biến backoff thành một vòng
+/// lặp. `WATCH_IDLE` chỉ được đặt khi thành công, nên so bằng là chính xác.
+fn next_backoff(current: Duration, ok: bool) -> Duration {
+    if ok {
+        return WATCH_IDLE;
+    }
+    if current == WATCH_IDLE {
+        return WATCH_MIN;
+    }
+    (current * 2).min(WATCH_MAX)
+}
 
 /// How much a channel may have in flight before the peer has to wait for the receiver to catch up.
 ///
@@ -74,19 +115,137 @@ fn remember_host(path: &Path, endpoint: &str, fingerprint: &str) -> Result<(), A
     std::fs::write(path, text).map_err(|e| err!("error.cannotSaveKnownHost", message = e))
 }
 
+/// Chuyện đang xảy ra với một tunnel, cho ai muốn nói lại với người dùng.
+///
+/// `ssh/` không biết gì về Tauri — nó nhận một callback và gọi, còn việc biến thành sự kiện của
+/// cửa sổ là việc của `commands/mod.rs`.
+pub enum TunnelEvent {
+    Reconnecting,
+    Reconnected,
+    Failed(AppError),
+}
+
+pub type TunnelNotify = Arc<dyn Fn(TunnelEvent) + Send + Sync>;
+
+/// Phiên SSH đang dùng, và dấu vết của lần mở gần nhất.
+struct SessionSlot {
+    /// `None` nghĩa là chưa có phiên nào, hoặc lần mở lại gần nhất thất bại.
+    handle: Option<Arc<client::Handle<TunnelHandler>>>,
+    /// Khi phiên hiện tại được mở. Một phiên trẻ hơn `RETRY_COOLDOWN` không bị vứt đi vì một lần
+    /// mở channel hỏng: máy chủ từ chối forward thẳng thừng (`PermitOpen`, `AllowTcpForwarding no`)
+    /// thì mọi lần đều hỏng, và xác thực lại cho từng kết nối bị từ chối chỉ tổ nện máy chủ.
+    opened_at: Option<Instant>,
+    /// Lần thất bại gần nhất, để không nện máy chủ SSH bằng một chuỗi xác thực hỏng.
+    failed_at: Option<Instant>,
+}
+
+/// Tất cả những gì cần để mở lại phiên, dùng chung bởi vòng accept, watcher, và mọi task bridge.
+struct TunnelInner {
+    ssh: SshConfig,
+    remote_host: String,
+    remote_port: u16,
+    app_data: PathBuf,
+    notify: TunnelNotify,
+    session: AsyncMutex<SessionSlot>,
+}
+
+impl TunnelInner {
+    /// Phiên đang dùng, mở lại nếu phiên cũ đã chết.
+    ///
+    /// Khoá giữ suốt lần xác thực là cố ý: pool mở năm kết nối cùng lúc thì cả năm dừng lại sau
+    /// **một** lần `authenticate`, không phải năm lần. Cái giá là khi đang mở lại, mọi kết nối mới
+    /// qua tunnel này chờ tối đa `CONNECT_TIMEOUT` (10 giây) — nằm gọn trong `acquire_timeout` 30
+    /// giây mặc định của sqlx.
+    async fn session(&self) -> Result<Arc<client::Handle<TunnelHandler>>, AppError> {
+        let mut slot = self.session.lock().await;
+        if let Some(handle) = slot.handle.as_ref().filter(|handle| !handle.is_closed()) {
+            return Ok(Arc::clone(handle));
+        }
+        if let Some(at) = slot.failed_at {
+            if at.elapsed() < RETRY_COOLDOWN {
+                return Err(err!("error.sshUnavailable"));
+            }
+        }
+
+        (self.notify)(TunnelEvent::Reconnecting);
+        match authenticate(&self.ssh, &self.app_data).await {
+            Ok(session) => {
+                let handle = Arc::new(session);
+                *slot = SessionSlot {
+                    handle: Some(Arc::clone(&handle)),
+                    opened_at: Some(Instant::now()),
+                    failed_at: None,
+                };
+                (self.notify)(TunnelEvent::Reconnected);
+                Ok(handle)
+            }
+            Err(e) => {
+                *slot = SessionSlot {
+                    handle: None,
+                    opened_at: None,
+                    failed_at: Some(Instant::now()),
+                };
+                (self.notify)(TunnelEvent::Failed(e.clone()));
+                Err(e)
+            }
+        }
+    }
+
+    /// Vứt phiên hiện tại đi, để lần `session()` kế tiếp mở phiên mới.
+    ///
+    /// `is_closed()` là đường phát hiện nhanh, không phải đường duy nhất: một phiên vừa chết có thể
+    /// chưa kịp báo, và cái hỏng đầu tiên là `channel_open_direct_tcpip`. Cooldown ở đây chặn
+    /// trường hợp ngược lại — phiên còn sống nhưng máy chủ từ chối forward, khi đó mở phiên mới
+    /// không giúp được gì và không được phép lặp lại cho từng kết nối.
+    async fn forget_session(&self) {
+        let mut slot = self.session.lock().await;
+        if slot.opened_at.is_none_or(|at| at.elapsed() >= RETRY_COOLDOWN) {
+            slot.handle = None;
+            slot.opened_at = None;
+        }
+    }
+}
+
 /// A running port forward, torn down as soon as this is dropped.
 ///
-/// The task cannot be held as a bare `JoinHandle`: dropping one of those detaches the task rather
+/// The tasks cannot be held as bare `JoinHandle`s: dropping one of those detaches the task rather
 /// than stopping it. Every connection attempt that failed *after* the tunnel came up — a mistyped
 /// database password, say — would then leave an authenticated SSH session and a bound local port
 /// running for the life of the process, with nothing left holding a handle to either.
 pub struct Tunnel {
-    task: JoinHandle<()>,
+    inner: Arc<TunnelInner>,
+    accept: JoinHandle<()>,
+    watch: JoinHandle<()>,
+}
+
+impl Tunnel {
+    /// Một tay cầm rẻ tới cùng phiên, để người gọi mở lại được mà không phải giữ cái khoá mà
+    /// `Tunnel` đang nằm sau — xác thực mất tới 10 giây, và bản đồ connection không được khoá lâu
+    /// như thế. Xem `commands::tunnel_reconnect`.
+    pub fn session_handle(&self) -> TunnelSession {
+        TunnelSession(Arc::clone(&self.inner))
+    }
 }
 
 impl Drop for Tunnel {
     fn drop(&mut self) {
-        self.task.abort();
+        self.accept.abort();
+        self.watch.abort();
+    }
+}
+
+/// Mở lại phiên theo yêu cầu của người dùng, không chờ hết nhịp backoff.
+pub struct TunnelSession(Arc<TunnelInner>);
+
+impl TunnelSession {
+    pub async fn reconnect(&self) -> Result<(), AppError> {
+        // Xoá dấu thất bại trước, nếu không lần gọi ngay sau một lần hỏng sẽ rơi vào cooldown và
+        // nút *Thử lại* không làm gì cả.
+        {
+            let mut slot = self.0.session.lock().await;
+            slot.failed_at = None;
+        }
+        self.0.session().await.map(|_| ())
     }
 }
 
@@ -166,6 +325,13 @@ async fn authenticate_inner(
         // nothing else is coming until the client has seen it. russh leaves it on by default.
         nodelay: true,
         window_size: WINDOW_SIZE,
+        // russh mặc định không gửi gì cả (`keepalive_interval: None`), nên một phiên để không sẽ
+        // bị NAT hoặc sshd bỏ rơi mà không ai biết — và `is_closed()` không bao giờ thành `true`.
+        // Bật lên vừa giữ phiên sống, vừa là thứ duy nhất phát hiện được đường đã chết.
+        keepalive_interval: Some(KEEPALIVE_INTERVAL),
+        keepalive_max: KEEPALIVE_MAX,
+        // `inactivity_timeout` giữ nguyên `None`: nó đóng phiên khi không có traffic, đúng thứ
+        // đang muốn tránh.
         ..client::Config::default()
     });
     let refused: Arc<Mutex<Option<AppError>>> = Arc::new(Mutex::new(None));
@@ -250,7 +416,10 @@ pub async fn open_tunnel(
     remote_host: &str,
     remote_port: u16,
     app_data: &Path,
+    notify: TunnelNotify,
 ) -> Result<(u16, Tunnel), AppError> {
+    // Lần xác thực đầu đứng ngoài `session()`: nó phải hỏng ra ngoài cho `connect_db` thấy, và
+    // không có gì để báo "đang kết nối lại" khi chưa từng có kết nối nào.
     let session = authenticate(ssh, app_data).await?;
 
     let listener = TcpListener::bind(("127.0.0.1", 0))
@@ -261,50 +430,81 @@ pub async fn open_tunnel(
         .map_err(|e| err!("error.cannotBindTunnelPort", message = e))?
         .port();
 
-    let remote_host = remote_host.to_string();
-    let session = Arc::new(session);
-    let task: JoinHandle<()> = tokio::spawn(async move {
-        loop {
-            let (local_stream, _) = match listener.accept().await {
-                Ok(pair) => pair,
-                Err(_) => break,
-            };
-            // A DB connection pool (or multiple in-flight queries) can hold
-            // several physical connections open at once, so each accepted
-            // local connection gets its own bridging task instead of being
-            // handled inline — an inline loop would block `accept()` for as
-            // long as that one connection stays open, starving every other
-            // connection the pool tries to establish through this tunnel.
-            let session = Arc::clone(&session);
-            let remote_host = remote_host.clone();
-            tokio::spawn(async move {
-                bridge_connection(&session, local_stream, &remote_host, remote_port).await;
-            });
+    let inner = Arc::new(TunnelInner {
+        ssh: ssh.clone(),
+        remote_host: remote_host.to_string(),
+        remote_port,
+        app_data: app_data.to_path_buf(),
+        notify,
+        session: AsyncMutex::new(SessionSlot {
+            handle: Some(Arc::new(session)),
+            opened_at: Some(Instant::now()),
+            failed_at: None,
+        }),
+    });
+
+    let accept: JoinHandle<()> = tokio::spawn({
+        let inner = Arc::clone(&inner);
+        async move {
+            loop {
+                let (local_stream, _) = match listener.accept().await {
+                    Ok(pair) => pair,
+                    Err(_) => break,
+                };
+                // A DB connection pool (or multiple in-flight queries) can hold several physical
+                // connections open at once, so each accepted local connection gets its own
+                // bridging task instead of being handled inline — an inline loop would block
+                // `accept()` for as long as that one connection stays open, starving every other
+                // connection the pool tries to establish through this tunnel.
+                let inner = Arc::clone(&inner);
+                tokio::spawn(async move {
+                    bridge_connection(&inner, local_stream).await;
+                });
+            }
         }
     });
 
-    Ok((local_port, Tunnel { task }))
+    // Chỉ mở lại khi có ai đó gõ cửa thì banner chỉ hiện sau khi người dùng đã bấm vào một thứ và
+    // chờ. Watcher làm tab tự lành: máy tính ngủ dậy, đường mạng về, và banner đã chuyển sang "đã
+    // kết nối lại" trước khi người dùng chạm vào gì.
+    let watch: JoinHandle<()> = tokio::spawn({
+        let inner = Arc::clone(&inner);
+        async move {
+            let mut wait = WATCH_IDLE;
+            loop {
+                tokio::time::sleep(wait).await;
+                let dead = {
+                    let slot = inner.session.lock().await;
+                    slot.handle.as_ref().is_none_or(|handle| handle.is_closed())
+                };
+                if !dead {
+                    wait = WATCH_IDLE;
+                    continue;
+                }
+                wait = next_backoff(wait, inner.session().await.is_ok());
+            }
+        }
+    });
+
+    Ok((local_port, Tunnel { inner, accept, watch }))
 }
 
-async fn bridge_connection(
-    session: &client::Handle<TunnelHandler>,
-    mut local_stream: tokio::net::TcpStream,
-    remote_host: &str,
-    remote_port: u16,
-) {
-    let opened = timeout(
-        CHANNEL_OPEN_TIMEOUT,
-        session.channel_open_direct_tcpip(remote_host.to_string(), remote_port as u32, "127.0.0.1", 0),
-    )
-    .await;
-    let channel = match opened {
-        Ok(Ok(c)) => c,
-        // Either the SSH server rejected/never answered the forward request
-        // (e.g. it can't reach remote_host:remote_port itself, or
-        // AllowTcpForwarding/PermitOpen blocks it). Drop this local
-        // connection so the DB client sees a closed socket instead of
-        // hanging indefinitely.
-        Ok(Err(_)) | Err(_) => return,
+async fn bridge_connection(inner: &Arc<TunnelInner>, mut local_stream: tokio::net::TcpStream) {
+    let channel = match open_channel(inner).await {
+        Some(channel) => channel,
+        None => {
+            // Phiên trông còn sống mà không phải. Vứt nó đi rồi thử đúng một lần nữa với phiên
+            // mới, trước khi buông socket local.
+            inner.forget_session().await;
+            match open_channel(inner).await {
+                Some(channel) => channel,
+                // Either the SSH server rejected/never answered the forward request (e.g. it
+                // can't reach remote_host:remote_port itself, or AllowTcpForwarding/PermitOpen
+                // blocks it). Drop this local connection so the DB client sees a closed socket
+                // instead of hanging indefinitely.
+                None => return,
+            }
+        }
     };
 
     // The same reasoning as the SSH socket's `nodelay`, for the hop between the app and whatever
@@ -329,9 +529,31 @@ async fn bridge_connection(
     .await;
 }
 
+/// Một lần thử mở channel forward trên phiên hiện tại. `None` là hỏng, không nói vì sao — người
+/// gọi chỉ có hai lựa chọn, thử lại hoặc buông.
+async fn open_channel(inner: &Arc<TunnelInner>) -> Option<russh::Channel<client::Msg>> {
+    let session = inner.session().await.ok()?;
+    let opened = timeout(
+        CHANNEL_OPEN_TIMEOUT,
+        session.channel_open_direct_tcpip(
+            inner.remote_host.clone(),
+            inner.remote_port as u32,
+            "127.0.0.1",
+            0,
+        ),
+    )
+    .await;
+    match opened {
+        Ok(Ok(channel)) => Some(channel),
+        Ok(Err(_)) | Err(_) => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{known_hosts_file, load_known_hosts, remember_host};
+    use super::{known_hosts_file, load_known_hosts, next_backoff, remember_host};
+    use super::{WATCH_IDLE, WATCH_MAX, WATCH_MIN};
+    use std::time::Duration;
 
     /// What the handler reads and writes between connections. The handshake around it needs a real
     /// SSH server to exercise; this is the part that decides whether a key is the one seen before.
@@ -370,5 +592,26 @@ mod tests {
         let known = load_known_hosts(&file);
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(known.is_empty());
+    }
+
+    /// Nhịp của watcher. Thành công thì về nhịp nghỉ; hỏng lần đầu xuống nhịp nhanh nhất rồi giãn
+    /// dần gấp đôi tới trần — và ở lại trần thay vì quay về nhịp nhanh.
+    #[test]
+    fn the_watcher_backs_off_while_the_tunnel_stays_down() {
+        // Đang ổn thì mỗi nhịp là WATCH_IDLE, dù trước đó vừa hỏng ở nhịp nào.
+        assert_eq!(next_backoff(WATCH_IDLE, true), WATCH_IDLE);
+        assert_eq!(next_backoff(WATCH_MIN, true), WATCH_IDLE);
+        assert_eq!(next_backoff(WATCH_MAX, true), WATCH_IDLE);
+
+        // Lần hỏng đầu tiên — nhịp hiện tại đang là nhịp nghỉ — thử lại nhanh.
+        assert_eq!(next_backoff(WATCH_IDLE, false), WATCH_MIN);
+
+        // Rồi gấp đôi.
+        assert_eq!(next_backoff(WATCH_MIN, false), Duration::from_secs(10));
+        assert_eq!(next_backoff(Duration::from_secs(10), false), Duration::from_secs(20));
+
+        // Chạm trần thì dừng ở trần, không vượt và không quay về WATCH_MIN.
+        assert_eq!(next_backoff(Duration::from_secs(40), false), WATCH_MAX);
+        assert_eq!(next_backoff(WATCH_MAX, false), WATCH_MAX);
     }
 }

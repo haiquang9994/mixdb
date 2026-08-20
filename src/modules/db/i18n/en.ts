@@ -803,6 +803,14 @@ const dbEn = {
     dropMongoMessage:
       "Drop {{database}} with every collection and document in it? This cannot be undone \u2014 dump it first if you may want it back.",
   },
+  tunnel: {
+    reconnecting: "The SSH tunnel dropped \u2014 opening it again\u2026",
+    reconnected:
+      "The tunnel is back. Anything the old connection held \u2014 temporary tables, an open transaction, a script that was running \u2014 went with it.",
+    failed: "The SSH tunnel could not be opened again: {{message}}",
+    retry: "Try again",
+    later: "Later",
+  },
   // What a failed backend command says. The keys here are the `code` an `AppError` carries \u2014 see
   // src-tauri/src/error.rs \u2014 and `{{message}}` is where a driver's own words go, untranslated
   // because they are the server talking and the part worth searching for.
@@ -817,6 +825,9 @@ const dbEn = {
     wrongConnectionKind: "This is not a {{kind}} connection.",
     connectTimeout:
       "The {{kind}} connection timed out after {{seconds}}s \u2014 check the host, the port and the firewall.",
+    connectionLost:
+      "The connection to the server was lost. If it goes through an SSH tunnel, MixDB is opening it again \u2014 try once more in a moment.",
+    noTunnel: "This connection does not go through an SSH tunnel.",
     mongoUriRequired: "A MongoDB connection string is required.",
     mongoNoTcpHost: "The connection string names no TCP host to tunnel to.",
     emptyRedisCommand: "There is no command to run.",

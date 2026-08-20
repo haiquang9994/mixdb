@@ -12,7 +12,7 @@
 //! * **Parse rather than PREPARE.** Checking a statement without running it is a protocol message
 //!   here, not a SQL statement, so the user's text is never interpolated into SQL to check it.
 
-use super::postgres::column_value;
+use super::postgres::{column_value, map_error};
 use crate::error::AppError;
 use futures_util::StreamExt;
 use serde::Serialize;
@@ -262,7 +262,7 @@ pub async fn validate(pool: &PgPool, sql: &str) -> Result<Option<SqlProblem>, Ap
     let mut conn = pool
         .acquire()
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
 
     let statement = sqlx::SqlSafeStr::into_sql_str(sqlx::AssertSqlSafe(sql));
     let Err(error) = conn.prepare(statement).await else {
@@ -306,7 +306,7 @@ pub async fn backend_pid(conn: &mut sqlx::PgConnection) -> Result<u64, AppError>
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
         .fetch_one(conn)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
     Ok(pid.max(0) as u64)
 }
 
@@ -322,7 +322,7 @@ pub async fn cancel(pool: &PgPool, pid: u64) -> Result<(), AppError> {
         .fetch_optional(pool)
         .await
         .map(|_| ())
-        .map_err(|e| err!("error.postgres", message = e))
+        .map_err(map_error)
 }
 
 /// Runs the editor's text statement by statement and reports each one's outcome.
@@ -349,7 +349,7 @@ pub async fn run(
     let mut conn = pool
         .acquire()
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
     announce(backend_pid(&mut conn).await?);
 
     let mut results: Vec<StatementResult> = Vec::new();

@@ -17,8 +17,10 @@ pub async fn postgres_list_databases(
     state: State<'_, DbState>,
     id: String,
 ) -> Result<Vec<String>, AppError> {
-    let pool = postgres_pool(&state, &id, "").await?;
-    postgres::list_databases(&pool).await
+    retry_read!({
+        let pool = postgres_pool(&state, &id, "").await?;
+        postgres::list_databases(&pool).await
+    })
 }
 
 #[tauri::command]
@@ -26,8 +28,10 @@ pub async fn postgres_server_info(
     state: State<'_, DbState>,
     id: String,
 ) -> Result<postgres::ServerInfo, AppError> {
-    let pool = postgres_pool(&state, &id, "").await?;
-    postgres::server_info(&pool).await
+    retry_read!({
+        let pool = postgres_pool(&state, &id, "").await?;
+        postgres::server_info(&pool).await
+    })
 }
 
 #[tauri::command]
@@ -36,8 +40,10 @@ pub async fn postgres_list_tables(
     id: String,
     database: String,
 ) -> Result<Vec<String>, AppError> {
-    let pool = postgres_pool(&state, &id, &database).await?;
-    postgres::list_tables(&pool).await
+    retry_read!({
+        let pool = postgres_pool(&state, &id, &database).await?;
+        postgres::list_tables(&pool).await
+    })
 }
 
 #[tauri::command]
@@ -46,8 +52,10 @@ pub async fn postgres_table_stats(
     id: String,
     database: String,
 ) -> Result<Vec<postgres_structure::TableStats>, AppError> {
-    let pool = postgres_pool(&state, &id, &database).await?;
-    postgres_structure::table_stats(&pool).await
+    retry_read!({
+        let pool = postgres_pool(&state, &id, &database).await?;
+        postgres_structure::table_stats(&pool).await
+    })
 }
 
 #[tauri::command]
@@ -58,8 +66,10 @@ pub async fn postgres_table_data(
     table: String,
     query: postgres::PageQuery,
 ) -> Result<postgres::TablePage, AppError> {
-    let pool = postgres_pool(&state, &id, &database).await?;
-    postgres::table_data(&pool, &table, &query).await
+    retry_read!({
+        let pool = postgres_pool(&state, &id, &database).await?;
+        postgres::table_data(&pool, &table, &query).await
+    })
 }
 
 #[tauri::command]
@@ -110,8 +120,10 @@ pub async fn postgres_table_structure(
     database: String,
     table: String,
 ) -> Result<postgres_structure::TableStructure, AppError> {
-    let pool = postgres_pool(&state, &id, &database).await?;
-    postgres_structure::table_structure(&pool, &table).await
+    retry_read!({
+        let pool = postgres_pool(&state, &id, &database).await?;
+        postgres_structure::table_structure(&pool, &table).await
+    })
 }
 
 #[tauri::command]
@@ -119,8 +131,10 @@ pub async fn postgres_collations(
     state: State<'_, DbState>,
     id: String,
 ) -> Result<Vec<postgres_structure::Collation>, AppError> {
-    let pool = postgres_pool(&state, &id, "").await?;
-    postgres_structure::collations(&pool).await
+    retry_read!({
+        let pool = postgres_pool(&state, &id, "").await?;
+        postgres_structure::collations(&pool).await
+    })
 }
 
 #[tauri::command]
@@ -140,8 +154,10 @@ pub async fn postgres_schema_outline(
     id: String,
     database: String,
 ) -> Result<postgres_structure::SchemaOutline, AppError> {
-    let pool = postgres_pool(&state, &id, &database).await?;
-    postgres_structure::schema_outline(&pool, &database).await
+    retry_read!({
+        let pool = postgres_pool(&state, &id, &database).await?;
+        postgres_structure::schema_outline(&pool, &database).await
+    })
 }
 
 #[tauri::command]

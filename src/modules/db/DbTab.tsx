@@ -971,6 +971,7 @@ function DbTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
           initialDatabase={database}
           status={status}
           error={error}
+          tunnelled={tunnelType === "ssh"}
           onDisconnect={disconnect}
           sidebarWidth={activeSavedConnection?.sidebarWidth}
           onSidebarWidthChange={updateSidebarWidth}
@@ -990,6 +991,7 @@ function DbTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
         initialDatabase={mongoUriDatabase(uri)}
         status={status}
         error={error}
+        tunnelled={tunnelType === "ssh"}
         onDisconnect={disconnect}
         sidebarWidth={activeSavedConnection?.sidebarWidth}
         onSidebarWidthChange={updateSidebarWidth}
@@ -1005,6 +1007,7 @@ function DbTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
       initialDatabase={database}
       status={status}
       error={error}
+      tunnelled={tunnelType === "ssh"}
       onDisconnect={disconnect}
       sidebarWidth={activeSavedConnection?.sidebarWidth}
       onSidebarWidthChange={updateSidebarWidth}

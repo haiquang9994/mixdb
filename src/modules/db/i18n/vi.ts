@@ -797,6 +797,14 @@ const dbVi: DbDict = {
   },
   // Thông báo khi một lệnh ở backend thất bại. Khóa ở đây chính là `code` mà `AppError` mang theo
   // — xem src-tauri/src/error.rs. `{{message}}` là nguyên văn lời của driver, không dịch: đó là
+  tunnel: {
+    reconnecting: "Mất kết nối SSH — đang kết nối lại…",
+    reconnected:
+      "Đã kết nối lại. Những gì thuộc về kết nối cũ — bảng tạm, transaction đang mở, script đang chạy dở — đã mất theo nó.",
+    failed: "Không mở lại được tunnel SSH: {{message}}",
+    retry: "Thử lại",
+    later: "Để sau",
+  },
   // máy chủ đang nói, và cũng là phần đáng tra cứu nhất.
   error: {
     // Bốn loại driver, khi lỗi đến từ chính máy chủ.
@@ -809,6 +817,9 @@ const dbVi: DbDict = {
     wrongConnectionKind: "Đây không phải kết nối {{kind}}.",
     connectTimeout:
       "Kết nối {{kind}} quá hạn sau {{seconds}} giây — kiểm tra host, cổng và tường lửa.",
+    connectionLost:
+      "Mất kết nối tới máy chủ. Nếu kết nối này đi qua SSH tunnel, MixDB đang mở lại — thử lại sau giây lát.",
+    noTunnel: "Kết nối này không đi qua SSH tunnel.",
     mongoUriRequired: "Cần có chuỗi kết nối MongoDB.",
     mongoNoTcpHost: "Chuỗi kết nối không chỉ ra host TCP nào để mở tunnel.",
     emptyRedisCommand: "Không có lệnh nào để chạy.",

@@ -43,9 +43,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
+- A connection over an SSH tunnel now heals itself: the tunnel keeps its session alive and opens a new one behind the same local port when it drops.
 - REST requests take `{{variables}}` from an environment picked at the end of the tab strip, with values marked secret kept in the OS credential store instead of on disk.
 - REST requests carry credentials: a bearer token, basic auth, or an API key sent as a header or a query parameter.
 - REST bodies can now be a form, a multipart upload with files from disk, or a single file sent as it is.
+- A connection that dropped now says so plainly instead of repeating the driver's own words about bytes at EOF.
+- A read that died with the connection is run again once, after the tunnel has been opened back up. Writes are never repeated.
+- A tunnel that dropped holds its own tab until it is back, offering to try again or to disconnect.
 
 ## [0.0.13] - 2026-08-19
 

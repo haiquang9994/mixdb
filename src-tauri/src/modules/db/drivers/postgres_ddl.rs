@@ -13,7 +13,7 @@
 //! * **An index is not part of its table.** `CREATE INDEX` stands alone and the index lives in a
 //!   schema of its own accord, so it is named and dropped separately from the table it covers.
 
-use super::postgres::{qualified_sql, quote_ident, resolve, Pools, FALLBACK_DATABASE};
+use super::postgres::{map_error, qualified_sql, quote_ident, resolve, Pools, FALLBACK_DATABASE};
 use crate::error::AppError;
 use serde::Deserialize;
 use sqlx::{PgPool, Row};
@@ -192,18 +192,18 @@ async fn execute_all(pool: &PgPool, statements: Vec<String>) -> Result<(), AppEr
     let mut tx = pool
         .begin()
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
     for sql in statements {
         if let Err(e) = sqlx::query(sqlx::AssertSqlSafe(sql)).execute(&mut *tx).await {
             tx.rollback()
                 .await
-                .map_err(|e| err!("error.postgres", message = e))?;
-            return Err(err!("error.postgres", message = e));
+                .map_err(map_error)?;
+            return Err(map_error(e));
         }
     }
     tx.commit()
         .await
-        .map_err(|e| err!("error.postgres", message = e))
+        .map_err(map_error)
 }
 
 /// Creates a database.
@@ -225,7 +225,7 @@ pub async fn create_database(pool: &PgPool, name: &str) -> Result<(), AppError> 
     .execute(pool)
     .await
     .map(|_| ())
-    .map_err(|e| err!("error.postgres", message = e))
+    .map_err(map_error)
 }
 
 /// Drops a database and every table in it.
@@ -263,7 +263,7 @@ pub async fn drop_database(pools: &Pools, name: &str) -> Result<(), AppError> {
     )))
     .execute(&pool)
     .await
-    .map_err(|e| err!("error.postgres", message = e))?;
+    .map_err(map_error)?;
 
     // Only once the server has accepted it: what the connection means by "no database named" was
     // the one just dropped, and every later command — the sidebar's own listing among them — would
@@ -394,7 +394,7 @@ async fn current_column(
     .bind(column)
     .fetch_optional(pool)
     .await
-    .map_err(|e| err!("error.postgres", message = e))?
+    .map_err(map_error)?
     .ok_or_else(|| err!("error.unknownColumn", table = table, name = column))?;
 
     Ok(CurrentColumn {
@@ -665,7 +665,7 @@ async fn drop_index_statement(
     .bind(name)
     .fetch_one(pool)
     .await
-    .map_err(|e| err!("error.postgres", message = e))?;
+    .map_err(map_error)?;
 
     Ok(if constrained {
         format!(

@@ -4,7 +4,7 @@
 //! confirmation that the statement ran.
 
 use crate::error::AppError;
-use super::mysql::{column_value, quote_ident};
+use super::mysql::{column_value, map_error, quote_ident};
 use futures_util::StreamExt;
 use serde::Serialize;
 use serde_json::Value;
@@ -263,7 +263,7 @@ pub async fn validate(
         return Ok(None);
     }
 
-    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut conn = pool.acquire().await.map_err(map_error)?;
     if let Some(db) = database.filter(|d| !d.is_empty()) {
         // Sent as text, since `USE` is one of the statements the prepared protocol refuses. A
         // database that cannot be entered ends the check rather than failing it: whatever is wrong
@@ -281,7 +281,7 @@ pub async fn validate(
         .bind(sql)
         .execute(&mut *conn)
         .await
-        .map_err(|e| err!("error.mysql", message = e))?;
+        .map_err(map_error)?;
 
     match sqlx::raw_sql("PREPARE mixdb_check FROM @mixdb_check")
         .execute(&mut *conn)
@@ -333,7 +333,7 @@ pub async fn run(
         return Err(err!("error.nothingToRun"));
     }
 
-    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut conn = pool.acquire().await.map_err(map_error)?;
     announce(super::mysql::thread_id(&mut conn).await?);
     if let Some(db) = database.filter(|d| !d.is_empty()) {
         // Sent as text, not prepared: MySQL refuses `USE` in the prepared statement protocol
@@ -341,7 +341,7 @@ pub async fn run(
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!("USE {}", quote_ident(db))))
             .execute(&mut *conn)
             .await
-            .map_err(|e| err!("error.mysql", message = e))?;
+            .map_err(map_error)?;
     }
 
     let mut results: Vec<StatementResult> = Vec::new();
