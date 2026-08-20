@@ -817,6 +817,8 @@ const dbEn = {
     wrongConnectionKind: "This is not a {{kind}} connection.",
     connectTimeout:
       "The {{kind}} connection timed out after {{seconds}}s \u2014 check the host, the port and the firewall.",
+    connectionLost:
+      "The connection to the server was lost. If it goes through an SSH tunnel, MixDB is opening it again \u2014 try once more in a moment.",
     mongoUriRequired: "A MongoDB connection string is required.",
     mongoNoTcpHost: "The connection string names no TCP host to tunnel to.",
     emptyRedisCommand: "There is no command to run.",

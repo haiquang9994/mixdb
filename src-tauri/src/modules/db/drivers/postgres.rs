@@ -17,6 +17,16 @@ use sqlx::{Column, PgPool, Row, TypeInfo};
 use std::collections::{BTreeMap, HashMap};
 use tokio::sync::Mutex;
 
+/// Cái mà mọi lệnh PostgreSQL đang dùng kết nối dùng thay cho `err!("error.postgres", message = e)`
+/// — cùng cách phân biệt như `mysql::map_error`, xem `mysql::lost_connection`.
+pub(super) fn map_error(e: sqlx::Error) -> AppError {
+    if super::mysql::lost_connection(&e) {
+        err!("error.connectionLost")
+    } else {
+        err!("error.postgres", message = e)
+    }
+}
+
 /// The database dialed when the connection form leaves the field empty. PostgreSQL insists on one
 /// to connect at all, and this is the maintenance database every server is created with.
 pub(super) const FALLBACK_DATABASE: &str = "postgres";
@@ -67,6 +77,8 @@ impl Pools {
             .max_connections(5)
             .connect_with(self.options.clone().database(&name))
             .await
+            // Không đi qua `map_error`: đây là chỗ mở pool, kể cả pool đầu tiên mà `connect()` mở
+            // — hỏng ở đây là "không kết nối được", và lý do thật nằm trong `message`.
             .map_err(|e| err!("error.postgres", message = e))?;
 
         let mut pools = self.pools.lock().await;
@@ -240,11 +252,11 @@ pub async fn query(
 ) -> Result<Vec<Map<String, Value>>, AppError> {
     // As in `mysql::query`: a borrowed, non-'static statement needs a connection of its own rather
     // than the pool, and this client runs user-authored SQL by design.
-    let mut conn = pool.acquire().await.map_err(|e| err!("error.postgres", message = e))?;
+    let mut conn = pool.acquire().await.map_err(map_error)?;
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
     Ok(rows.iter().map(row_to_json).collect())
 }
 
@@ -262,7 +274,7 @@ pub async fn server_info(pool: &PgPool) -> Result<ServerInfo, AppError> {
     let version: String = sqlx::query_scalar("SHOW server_version")
         .fetch_one(pool)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
     let banner: String = sqlx::query_scalar("SELECT version()")
         .fetch_one(pool)
         .await
@@ -289,7 +301,7 @@ pub async fn list_databases(pool: &PgPool) -> Result<Vec<String>, AppError> {
     )
     .fetch_all(pool)
     .await
-    .map_err(|e| err!("error.postgres", message = e))
+    .map_err(map_error)
 }
 
 /// Every table and view of the connected database, across every schema the user can see, named as
@@ -310,7 +322,7 @@ pub async fn list_tables(pool: &PgPool) -> Result<Vec<String>, AppError> {
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
         .fetch_all(pool)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
     Ok(rows
         .iter()
         .map(|row| {
@@ -378,7 +390,7 @@ async fn foreign_keys(
     .bind(table)
     .fetch_all(pool)
     .await
-    .map_err(|e| err!("error.postgres", message = e))?;
+    .map_err(map_error)?;
 
     let mut keys = BTreeMap::new();
     for row in &rows {
@@ -596,7 +608,7 @@ async fn table_columns(
     .bind(table)
     .fetch_all(pool)
     .await
-    .map_err(|e| err!("error.postgres", message = e))
+    .map_err(map_error)
 }
 
 /// Whether [`column_value`] has a decoder for this type, given as `format_type` spells it.
@@ -680,7 +692,7 @@ async fn primary_key(pool: &PgPool, schema: &str, table: &str) -> Result<Vec<Str
     .bind(table)
     .fetch_all(pool)
     .await
-    .map_err(|e| err!("error.postgres", message = e))
+    .map_err(map_error)
 }
 
 /// Reads one page of a table. `query.sort_column` orders the whole table before the page is cut
@@ -743,7 +755,7 @@ pub async fn table_data(
     let total: i64 = count_query
         .fetch_one(pool)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
 
     // The ceiling is the largest page size the grid offers; see `mysql::table_data`.
     let page_size = query.page_size.clamp(1, 5000);
@@ -786,7 +798,7 @@ pub async fn table_data(
     let rows = data_query
         .fetch_all(pool)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
 
     Ok(TablePage {
         columns,
@@ -905,7 +917,7 @@ pub async fn update_row(
         .collect::<Vec<_>>()
         .join(", ");
 
-    let mut tx = pool.begin().await.map_err(|e| err!("error.postgres", message = e))?;
+    let mut tx = pool.begin().await.map_err(map_error)?;
 
     let count_sql = format!(
         "SELECT COUNT(*) FROM {qualified} WHERE {}",
@@ -921,9 +933,9 @@ pub async fn update_row(
     let matched: i64 = count_query
         .fetch_one(&mut *tx)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
     if matched != 1 {
-        tx.rollback().await.map_err(|e| err!("error.postgres", message = e))?;
+        tx.rollback().await.map_err(map_error)?;
         return Err(err!("error.rowsMatched", matched = matched));
     }
 
@@ -943,9 +955,9 @@ pub async fn update_row(
     update_query
         .execute(&mut *tx)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
 
-    tx.commit().await.map_err(|e| err!("error.postgres", message = e))?;
+    tx.commit().await.map_err(map_error)?;
     Ok(())
 }
 
@@ -969,7 +981,7 @@ pub async fn insert_rows(
     let (schema, name) = resolve(table);
     let qualified = qualified_sql(&schema, &name);
     let types = column_types(pool, &schema, &name).await?;
-    let mut tx = pool.begin().await.map_err(|e| err!("error.postgres", message = e))?;
+    let mut tx = pool.begin().await.map_err(map_error)?;
 
     for (i, row) in rows.iter().enumerate() {
         // `DEFAULT VALUES` is PostgreSQL's way of spelling "a row that is nothing but defaults".
@@ -994,13 +1006,12 @@ pub async fn insert_rows(
             query = bind_value(query, value);
         }
         if let Err(e) = query.execute(&mut *tx).await {
-            tx.rollback().await.map_err(|e| err!("error.postgres", message = e))?;
-            return Err(err!("error.rowFailed", index = i + 1)
-                .caused_by(err!("error.postgres", message = e)));
+            tx.rollback().await.map_err(map_error)?;
+            return Err(err!("error.rowFailed", index = i + 1).caused_by(map_error(e)));
         }
     }
 
-    tx.commit().await.map_err(|e| err!("error.postgres", message = e))?;
+    tx.commit().await.map_err(map_error)?;
     Ok(())
 }
 
@@ -1029,18 +1040,18 @@ pub async fn delete_rows(
     // and PostgreSQL has no `DELETE ... LIMIT` to cap it with — hence the subquery below.
     let keyed = !primary_key(pool, &schema, &name).await?.is_empty();
 
-    let mut tx = pool.begin().await.map_err(|e| err!("error.postgres", message = e))?;
+    let mut tx = pool.begin().await.map_err(map_error)?;
 
     if all {
         let sql = format!("DELETE FROM {qualified}");
         sqlx::query(sqlx::AssertSqlSafe(sql))
             .execute(&mut *tx)
             .await
-            .map_err(|e| err!("error.postgres", message = e))?;
+            .map_err(map_error)?;
     } else {
         for key in keys {
             if key.is_empty() {
-                tx.rollback().await.map_err(|e| err!("error.postgres", message = e))?;
+                tx.rollback().await.map_err(map_error)?;
                 return Err(err!("error.deleteWithoutKey"));
             }
             let predicate = key_predicate(key, &types, 1);
@@ -1062,11 +1073,11 @@ pub async fn delete_rows(
             query
                 .execute(&mut *tx)
                 .await
-                .map_err(|e| err!("error.postgres", message = e))?;
+                .map_err(map_error)?;
         }
     }
 
-    tx.commit().await.map_err(|e| err!("error.postgres", message = e))?;
+    tx.commit().await.map_err(map_error)?;
 
     if reset_sequence {
         restart_sequence(pool, &schema, &name).await?;
@@ -1099,7 +1110,7 @@ async fn restart_sequence(pool: &PgPool, schema: &str, table: &str) -> Result<()
         .bind(&column)
         .fetch_one(pool)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
     let Some(sequence) = sequence else {
         return Ok(());
     };
@@ -1109,7 +1120,7 @@ async fn restart_sequence(pool: &PgPool, schema: &str, table: &str) -> Result<()
     sqlx::query(sqlx::AssertSqlSafe(sql))
         .execute(pool)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
     Ok(())
 }
 
@@ -1210,7 +1221,7 @@ pub(super) fn column_value(row: &PgRow, i: usize) -> Value {
 /// The parts of this module that decide what SQL is written, rather than what a server answers.
 #[cfg(test)]
 mod tests {
-    use super::{build_where, is_decodable, qualify, quote_ident, resolve, Filter};
+    use super::{build_where, is_decodable, map_error, qualify, quote_ident, resolve, Filter};
     use std::collections::BTreeMap;
 
     fn filter(column: &str, operator: &str, value: Option<&str>) -> Filter {
@@ -1351,5 +1362,16 @@ mod tests {
     #[test]
     fn refuses_a_column_the_table_does_not_have() {
         assert!(build_where(&[filter("nope", "eq", Some("1"))], &columns()).is_err());
+    }
+
+    #[test]
+    fn postgres_tells_a_lost_connection_from_a_server_error() {
+        let eof = sqlx::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "expected to read 4 bytes, got 0 bytes at EOF",
+        ));
+        assert_eq!(map_error(eof).code, "error.connectionLost");
+        assert_eq!(map_error(sqlx::Error::PoolTimedOut).code, "error.connectionLost");
+        assert_eq!(map_error(sqlx::Error::RowNotFound).code, "error.postgres");
     }
 }

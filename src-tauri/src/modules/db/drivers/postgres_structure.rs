@@ -6,7 +6,7 @@
 //! than dropped: `on_update_current_timestamp` is a MySQL clause with no counterpart, and
 //! `prefix_length` an index feature PostgreSQL does not have.
 
-use super::postgres::{extra_tokens, qualify, resolve, system_schema_filter, DEFAULT_SCHEMA};
+use super::postgres::{extra_tokens, map_error, qualify, resolve, system_schema_filter, DEFAULT_SCHEMA};
 use crate::error::AppError;
 use serde::Serialize;
 use sqlx::{PgPool, Row};
@@ -146,7 +146,7 @@ async fn structure_columns(
     .bind(table)
     .fetch_all(pool)
     .await
-    .map_err(|e| err!("error.postgres", message = e))?;
+    .map_err(map_error)?;
 
     Ok(rows
         .iter()
@@ -215,7 +215,7 @@ async fn table_indexes(
     .bind(table)
     .fetch_all(pool)
     .await
-    .map_err(|e| err!("error.postgres", message = e))?;
+    .map_err(map_error)?;
 
     let mut indexes: Vec<TableIndex> = Vec::new();
     for row in &rows {
@@ -262,7 +262,7 @@ pub async fn table_stats(pool: &PgPool) -> Result<Vec<TableStats>, AppError> {
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
         .fetch_all(pool)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
 
     Ok(rows
         .iter()
@@ -295,7 +295,7 @@ pub async fn collations(pool: &PgPool) -> Result<Vec<Collation>, AppError> {
     )
     .fetch_all(pool)
     .await
-    .map_err(|e| err!("error.postgres", message = e))?;
+    .map_err(map_error)?;
 
     Ok(rows
         .iter()
@@ -409,7 +409,7 @@ pub async fn schema_outline(pool: &PgPool, database: &str) -> Result<SchemaOutli
     let column_rows = sqlx::query(sqlx::AssertSqlSafe(column_sql))
         .fetch_all(pool)
         .await
-        .map_err(|e| err!("error.postgres", message = e))?;
+        .map_err(map_error)?;
 
     let mut tables: Vec<OutlineTable> = Vec::new();
     for row in &column_rows {

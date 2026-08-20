@@ -6,6 +6,28 @@ use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlRow, MySqlSslMode}
 use sqlx::{Column, MySqlPool, Row, TypeInfo};
 use std::collections::BTreeMap;
 
+/// Lỗi này là đường ống đứt, không phải máy chủ từ chối.
+///
+/// `Io` là chỗ câu "expected to read N bytes, got 0 bytes at EOF" đi ra — sqlx dựng nó ở
+/// `net/socket/buffered.rs` khi socket đóng giữa chừng. Hai biến thể pool đi kèm vì khi tunnel
+/// đang được mở lại, cái người dùng gặp không phải là một socket đứt mà là một `acquire` không có
+/// kết nối nào để trả.
+pub(super) fn lost_connection(e: &sqlx::Error) -> bool {
+    matches!(
+        e,
+        sqlx::Error::Io(_) | sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed
+    )
+}
+
+/// Cái mà mọi lệnh MySQL đang dùng kết nối dùng thay cho `err!("error.mysql", message = e)`.
+pub(super) fn map_error(e: sqlx::Error) -> AppError {
+    if lost_connection(&e) {
+        err!("error.connectionLost")
+    } else {
+        err!("error.mysql", message = e)
+    }
+}
+
 pub async fn connect(
     host: &str,
     port: u16,
@@ -39,6 +61,8 @@ pub async fn connect(
         .max_connections(5)
         .connect_with(opts)
         .await
+        // Không đi qua `map_error`: hỏng ở đây là "không kết nối được", không phải "mất kết nối",
+        // và lý do thật (connection refused, tên máy không phân giải được) nằm trong `message`.
         .map_err(|e| err!("error.mysql", message = e))
 }
 
@@ -50,21 +74,21 @@ pub async fn query(
     // Querying a &Pool directly requires 'static query text (sqlx's Executor
     // impl for &Pool boxes the acquire+execute future); acquiring a connection
     // first lets us run borrowed, non-'static SQL text instead.
-    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut conn = pool.acquire().await.map_err(map_error)?;
     if let Some(db) = database.filter(|d| !d.is_empty()) {
         let use_sql = format!("USE {}", quote_ident(db));
         // Text protocol: `USE` is one of the statements MySQL will not accept as a prepared one.
         sqlx::raw_sql(sqlx::AssertSqlSafe(use_sql))
             .execute(&mut *conn)
             .await
-            .map_err(|e| err!("error.mysql", message = e))?;
+            .map_err(map_error)?;
     }
     // AssertSqlSafe opts out of sqlx's SQL-injection speed bump: this client
     // runs arbitrary, user-authored SQL by design, not app-embedded queries.
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| err!("error.mysql", message = e))?;
+        .map_err(map_error)?;
 
     Ok(rows.iter().map(row_to_json).collect())
 }
@@ -80,7 +104,7 @@ pub async fn thread_id(conn: &mut sqlx::MySqlConnection) -> Result<u64, AppError
     sqlx::query_scalar("SELECT CONNECTION_ID()")
         .fetch_one(conn)
         .await
-        .map_err(|e| err!("error.mysql", message = e))
+        .map_err(map_error)
 }
 
 /// Asks the server to stop whatever session `thread_id` is running.
@@ -99,7 +123,7 @@ pub async fn kill_query(pool: &MySqlPool, thread_id: u64) -> Result<(), AppError
     {
         Ok(_) => Ok(()),
         Err(e) if e.to_string().contains("Unknown thread id") => Ok(()),
-        Err(e) => Err(err!("error.mysql", message = e)),
+        Err(e) => Err(map_error(e)),
     }
 }
 
@@ -114,14 +138,14 @@ pub struct ServerInfo {
 /// MySQL connection names its machine: the platform it was built for, and the architecture it
 /// was built for — "Linux x86_64".
 pub async fn server_info(pool: &MySqlPool) -> Result<ServerInfo, AppError> {
-    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut conn = pool.acquire().await.map_err(map_error)?;
     let rows = sqlx::query(
         "SHOW VARIABLES WHERE Variable_name IN \
          ('version', 'version_compile_os', 'version_compile_machine')",
     )
     .fetch_all(&mut *conn)
     .await
-    .map_err(|e| err!("error.mysql", message = e))?;
+    .map_err(map_error)?;
 
     let mut version = String::new();
     let mut platform = String::new();
@@ -171,21 +195,21 @@ pub async fn detect_mariadb(pool: &MySqlPool) -> bool {
 }
 
 pub async fn list_databases(pool: &MySqlPool) -> Result<Vec<String>, AppError> {
-    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut conn = pool.acquire().await.map_err(map_error)?;
     let rows = sqlx::query("SHOW DATABASES")
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| err!("error.mysql", message = e))?;
+        .map_err(map_error)?;
     Ok(rows.iter().map(|r| r.get::<String, _>(0)).collect())
 }
 
 pub async fn list_tables(pool: &MySqlPool, database: &str) -> Result<Vec<String>, AppError> {
-    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut conn = pool.acquire().await.map_err(map_error)?;
     let sql = format!("SHOW TABLES FROM {}", quote_ident(database));
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| err!("error.mysql", message = e))?;
+        .map_err(map_error)?;
     Ok(rows.iter().map(|r| r.get::<String, _>(0)).collect())
 }
 
@@ -245,7 +269,7 @@ async fn foreign_keys(
     .bind(table)
     .fetch_all(&mut *conn)
     .await
-    .map_err(|e| err!("error.mysql", message = e))?;
+    .map_err(map_error)?;
 
     let mut keys = BTreeMap::new();
     for row in &rows {
@@ -419,7 +443,7 @@ pub async fn table_data(
     table: &str,
     query: &PageQuery,
 ) -> Result<TablePage, AppError> {
-    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut conn = pool.acquire().await.map_err(map_error)?;
     let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
 
     // SHOW COLUMNS gives us the column list (in table order) even when the
@@ -428,7 +452,7 @@ pub async fn table_data(
     let column_rows = sqlx::query(sqlx::AssertSqlSafe(columns_sql))
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| err!("error.mysql", message = e))?;
+        .map_err(map_error)?;
     let columns: Vec<String> = column_rows
         .iter()
         .map(|r| r.get::<String, _>("Field"))
@@ -492,7 +516,7 @@ pub async fn table_data(
     let total: i64 = count_query
         .fetch_one(&mut *conn)
         .await
-        .map_err(|e| err!("error.mysql", message = e))?;
+        .map_err(map_error)?;
 
     // The ceiling is the largest page size the grid offers. Anything lower silently shortens the
     // page while the grid still counts its pages by the size it asked for, putting the rows past
@@ -523,7 +547,7 @@ pub async fn table_data(
     let rows = data_query
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| err!("error.mysql", message = e))?;
+        .map_err(map_error)?;
 
     Ok(TablePage {
         columns,
@@ -580,7 +604,7 @@ pub async fn update_row(
         .collect::<Vec<_>>()
         .join(" AND ");
 
-    let mut tx = pool.begin().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut tx = pool.begin().await.map_err(map_error)?;
 
     let count_sql = format!("SELECT COUNT(*) FROM {qualified} WHERE {where_clause}");
     let mut count_query = sqlx::query(sqlx::AssertSqlSafe(count_sql));
@@ -590,10 +614,10 @@ pub async fn update_row(
     let matched: i64 = count_query
         .fetch_one(&mut *tx)
         .await
-        .map_err(|e| err!("error.mysql", message = e))?
+        .map_err(map_error)?
         .get::<i64, _>(0);
     if matched != 1 {
-        tx.rollback().await.map_err(|e| err!("error.mysql", message = e))?;
+        tx.rollback().await.map_err(map_error)?;
         return Err(err!("error.rowsMatched", matched = matched));
     }
 
@@ -608,9 +632,9 @@ pub async fn update_row(
     update_query
         .execute(&mut *tx)
         .await
-        .map_err(|e| err!("error.mysql", message = e))?;
+        .map_err(map_error)?;
 
-    tx.commit().await.map_err(|e| err!("error.mysql", message = e))?;
+    tx.commit().await.map_err(map_error)?;
     Ok(())
 }
 
@@ -633,7 +657,7 @@ pub async fn insert_rows(
     }
 
     let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
-    let mut tx = pool.begin().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut tx = pool.begin().await.map_err(map_error)?;
 
     for (i, row) in rows.iter().enumerate() {
         // `() VALUES ()` is MySQL's way of spelling "a row that is nothing but defaults".
@@ -653,12 +677,12 @@ pub async fn insert_rows(
             query = bind_value(query, v);
         }
         if let Err(e) = query.execute(&mut *tx).await {
-            tx.rollback().await.map_err(|e| err!("error.mysql", message = e))?;
-            return Err(err!("error.rowFailed", index = i + 1).caused_by(err!("error.mysql", message = e)));
+            tx.rollback().await.map_err(map_error)?;
+            return Err(err!("error.rowFailed", index = i + 1).caused_by(map_error(e)));
         }
     }
 
-    tx.commit().await.map_err(|e| err!("error.mysql", message = e))?;
+    tx.commit().await.map_err(map_error)?;
     Ok(())
 }
 
@@ -683,18 +707,18 @@ pub async fn delete_rows(
     }
 
     let qualified = format!("{}.{}", quote_ident(database), quote_ident(table));
-    let mut tx = pool.begin().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut tx = pool.begin().await.map_err(map_error)?;
 
     if all {
         let sql = format!("DELETE FROM {qualified}");
         sqlx::query(sqlx::AssertSqlSafe(sql))
             .execute(&mut *tx)
             .await
-            .map_err(|e| err!("error.mysql", message = e))?;
+            .map_err(map_error)?;
     } else {
         for key in keys {
             if key.is_empty() {
-                tx.rollback().await.map_err(|e| err!("error.mysql", message = e))?;
+                tx.rollback().await.map_err(map_error)?;
                 return Err(err!("error.deleteWithoutKey"));
             }
             // `<=>` is MySQL's NULL-safe equality operator, so a key column that
@@ -709,11 +733,11 @@ pub async fn delete_rows(
             for v in key.values() {
                 query = bind_value(query, v);
             }
-            query.execute(&mut *tx).await.map_err(|e| err!("error.mysql", message = e))?;
+            query.execute(&mut *tx).await.map_err(map_error)?;
         }
     }
 
-    tx.commit().await.map_err(|e| err!("error.mysql", message = e))?;
+    tx.commit().await.map_err(map_error)?;
 
     // Outside the transaction on purpose: ALTER TABLE forces an implicit commit
     // in MySQL, so running it inside would end the transaction behind our back.
@@ -722,7 +746,7 @@ pub async fn delete_rows(
         sqlx::query(sqlx::AssertSqlSafe(sql))
             .execute(pool)
             .await
-            .map_err(|e| err!("error.mysql", message = e))?;
+            .map_err(map_error)?;
     }
 
     Ok(())
@@ -813,7 +837,7 @@ pub(super) fn column_value(row: &MySqlRow, i: usize) -> Value {
 /// statement text. Both are what stands between user input and the SQL that reaches MySQL.
 #[cfg(test)]
 mod tests {
-    use super::{build_where, quote_ident, Filter};
+    use super::{build_where, lost_connection, map_error, quote_ident, Filter};
 
     fn filter(column: &str, operator: &str, value: Option<&str>) -> Filter {
         Filter {
@@ -916,5 +940,41 @@ mod tests {
     fn identifiers_are_backtick_quoted() {
         assert_eq!(quote_ident("users"), "`users`");
         assert_eq!(quote_ident("we`ird"), "`we``ird`");
+    }
+
+    /// `Database(_)` không dựng được ở đây — `sqlx::error::DatabaseError` là một trait và bản cài
+    /// đặt của MySQL không public — nên hai biến thể "máy chủ đã trả lời" dùng để thay thế là
+    /// `RowNotFound` và `Protocol`. Điều cần giữ vẫn là điều đó: một lỗi máy chủ đã trả lời thì
+    /// không bao giờ được biến thành "mất kết nối", vì như thế lệnh đọc sẽ bị chạy lại vô ích và
+    /// người dùng bị nói sai chuyện gì đã xảy ra.
+    #[test]
+    fn only_a_broken_pipe_counts_as_a_lost_connection() {
+        let eof = sqlx::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "expected to read 4 bytes, got 0 bytes at EOF",
+        ));
+        assert!(lost_connection(&eof));
+        assert!(lost_connection(&sqlx::Error::PoolTimedOut));
+        assert!(lost_connection(&sqlx::Error::PoolClosed));
+
+        assert!(!lost_connection(&sqlx::Error::RowNotFound));
+        assert!(!lost_connection(&sqlx::Error::Protocol("unexpected packet".into())));
+    }
+
+    #[test]
+    fn a_lost_connection_gets_its_own_code_and_carries_no_driver_text() {
+        let eof = sqlx::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "expected to read 4 bytes, got 0 bytes at EOF",
+        ));
+        let error = map_error(eof);
+        assert_eq!(error.code, "error.connectionLost");
+        // Nguyên văn của sqlx ở đây là chuyện nội bộ của thư viện, không phải máy chủ nói — nên
+        // nó không thuộc diện được giữ nguyên như quy ước ở `error.rs` mô tả.
+        assert!(error.params.is_empty());
+
+        let other = map_error(sqlx::Error::RowNotFound);
+        assert_eq!(other.code, "error.mysql");
+        assert!(other.params.contains_key("message"));
     }
 }

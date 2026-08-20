@@ -6,7 +6,7 @@
 //! "this is all there is".
 
 use crate::error::AppError;
-use super::mysql::quote_ident;
+use super::mysql::{map_error, quote_ident};
 use serde::{Deserialize, Serialize};
 use sqlx::mysql::MySqlRow;
 use sqlx::{MySqlPool, Row};
@@ -270,7 +270,7 @@ pub async fn mariadb_expression_defaults(
     .bind(table)
     .fetch_all(&mut *conn)
     .await
-    .map_err(|e| err!("error.mysql", message = e))?;
+    .map_err(map_error)?;
 
     Ok(rows
         .iter()
@@ -483,7 +483,7 @@ async fn execute(pool: &MySqlPool, sql: String) -> Result<(), AppError> {
         .execute(pool)
         .await
         .map(|_| ())
-        .map_err(|e| err!("error.mysql", message = e))
+        .map_err(map_error)
 }
 
 /// `mariadb` says which of the two servers answered, because a column's DEFAULT is the one thing
@@ -494,7 +494,7 @@ pub async fn table_structure(
     database: &str,
     table: &str,
 ) -> Result<TableStructure, AppError> {
-    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut conn = pool.acquire().await.map_err(map_error)?;
 
     let column_rows = sqlx::query(
         "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT,
@@ -507,7 +507,7 @@ pub async fn table_structure(
     .bind(table)
     .fetch_all(&mut *conn)
     .await
-    .map_err(|e| err!("error.mysql", message = e))?;
+    .map_err(map_error)?;
 
     if column_rows.is_empty() {
         return Err(err!("error.noVisibleColumns", database = database, table = table));
@@ -563,7 +563,7 @@ pub async fn table_structure(
     .bind(table)
     .fetch_all(&mut *conn)
     .await
-    .map_err(|e| err!("error.mysql", message = e))?;
+    .map_err(map_error)?;
 
     let mut indexes: Vec<TableIndex> = Vec::new();
     for row in &index_rows {
@@ -638,7 +638,7 @@ pub struct SchemaOutline {
 /// as everywhere else in this module. Views come back alongside base tables; a view's columns
 /// complete exactly like a table's, so nothing here needs to tell the two apart.
 pub async fn schema_outline(pool: &MySqlPool, database: &str) -> Result<SchemaOutline, AppError> {
-    let mut conn = pool.acquire().await.map_err(|e| err!("error.mysql", message = e))?;
+    let mut conn = pool.acquire().await.map_err(map_error)?;
 
     // The foreign keys first, so that each column can be built already knowing where it points.
     //
@@ -678,7 +678,7 @@ pub async fn schema_outline(pool: &MySqlPool, database: &str) -> Result<SchemaOu
     .bind(database)
     .fetch_all(&mut *conn)
     .await
-    .map_err(|e| err!("error.mysql", message = e))?;
+    .map_err(map_error)?;
 
     let mut tables: Vec<OutlineTable> = Vec::new();
     for row in &column_rows {
@@ -718,7 +718,7 @@ pub async fn collations(pool: &MySqlPool) -> Result<Vec<Collation>, AppError> {
     )
     .fetch_all(pool)
     .await
-    .map_err(|e| err!("error.mysql", message = e))?;
+    .map_err(map_error)?;
 
     Ok(rows
         .iter()
@@ -763,7 +763,7 @@ pub async fn table_stats(pool: &MySqlPool, database: &str) -> Result<Vec<TableSt
     .bind(database)
     .fetch_all(pool)
     .await
-    .map_err(|e| err!("error.mysql", message = e))?;
+    .map_err(map_error)?;
 
     Ok(rows
         .iter()
@@ -846,7 +846,7 @@ pub async fn dump_charset(pool: &MySqlPool, database: &str) -> Result<String, Ap
     .bind(database)
     .fetch_all(pool)
     .await
-    .map_err(|e| err!("error.mysql", message = e))?
+    .map_err(map_error)?
     .iter()
     .filter_map(|row| text(row, "charset"))
     // The name is about to reach a command line, so anything not shaped like a character set name
