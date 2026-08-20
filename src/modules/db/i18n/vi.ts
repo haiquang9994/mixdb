@@ -811,6 +811,7 @@ const dbVi: DbDict = {
       "Kết nối {{kind}} quá hạn sau {{seconds}} giây — kiểm tra host, cổng và tường lửa.",
     connectionLost:
       "Mất kết nối tới máy chủ. Nếu kết nối này đi qua SSH tunnel, MixDB đang mở lại — thử lại sau giây lát.",
+    noTunnel: "Kết nối này không đi qua SSH tunnel.",
     mongoUriRequired: "Cần có chuỗi kết nối MongoDB.",
     mongoNoTcpHost: "Chuỗi kết nối không chỉ ra host TCP nào để mở tunnel.",
     emptyRedisCommand: "Không có lệnh nào để chạy.",

@@ -37,10 +37,9 @@ pub struct ActiveConnection {
     /// host and port when there is not. `None` for a MongoDB connection with no tunnel, whose
     /// address is whatever its URI says.
     pub endpoint: Option<(String, u16)>,
-    /// Keeps the SSH port forward open. Never read, and not meant to be: holding it here is the
-    /// whole point, since dropping this connection drops the tunnel with it and that is what tears
-    /// the forward down — see {@link Tunnel}.
-    #[allow(dead_code)]
+    /// Keeps the SSH port forward open, and is what the Retry button reaches through to open the
+    /// session again — see `commands::tunnel_reconnect`. Dropping this connection drops the tunnel
+    /// with it, and that is what tears the forward down — see {@link Tunnel}.
     pub tunnel: Option<Tunnel>,
 }
 

@@ -268,6 +268,24 @@ pub async fn disconnect_db(state: State<'_, DbState>, id: String) -> Result<(), 
     Ok(())
 }
 
+/// Mở lại phiên SSH của một connection ngay lập tức, thay vì chờ hết nhịp backoff của watcher.
+/// Đây là cái nút *Thử lại* trên banner gọi.
+#[tauri::command]
+pub async fn tunnel_reconnect(state: State<'_, DbState>, id: String) -> Result<(), AppError> {
+    // Tay cầm được sao ra và bản đồ được mở khoá **trước** khi chờ: xác thực mất tới
+    // `CONNECT_TIMEOUT` (10 giây), và giữ bản đồ lâu như thế sẽ chặn mọi lệnh khác trong app.
+    let session = {
+        let connections = state.connections.lock().await;
+        let connection = connections.get(&id).ok_or_else(|| err!("error.unknownConnection"))?;
+        connection
+            .tunnel
+            .as_ref()
+            .map(|tunnel| tunnel.session_handle())
+            .ok_or_else(|| err!("error.noTunnel"))?
+    };
+    session.reconnect().await
+}
+
 /// The handle `id` names, cloned out of the connection map so that the map is unlocked again
 /// before the command runs anything on it.
 ///
