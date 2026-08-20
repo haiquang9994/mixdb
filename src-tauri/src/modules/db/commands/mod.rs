@@ -37,6 +37,10 @@ const TOOLS_PROGRESS_EVENT: &str = "tools://progress";
 /// `src/transfer.ts`.
 const TRANSFER_PROGRESS_EVENT: &str = "transfer://progress";
 
+/// Where a workspace listens for its SSH tunnel dropping and coming back. Named here and in
+/// `src/modules/db/tunnel.ts`.
+const TUNNEL_STATE_EVENT: &str = "tunnel://state";
+
 /// One reading of a running transfer, with the connection it belongs to: two tabs can be dumping at
 /// once, and neither overlay has any business showing the other's figures.
 #[derive(Clone, Serialize)]
@@ -61,6 +65,37 @@ fn reporter(app: &AppHandle, id: &str) -> impl Fn(drivers::dump::Progress) {
     }
 }
 
+/// Một tin về tunnel của một connection, gửi lên cửa sổ.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TunnelState {
+    id: String,
+    /// `"reconnecting"`, `"reconnected"` hoặc `"failed"` — cùng bộ chữ với `TunnelState` bên
+    /// TypeScript.
+    state: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<AppError>,
+}
+
+/// Hands every turn of one connection's tunnel to the window, on [`TUNNEL_STATE_EVENT`].
+fn tunnel_notify(app: &AppHandle, id: &str) -> ssh::TunnelNotify {
+    let app = app.clone();
+    let id = id.to_string();
+    Arc::new(move |event: ssh::TunnelEvent| {
+        let (state, error) = match event {
+            ssh::TunnelEvent::Reconnecting => ("reconnecting", None),
+            ssh::TunnelEvent::Reconnected => ("reconnected", None),
+            ssh::TunnelEvent::Failed(e) => ("failed", Some(e)),
+        };
+        // A dropped notice is not worth failing anything over: the watcher says it again on its
+        // next round.
+        let _ = app.emit(
+            TUNNEL_STATE_EVENT,
+            TunnelState { id: id.clone(), state, error },
+        );
+    })
+}
+
 async fn with_timeout<T>(
     fut: impl std::future::Future<Output = Result<T, AppError>>,
     kind: &'static str,
@@ -82,11 +117,12 @@ pub async fn test_ssh_tunnel(app: AppHandle, ssh: SshConfig) -> Result<(), AppEr
 async fn resolve_endpoint(
     config: &ConnectionConfig,
     app_data: &std::path::Path,
+    notify: ssh::TunnelNotify,
 ) -> Result<(String, u16, Option<ssh::Tunnel>), AppError> {
     match &config.ssh {
         Some(ssh) => {
             let (local_port, tunnel) =
-                ssh::open_tunnel(ssh, &config.host, config.port, app_data).await?;
+                ssh::open_tunnel(ssh, &config.host, config.port, app_data, notify).await?;
             Ok(("127.0.0.1".to_string(), local_port, Some(tunnel)))
         }
         None => Ok((config.host.clone(), config.port, None)),
@@ -100,9 +136,14 @@ pub async fn connect_db(
     config: ConnectionConfig,
 ) -> Result<String, AppError> {
     let app_data = app_data_dir(&app)?;
+    // Id sinh ở đây chứ không phải sau khi đã kết nối: closure báo tin cần biết nó tên gì, và
+    // tunnel bắt đầu báo tin ngay khi nó được mở.
+    let id = Uuid::new_v4().to_string();
+    let notify = tunnel_notify(&app, &id);
     let (handle, endpoint, tunnel) = match config.kind {
         DbKind::Mysql => {
-            let (host, port, tunnel) = resolve_endpoint(&config, &app_data).await?;
+            let (host, port, tunnel) =
+                resolve_endpoint(&config, &app_data, Arc::clone(&notify)).await?;
             let username = config.username.clone().unwrap_or_default();
             let password = config.password.clone().unwrap_or_default();
             let pool = with_timeout(
@@ -121,7 +162,8 @@ pub async fn connect_db(
             (DbHandle::Mysql { pool, mariadb }, Some((host, port)), tunnel)
         }
         DbKind::Postgres => {
-            let (host, port, tunnel) = resolve_endpoint(&config, &app_data).await?;
+            let (host, port, tunnel) =
+                resolve_endpoint(&config, &app_data, Arc::clone(&notify)).await?;
             let username = config.username.clone().unwrap_or_default();
             let password = config.password.clone().unwrap_or_default();
             let pools = with_timeout(
@@ -153,7 +195,8 @@ pub async fn connect_db(
             let (endpoint, tunnel) = match &config.ssh {
                 Some(ssh) => {
                     let (host, port) = drivers::mongo::first_endpoint(uri).await?;
-                    let (local_port, task) = ssh::open_tunnel(ssh, &host, port, &app_data).await?;
+                    let (local_port, task) =
+                        ssh::open_tunnel(ssh, &host, port, &app_data, Arc::clone(&notify)).await?;
                     (Some(("127.0.0.1".to_string(), local_port)), Some(task))
                 }
                 None => (None, None),
@@ -163,7 +206,8 @@ pub async fn connect_db(
             (DbHandle::Mongo(client), endpoint, tunnel)
         }
         DbKind::Redis => {
-            let (host, port, tunnel) = resolve_endpoint(&config, &app_data).await?;
+            let (host, port, tunnel) =
+                resolve_endpoint(&config, &app_data, Arc::clone(&notify)).await?;
             let db_index = config.database.as_deref().and_then(|d| d.parse().ok()).unwrap_or(0);
             let conn = with_timeout(
                 drivers::redis::connect(
@@ -184,7 +228,6 @@ pub async fn connect_db(
         }
     };
 
-    let id = Uuid::new_v4().to_string();
     state.connections.lock().await.insert(
         id.clone(),
         ActiveConnection {

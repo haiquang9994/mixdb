@@ -128,6 +128,7 @@ const vi: SharedDict = {
     invalidPrivateKey: "Đây không phải khóa riêng mà MixDB đọc được: {{message}}",
     cannotBindTunnelPort: "Không mở được cổng cục bộ cho tunnel: {{message}}",
     cannotSaveKnownHost: "Không ghi nhớ được khóa của máy chủ: {{message}}",
+    sshUnavailable: "Tunnel SSH hiện không mở — MixDB đang thử mở lại.",
     // Mật khẩu đã lưu
     credentialStoreUnreachable: "Không truy cập được kho mật khẩu của hệ điều hành: {{message}}",
     cannotSavePassword: "Không lưu được mật khẩu: {{message}}",
