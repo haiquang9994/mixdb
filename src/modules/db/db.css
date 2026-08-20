@@ -772,6 +772,8 @@ fieldset .row label.field-connection-string {
 }
 
 .redis-workspace {
+  /* Chỗ đứng của popup tunnel: nó phủ workspace của tab này, và chỉ nó. */
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;

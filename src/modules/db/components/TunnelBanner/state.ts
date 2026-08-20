@@ -15,6 +15,28 @@ export type BannerState =
 
 export const HIDDEN: BannerState = { kind: "hidden" };
 
+/**
+ * Popup có được hiện với trạng thái này không.
+ *
+ * `ripe` là đã đứt đủ lâu để đáng chặn màn hình; `showing` là popup đang đứng đó từ trước.
+ *
+ * Hai cửa khác nhau, vì hai lần đứt không giống nhau. Phần lớn chỉ kéo dài vài trăm mili-giây rồi tự
+ * lành và câu lệnh chạy tiếp như không có gì: chặn ở đó chỉ là nháy màn hình. Và "đã kết nối lại" chỉ trấn
+ * an ai vừa bị chặn — người không thấy gì xảy ra thì không cần được báo là nó đã qua.
+ */
+export function popupShows(state: BannerState, ripe: boolean, showing: boolean): boolean {
+  switch (state.kind) {
+    case "hidden":
+      return false;
+    case "reconnecting":
+      return ripe;
+    case "reconnected":
+      return showing;
+    case "failed":
+      return true;
+  }
+}
+
 /** Trạng thái kế tiếp của banner. Trả lại chính `current` khi không có gì mới để nói. */
 export function nextBannerState(current: BannerState, event: TunnelState): BannerState {
   switch (event.state) {

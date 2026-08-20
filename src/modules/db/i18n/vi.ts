@@ -803,6 +803,7 @@ const dbVi: DbDict = {
       "Đã kết nối lại. Những gì thuộc về kết nối cũ — bảng tạm, transaction đang mở, script đang chạy dở — đã mất theo nó.",
     failed: "Không mở lại được tunnel SSH: {{message}}",
     retry: "Thử lại",
+    later: "Để sau",
   },
   // máy chủ đang nói, và cũng là phần đáng tra cứu nhất.
   error: {

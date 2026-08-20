@@ -15,6 +15,7 @@ import type { StatsCache } from "../components/DatabaseStats";
 import TransferOverlay from "../components/TransferOverlay";
 import ErrorBanner from "../../../components/ErrorBanner";
 import TunnelBanner from "../components/TunnelBanner";
+import { useWorkspaceError } from "../workspaceError";
 import Input from "../../../components/Input";
 import NameDialog from "../../../components/NameDialog";
 import SqlTable from "../components/SqlTable";
@@ -41,6 +42,13 @@ interface Props {
   initialDatabase?: string;
   status: string;
   error: string;
+  /**
+   * Connection này đi qua SSH tunnel.
+   *
+   * Chỉ để biết ai kể chuyện mất kết nối: có tunnel thì TunnelBanner kể, và ErrorBanner im — xem
+   * {@link useWorkspaceError}.
+   */
+  tunnelled: boolean;
   onDisconnect: () => void;
   sidebarWidth?: number;
   onSidebarWidthChange?: (width: number) => void;
@@ -93,6 +101,8 @@ function SqlWorkspace({
   connectionId,
   initialDatabase,
   error,
+  tunnelled,
+  onDisconnect,
   sidebarWidth,
   onSidebarWidthChange,
   readOnly = false,
@@ -119,7 +129,7 @@ function SqlWorkspace({
    */
   const [pinnedTable, setPinnedTable] = useState<string | null>(null);
   const [contentMode, setContentMode] = useState<ContentMode>("data");
-  const [localError, setLocalError] = useState("");
+  const [localError, setLocalError] = useWorkspaceError(tunnelled);
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
   const [collations, setCollations] = useState<SqlCollation[]>([]);
   const [creatingDatabase, setCreatingDatabase] = useState(false);
@@ -691,7 +701,7 @@ function SqlWorkspace({
         </div>
       </div>
 
-      <TunnelBanner connectionId={connectionId} />
+      <TunnelBanner connectionId={connectionId} onDisconnect={onDisconnect} />
 
       {(error || localError) && (
         <ErrorBanner message={error || localError} onDismiss={() => setLocalError("")} />

@@ -19,6 +19,7 @@ import type { StatsCache } from "../components/DatabaseStats";
 import TransferOverlay from "../components/TransferOverlay";
 import ErrorBanner from "../../../components/ErrorBanner";
 import TunnelBanner from "../components/TunnelBanner";
+import { useWorkspaceError } from "../workspaceError";
 import Input from "../../../components/Input";
 import NameDialog from "../../../components/NameDialog";
 import NoSqlTable from "../components/NoSqlTable";
@@ -40,6 +41,13 @@ interface Props {
   initialDatabase?: string;
   status: string;
   error: string;
+  /**
+   * Connection này đi qua SSH tunnel.
+   *
+   * Chỉ để biết ai kể chuyện mất kết nối: có tunnel thì TunnelBanner kể, và ErrorBanner im — xem
+   * {@link useWorkspaceError}.
+   */
+  tunnelled: boolean;
   onDisconnect: () => void;
   sidebarWidth?: number;
   onSidebarWidthChange?: (width: number) => void;
@@ -85,6 +93,8 @@ function MongoWorkspace({
   connectionId,
   initialDatabase,
   error,
+  tunnelled,
+  onDisconnect,
   sidebarWidth,
   onSidebarWidthChange,
   readOnly = false,
@@ -98,7 +108,7 @@ function MongoWorkspace({
   const [collectionFilter, setCollectionFilter] = useState("");
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
   const [contentMode, setContentMode] = useState<ContentMode>("data");
-  const [localError, setLocalError] = useState("");
+  const [localError, setLocalError] = useWorkspaceError(tunnelled);
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
   const [creatingDatabase, setCreatingDatabase] = useState(false);
   const [creatingCollection, setCreatingCollection] = useState(false);
@@ -592,7 +602,7 @@ function MongoWorkspace({
         </div>
       </div>
 
-      <TunnelBanner connectionId={connectionId} />
+      <TunnelBanner connectionId={connectionId} onDisconnect={onDisconnect} />
 
       {(error || localError) && (
         <ErrorBanner message={error || localError} onDismiss={() => setLocalError("")} />

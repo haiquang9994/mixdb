@@ -11,6 +11,7 @@ import {
 import Select from "../../../components/Select";
 import ErrorBanner from "../../../components/ErrorBanner";
 import TunnelBanner from "../components/TunnelBanner";
+import { useWorkspaceError } from "../workspaceError";
 import Input from "../../../components/Input";
 import ActionBar from "../../../components/ActionBar";
 import RedisGroupKeys from "../components/RedisGroupKeys";
@@ -27,6 +28,13 @@ interface Props {
   initialDatabase?: string;
   status: string;
   error: string;
+  /**
+   * Connection này đi qua SSH tunnel.
+   *
+   * Chỉ để biết ai kể chuyện mất kết nối: có tunnel thì TunnelBanner kể, và ErrorBanner im — xem
+   * {@link useWorkspaceError}.
+   */
+  tunnelled: boolean;
   onDisconnect: () => void;
   sidebarWidth?: number;
   onSidebarWidthChange?: (width: number) => void;
@@ -108,6 +116,8 @@ function RedisWorkspace({
   connectionId,
   initialDatabase,
   error,
+  tunnelled,
+  onDisconnect,
   sidebarWidth,
   onSidebarWidthChange,
   scanLimit,
@@ -130,7 +140,7 @@ function RedisWorkspace({
   // The group the delete pane is listing, by its prefix, or null when no group has been opened.
   const [groupPrefix, setGroupPrefix] = useState<string | null>(null);
   const [contentMode, setContentMode] = useState<ContentMode>("data");
-  const [localError, setLocalError] = useState("");
+  const [localError, setLocalError] = useWorkspaceError(tunnelled);
   const [serverInfo, setServerInfo] = useState<{ version: string; os: string } | null>(null);
 
   // The pattern the key list is showing. The input below edits `pattern` freely; only Enter (or
@@ -490,7 +500,7 @@ function RedisWorkspace({
         </div>
       </div>
 
-      <TunnelBanner connectionId={connectionId} />
+      <TunnelBanner connectionId={connectionId} onDisconnect={onDisconnect} />
 
       {(error || localError) && (
         <ErrorBanner message={error || localError} onDismiss={() => setLocalError("")} />

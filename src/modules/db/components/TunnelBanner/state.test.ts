@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HIDDEN, nextBannerState, type BannerState } from "./state";
+import { HIDDEN, nextBannerState, popupShows, type BannerState } from "./state";
 
 const reconnecting = { id: "a", state: "reconnecting" } as const;
 const reconnected = { id: "a", state: "reconnected" } as const;
@@ -43,5 +43,28 @@ describe("nextBannerState", () => {
   it("does not restart a reconnection that is already on screen", () => {
     const busy = nextBannerState(HIDDEN, reconnecting);
     expect(nextBannerState(busy, reconnecting)).toBe(busy);
+  });
+});
+
+describe("popupShows", () => {
+  it("says nothing at all until there is something to say", () => {
+    expect(popupShows(HIDDEN, true, true)).toBe(false);
+  });
+
+  it("waits out a drop too short to be worth blocking the screen for", () => {
+    const losing: BannerState = { kind: "reconnecting" };
+    expect(popupShows(losing, false, false)).toBe(false);
+    expect(popupShows(losing, true, false)).toBe(true);
+  });
+
+  it("blocks on a failure however long it took to get there", () => {
+    const dead: BannerState = { kind: "failed", error: { code: "error.sshAuthFailed" } };
+    expect(popupShows(dead, false, false)).toBe(true);
+  });
+
+  it("only reassures whoever was being blocked", () => {
+    const back: BannerState = { kind: "reconnected" };
+    expect(popupShows(back, true, true)).toBe(true);
+    expect(popupShows(back, true, false)).toBe(false);
   });
 });

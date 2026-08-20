@@ -49,7 +49,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - REST bodies can now be a form, a multipart upload with files from disk, or a single file sent as it is.
 - A connection that dropped now says so plainly instead of repeating the driver's own words about bytes at EOF.
 - A read that died with the connection is run again once, after the tunnel has been opened back up. Writes are never repeated.
-- A banner in the workspace says when an SSH tunnel dropped, when it came back, and offers to try again when it cannot be opened.
+- A tunnel that dropped holds its own tab until it is back, offering to try again or to disconnect.
 
 ## [0.0.13] - 2026-08-19
 
