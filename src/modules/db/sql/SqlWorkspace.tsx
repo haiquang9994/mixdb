@@ -14,6 +14,7 @@ import DatabaseStats from "../components/DatabaseStats";
 import type { StatsCache } from "../components/DatabaseStats";
 import TransferOverlay from "../components/TransferOverlay";
 import ErrorBanner from "../../../components/ErrorBanner";
+import TunnelBanner from "../components/TunnelBanner";
 import Input from "../../../components/Input";
 import NameDialog from "../../../components/NameDialog";
 import SqlTable from "../components/SqlTable";
@@ -689,6 +690,8 @@ function SqlWorkspace({
           ))}
         </div>
       </div>
+
+      <TunnelBanner connectionId={connectionId} />
 
       {(error || localError) && (
         <ErrorBanner message={error || localError} onDismiss={() => setLocalError("")} />

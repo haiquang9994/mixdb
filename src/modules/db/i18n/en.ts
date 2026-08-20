@@ -803,6 +803,13 @@ const dbEn = {
     dropMongoMessage:
       "Drop {{database}} with every collection and document in it? This cannot be undone \u2014 dump it first if you may want it back.",
   },
+  tunnel: {
+    reconnecting: "The SSH tunnel dropped \u2014 opening it again\u2026",
+    reconnected:
+      "The tunnel is back. Anything the old connection held \u2014 temporary tables, an open transaction, a script that was running \u2014 went with it.",
+    failed: "The SSH tunnel could not be opened again: {{message}}",
+    retry: "Try again",
+  },
   // What a failed backend command says. The keys here are the `code` an `AppError` carries \u2014 see
   // src-tauri/src/error.rs \u2014 and `{{message}}` is where a driver's own words go, untranslated
   // because they are the server talking and the part worth searching for.

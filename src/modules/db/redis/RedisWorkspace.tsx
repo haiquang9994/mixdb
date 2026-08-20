@@ -10,6 +10,7 @@ import {
 } from "./api";
 import Select from "../../../components/Select";
 import ErrorBanner from "../../../components/ErrorBanner";
+import TunnelBanner from "../components/TunnelBanner";
 import Input from "../../../components/Input";
 import ActionBar from "../../../components/ActionBar";
 import RedisGroupKeys from "../components/RedisGroupKeys";
@@ -488,6 +489,8 @@ function RedisWorkspace({
           )}
         </div>
       </div>
+
+      <TunnelBanner connectionId={connectionId} />
 
       {(error || localError) && (
         <ErrorBanner message={error || localError} onDismiss={() => setLocalError("")} />

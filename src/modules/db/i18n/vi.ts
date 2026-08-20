@@ -797,6 +797,13 @@ const dbVi: DbDict = {
   },
   // Thông báo khi một lệnh ở backend thất bại. Khóa ở đây chính là `code` mà `AppError` mang theo
   // — xem src-tauri/src/error.rs. `{{message}}` là nguyên văn lời của driver, không dịch: đó là
+  tunnel: {
+    reconnecting: "Mất kết nối SSH — đang kết nối lại…",
+    reconnected:
+      "Đã kết nối lại. Những gì thuộc về kết nối cũ — bảng tạm, transaction đang mở, script đang chạy dở — đã mất theo nó.",
+    failed: "Không mở lại được tunnel SSH: {{message}}",
+    retry: "Thử lại",
+  },
   // máy chủ đang nói, và cũng là phần đáng tra cứu nhất.
   error: {
     // Bốn loại driver, khi lỗi đến từ chính máy chủ.
