@@ -9,8 +9,10 @@ import { useTranslation } from "../../i18n";
 import { CANCELLED, decodeBase64, restCancel, restSend } from "./api";
 import { buildRequest } from "./buildRequest";
 import { detectBody, type ViewMode } from "./contentType";
-import { SECRET_MASK, findEnvironment, previewVars, varMap } from "./environments";
+import { SECRET_MASK, findEnvironment, historyVars, previewVars, varMap } from "./environments";
 import { addVariables, useEnvironments } from "./environmentsStore";
+import { historyUrl, keptBody, type HistoryEntry } from "./history";
+import { recordSend } from "./historyStore";
 import { interpolate } from "./interpolate";
 import { resolveRequest } from "./resolveRequest";
 import { findSubstitutions, substitute, type Substitution } from "./substitute";
@@ -45,6 +47,7 @@ import {
   MAX_SPLIT_RATIO,
   MIN_SIDEBAR_WIDTH,
   MIN_SPLIT_RATIO,
+  currentWorkspace,
   sendSettings,
   setLastEnvId,
   setSidebarWidth,
@@ -293,6 +296,18 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     const request = activeRequest;
     const sendId = crypto.randomUUID();
     const wire = buildRequest(resolved.request, sendId, sendSettings(workspace));
+    const startedAt = Date.now();
+    /* The history's own URL, built from the request rather than from `wire`: what goes on the wire
+       carries the secrets, and the Auth tab's query key is a credential whichever way it was
+       typed. */
+    const stub = {
+      id: crypto.randomUUID(),
+      requestId: request.id,
+      envName: env?.name ?? "",
+      method: request.method,
+      url: historyUrl(request, historyVars(env)),
+      startedAt,
+    } satisfies Partial<HistoryEntry>;
 
     setSends((prev) => ({
       ...prev,
@@ -324,20 +339,50 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
           error: null,
         },
       }));
+      recordSend({
+        ...stub,
+        durationMs: Date.now() - startedAt,
+        status: response.status,
+        statusText: response.status_text,
+        size: response.body_size,
+        error: null,
+        // Read now rather than from the render this send started in: the switch may have been
+        // turned off in the minute the server took to answer.
+        responseBody: keptBody(
+          response.body_base64,
+          response.body_size,
+          currentWorkspace().keepResponseBodies,
+        ),
+      });
     } catch (e) {
       // Cancelling is not a failure, and a failure leaves the previous response where it was —
       // the banner says what happened, and the pane still holds what is being compared against.
       const cancelled =
         typeof e === "object" && e !== null && (e as { code?: string }).code === CANCELLED;
+      const message = errorMessage(t, e);
       setSends((prev) => ({
         ...prev,
         [request.id]: {
           ...(prev[request.id] ?? IDLE_SEND),
           phase: cancelled ? "cancelled" : "failed",
           sendId: null,
-          error: cancelled ? null : errorMessage(t, e),
+          error: cancelled ? null : message,
         },
       }));
+      /* A cancelled send is not recorded: nothing came back and nothing was learned, and an entry
+         with neither a status nor an error would be a blank row nobody could read. A timeout or a
+         refused connection is an answer, and is kept. */
+      if (!cancelled) {
+        recordSend({
+          ...stub,
+          durationMs: Date.now() - startedAt,
+          status: null,
+          statusText: "",
+          size: 0,
+          error: message,
+          responseBody: null,
+        });
+      }
     }
   }
 
