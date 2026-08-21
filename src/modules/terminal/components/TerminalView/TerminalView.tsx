@@ -12,7 +12,7 @@ import {
   writeSession,
   type SessionExit,
 } from "../../api";
-import { useTerminalFontSize, zoomTerminal } from "../../fontSizeStore";
+import { useTerminalSettings, zoomTerminal } from "../../settingsStore";
 import { shellKeeps } from "../../keys";
 import type { TerminalTarget } from "../../types";
 import styles from "./TerminalView.module.css";
@@ -39,7 +39,8 @@ interface Props {
 
 function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, onError }: Props) {
   const { t } = useTranslation();
-  const fontSize = useTerminalFontSize();
+  const settings = useTerminalSettings();
+  const fontSize = settings.fontSize;
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
