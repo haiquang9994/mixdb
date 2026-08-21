@@ -7,11 +7,11 @@ import { errorMessage } from "../../../../core/errors";
 import { useTranslation } from "../../../../i18n";
 import { localShells } from "../../api";
 import { shellLabel } from "../../shells";
-import type { LocalChoice, LocalShell } from "../../types";
+import type { LocalShell, TerminalChoice } from "../../types";
 import styles from "./TargetForm.module.css";
 
 interface Props {
-  onOpen: (choice: LocalChoice) => void;
+  onOpen: (choice: TerminalChoice) => void;
   onError: (message: string) => void;
 }
 
@@ -70,7 +70,7 @@ function TargetForm({ onOpen, onError }: Props) {
       <Button
         variant="primary"
         disabled={!chosen}
-        onClick={() => chosen && onOpen({ shell: chosen, cwd: cwd.trim() || null })}
+        onClick={() => chosen && onOpen({ kind: "local", shell: chosen, cwd: cwd.trim() || null })}
       >
         {t("terminal.open")}
       </Button>

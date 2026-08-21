@@ -16,6 +16,7 @@ const terminalEn = {
     noShells: "No shell was found on this machine.",
     screen: "Terminal screen",
     badgeLocal: "Local shell",
+    badgeSsh: "SSH session",
     badgeEnded: "Session ended",
     sessionEnded: "The session has ended.",
     sessionEndedCode: "The session has ended (exit code {{code}}).",

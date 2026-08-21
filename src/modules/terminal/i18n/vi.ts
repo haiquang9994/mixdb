@@ -10,6 +10,7 @@ const terminalVi = {
     noShells: "Không tìm thấy shell nào trên máy này.",
     screen: "Màn hình terminal",
     badgeLocal: "Shell cục bộ",
+    badgeSsh: "Phiên SSH",
     badgeEnded: "Phiên đã kết thúc",
     sessionEnded: "Phiên đã kết thúc.",
     sessionEndedCode: "Phiên đã kết thúc (mã thoát {{code}}).",

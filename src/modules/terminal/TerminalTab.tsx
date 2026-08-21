@@ -7,14 +7,14 @@ import { useTranslation } from "../../i18n";
 import type { SessionExit } from "./api";
 import TargetForm from "./components/TargetForm";
 import TerminalView from "./components/TerminalView";
-import { localTarget, terminalBadgeMarks, terminalTitle } from "./session";
-import type { LocalChoice } from "./types";
+import { terminalBadgeMarks, terminalTarget, terminalTitle } from "./session";
+import type { TerminalChoice } from "./types";
 import "./terminal.css";
 
 /** Terminal: một tab, một phiên. Form đứng trước, phiên thay chỗ nó khi người dùng bấm Mở. */
 function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
   const { t } = useTranslation();
-  const [choice, setChoice] = useState<LocalChoice | null>(null);
+  const [choice, setChoice] = useState<TerminalChoice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exit, setExit] = useState<SessionExit | null>(null);
   /* Bấm "Kết nối lại" là bơm số này lên: `TerminalView` mount lại, sinh id mới, mở phiên mới. Nội
@@ -27,16 +27,19 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
 
   useEffect(() => {
     onBadgesChange(
-      terminalBadgeMarks(choice !== null, exit !== null).map((mark) =>
-        mark.type === "ended"
-          ? {
-              id: "ended",
-              icon: <TerminalIcon />,
-              label: t("terminal.badgeEnded"),
-              tabClassName: "terminal-tab-ended",
-            }
-          : { id: "local", icon: <TerminalIcon />, label: t("terminal.badgeLocal") },
-      ),
+      terminalBadgeMarks(choice, exit !== null).map((mark) => {
+        if (mark.type === "ended") {
+          return {
+            id: "ended",
+            icon: <TerminalIcon />,
+            label: t("terminal.badgeEnded"),
+            tabClassName: "terminal-tab-ended",
+          };
+        }
+        return mark.type === "local"
+          ? { id: "local", icon: <TerminalIcon />, label: t("terminal.badgeLocal") }
+          : { id: "ssh", icon: <TerminalIcon />, label: t("terminal.badgeSsh") };
+      }),
     );
   }, [choice, exit, onBadgesChange, t]);
 
@@ -49,7 +52,7 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
 
   /* `useMemo` chứ không gọi thẳng trong JSX: `target` là dependency của effect mở phiên trong
      `TerminalView`, nên một object mới mỗi lần cha render là một phiên mới mỗi lần cha render. */
-  const target = useMemo(() => (choice ? localTarget(choice) : null), [choice]);
+  const target = useMemo(() => (choice ? terminalTarget(choice) : null), [choice]);
 
   return (
     <div className="terminal-tab">
