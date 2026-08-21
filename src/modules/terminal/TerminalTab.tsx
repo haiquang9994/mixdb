@@ -20,6 +20,8 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
   const [lastTried, setLastTried] = useState<TerminalChoice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exit, setExit] = useState<SessionExit | null>(null);
+  /** Phiên đã yêu cầu nhưng chưa mở xong. Với SSH thì đây là vài giây kết nối và xác thực. */
+  const [opening, setOpening] = useState(false);
   /* Bấm "Kết nối lại" là bơm số này lên: `TerminalView` mount lại, sinh id mới, mở phiên mới. Nội
      dung cũ đi theo instance cũ — đúng thế, vì nó là màn hình của một shell không còn nữa. */
   const [generation, setGeneration] = useState(0);
@@ -48,14 +50,25 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
 
   const showError = useCallback((message: string) => setError(message), []);
 
+  const opened = useCallback(() => setOpening(false), []);
+
+  /* Phiên không mở được. `choice` bị xoá nên form quay lại — với `lastTried` còn nguyên, nên người
+     dùng sửa mật khẩu rồi bấm lại chứ không gõ lại từ đầu. Banner do `onError` đặt vẫn ở trên đó. */
+  const failed = useCallback(() => {
+    setOpening(false);
+    setChoice(null);
+  }, []);
+
   function start(next: TerminalChoice) {
     setLastTried(next);
     setExit(null);
+    setOpening(true);
     setChoice(next);
   }
 
   function reconnect() {
     setExit(null);
+    setOpening(true);
     setGeneration((n) => n + 1);
   }
 
@@ -72,9 +85,12 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
             key={generation}
             target={target}
             active={active}
+            onOpened={opened}
             onExit={setExit}
+            onFailed={failed}
             onError={showError}
           />
+          {opening && <div className="terminal-connecting">{t("terminal.connecting")}</div>}
           {exit && (
             <div className="terminal-ended">
               <span>

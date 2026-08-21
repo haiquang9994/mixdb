@@ -20,3 +20,13 @@
 .terminal-tab-ended {
   opacity: 0.6;
 }
+
+/* Dải dưới màn hình chứ không phải lớp phủ: xterm đã ở đó và đã đo xong kích thước, còn một lớp
+   phủ trong lúc chờ chỉ để lại một khung đen. Điều cần nói là "đang chờ máy chủ". */
+.terminal-connecting {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--page-bg);
+  font-size: 0.85rem;
+  opacity: 0.8;
+}

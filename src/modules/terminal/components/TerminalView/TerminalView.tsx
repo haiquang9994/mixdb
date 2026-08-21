@@ -20,11 +20,17 @@ interface Props {
   target: TerminalTarget;
   /** Tab nằm sau vẫn mounted và vẫn nhận byte — cái này chỉ quyết định focus và lúc nào đo lại. */
   active: boolean;
+  /** Phiên đã mở xong. Với SSH thì đây là lúc kết nối, xác thực và xin pty đều đã qua — vài giây
+   *  sau khi bấm nút, nên tab có gì đó để nói trong lúc chờ. */
+  onOpened: () => void;
   onExit: (exit: SessionExit) => void;
+  /** Phiên không mở được: sai mật khẩu, vân tay đổi, máy chủ không tới được. Khác `onError` ở chỗ
+   *  nó nói rằng *không có phiên nào cả*, nên tab trả màn hình về form. */
+  onFailed: () => void;
   onError: (message: string) => void;
 }
 
-function TerminalView({ target, active, onExit, onError }: Props) {
+function TerminalView({ target, active, onOpened, onExit, onFailed, onError }: Props) {
   const { t } = useTranslation();
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -33,8 +39,12 @@ function TerminalView({ target, active, onExit, onError }: Props) {
 
   // Callback đi qua ref: effect mở phiên chỉ được chạy lại khi `target` đổi, không phải mỗi lần
   // cha render lại.
+  const onOpenedRef = useRef(onOpened);
+  onOpenedRef.current = onOpened;
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
+  const onFailedRef = useRef(onFailed);
+  onFailedRef.current = onFailed;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
   const tRef = useRef(t);
@@ -74,7 +84,15 @@ function TerminalView({ target, active, onExit, onError }: Props) {
       }
       ended = true;
       onExitRef.current(message);
-    }).catch((e) => onErrorRef.current(errorMessage(tRef.current, e)));
+    })
+      .then(() => onOpenedRef.current())
+      .catch((e) => {
+        /* Không có phiên nào để đóng: `terminal_open` hỏng trước khi đưa được gì vào map, nên
+           cleanup bên dưới không được gọi `terminal_close` cho một id chưa từng tồn tại. */
+        ended = true;
+        onErrorRef.current(errorMessage(tRef.current, e));
+        onFailedRef.current();
+      });
 
     return () => {
       typed.dispose();
