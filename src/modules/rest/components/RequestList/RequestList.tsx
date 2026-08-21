@@ -10,6 +10,7 @@ import {
   BackspaceIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  HistoryIcon,
   PinIcon,
   PlusIcon,
 } from "../../../../icons";
@@ -29,6 +30,8 @@ interface Props {
   vars: Record<string, string> | null;
   onOpen: (id: string) => void;
   onNew: () => void;
+  /** Opens the history dialog — the sidebar header is where the spec puts it. */
+  onHistory: () => void;
   /** A request with something changed — a rename. */
   onSave: (request: RestRequest) => void;
   onDuplicate: (request: RestRequest) => void;
@@ -60,6 +63,7 @@ function RequestList({
   vars,
   onOpen,
   onNew,
+  onHistory,
   onSave,
   onDuplicate,
   onPin,
@@ -168,6 +172,15 @@ function RequestList({
             <PlusIcon size="1em" />
             {t("rest.newRequest")}
           </Button>
+          <button
+            type="button"
+            className={styles.historyButton}
+            onClick={onHistory}
+            title={t("rest.historyOpen")}
+            aria-label={t("rest.historyOpen")}
+          >
+            <HistoryIcon size="1em" />
+          </button>
         </div>
         <Input
           size="small"

@@ -17,7 +17,7 @@ import type {
  * Everything Rust would otherwise have to decide is decided here, where it can be tested without
  * a server: which URL, which headers, how a form is encoded, what content type to declare.
  *
- * Phase 4 puts `interpolate` in front of this. Until then `{{var}}` reaches the wire as text.
+ * `interpolate` runs in front of this, so what arrives here has its variables already put in.
  */
 
 export interface SendSettings {
@@ -26,9 +26,9 @@ export interface SendSettings {
   acceptInvalidCerts: boolean;
 }
 
-/** Until the Settings pane exists in Phase 5. The contract already carries all three, so Phase 5
- *  changes where they come from and nothing else. */
-export const PHASE_ONE_SETTINGS: SendSettings = {
+/** What the workspace file starts from, and what `toCurl` builds with — a printed cURL command
+ *  carries no timeout of its own, so the default is the honest thing to build it under. */
+export const DEFAULT_SEND_SETTINGS: SendSettings = {
   timeoutMs: 30_000,
   followRedirects: true,
   acceptInvalidCerts: false,

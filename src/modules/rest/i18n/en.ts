@@ -144,11 +144,47 @@ const restEn = {
     deleteTitle: "Delete this request?",
     deleteMessage: "\u201c{{name}}\u201d will be gone for good.",
     copySuffix: "{{name}} copy",
+    // History
+    historyTitle: "History",
+    historyOpen: "History",
+    historyFilter: "Filter by URL",
+    historyEmpty: "Nothing has been sent yet.",
+    historyNoMatch: "Nothing matches that.",
+    historyClear: "Clear",
+    historyClearConfirm: "Clear it all?",
+    historyDrop: "Forget this one",
+    historyDropConfirm: "Forget it?",
+    historyFailed: "Failed",
+    historyOpenRequest: "Open the request",
+    historyRequestGone: "The request this was sent from has been deleted.",
+    historyNoBody: "The response body was not kept.",
+    historyBodyTooBig: "The response was over {{limit}}, so the body was not kept.",
+    duration: "{{ms}} ms",
+
+    // Settings pane
+    settingsTitle: "REST",
+    settingsHistoryGroup: "History",
+    settingsKeepBodies: "Keep response bodies",
+    settingsKeepBodiesHint:
+      "Bodies up to {{limit}} are kept with each entry. Turning this off also forgets the ones already kept.",
+    settingsClearHistory: "Clear the history",
+    settingsClearHistoryConfirm: "Clear it all?",
+    settingsHistoryCount: "{{n}} of {{max}} kept",
+    settingsSendGroup: "Sending",
+    settingsTimeout: "Timeout",
+    settingsTimeoutUnit: "seconds",
+    settingsFollowRedirects: "Follow redirects",
+    settingsInvalidCerts: "Accept self-signed certificates",
+    settingsInvalidCertsHint:
+      "Turns certificate checking off for every request — leave it off unless you know the server.",
+    settingsGlobalHint: "These three apply to every request.",
+
     // Shortcuts
     shortcutScope: "REST",
     shortcutSend: "Send the request",
     shortcutNewRequest: "New request",
     shortcutCloseRequest: "Close the request tab",
+    shortcutHistory: "Open the history",
   },
   error: {
     restTimeout: "The request timed out. {{message}}",

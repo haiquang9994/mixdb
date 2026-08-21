@@ -1,12 +1,14 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { Store } from "@tauri-apps/plugin-store";
+import { DEFAULT_SEND_SETTINGS, type SendSettings } from "./buildRequest";
 
 /**
  * How the REST workspace is laid out, kept between sessions.
  *
  * The shell remembers no tabs, so nothing here is about which requests were open — only about
  * the furniture, which is the same in every REST tab and so belongs to the app rather than to one
- * of them. Phase 5 adds the send settings here.
+ * of them — the settings pane's four switches included, since a timeout is no more one tab's than
+ * a sidebar width is.
  */
 
 export interface Workspace {
@@ -17,6 +19,32 @@ export interface Workspace {
    *  its own choice changes — but it never reads it again, because a second tab moving to prod is
    *  not this tab moving with it. */
   lastEnvId: string | null;
+  /** Whether a response body is kept with its history entry. Turning it off also forgets the ones
+   *  already kept — see `dropHistoryBodies`. */
+  keepResponseBodies: boolean;
+  timeoutMs: number;
+  followRedirects: boolean;
+  /** Off. Turning it on stops the client checking any server's certificate, on every request. */
+  acceptInvalidCerts: boolean;
+}
+
+/** A timeout of nothing is a request that always fails, and one of a day is a tab that never comes
+ *  back. Both ends belong to the box, not to the wire. */
+export const MIN_TIMEOUT_SECONDS = 1;
+export const MAX_TIMEOUT_SECONDS = 600;
+
+export function clampTimeoutSeconds(seconds: number): number {
+  if (!Number.isFinite(seconds)) return DEFAULT_SEND_SETTINGS.timeoutMs / 1000;
+  return Math.min(MAX_TIMEOUT_SECONDS, Math.max(MIN_TIMEOUT_SECONDS, Math.round(seconds)));
+}
+
+/** The three the wire asks for, out of the seven kept here. */
+export function sendSettings(workspace: Workspace): SendSettings {
+  return {
+    timeoutMs: workspace.timeoutMs,
+    followRedirects: workspace.followRedirects,
+    acceptInvalidCerts: workspace.acceptInvalidCerts,
+  };
 }
 
 export const DEFAULT_SIDEBAR_WIDTH = 260;
@@ -32,6 +60,8 @@ const DEFAULTS: Workspace = {
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   splitRatio: DEFAULT_SPLIT_RATIO,
   lastEnvId: null,
+  keepResponseBodies: true,
+  ...DEFAULT_SEND_SETTINGS,
 };
 
 let storePromise: Promise<Store> | null = null;
@@ -105,4 +135,16 @@ export function workspaceLoaded(): boolean {
 
 export function setLastEnvId(lastEnvId: string | null): void {
   write({ ...snapshot, lastEnvId });
+}
+
+/** What the store holds now, for a caller that is not a component — the send path, which reads the
+ *  settings as they stand rather than as they were when its handler was made. */
+export function currentWorkspace(): Workspace {
+  return snapshot;
+}
+
+/** A settings change. One entry point rather than a setter each: the Settings pane changes one
+ *  field at a time and none of them needs anything the others do not. */
+export function updateWorkspace(patch: Partial<Workspace>): void {
+  write({ ...snapshot, ...patch });
 }

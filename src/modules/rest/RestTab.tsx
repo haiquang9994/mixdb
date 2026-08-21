@@ -7,10 +7,12 @@ import { modalDepth, useShortcut } from "../../core/shortcuts";
 import type { ModuleTabProps } from "../../shell/module";
 import { useTranslation } from "../../i18n";
 import { CANCELLED, decodeBase64, restCancel, restSend } from "./api";
-import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
+import { buildRequest } from "./buildRequest";
 import { detectBody, type ViewMode } from "./contentType";
-import { SECRET_MASK, findEnvironment, previewVars, varMap } from "./environments";
+import { SECRET_MASK, findEnvironment, historyVars, previewVars, varMap } from "./environments";
 import { addVariables, useEnvironments } from "./environmentsStore";
+import { historyUrl, keptBody, type HistoryEntry } from "./history";
+import { recordSend } from "./historyStore";
 import { interpolate } from "./interpolate";
 import { resolveRequest } from "./resolveRequest";
 import { findSubstitutions, substitute, type Substitution } from "./substitute";
@@ -18,6 +20,7 @@ import AuthPane from "./components/AuthPane";
 import BodyEditor from "./components/BodyEditor";
 import EnvironmentDialog from "./components/EnvironmentDialog";
 import EnvironmentSelect from "./components/EnvironmentSelect";
+import HistoryDialog from "./components/HistoryDialog";
 import ResponsePane, { IDLE_SEND, type SendState } from "./components/ResponsePane";
 import KeyValueTable from "./components/KeyValueTable";
 import RequestList from "./components/RequestList";
@@ -45,6 +48,8 @@ import {
   MAX_SPLIT_RATIO,
   MIN_SIDEBAR_WIDTH,
   MIN_SPLIT_RATIO,
+  currentWorkspace,
+  sendSettings,
   setLastEnvId,
   setSidebarWidth,
   setSplitRatio,
@@ -72,6 +77,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   const environments = useEnvironments();
   const [envId, setEnvId] = useState<string | null>(null);
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   /** Whether `lastEnvId` has been taken. Once, and once only — see the note on the field. */
   const envSeeded = useRef(false);
 
@@ -291,7 +297,19 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     if (!activeRequest || resolved === null || blocked) return;
     const request = activeRequest;
     const sendId = crypto.randomUUID();
-    const wire = buildRequest(resolved.request, sendId, PHASE_ONE_SETTINGS);
+    const wire = buildRequest(resolved.request, sendId, sendSettings(workspace));
+    const startedAt = Date.now();
+    /* The history's own URL, built from the request rather than from `wire`: what goes on the wire
+       carries the secrets, and the Auth tab's query key is a credential whichever way it was
+       typed. */
+    const stub = {
+      id: crypto.randomUUID(),
+      requestId: request.id,
+      envName: env?.name ?? "",
+      method: request.method,
+      url: historyUrl(request, historyVars(env)),
+      startedAt,
+    } satisfies Partial<HistoryEntry>;
 
     setSends((prev) => ({
       ...prev,
@@ -323,20 +341,50 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
           error: null,
         },
       }));
+      recordSend({
+        ...stub,
+        durationMs: Date.now() - startedAt,
+        status: response.status,
+        statusText: response.status_text,
+        size: response.body_size,
+        error: null,
+        // Read now rather than from the render this send started in: the switch may have been
+        // turned off in the minute the server took to answer.
+        responseBody: keptBody(
+          response.body_base64,
+          response.body_size,
+          currentWorkspace().keepResponseBodies,
+        ),
+      });
     } catch (e) {
       // Cancelling is not a failure, and a failure leaves the previous response where it was —
       // the banner says what happened, and the pane still holds what is being compared against.
       const cancelled =
         typeof e === "object" && e !== null && (e as { code?: string }).code === CANCELLED;
+      const message = errorMessage(t, e);
       setSends((prev) => ({
         ...prev,
         [request.id]: {
           ...(prev[request.id] ?? IDLE_SEND),
           phase: cancelled ? "cancelled" : "failed",
           sendId: null,
-          error: cancelled ? null : errorMessage(t, e),
+          error: cancelled ? null : message,
         },
       }));
+      /* A cancelled send is not recorded: nothing came back and nothing was learned, and an entry
+         with neither a status nor an error would be a blank row nobody could read. A timeout or a
+         refused connection is an answer, and is kept. */
+      if (!cancelled) {
+        recordSend({
+          ...stub,
+          durationMs: Date.now() - startedAt,
+          status: null,
+          statusText: "",
+          size: 0,
+          error: message,
+          responseBody: null,
+        });
+      }
     }
   }
 
@@ -393,6 +441,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     () => currentId !== null && close(currentId),
     active && currentId !== null,
   );
+  useShortcut("rest.history", () => setHistoryOpen(true), active);
 
   const paneTabs: { key: RequestTabKey; label: string }[] = [
     { key: "params", label: t("rest.paramsTab") },
@@ -410,6 +459,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
           vars={varMap(env)}
           onOpen={open}
           onNew={makeRequest}
+          onHistory={() => setHistoryOpen(true)}
           onSave={saveRequest}
           onDuplicate={duplicate}
           onPin={pinRequest}
@@ -578,6 +628,10 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
 
       {envDialogOpen && (
         <EnvironmentDialog initialId={env?.id ?? null} onClose={() => setEnvDialogOpen(false)} />
+      )}
+
+      {historyOpen && (
+        <HistoryDialog onOpenRequest={open} onClose={() => setHistoryOpen(false)} />
       )}
 
       {swap !== null && (
