@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import type { ModuleTabProps } from "../../shell/module";
 import { useTranslation } from "../../i18n";
 import { localShells } from "./api";
-import { shellLabel } from "./shells";
-import type { LocalShell } from "./types";
+import TerminalView from "./components/TerminalView";
+import type { TerminalTarget } from "./types";
 import "./terminal.css";
 
 /** Terminal: một tab, một phiên. Việc 7 thay chỗ giữ chỗ này bằng form chọn đích. */
-function TerminalTab({ onTitleChange }: ModuleTabProps) {
+function TerminalTab({ active, onTitleChange }: ModuleTabProps) {
   const { t } = useTranslation();
-  const [shells, setShells] = useState<LocalShell[]>([]);
+  const [target, setTarget] = useState<TerminalTarget | null>(null);
 
   useEffect(() => {
     onTitleChange(t("terminal.newTabTitle"));
@@ -17,19 +17,18 @@ function TerminalTab({ onTitleChange }: ModuleTabProps) {
 
   useEffect(() => {
     localShells()
-      .then(setShells)
-      .catch(() => setShells([]));
+      .then((shells) => {
+        const first = shells[0];
+        if (first) setTarget({ type: "local", shell: first.path, args: first.args, cwd: null });
+      })
+      .catch(() => {});
   }, []);
 
   return (
     <div className="terminal-tab">
-      <ul>
-        {shells.map((shell) => (
-          <li key={shell.path}>
-            {shellLabel(shell.name)} — {shell.path}
-          </li>
-        ))}
-      </ul>
+      {target && (
+        <TerminalView target={target} active={active} onExit={() => {}} onError={() => {}} />
+      )}
     </div>
   );
 }
