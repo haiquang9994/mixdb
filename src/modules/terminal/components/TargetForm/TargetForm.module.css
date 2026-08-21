@@ -1,0 +1,22 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(480px, 100%);
+  margin: 48px auto;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cwd {
+  display: flex;
+  gap: 8px;
+}
+
+.cwd input {
+  flex: 1;
+}

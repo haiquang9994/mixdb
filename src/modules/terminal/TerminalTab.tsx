@@ -1,33 +1,47 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import ErrorBanner from "../../components/ErrorBanner";
+import { TerminalIcon } from "../../icons";
 import type { ModuleTabProps } from "../../shell/module";
 import { useTranslation } from "../../i18n";
-import { localShells } from "./api";
+import TargetForm from "./components/TargetForm";
 import TerminalView from "./components/TerminalView";
-import type { TerminalTarget } from "./types";
+import { localTarget, terminalBadgeMarks, terminalTitle } from "./session";
+import type { LocalChoice } from "./types";
 import "./terminal.css";
 
-/** Terminal: một tab, một phiên. Việc 7 thay chỗ giữ chỗ này bằng form chọn đích. */
-function TerminalTab({ active, onTitleChange }: ModuleTabProps) {
+/** Terminal: một tab, một phiên. Form đứng trước, phiên thay chỗ nó khi người dùng bấm Mở. */
+function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
   const { t } = useTranslation();
-  const [target, setTarget] = useState<TerminalTarget | null>(null);
+  const [choice, setChoice] = useState<LocalChoice | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    onTitleChange(t("terminal.newTabTitle"));
-  }, [onTitleChange, t]);
+    onTitleChange(choice ? terminalTitle(choice) : t("terminal.newTabTitle"));
+  }, [choice, onTitleChange, t]);
 
   useEffect(() => {
-    localShells()
-      .then((shells) => {
-        const first = shells[0];
-        if (first) setTarget({ type: "local", shell: first.path, args: first.args, cwd: null });
-      })
-      .catch(() => {});
-  }, []);
+    onBadgesChange(
+      terminalBadgeMarks(choice !== null, false).map((mark) => ({
+        id: mark.type,
+        icon: <TerminalIcon />,
+        label: t("terminal.badgeLocal"),
+      })),
+    );
+  }, [choice, onBadgesChange, t]);
+
+  const showError = useCallback((message: string) => setError(message), []);
+
+  /* `useMemo` chứ không gọi thẳng trong JSX: `target` là dependency của effect mở phiên trong
+     `TerminalView`, nên một object mới mỗi lần cha render là một phiên mới mỗi lần cha render. */
+  const target = useMemo(() => (choice ? localTarget(choice) : null), [choice]);
 
   return (
     <div className="terminal-tab">
-      {target && (
-        <TerminalView target={target} active={active} onExit={() => {}} onError={() => {}} />
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+      {target ? (
+        <TerminalView target={target} active={active} onExit={() => {}} onError={showError} />
+      ) : (
+        <TargetForm onOpen={setChoice} onError={showError} />
       )}
     </div>
   );
