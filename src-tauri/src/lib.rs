@@ -31,6 +31,7 @@ pub fn run() {
     // `modules::handler`.
     let builder = modules::db::register(builder);
     let builder = modules::rest::register(builder);
+    let builder = modules::terminal::register(builder);
 
     builder
         .invoke_handler(modules::handler())
