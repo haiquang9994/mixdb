@@ -18,7 +18,7 @@ pub struct LocalShell {
     pub args: Vec<String>,
 }
 
-/// Phiên mở đi đâu. Đợt 2 thêm nhánh `Ssh(crate::ssh::SshConfig)`.
+/// Phiên mở đi đâu.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum TerminalTarget {
@@ -29,6 +29,9 @@ pub enum TerminalTarget {
         args: Vec<String>,
         cwd: Option<String>,
     },
+    /// Máy chủ mở phiên. Đúng `SshConfig` mà tunnel dùng — bốn trường ấy là bốn trường của một máy
+    /// chủ SSH, không của thứ nằm ở đầu kia.
+    Ssh(crate::ssh::SshConfig),
 }
 
 /// Thứ duy nhất phiên gửi ngược lên UI dưới dạng JSON. Byte thì đi thẳng, không bọc.

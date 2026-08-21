@@ -549,6 +549,119 @@ async fn open_channel(inner: &Arc<TunnelInner>) -> Option<russh::Channel<client:
     }
 }
 
+/// Một shell đang chạy trên máy chủ, cộng phiên SSH giữ nó sống.
+///
+/// Phiên đi cùng channel chứ không ở lại trong hàm: `client::Handle` là thứ chạy vòng lặp sự kiện
+/// của russh, và bỏ nó là channel chết theo trong vài mili giây. Người gọi phải giữ cả hai sống
+/// đúng bằng nhau, nên hàm này trao cả hai cùng lúc.
+pub struct RemoteShell {
+    session: client::Handle<TunnelHandler>,
+    read: russh::ChannelReadHalf,
+    write: russh::ChannelWriteHalf<client::Msg>,
+}
+
+impl RemoteShell {
+    /// Tách làm hai nửa cho hai task: một đọc, một ghi. Phiên SSH ở lại với nửa ghi — đó là nửa
+    /// sống đúng bằng phiên terminal, còn nửa đọc kết thúc ngay khi đầu xa im.
+    pub fn split(self) -> (russh::ChannelReadHalf, RemoteWriter) {
+        (
+            self.read,
+            RemoteWriter {
+                session: self.session,
+                write: self.write,
+            },
+        )
+    }
+}
+
+/// Nửa ghi của một phiên shell: byte gõ, đổi kích thước, và đóng.
+///
+/// Giữ luôn `client::Handle` vì cả ba đường ra vào của một phiên đều đi qua đây — nên bỏ cái này
+/// là đóng cả kết nối, và không có đường nào để sót một phiên SSH đang mở.
+pub struct RemoteWriter {
+    session: client::Handle<TunnelHandler>,
+    write: russh::ChannelWriteHalf<client::Msg>,
+}
+
+impl RemoteWriter {
+    /// Byte người dùng gõ. Hỏng là đường đã đứt — người gọi dừng, không thử lại.
+    pub async fn write(&self, bytes: Vec<u8>) -> Result<(), AppError> {
+        self.write
+            .data_bytes(bytes)
+            .await
+            .map_err(|e| err!("error.sshShellFailed", message = e))
+    }
+
+    /// Khung đổi kích thước. `pix_width`/`pix_height` để 0: đầu xa dùng cols/rows, và số pixel của
+    /// một webview không nói gì về ô chữ của nó.
+    pub async fn resize(&self, cols: u16, rows: u16) -> Result<(), AppError> {
+        self.write
+            .window_change(cols as u32, rows as u32, 0, 0)
+            .await
+            .map_err(|e| err!("error.sshShellFailed", message = e))
+    }
+
+    /// Đóng cho gọn: hết đầu vào, đóng channel, rồi chào máy chủ. Bỏ `RemoteWriter` cũng đóng
+    /// được, nhưng bằng cách rơi handle mà không nói lời nào — và một sshd đang ghi log thì đáng
+    /// được nói.
+    pub async fn close(self) {
+        let _ = self.write.eof().await;
+        let _ = self.write.close().await;
+        let _ = self
+            .session
+            .disconnect(russh::Disconnect::ByApplication, "", "English")
+            .await;
+    }
+}
+
+/// Mở một shell trên máy chủ: kết nối, xác thực, xin pty, xin shell.
+///
+/// Dùng chung `authenticate()` với tunnel — cùng kiểm vân tay theo `known_hosts.json`, cùng hai
+/// cách xác thực — nhưng **kết nối là riêng**: vòng đời một terminal là vòng đời cái tab, còn vòng
+/// đời một tunnel là vòng đời một kết nối database. Gộp lại thì đóng tab terminal làm rụng kết nối
+/// database.
+pub async fn open_shell(
+    ssh: &SshConfig,
+    app_data: &Path,
+    cols: u16,
+    rows: u16,
+) -> Result<RemoteShell, AppError> {
+    let session = authenticate(ssh, app_data).await?;
+
+    let channel = match timeout(CHANNEL_OPEN_TIMEOUT, session.channel_open_session()).await {
+        Ok(Ok(channel)) => channel,
+        Ok(Err(e)) => return Err(err!("error.sshShellFailed", message = e)),
+        Err(_) => {
+            return Err(err!(
+                "error.sshTimeout",
+                host = &ssh.host,
+                port = ssh.port,
+                seconds = CHANNEL_OPEN_TIMEOUT.as_secs(),
+            ))
+        }
+    };
+
+    /* `want_reply: true` cho cả hai: một máy chủ từ chối cấp pty phải nói ra, và câu trả lời của
+       nó tới dưới dạng `ChannelMsg::Success`/`Failure` trong hàng đợi của channel. Bộ đọc bỏ qua
+       cả hai — cái nó chờ là byte — nhưng một `Failure` bao giờ cũng kéo theo channel đóng, và
+       phiên kết thúc ngay thay vì treo trên một terminal câm. */
+    channel
+        .request_pty(true, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
+        .await
+        .map_err(|e| err!("error.sshShellFailed", message = e))?;
+    channel
+        .request_shell(true)
+        .await
+        .map_err(|e| err!("error.sshShellFailed", message = e))?;
+
+    let (read, write) = channel.split();
+    Ok(RemoteShell {
+        session,
+        read,
+        write,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{known_hosts_file, load_known_hosts, next_backoff, remember_host};

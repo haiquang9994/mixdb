@@ -1,11 +1,12 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
-use super::local;
 use super::models::{LocalShell, Output, OutputSink, TerminalEvent, TerminalSize, TerminalTarget};
 use super::state::TerminalState;
+use super::{local, remote};
 use crate::error::AppError;
 
 /// Máy này mở được shell nào. Dò bằng cách nhìn đĩa và — trên Windows — hỏi `wsl.exe`, nên chạy
@@ -23,6 +24,7 @@ pub async fn terminal_local_shells() -> Result<Vec<LocalShell>, AppError> {
 /// mọi khung và phía JS xếp lại theo số đó, nên `Exit` không thể vượt lên trước byte cuối.
 #[tauri::command]
 pub async fn terminal_open(
+    app: AppHandle,
     id: String,
     target: TerminalTarget,
     size: TerminalSize,
@@ -42,6 +44,9 @@ pub async fn terminal_open(
 
     let session = match target {
         TerminalTarget::Local { shell, args, cwd } => local::spawn(shell, args, cwd, size, sink)?,
+        // Xác thực hỏng, vân tay đổi, máy chủ không tới được — tất cả hỏng ở đây, trước khi có
+        // phiên nào để đưa vào map. Đó là thứ frontend đưa về `ErrorBanner` ngay tại form.
+        TerminalTarget::Ssh(ssh) => remote::spawn(&ssh, &app_data_dir(&app)?, size, sink).await?,
     };
 
     // Cùng một id mở hai lần thì phiên cũ bị thay và `Drop` của nó dọn phần còn lại.
@@ -90,4 +95,12 @@ pub async fn terminal_resize(
 pub async fn terminal_close(id: String, state: State<'_, TerminalState>) -> Result<(), AppError> {
     state.sessions.lock().unwrap().remove(&id);
     Ok(())
+}
+
+/// Nơi MixDB nhớ những gì nó thấy giữa các lần chạy. Ở đây chỉ cần một thứ trong đó:
+/// `known_hosts.json`, tức vân tay của mọi máy chủ SSH đã kết nối.
+fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
+    app.path()
+        .app_data_dir()
+        .map_err(|e| err!("error.noAppDataDir", message = e))
 }

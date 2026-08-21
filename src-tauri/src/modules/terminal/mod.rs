@@ -1,4 +1,4 @@
-//! Terminal: một phiên shell, trên máy này hoặc — từ đợt 2 — trên một máy chủ qua SSH.
+//! Terminal: một phiên shell, trên máy này hoặc trên một máy chủ qua SSH.
 //!
 //! Chỗ khác nhau giữa hai loại phiên nằm gọn trong hàm dựng phiên; từ `commands.rs` trở lên chỉ
 //! còn một `Session` và một đường ra.
@@ -6,6 +6,7 @@
 pub mod commands;
 pub mod local;
 pub mod models;
+pub mod remote;
 pub mod state;
 pub mod stream;
 
