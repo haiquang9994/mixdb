@@ -15,6 +15,9 @@ import "./terminal.css";
 function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
   const { t } = useTranslation();
   const [choice, setChoice] = useState<TerminalChoice | null>(null);
+  /* Cái tab vừa thử mở. Khác `choice` ở chỗ nó không bị xoá khi phiên hỏng — form cần nó để dựng
+     lại đúng những gì người dùng đã gõ. */
+  const [lastTried, setLastTried] = useState<TerminalChoice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exit, setExit] = useState<SessionExit | null>(null);
   /* Bấm "Kết nối lại" là bơm số này lên: `TerminalView` mount lại, sinh id mới, mở phiên mới. Nội
@@ -44,6 +47,12 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
   }, [choice, exit, onBadgesChange, t]);
 
   const showError = useCallback((message: string) => setError(message), []);
+
+  function start(next: TerminalChoice) {
+    setLastTried(next);
+    setExit(null);
+    setChoice(next);
+  }
 
   function reconnect() {
     setExit(null);
@@ -78,7 +87,7 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
           )}
         </>
       ) : (
-        <TargetForm onOpen={setChoice} onError={showError} />
+        <TargetForm onOpen={start} onError={showError} initial={lastTried} />
       )}
     </div>
   );

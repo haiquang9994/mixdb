@@ -4,14 +4,14 @@ import type { SshConfig, TerminalChoice } from "./types";
 
 const bash: TerminalChoice = {
   kind: "local",
-  shell: { name: "git-bash", path: "C:\Program Files\Git\bin\bash.exe", args: [] },
+  shell: { name: "git-bash", path: "C:\\Program Files\\Git\\bin\\bash.exe", args: [] },
   cwd: null,
 };
 
 const ubuntu: TerminalChoice = {
   kind: "local",
-  shell: { name: "wsl:Ubuntu", path: "C:\Windows\System32\wsl.exe", args: ["-d", "Ubuntu"] },
-  cwd: "D:\work",
+  shell: { name: "wsl:Ubuntu", path: "C:\\Windows\\System32\\wsl.exe", args: ["-d", "Ubuntu"] },
+  cwd: "D:\\work",
 };
 
 const config: SshConfig = {
@@ -27,7 +27,7 @@ describe("terminalTarget", () => {
   it("sends the path and the args, not the display name", () => {
     expect(terminalTarget(bash)).toEqual({
       type: "local",
-      shell: "C:\Program Files\Git\bin\bash.exe",
+      shell: "C:\\Program Files\\Git\\bin\\bash.exe",
       args: [],
       cwd: null,
     });
@@ -36,9 +36,9 @@ describe("terminalTarget", () => {
   it("carries a WSL distribution through as arguments", () => {
     expect(terminalTarget(ubuntu)).toEqual({
       type: "local",
-      shell: "C:\Windows\System32\wsl.exe",
+      shell: "C:\\Windows\\System32\\wsl.exe",
       args: ["-d", "Ubuntu"],
-      cwd: "D:\work",
+      cwd: "D:\\work",
     });
   });
 
