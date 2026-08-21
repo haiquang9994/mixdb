@@ -20,6 +20,7 @@ import AuthPane from "./components/AuthPane";
 import BodyEditor from "./components/BodyEditor";
 import EnvironmentDialog from "./components/EnvironmentDialog";
 import EnvironmentSelect from "./components/EnvironmentSelect";
+import HistoryDialog from "./components/HistoryDialog";
 import ResponsePane, { IDLE_SEND, type SendState } from "./components/ResponsePane";
 import KeyValueTable from "./components/KeyValueTable";
 import RequestList from "./components/RequestList";
@@ -76,6 +77,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
   const environments = useEnvironments();
   const [envId, setEnvId] = useState<string | null>(null);
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   /** Whether `lastEnvId` has been taken. Once, and once only — see the note on the field. */
   const envSeeded = useRef(false);
 
@@ -439,6 +441,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     () => currentId !== null && close(currentId),
     active && currentId !== null,
   );
+  useShortcut("rest.history", () => setHistoryOpen(true), active);
 
   const paneTabs: { key: RequestTabKey; label: string }[] = [
     { key: "params", label: t("rest.paramsTab") },
@@ -456,6 +459,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
           vars={varMap(env)}
           onOpen={open}
           onNew={makeRequest}
+          onHistory={() => setHistoryOpen(true)}
           onSave={saveRequest}
           onDuplicate={duplicate}
           onPin={pinRequest}
@@ -624,6 +628,10 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
 
       {envDialogOpen && (
         <EnvironmentDialog initialId={env?.id ?? null} onClose={() => setEnvDialogOpen(false)} />
+      )}
+
+      {historyOpen && (
+        <HistoryDialog onOpenRequest={open} onClose={() => setHistoryOpen(false)} />
       )}
 
       {swap !== null && (

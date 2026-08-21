@@ -20,6 +20,7 @@ export const REST_SHORTCUTS: ShortcutGroup[] = [
          of whichever handler started listening last, which is this one — and it is registered only
          while a request tab is open, so an empty REST workspace still closes the MixDB tab. */
       { id: "rest.closeRequest", chord: { key: "w" }, labelKey: "rest.shortcutCloseRequest" },
+      { id: "rest.history", chord: { key: "h" }, labelKey: "rest.shortcutHistory" },
     ],
   },
 ];
