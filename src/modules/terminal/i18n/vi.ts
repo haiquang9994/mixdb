@@ -67,6 +67,12 @@ const terminalVi = {
       "Đúng cách PuTTY làm. Tắt thì chuột phải mở menu của chính terminal.",
     settingsGlobalHint:
       "Cài đặt này áp cho mọi tab terminal, kể cả tab đang mở.",
+    shortcutFind: "Tìm trong phần đã cuộn qua",
+    findPlaceholder: "Tìm",
+    findPrevious: "Kết quả trước",
+    findNext: "Kết quả sau",
+    findClose: "Đóng thanh tìm",
+    findNoMatch: "Không có kết quả",
   },
   error: {
     terminalSpawnFailed: "Không khởi động được shell: {{message}}",

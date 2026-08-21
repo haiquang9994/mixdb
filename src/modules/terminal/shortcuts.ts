@@ -36,6 +36,11 @@ export const TERMINAL_SHORTCUTS: ShortcutGroup[] = [
         alias: [{ key: "_", shift: true }],
         labelKey: "terminal.shortcutZoomOut",
       },
+      /* Không đặt `whenTyping: "ignore"`: con trỏ nằm trong ô tìm cũng là "đang gõ", và `Ctrl+F`
+         lúc ấy phải chọn lại nội dung ô chứ không phải rơi xuống webview. Trong màn hình terminal
+         thì `isTextEntry` cũng trả `true` — textarea ẩn của xterm — nên def này bị bỏ qua hoàn
+         toàn nếu mang cờ ấy, và phím tắt sẽ không bao giờ chạy. */
+      { id: "terminal.find", chord: { key: "f" }, labelKey: "terminal.shortcutFind" },
     ],
   },
 ];

@@ -72,6 +72,12 @@ const terminalEn = {
     settingsRightClickPastesHint:
       "The way PuTTY behaves. With it off, a right-click opens the terminal's own menu.",
     settingsGlobalHint: "These settings apply to every terminal tab, open ones included.",
+    shortcutFind: "Find in the scrollback",
+    findPlaceholder: "Find",
+    findPrevious: "Previous match",
+    findNext: "Next match",
+    findClose: "Close the search bar",
+    findNoMatch: "No match",
   },
   error: {
     terminalSpawnFailed: "Could not start the shell: {{message}}",

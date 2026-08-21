@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { Terminal } from "@xterm/xterm";
 import { copyText } from "../../../../core/clipboard";
 import { errorMessage } from "../../../../core/errors";
@@ -15,6 +16,7 @@ import {
 import { useTerminalSettings, zoomTerminal } from "../../settingsStore";
 import { shellKeeps } from "../../keys";
 import type { TerminalTarget } from "../../types";
+import SearchBar from "../SearchBar";
 import styles from "./TerminalView.module.css";
 
 /** Kéo cửa sổ sinh ra hàng chục sự kiện một giây; đầu xa chỉ cần biết kích thước cuối cùng. */
@@ -43,6 +45,7 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchRef = useRef<SearchAddon | null>(null);
   const sessionRef = useRef<string | null>(null);
   /* Trong state chứ không trong ref: nó là điều kiện `enabled` của `terminal.copy`, và một ref đổi
      giá trị thì không có ai đăng ký lại phím tắt. */
@@ -50,6 +53,10 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
   /* Shell đã chết. Trong state chứ không chỉ trong biến `ended` của effect bên dưới, và cũng vì lý
      do ấy: nó quyết định phím tắt nào đang được đăng ký. */
   const [ended, setEnded] = useState(false);
+  /* Thanh tìm đang mở hay không. Trong state chứ không trong ref: nó quyết định cái được vẽ. */
+  const [searching, setSearching] = useState(false);
+  /** Mỗi lần `Ctrl+F` được bấm, kể cả khi thanh đã mở — xem `SearchBar.focusSignal`. */
+  const [findSignal, setFindSignal] = useState(0);
 
   /* Cài đặt lúc dựng terminal đi qua ref: đổi cài đặt thì `term.options` được đặt lại tại chỗ —
      xem effect ở cuối — chứ không dựng lại cả màn hình và mở lại cả phiên. */
@@ -84,6 +91,8 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    const search = new SearchAddon();
+    term.loadAddon(search);
     /* Cửa duy nhất để lấy được một phím ra khỏi xterm. Nó đọc `keydown` trên textarea ẩn của chính
        nó và `stopPropagation` mọi `Ctrl`+chữ cái, nên listener của app ở `window` không bao giờ
        nghe thấy `Ctrl+W`. Trả `false` là xterm thoát ra *trước* khi `preventDefault`, và sự kiện
@@ -96,6 +105,7 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
+    searchRef.current = search;
 
     /* Id sinh ở đây chứ không do tab cấp: `StrictMode` chạy effect hai vòng trong dev, và cleanup
        của vòng đầu phải đóng đúng phiên của vòng đầu. */
@@ -134,6 +144,7 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
+      searchRef.current = null;
       sessionRef.current = null;
     };
   }, [target]);
@@ -191,6 +202,41 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
   useShortcut("terminal.zoomIn", () => zoomTerminal(1), active);
   useShortcut("terminal.zoomOut", () => zoomTerminal(-1), active);
 
+  /* Chỉ khi tab đang xem. Ở một tab khác thì `Ctrl+F` không có ai nhận và rơi xuống webview như
+     cũ, đúng như `terminal.zoomIn` đang làm. */
+  useShortcut(
+    "terminal.find",
+    () => {
+      setSearching(true);
+      setFindSignal((n) => n + 1);
+    },
+    active,
+  );
+
+  function find(query: string, back: boolean): boolean {
+    const search = searchRef.current;
+    if (!search) return false;
+    /* Bốn màu chứ không hai: `matchOverviewRuler` và `activeMatchColorOverviewRuler` là bắt buộc
+       trong `ISearchDecorationOptions`. Chúng vẽ dải đánh dấu bên phải màn hình — chỗ cho thấy các
+       kết quả nằm đâu trong cả phần đã cuộn qua — nên chúng dùng đúng cặp màu của chính kết quả. */
+    const options = {
+      decorations: {
+        matchBackground: "#5a4b00",
+        matchOverviewRuler: "#5a4b00",
+        activeMatchBackground: "#a07800",
+        activeMatchColorOverviewRuler: "#a07800",
+      },
+    };
+    return back ? search.findPrevious(query, options) : search.findNext(query, options);
+  }
+
+  function closeSearch() {
+    setSearching(false);
+    searchRef.current?.clearDecorations();
+    // Bàn phím về lại shell; đóng thanh mà con trỏ ở lại một ô đã biến mất thì gõ gì cũng mất.
+    termRef.current?.focus();
+  }
+
   /* Font đổi là ô chữ đổi, nên số cột và số dòng đổi theo: đo lại rồi báo cho đầu kia. Thiếu bước
      ấy thì `stty size` trong shell nói một đằng còn màn hình vẽ một nẻo, và mọi thứ vẽ theo chiều
      rộng cuối dòng đều lệch.
@@ -228,12 +274,15 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
   }, [active]);
 
   return (
-    <div
-      ref={hostRef}
-      className={styles.host}
-      role="application"
-      aria-label={t("terminal.screen")}
-    />
+    <div className={styles.frame}>
+      {searching && <SearchBar onFind={find} onClose={closeSearch} focusSignal={findSignal} />}
+      <div
+        ref={hostRef}
+        className={styles.host}
+        role="application"
+        aria-label={t("terminal.screen")}
+      />
+    </div>
   );
 }
 
