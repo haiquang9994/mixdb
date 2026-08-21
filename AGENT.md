@@ -76,6 +76,9 @@ src-tauri/src/       Rust backend
 - **A new backend command touches five places.** Follow
   [.agent/conventions/adding-a-command.md](.agent/conventions/adding-a-command.md).
 - Commit messages need a `type(scope): message` prefix (see the global rules).
+- **Never link to a file under `docs/superpowers/plans/`.** Those are local-only implementation
+  plans, gitignored and absent on every other machine. Link to `docs/superpowers/specs/` instead —
+  see [.agent/conventions/plans-and-specs.md](.agent/conventions/plans-and-specs.md).
 - **`PG_VERSION` in `src-tauri/src/modules/db/drivers/tools.rs` expires every September.** `pg_dump` will not dump a
   server newer than itself, and nothing in the build says so. Bumping it, or any other pinned
   download, follows
