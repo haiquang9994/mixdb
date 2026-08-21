@@ -12,18 +12,16 @@ pub fn detect() -> Vec<LocalShell> {
     found
 }
 
-/// Đường dẫn của shell mặc định, cho một `TerminalTarget::Local { shell: None, .. }`.
-pub fn default_shell() -> String {
+/// Shell mặc định của máy, cho một `TerminalTarget::Local { shell: None, .. }` — kèm tham số của
+/// nó, vì `--login` thuộc về "shell mặc định" chẳng kém gì đường dẫn.
+fn default_shell() -> (String, Vec<String>) {
     detect()
         .into_iter()
         .next()
-        .map(|shell| shell.path)
+        .map(|shell| (shell.path, shell.args))
         .unwrap_or_else(|| {
-            if cfg!(windows) {
-                "cmd.exe".to_string()
-            } else {
-                "/bin/sh".to_string()
-            }
+            let path = if cfg!(windows) { "cmd.exe" } else { "/bin/sh" };
+            (path.to_string(), Vec::new())
         })
 }
 
@@ -41,6 +39,23 @@ fn push_if_present(found: &mut Vec<LocalShell>, name: &str, path: PathBuf, args:
         path,
         args,
     });
+}
+
+/// Tham số để shell mở ra là một *login* shell.
+///
+/// Đây là chỗ `.bash_profile`, `.zprofile`, `.profile` được đọc — và chỉ ở đó. Một bash chạy trên
+/// pty là interactive nhưng không login, nên PATH, alias và biến người dùng đặt trong những file
+/// ấy đơn giản là không tồn tại trong phiên; `ssh-add -l` không thấy agent nào là triệu chứng hay
+/// gặp nhất. Mọi terminal thật đều mở login shell: shortcut "Git Bash" chạy `bash --login -i`,
+/// Terminal.app trên macOS cũng vậy.
+///
+/// Theo tên chứ không cho tất: `-l` là cờ của bash, zsh và fish, còn `sh` trên Linux thường là
+/// dash và không nhận nó. `-i` thì không cần — có pty thật, shell tự biết mình là interactive.
+fn login_args(name: &str) -> Vec<String> {
+    match name {
+        "bash" | "git-bash" | "zsh" | "fish" => vec!["-l".to_string()],
+        _ => Vec::new(),
+    }
 }
 
 /// Tìm một chương trình trong `PATH`. Dùng cho `pwsh` và `wsl.exe`, hai thứ không có đường dẫn
@@ -75,7 +90,7 @@ fn detect_windows(found: &mut Vec<LocalShell>) {
     for base in ["ProgramFiles", "ProgramW6432", "LOCALAPPDATA"] {
         if let Ok(dir) = std::env::var(base) {
             let git_bash = PathBuf::from(&dir).join("Git").join("bin").join("bash.exe");
-            push_if_present(found, "git-bash", git_bash, Vec::new());
+            push_if_present(found, "git-bash", git_bash, login_args("git-bash"));
         }
     }
 
@@ -134,7 +149,7 @@ fn detect_unix(found: &mut Vec<LocalShell>) {
             .and_then(|n| n.to_str())
             .unwrap_or("sh")
             .to_string();
-        push_if_present(found, &name, path, Vec::new());
+        push_if_present(found, &name, path, login_args(&name));
     }
     for candidate in ["/bin/zsh", "/bin/bash", "/bin/sh"] {
         let path = PathBuf::from(candidate);
@@ -143,7 +158,7 @@ fn detect_unix(found: &mut Vec<LocalShell>) {
             .and_then(|n| n.to_str())
             .unwrap_or("sh")
             .to_string();
-        push_if_present(found, &name, path, Vec::new());
+        push_if_present(found, &name, path, login_args(&name));
     }
 }
 
@@ -185,7 +200,12 @@ pub fn spawn(
     size: TerminalSize,
     out: OutputSink,
 ) -> Result<Session, AppError> {
-    let program = shell.unwrap_or_else(default_shell);
+    /* Không có shell nào được chọn thì lấy cả mục mặc định, đường dẫn lẫn tham số — `args` đi vào
+       đây là của một shell mà lời gọi không nêu tên, nên nó rỗng. */
+    let (program, args) = match shell {
+        Some(path) => (path, args),
+        None => default_shell(),
+    };
 
     /* Một đường dẫn tuyệt đối không còn tồn tại — Git bị gỡ, bản WSL bị xoá — đáng được nói thẳng
        thay vì để pty trả về một lỗi hệ điều hành không ai đọc. Tên trần như `cmd.exe` thì bỏ qua:
@@ -300,10 +320,34 @@ pub fn spawn(
 
 #[cfg(test)]
 mod tests {
+    use super::login_args;
     use super::parse_wsl_list;
     use super::spawn;
     use crate::modules::terminal::models::{Output, OutputSink, TerminalSize};
     use std::sync::{Arc, Mutex};
+
+    /// Cái đắt nhất mà một phiên không-login đánh mất là `.bash_profile`, và cùng với nó là
+    /// `GIT_SSH`, PATH và alias người dùng đặt ở đó.
+    #[test]
+    fn opens_bash_as_a_login_shell() {
+        assert_eq!(login_args("bash"), vec!["-l".to_string()]);
+        assert_eq!(login_args("git-bash"), vec!["-l".to_string()]);
+    }
+
+    /// `.zprofile` là chỗ macOS đặt PATH, và Terminal.app đọc nó vì nó mở login shell.
+    #[test]
+    fn opens_zsh_as_a_login_shell() {
+        assert_eq!(login_args("zsh"), vec!["-l".to_string()]);
+    }
+
+    /// `sh` trên Linux thường là dash, và dash không có `-l` — mở kiểu ấy là phiên chết ngay từ
+    /// dòng đầu. `cmd` với `powershell` thì không có khái niệm login shell.
+    #[test]
+    fn leaves_alone_a_shell_that_has_no_such_flag() {
+        assert!(login_args("sh").is_empty());
+        assert!(login_args("cmd").is_empty());
+        assert!(login_args("powershell").is_empty());
+    }
 
     /// `wsl.exe -l -q` in ra UTF-16LE với CRLF — dựng lại đúng thế để test.
     fn utf16le(text: &str) -> Vec<u8> {
