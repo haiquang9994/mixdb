@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shellLabel } from "./shells";
+import { shellBrand, shellLabel } from "./shells";
 
 describe("shellLabel", () => {
   it("gives the two PowerShells names that tell them apart", () => {
@@ -25,5 +25,29 @@ describe("shellLabel", () => {
   // Rust dò được cái gì thì frontend hiện cái đó — một shell chưa có trong bảng vẫn phải chọn được.
   it("falls back to the name for anything it has never heard of", () => {
     expect(shellLabel("fish")).toBe("fish");
+  });
+});
+
+describe("shellBrand", () => {
+  it("gives both PowerShells the same mark", () => {
+    expect(shellBrand("powershell")).toBe("powershell");
+    expect(shellBrand("pwsh")).toBe("powershell");
+  });
+
+  it("marks Git Bash by Git, not by bash", () => {
+    expect(shellBrand("git-bash")).toBe("git");
+    expect(shellBrand("bash")).toBe("bash");
+  });
+
+  it("marks every WSL distribution as Linux", () => {
+    expect(shellBrand("wsl:Ubuntu")).toBe("linux");
+    expect(shellBrand("wsl:my-dev-box")).toBe("linux");
+  });
+
+  // Không có logo là một câu trả lời, và `icons.tsx` vẽ biểu tượng terminal chung cho nó.
+  it("has no mark for the shells that have no logo", () => {
+    expect(shellBrand("cmd")).toBeNull();
+    expect(shellBrand("sh")).toBeNull();
+    expect(shellBrand("nushell")).toBeNull();
   });
 });

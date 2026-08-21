@@ -10,6 +10,9 @@ interface Props {
   /** Host đang được nạp trong form, để tô đúng dòng. */
   selectedId: string | null;
   onSelect: (host: SavedHost) => void;
+  /** Nháy đúp: nạp host *và* mở luôn phiên. Một máy chủ hay dùng thì mọi ô trong form đã đúng sẵn,
+   *  nên bắt người ta nạp rồi mới bấm Kết nối là bắt bấm hai lần cho một ý định. */
+  onOpen: (host: SavedHost) => void;
   onDelete: (id: string) => void;
   /** Bỏ form về trắng — hành động trên danh sách, không phải trên một dòng nào của nó, nên nó nằm
    *  ở đầu cột chứ không trong menu của một dòng. */
@@ -29,7 +32,7 @@ interface MenuState {
  * Tự vẽ chứ không dùng `ItemList`: cái đó nói lại bằng tên, mà hai host trùng tên — chuyện thường
  * với "prod" — thì không phân biệt được. Danh sách này đi theo `id`.
  */
-function SavedHostList({ hosts, selectedId, onSelect, onDelete, onNew }: Props) {
+function SavedHostList({ hosts, selectedId, onSelect, onOpen, onDelete, onNew }: Props) {
   const { t } = useTranslation();
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [confirming, setConfirming] = useState<SavedHost | null>(null);
@@ -53,6 +56,7 @@ function SavedHostList({ hosts, selectedId, onSelect, onDelete, onNew }: Props) 
                 type="button"
                 className={`${styles.item}${host.id === selectedId ? ` ${styles.itemActive}` : ""}`}
                 onClick={() => onSelect(host)}
+                onDoubleClick={() => onOpen(host)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ host, x: e.clientX, y: e.clientY });

@@ -71,3 +71,11 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* Logo rồi mới tới tên. `inline-flex` chứ không `flex`: nhãn này còn được vẽ trong nút của
+   `Select`, cạnh mũi tên xuống, và một khối chiếm cả dòng sẽ đẩy mũi tên ra khỏi chỗ của nó. */
+.shellOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

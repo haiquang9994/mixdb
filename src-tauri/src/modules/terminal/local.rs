@@ -165,6 +165,7 @@ fn detect_unix(found: &mut Vec<LocalShell>) {
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tokio::sync::{mpsc, oneshot};
@@ -178,6 +179,15 @@ use crate::error::AppError;
 /// Đệm đọc một lần từ pty. Nhỏ hơn khung IPC nhiều — bộ gom lô mới là chỗ quyết định khung to
 /// bằng nào.
 const READ_BUFFER: usize = 8 * 1024;
+
+/// Đợi bao lâu cho byte cuối cùng ra khỏi pty sau khi tiến trình con đã chết, trước khi buông
+/// master. Đầu đọc đang rút liên tục nên đây là chỗ nghỉ, không phải chỗ chờ.
+const EXIT_DRAIN: Duration = Duration::from_millis(100);
+
+/// Trần cho việc đợi đầu đọc thấy EOF. `ClosePseudoConsole` của Windows có tiếng là thỉnh thoảng
+/// không trả về, và cái tệ nhất nó được phép làm là nuốt vài byte cuối — không phải là giấu luôn
+/// việc phiên đã kết thúc.
+const EXIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn pty_size(size: TerminalSize) -> PtySize {
     PtySize {
@@ -243,7 +253,9 @@ pub fn spawn(
         .master
         .take_writer()
         .map_err(|e| err!("error.terminalSpawnFailed", message = e))?;
-    let master = Arc::new(StdMutex::new(pair.master));
+    /* `Option` chứ không phải chính nó: kết thúc phiên là *buông* master, mà buông một thứ nằm
+       trong `Arc` thì phải nhấc nó ra khỏi đó. Xem chỗ `take()` bên dưới. */
+    let master = Arc::new(StdMutex::new(Some(pair.master)));
     let killer = child.clone_killer();
 
     let (raw_tx, raw_rx) = mpsc::unbounded_channel::<Vec<u8>>();
@@ -277,10 +289,15 @@ pub fn spawn(
         }
     });
 
-    // Đổi kích thước. Giữ `master` sống chừng nào phiên còn sống: buông nó là đầu đọc thấy EOF.
-    std::thread::spawn(move || {
-        while let Some(size) = resize_rx.blocking_recv() {
-            let _ = master.lock().unwrap().resize(pty_size(size));
+    // Đổi kích thước. Phiên đã kết thúc thì `master` là `None` và không còn gì để đổi.
+    std::thread::spawn({
+        let master = master.clone();
+        move || {
+            while let Some(size) = resize_rx.blocking_recv() {
+                if let Some(master) = master.lock().unwrap().as_ref() {
+                    let _ = master.resize(pty_size(size));
+                }
+            }
         }
     });
 
@@ -301,12 +318,32 @@ pub fn spawn(
         }
     });
 
-    // Một đường ra, một thứ tự: hết byte → hết đệm → mới tới `Exit`.
+    /* Một đường ra, một thứ tự: hết byte → hết đệm → mới tới `Exit`.
+
+       Đầu đọc không tự thấy EOF khi shell chết. Trên Windows, ống ra là của ConPTY và ConPTY sống
+       chừng nào master còn sống — mà master thì phiên giữ để còn đổi kích thước. Nên tiến trình
+       con chết mà không ai buông master là đầu đọc nằm im mãi, `coalesce` không bao giờ trả về, và
+       `Exit` không bao giờ được phát: người dùng gõ `exit` rồi nhìn một màn hình đứng im mà không
+       ai nói cho biết. (Trên Unix thì đọc master sau khi con chết trả về EIO nên chuyện này không
+       lộ ra, và buông master ở đó cũng vô hại: đầu đọc cầm một bản `dup` của riêng nó.)
+
+       Vậy nên: đợi con chết → nghỉ một nhịp cho byte cuối ra khỏi ống → buông master → giờ mới hết
+       byte, hết đệm, rồi tới `Exit`. */
     tokio::spawn({
         let out = out.clone();
+        let data = out.clone();
         async move {
-            coalesce(raw_rx, |chunk| out(Output::Data(chunk))).await;
+            let mut drain = tokio::spawn(coalesce(raw_rx, move |chunk| data(Output::Data(chunk))));
             let code = exit_rx.await.ok().flatten();
+            tokio::time::sleep(EXIT_DRAIN).await;
+            // Trên thread blocking: đóng ConPTY là một lời gọi hệ điều hành có thể nằm lại một lúc.
+            let _ = tokio::task::spawn_blocking(move || {
+                master.lock().unwrap().take();
+            })
+            .await;
+            if tokio::time::timeout(EXIT_TIMEOUT, &mut drain).await.is_err() {
+                drain.abort();
+            }
             out(Output::Exit { code, message: None });
         }
     });
@@ -379,6 +416,58 @@ mod tests {
     fn is_not_fooled_by_the_no_distributions_message() {
         let bytes = utf16le("Windows Subsystem for Linux has no installed distributions.\r\n");
         assert!(parse_wsl_list(&bytes).is_empty());
+    }
+
+    /// Đường mà máy chủ của bảng "phiên đã kết thúc" đi: shell tự thoát, không ai giết nó.
+    ///
+    /// Chạy `exit 3` thay vì gõ `exit` vào một shell tương tác — PowerShell hỏi vị trí con trỏ
+    /// bằng `ESC[6n` rồi đợi trả lời, mà ở đây không có xterm nào để trả lời. Cái đang được thử
+    /// là "tiến trình con chết thì có `Exit` không", không phải dấu nhắc của một shell cụ thể.
+    #[tokio::test]
+    async fn a_shell_that_ends_by_itself_says_so() {
+        let seen: Arc<Mutex<Vec<Output>>> = Arc::new(Mutex::new(Vec::new()));
+        let handle = seen.clone();
+        let sink: OutputSink = Arc::new(move |output| handle.lock().unwrap().push(output));
+
+        let (shell, args) = if cfg!(windows) {
+            ("cmd.exe", vec!["/c".to_string(), "exit".to_string(), "3".to_string()])
+        } else {
+            ("/bin/sh", vec!["-c".to_string(), "exit 3".to_string()])
+        };
+        let session = spawn(
+            Some(shell.to_string()),
+            args,
+            None,
+            TerminalSize { cols: 80, rows: 24 },
+            sink,
+        )
+        .expect("shell phải mở được");
+
+        /* ConPTY mở ra bằng cách hỏi vị trí con trỏ (`ESC[6n`) và *đợi* câu trả lời trước khi cho
+           tiến trình con chạy — trong app thì xterm trả lời, ở đây thì không ai. Trả lời hộ nó. */
+        session.input.send(b"\x1b[1;1R".to_vec()).unwrap();
+
+        /* Có hạn, và hạn ngắn hơn `EXIT_TIMEOUT`: cái lưới an toàn ấy vẫn phát `Exit` kể cả khi
+           đầu đọc không bao giờ thấy EOF, nên một test chỉ hỏi "cuối cùng có `Exit` không" sẽ
+           xanh ngay cả khi lỗi quay lại. Điều đang được giữ là phiên báo *ngay*. */
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+        loop {
+            if matches!(
+                seen.lock().unwrap().last(),
+                Some(Output::Exit { code: Some(3), .. })
+            ) {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "hết hạn mà chưa có Exit(3), thấy: {:?}",
+                seen.lock().unwrap(),
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+
+        // Tay cầm vẫn còn — không có ai giết nó, và nó vẫn phải báo.
+        drop(session);
     }
 
     /// Mở shell mặc định của máy rồi bỏ tay cầm. Phiên phải chết và phải báo `Exit` — đây là

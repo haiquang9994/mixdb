@@ -6,6 +6,7 @@ import Select from "../../../../components/Select";
 import { errorMessage } from "../../../../core/errors";
 import { useTranslation } from "../../../../i18n";
 import { localShells } from "../../api";
+import { ShellIcon } from "../../icons";
 import { addHost, removeHost, updateHost, useSavedHosts } from "../../savedHostsStore";
 import { shellLabel } from "../../shells";
 import type { LocalShell, SavedHost, SshAuth, SshConfig, TerminalChoice } from "../../types";
@@ -109,6 +110,9 @@ function TargetForm({ onOpen, onError, initial }: Props) {
     (authType === "password" ? password !== "" : keyPath.trim() !== "");
 
   function applyHost(entry: SavedHost) {
+    // Cột host luôn ở đó, kể cả khi form đang ở "Máy này" — bấm một host mà form không đổi sang
+    // SSH thì cú bấm ấy trông như không có tác dụng gì.
+    setKind("ssh");
     setHostId(entry.id);
     setName(entry.name);
     setHost(entry.config.host);
@@ -120,6 +124,13 @@ function TargetForm({ onOpen, onError, initial }: Props) {
     setPassphrase(
       entry.config.auth.type === "privatekey" ? (entry.config.auth.passphrase ?? "") : "",
     );
+  }
+
+  /** Nháy đúp một host: nạp nó vào form rồi mở luôn. Cấu hình lấy thẳng từ mục được bấm chứ không
+   *  từ state — `applyHost` vừa gọi `setState`, mà state thì phải sang lần render sau mới đổi. */
+  function openHost(entry: SavedHost) {
+    applyHost(entry);
+    onOpen({ kind: "ssh", config: entry.config, hostId: entry.id });
   }
 
   function clearHostForm() {
@@ -161,15 +172,21 @@ function TargetForm({ onOpen, onError, initial }: Props) {
 
   return (
     <div className={styles.layout}>
-      {kind === "ssh" && (
-        <SavedHostList
-          hosts={hosts}
-          selectedId={hostId}
-          onSelect={applyHost}
-          onDelete={(id) => void deleteHost(id)}
-          onNew={clearHostForm}
-        />
-      )}
+      {/* Luôn hiện, không chỉ ở tab SSH: đây là danh sách những chỗ người dùng hay tới, và một danh
+          sách chỉ hiện ra sau khi đã bấm đúng tab thì không đỡ được ai lần bấm nào. */}
+      <SavedHostList
+        hosts={hosts}
+        selectedId={kind === "ssh" ? hostId : null}
+        onSelect={applyHost}
+        onOpen={openHost}
+        onDelete={(id) => void deleteHost(id)}
+        onNew={() => {
+          // "+" là "một máy chủ mới", nên nó cũng mang form sang bên SSH; `clearHostForm` một mình
+          // thì không, vì nó còn được gọi khi host đang chọn bị xoá.
+          setKind("ssh");
+          clearHostForm();
+        }}
+      />
 
       <div className={styles.form}>
         {/* Hai kiểu đích. Nút chứ không phải `Select`: chỉ có hai, và cái đang chọn quyết định cả
@@ -204,7 +221,14 @@ function TargetForm({ onOpen, onError, initial }: Props) {
                 value={path}
                 options={shells.map((shell) => ({
                   value: shell.path,
-                  label: shellLabel(shell.name),
+                  label: (
+                    <span className={styles.shellOption}>
+                      <ShellIcon name={shell.name} />
+                      {shellLabel(shell.name)}
+                    </span>
+                  ),
+                  // Nhãn là node nên ô tìm kiếm không đọc được nó; đây là chữ nó đọc.
+                  searchText: shellLabel(shell.name),
                 }))}
                 onChange={setPath}
                 ariaLabel={t("terminal.shell")}

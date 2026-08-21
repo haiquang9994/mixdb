@@ -36,3 +36,9 @@
   font-size: 0.85rem;
   opacity: 0.8;
 }
+
+.terminal-ended-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}

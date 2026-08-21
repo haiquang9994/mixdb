@@ -1,7 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
+import { copyText } from "../../../../core/clipboard";
 import { errorMessage } from "../../../../core/errors";
+import { isClaimed, pressOf, useShortcut } from "../../../../core/shortcuts";
 import { useTranslation } from "../../../../i18n";
 import {
   closeSession,
@@ -10,6 +12,8 @@ import {
   writeSession,
   type SessionExit,
 } from "../../api";
+import { useTerminalFontSize, zoomTerminal } from "../../fontSizeStore";
+import { shellKeeps } from "../../keys";
 import type { TerminalTarget } from "../../types";
 import styles from "./TerminalView.module.css";
 
@@ -27,15 +31,30 @@ interface Props {
   /** Phiên không mở được: sai mật khẩu, vân tay đổi, máy chủ không tới được. Khác `onError` ở chỗ
    *  nó nói rằng *không có phiên nào cả*, nên tab trả màn hình về form. */
   onFailed: () => void;
+  /** Bỏ hẳn phiên đã kết thúc và quay về màn hình chọn đích. Khác `onExit` ở chỗ đó là người dùng
+   *  nói, không phải shell nói. */
+  onDismiss: () => void;
   onError: (message: string) => void;
 }
 
-function TerminalView({ target, active, onOpened, onExit, onFailed, onError }: Props) {
+function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, onError }: Props) {
   const { t } = useTranslation();
+  const fontSize = useTerminalFontSize();
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const sessionRef = useRef<string | null>(null);
+  /* Trong state chứ không trong ref: nó là điều kiện `enabled` của `terminal.copy`, và một ref đổi
+     giá trị thì không có ai đăng ký lại phím tắt. */
+  const [hasSelection, setHasSelection] = useState(false);
+  /* Shell đã chết. Trong state chứ không chỉ trong biến `ended` của effect bên dưới, và cũng vì lý
+     do ấy: nó quyết định phím tắt nào đang được đăng ký. */
+  const [ended, setEnded] = useState(false);
+
+  /* Cỡ chữ lúc dựng terminal đi qua ref: đổi cỡ thì `options.fontSize` được đặt lại tại chỗ — xem
+     effect ở cuối — chứ không dựng lại cả màn hình và mở lại cả phiên. */
+  const fontSizeRef = useRef(fontSize);
+  fontSizeRef.current = fontSize;
 
   // Callback đi qua ref: effect mở phiên chỉ được chạy lại khi `target` đổi, không phải mỗi lần
   // cha render lại.
@@ -45,6 +64,8 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onError }: P
   onExitRef.current = onExit;
   const onFailedRef = useRef(onFailed);
   onFailedRef.current = onFailed;
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
   const tRef = useRef(t);
@@ -56,12 +77,20 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onError }: P
 
     const term = new Terminal({
       fontFamily: '"Fira Code", monospace',
-      fontSize: 13,
+      fontSize: fontSizeRef.current,
       cursorBlink: true,
       scrollback: 5000,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    /* Cửa duy nhất để lấy được một phím ra khỏi xterm. Nó đọc `keydown` trên textarea ẩn của chính
+       nó và `stopPropagation` mọi `Ctrl`+chữ cái, nên listener của app ở `window` không bao giờ
+       nghe thấy `Ctrl+W`. Trả `false` là xterm thoát ra *trước* khi `preventDefault`, và sự kiện
+       bay lên nguyên vẹn — cho bộ điều phối, hoặc cho chính webview khi đó là lệnh dán. */
+    term.attachCustomKeyEventHandler((e) => {
+      const press = pressOf(e);
+      return shellKeeps(press, isClaimed(press));
+    });
     term.open(host);
     fit.fit();
     termRef.current = term;
@@ -76,6 +105,7 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onError }: P
     const typed = term.onData((data) => {
       void writeSession(id, data).catch(() => {});
     });
+    const selected = term.onSelectionChange(() => setHasSelection(term.hasSelection()));
 
     void openSession(id, target, { cols: term.cols, rows: term.rows }, (message) => {
       if (message instanceof ArrayBuffer) {
@@ -83,6 +113,7 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onError }: P
         return;
       }
       ended = true;
+      setEnded(true);
       onExitRef.current(message);
     })
       .then(() => onOpenedRef.current())
@@ -96,6 +127,7 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onError }: P
 
     return () => {
       typed.dispose();
+      selected.dispose();
       // Chỉ khi unmount, không phải khi mất `active`: tab nằm sau vẫn phải cuộn tiếp.
       if (!ended) void closeSession(id).catch(() => {});
       term.dispose();
@@ -128,6 +160,48 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onError }: P
       window.clearTimeout(timer);
     };
   }, []);
+
+  /* Chỉ đăng ký khi đang có vùng chọn, và đó là toàn bộ cách `Ctrl+C` biết mình là lệnh nào: không
+     chọn gì thì không ai nhận chord, `shellKeeps` trả phím lại cho shell và nó là lệnh huỷ như mọi
+     khi. Trên macOS thì `Cmd+C` mang chord này còn `Ctrl+C` không mang gì — không có gì để phân xử. */
+  useShortcut(
+    "terminal.copy",
+    () => {
+      const term = termRef.current;
+      if (!term) return;
+      const text = term.getSelection();
+      if (!text) return;
+      /* Xoá vùng chọn ngay, kể cả khi chép hỏng: để nguyên thì lần `Ctrl+C` sau lại là chép, và
+         không còn đường nào gửi lệnh huỷ xuống shell. */
+      term.clearSelection();
+      void copyText(text).catch((e) => onErrorRef.current(errorMessage(tRef.current, e)));
+    },
+    active && hasSelection,
+  );
+
+  /* Cùng `Ctrl/Cmd+C`, và hai cái không bao giờ cùng sống: có vùng chọn thì phím là lệnh chép, hết
+     phiên mà không chọn gì thì nó đóng màn hình đã đứng im. Nên lần bấm đầu chép và xoá vùng chọn,
+     lần thứ hai đóng — cùng nhịp với phiên đang sống, nơi lần thứ hai là lệnh huỷ. */
+  useShortcut("terminal.dismiss", () => onDismissRef.current(), active && ended && !hasSelection);
+
+  /* Phóng to thu nhỏ đi qua store dùng chung nên mọi tab terminal đổi cùng lúc — và vì `enabled` là
+     `active`, chỉ tab đang xem mới nhận phím; ở một tab cơ sở dữ liệu thì `Ctrl+=` không có ai
+     nhận và rơi xuống webview như cũ. */
+  useShortcut("terminal.zoomIn", () => zoomTerminal(1), active);
+  useShortcut("terminal.zoomOut", () => zoomTerminal(-1), active);
+
+  /* Cỡ chữ đổi là số cột và số dòng đổi theo, nên đo lại rồi báo cho đầu kia — thiếu bước này thì
+     `stty size` ở trong shell nói một đằng còn màn hình vẽ một nẻo, và mọi thứ vẽ theo chiều rộng
+     cuối dòng đều lệch. */
+  useEffect(() => {
+    const term = termRef.current;
+    const host = hostRef.current;
+    if (!term || !host || host.clientWidth === 0) return;
+    term.options.fontSize = fontSize;
+    fitRef.current?.fit();
+    const id = sessionRef.current;
+    if (id) void resizeSession(id, term.cols, term.rows).catch(() => {});
+  }, [fontSize]);
 
   // Tab quay lại: cửa sổ có thể đã đổi kích thước trong lúc khung này ẩn, và `ResizeObserver`
   // không bắn cho một khung đang `display: none`.

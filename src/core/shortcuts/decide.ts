@@ -1,4 +1,4 @@
-import type { ShortcutDef, ShortcutGroup } from "./types";
+import type { Chord, ShortcutDef, ShortcutGroup } from "./types";
 
 /** A keystroke, already read: the DOM questions are asked once by the dispatcher and answered as
  *  plain flags, so everything below is testable without a browser. */
@@ -26,12 +26,17 @@ export interface ShortcutContext {
   enabled: string[];
 }
 
-function matches(def: ShortcutDef, press: Press): boolean {
+function chordMatches(chord: Chord, press: Press): boolean {
   return (
-    def.chord.key === press.key &&
-    (def.chord.shift ?? false) === press.shift &&
-    (def.chord.alt ?? false) === press.alt
+    chord.key === press.key &&
+    (chord.shift ?? false) === press.shift &&
+    (chord.alt ?? false) === press.alt
   );
+}
+
+/** The chord a def is filed under, or any of the other spellings of it — see `ShortcutDef.alias`. */
+function matches(def: ShortcutDef, press: Press): boolean {
+  return chordMatches(def.chord, press) || (def.alias?.some((c) => chordMatches(c, press)) ?? false);
 }
 
 /**

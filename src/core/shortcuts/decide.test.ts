@@ -36,6 +36,14 @@ const GROUPS: ShortcutGroup[] = [
         unhandled: "swallow",
       },
       { id: "grid.focusFilter", chord: { key: "f" }, labelKey: "app.settings" },
+      /* One gesture spelled two ways — the shape zoom needs, where the key that says `+` on it
+         answers to `=` unshifted and to `+` shifted. */
+      {
+        id: "grid.zoomIn",
+        chord: { key: "=" },
+        alias: [{ key: "+", shift: true }],
+        labelKey: "app.settings",
+      },
       {
         id: "editor.format",
         chord: { key: "f", shift: true },
@@ -139,6 +147,20 @@ describe("decide", () => {
       do: "run",
       id: "keys.selectAll",
     });
+  });
+
+  it("answers an alias the same as the chord it is filed under", () => {
+    const enabled = ctx(["grid.zoomIn"]);
+    expect(decide(press({ key: "=" }), GROUPS, enabled)).toEqual({ do: "run", id: "grid.zoomIn" });
+    expect(decide(press({ key: "+", shift: true }), GROUPS, enabled)).toEqual({
+      do: "run",
+      id: "grid.zoomIn",
+    });
+  });
+
+  // An alias is a whole chord, shift included: `+` on its own is the numpad's key, not this one.
+  it("holds an alias to its own shift and alt", () => {
+    expect(decide(press({ key: "+" }), GROUPS, ctx(["grid.zoomIn"]))).toEqual({ do: "nothing" });
   });
 
   it("ignores handlers listening for something else entirely", () => {

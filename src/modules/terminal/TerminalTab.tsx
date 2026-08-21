@@ -74,6 +74,13 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
     setChoice(next);
   }
 
+  /* Bỏ phiên đã chết và quay về màn hình chọn đích. `lastTried` ở lại, nên form dựng lại đúng
+     những gì vừa mở — mở lại cái cũ là một lần bấm, mà đổi sang cái khác cũng vậy. */
+  function dismiss() {
+    setExit(null);
+    setChoice(null);
+  }
+
   function reconnect() {
     setExit(null);
     setOpening(true);
@@ -96,6 +103,7 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
             onOpened={opened}
             onExit={setExit}
             onFailed={failed}
+            onDismiss={dismiss}
             onError={showError}
           />
           {opening && <div className="terminal-connecting">{t("terminal.connecting")}</div>}
@@ -106,7 +114,10 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
                   ? t("terminal.sessionEnded")
                   : t("terminal.sessionEndedCode", { code: exit.code })}
               </span>
-              <Button onClick={reconnect}>{t("terminal.reconnect")}</Button>
+              <div className="terminal-ended-actions">
+                <Button onClick={reconnect}>{t("terminal.reconnect")}</Button>
+                <Button onClick={dismiss}>{t("terminal.closeSession")}</Button>
+              </div>
             </div>
           )}
         </>
