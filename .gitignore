@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Implementation plans — local working notes, never shared or referenced
+docs/superpowers/plans/

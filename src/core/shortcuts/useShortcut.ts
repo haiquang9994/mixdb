@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { hasPrimaryModifier } from "../platform";
 import { isTextEntry } from "../textEntry";
-import { decide } from "./decide";
-import { enabledIds, modalDepth, register, run } from "./store";
+import { decide, type Press } from "./decide";
+import { currentCatalogue, enabledIds, modalDepth, register, run, setCatalogue } from "./store";
 import type { ShortcutGroup } from "./types";
 
 /**
@@ -27,6 +27,38 @@ export function useShortcut(id: string, handler: () => void, enabled: boolean): 
   }, [id, enabled]);
 }
 
+/** A keystroke read the one way the app reads them, so nothing asks the DOM these questions
+ *  twice and answers them differently the second time. */
+export function pressOf(e: KeyboardEvent): Press {
+  return {
+    key: e.key.toLowerCase(),
+    shift: e.shiftKey,
+    alt: e.altKey,
+    mod: hasPrimaryModifier(e),
+    typing: isTextEntry(e.target),
+  };
+}
+
+/**
+ * Whether a handler would run for this keystroke — asked *before* the event reaches the dispatcher.
+ *
+ * Exactly one pane needs this and it is worth saying why. xterm answers `keydown` on its own hidden
+ * textarea and calls `stopPropagation` on every `Ctrl`+letter it turns into a control character, so
+ * the window listener below is never reached at all: `Ctrl+W` went to the shell and the tab stayed
+ * open. A terminal therefore has to ask the question from inside xterm's handler and step aside for
+ * the answer.
+ *
+ * "Run" and not "swallow": a chord nothing answers belongs to the shell, and xterm takes the key
+ * off the webview by itself anyway.
+ */
+export function isClaimed(press: Press): boolean {
+  const decision = decide(press, currentCatalogue(), {
+    modalDepth: modalDepth(),
+    enabled: enabledIds(),
+  });
+  return decision.do === "run";
+}
+
 /**
  * The app's one keydown listener. Called once, by the shell.
  *
@@ -35,23 +67,17 @@ export function useShortcut(id: string, handler: () => void, enabled: boolean): 
  */
 export function useShortcutDispatcher(groups: ShortcutGroup[]): void {
   useEffect(() => {
+    setCatalogue(groups);
     function onKeyDown(e: KeyboardEvent) {
       // CodeMirror declares `preventDefault: true` on its own keymap and sits on the editor
       // element, so it always answers before anything on the window. An editor with the focus
       // wins, and it says so this way rather than by being negotiated with.
       if (e.defaultPrevented) return;
 
-      const decision = decide(
-        {
-          key: e.key.toLowerCase(),
-          shift: e.shiftKey,
-          alt: e.altKey,
-          mod: hasPrimaryModifier(e),
-          typing: isTextEntry(e.target),
-        },
-        groups,
-        { modalDepth: modalDepth(), enabled: enabledIds() },
-      );
+      const decision = decide(pressOf(e), groups, {
+        modalDepth: modalDepth(),
+        enabled: enabledIds(),
+      });
 
       if (decision.do === "nothing") return;
       // One `preventDefault`, and not only for tidiness: on a Mac this is what keeps `⌘W` on the

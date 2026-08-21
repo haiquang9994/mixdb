@@ -35,6 +35,16 @@ export interface ShortcutDef {
   /** Take the key off the webview even when nothing is listening. Off by default, so an unclaimed
    *  chord goes through untouched. */
   unhandled?: "swallow";
+  /**
+   * Other keys that mean the same gesture. Matched by the dispatcher, never listed — the table
+   * shows `chord` and only that.
+   *
+   * "Bigger" is one gesture to a user and three events to a browser: `Ctrl+=` on the key that also
+   * carries `+`, `Ctrl+Shift+=` when the shift is actually held, and the numpad's own `+`. Giving
+   * each an id of its own would put three identical rows in the shortcut table and make a pane
+   * register three handlers for one action.
+   */
+  alias?: Chord[];
   /** Listed in the table, ignored by the dispatcher. For the keys CodeMirror binds itself. */
   owner?: "editor";
 }

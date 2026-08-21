@@ -2,6 +2,7 @@
 
 pub mod db;
 pub mod rest;
+pub mod terminal;
 
 /// Every command of every module.
 ///
@@ -111,5 +112,11 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // ── rest ──
         rest::commands::rest_send,
         rest::commands::rest_cancel,
+        // ── terminal ──
+        terminal::commands::terminal_local_shells,
+        terminal::commands::terminal_open,
+        terminal::commands::terminal_write,
+        terminal::commands::terminal_resize,
+        terminal::commands::terminal_close,
     ]
 }

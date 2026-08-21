@@ -31,6 +31,7 @@ const en = {
        the menu is built from. */
     moduleDatabase: "Database",
     moduleRest: "REST",
+    moduleTerminal: "Terminal",
   },
   pagination: {
     previousPage: "Previous page",
@@ -126,6 +127,7 @@ const en = {
       "The SSH connection to {{host}}:{{port}} timed out after {{seconds}}s \u2014 check the host, the port and the firewall.",
     sshConnectFailed: "Cannot reach the SSH server: {{message}}",
     sshAuthFailed: "SSH authentication failed: {{message}}",
+    sshShellFailed: "Could not open a shell on the SSH server: {{message}}",
     sshAuthRejected:
       "The SSH server rejected the login (partial success: {{partialSuccess}}). It accepts: {{methods}}.",
     sshHostKeyChanged:

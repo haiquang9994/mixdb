@@ -27,6 +27,7 @@ const vi: SharedDict = {
     newConnectionTitle: "Kết nối mới",
     moduleDatabase: "Database",
     moduleRest: "REST",
+    moduleTerminal: "Terminal",
   },
   pagination: {
     previousPage: "Trang trước",
@@ -120,6 +121,7 @@ const vi: SharedDict = {
       "Kết nối SSH tới {{host}}:{{port}} quá hạn sau {{seconds}} giây — kiểm tra host, cổng và tường lửa.",
     sshConnectFailed: "Không kết nối được tới máy chủ SSH: {{message}}",
     sshAuthFailed: "Xác thực SSH thất bại: {{message}}",
+    sshShellFailed: "Không mở được shell trên máy chủ SSH: {{message}}",
     sshAuthRejected:
       "Máy chủ SSH từ chối đăng nhập (partial success: {{partialSuccess}}). Máy chủ chấp nhận: {{methods}}.",
     sshHostKeyChanged:

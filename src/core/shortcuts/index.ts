@@ -3,5 +3,5 @@ export { decide, type Decision, type Press, type ShortcutContext } from "./decid
  *  listens for a gesture itself, rather than through a shortcut def, has to keep the same quiet
  *  while a dialog or a menu holds the keyboard. */
 export { enterModal, modalDepth } from "./store";
-export { useShortcut, useShortcutDispatcher } from "./useShortcut";
+export { isClaimed, pressOf, useShortcut, useShortcutDispatcher } from "./useShortcut";
 export type { Chord, ShortcutDef, ShortcutGroup } from "./types";
