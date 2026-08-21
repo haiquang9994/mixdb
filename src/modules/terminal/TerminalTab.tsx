@@ -30,8 +30,12 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
     onTitleChange(choice ? terminalTitle(choice) : t("terminal.newTabTitle"));
   }, [choice, onTitleChange, t]);
 
-  useEffect(() => {
-    onBadgesChange(
+  /* `useMemo` chứ không dựng thẳng trong effect, và effect không lấy `onBadgesChange` làm phụ
+     thuộc: shell so danh sách badge theo tham chiếu (xem `shell/tabs.ts`), nên một mảng mới là một
+     `setTabs` — và `App` cấp một closure mới mỗi lần render. Hai cái đó cộng lại là một vòng lặp
+     tự nuôi nó cho tới khi React cắt bằng "Maximum update depth exceeded", và cả cây đi theo. */
+  const badges = useMemo(
+    () =>
       terminalBadgeMarks(choice, exit !== null).map((mark) => {
         if (mark.type === "ended") {
           return {
@@ -45,8 +49,12 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
           ? { id: "local", icon: <TerminalIcon />, label: t("terminal.badgeLocal") }
           : { id: "ssh", icon: <TerminalIcon />, label: t("terminal.badgeSsh") };
       }),
-    );
-  }, [choice, exit, onBadgesChange, t]);
+    [choice, exit, t],
+  );
+
+  useEffect(() => {
+    onBadgesChange(badges);
+  }, [badges]);
 
   const showError = useCallback((message: string) => setError(message), []);
 
