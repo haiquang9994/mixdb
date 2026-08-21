@@ -45,6 +45,28 @@ const terminalVi = {
       "Xoá \u201c{{name}}\u201d? Mật khẩu của nó cũng bị xoá khỏi kho thông tin đăng nhập.",
     connect: "Kết nối",
     connecting: "Đang kết nối\u2026",
+    settingsTitle: "Terminal",
+    settingsScreenGroup: "Màn hình",
+    settingsFontFamily: "Phông chữ",
+    settingsFontFamilyHint:
+      "Một font stack CSS. Để trống thì dùng mặc định; chỉ phông đều nét mới vẽ thẳng được một terminal.",
+    settingsFontSize: "Cỡ chữ",
+    settingsScrollback: "Cuộn ngược",
+    settingsScrollbackUnit: "dòng",
+    settingsCursorStyle: "Con trỏ",
+    settingsCursorBlock: "Khối",
+    settingsCursorUnderline: "Gạch chân",
+    settingsCursorBar: "Vạch đứng",
+    settingsCursorBlink: "Con trỏ nhấp nháy",
+    settingsSessionGroup: "Phiên mới",
+    settingsDefaultShell: "Shell",
+    settingsDefaultShellAuto: "Cái máy này đưa ra trước tiên",
+    settingsDefaultCwd: "Bắt đầu tại",
+    settingsRightClickPastes: "Chuột phải dán luôn thay vì mở menu",
+    settingsRightClickPastesHint:
+      "Đúng cách PuTTY làm. Tắt thì chuột phải mở menu của chính terminal.",
+    settingsGlobalHint:
+      "Cài đặt này áp cho mọi tab terminal, kể cả tab đang mở.",
   },
   error: {
     terminalSpawnFailed: "Không khởi động được shell: {{message}}",

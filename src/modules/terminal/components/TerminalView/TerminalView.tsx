@@ -40,7 +40,6 @@ interface Props {
 function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, onError }: Props) {
   const { t } = useTranslation();
   const settings = useTerminalSettings();
-  const fontSize = settings.fontSize;
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -52,10 +51,10 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
      do ấy: nó quyết định phím tắt nào đang được đăng ký. */
   const [ended, setEnded] = useState(false);
 
-  /* Cỡ chữ lúc dựng terminal đi qua ref: đổi cỡ thì `options.fontSize` được đặt lại tại chỗ — xem
-     effect ở cuối — chứ không dựng lại cả màn hình và mở lại cả phiên. */
-  const fontSizeRef = useRef(fontSize);
-  fontSizeRef.current = fontSize;
+  /* Cài đặt lúc dựng terminal đi qua ref: đổi cài đặt thì `term.options` được đặt lại tại chỗ —
+     xem effect ở cuối — chứ không dựng lại cả màn hình và mở lại cả phiên. */
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   // Callback đi qua ref: effect mở phiên chỉ được chạy lại khi `target` đổi, không phải mỗi lần
   // cha render lại.
@@ -77,10 +76,11 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
     if (!host) return;
 
     const term = new Terminal({
-      fontFamily: '"Fira Code", monospace',
-      fontSize: fontSizeRef.current,
-      cursorBlink: true,
-      scrollback: 5000,
+      fontFamily: settingsRef.current.fontFamily,
+      fontSize: settingsRef.current.fontSize,
+      cursorStyle: settingsRef.current.cursorStyle,
+      cursorBlink: settingsRef.current.cursorBlink,
+      scrollback: settingsRef.current.scrollback,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -191,18 +191,28 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
   useShortcut("terminal.zoomIn", () => zoomTerminal(1), active);
   useShortcut("terminal.zoomOut", () => zoomTerminal(-1), active);
 
-  /* Cỡ chữ đổi là số cột và số dòng đổi theo, nên đo lại rồi báo cho đầu kia — thiếu bước này thì
-     `stty size` ở trong shell nói một đằng còn màn hình vẽ một nẻo, và mọi thứ vẽ theo chiều rộng
-     cuối dòng đều lệch. */
+  /* Font đổi là ô chữ đổi, nên số cột và số dòng đổi theo: đo lại rồi báo cho đầu kia. Thiếu bước
+     ấy thì `stty size` trong shell nói một đằng còn màn hình vẽ một nẻo, và mọi thứ vẽ theo chiều
+     rộng cuối dòng đều lệch.
+
+     Con trỏ và scrollback không đổi kích thước ô nào, nhưng chúng đi cùng effect này vì chúng đi
+     cùng một object `settings`: tách ra là ba effect cùng một dependency. */
   useEffect(() => {
     const term = termRef.current;
     const host = hostRef.current;
-    if (!term || !host || host.clientWidth === 0) return;
-    term.options.fontSize = fontSize;
+    if (!term || !host) return;
+    term.options.fontFamily = settings.fontFamily;
+    term.options.fontSize = settings.fontSize;
+    term.options.cursorStyle = settings.cursorStyle;
+    term.options.cursorBlink = settings.cursorBlink;
+    term.options.scrollback = settings.scrollback;
+    // Khung đang ẩn thì để yên: `fit()` lúc ấy tính ra cols/rows rác. Tab quay lại sẽ đo lại —
+    // xem effect `[active]` bên dưới.
+    if (host.clientWidth === 0) return;
     fitRef.current?.fit();
     const id = sessionRef.current;
     if (id) void resizeSession(id, term.cols, term.rows).catch(() => {});
-  }, [fontSize]);
+  }, [settings]);
 
   // Tab quay lại: cửa sổ có thể đã đổi kích thước trong lúc khung này ẩn, và `ResizeObserver`
   // không bắn cho một khung đang `display: none`.
