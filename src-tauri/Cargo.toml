@@ -47,6 +47,10 @@ reqwest = { version = "0.12", default-features = false, features = ["native-tls"
 # all of it into memory first.
 tokio-util = { version = "0.7", features = ["io"] }
 
+# Pty cho phiên terminal cục bộ. Dùng ConPTY trên Windows và forkpty ở nơi khác, nên không
+# phải viết một nhánh cho mỗi hệ điều hành. Đây là thư viện WezTerm chạy thật.
+portable-pty = "0.9"
+
 # `test-util` không nằm trong feature `full`, mà bộ gom lô chỉ test được khi tua nhanh được
 # đồng hồ — 5ms thật thì test nào cũng thành test đo thời gian.
 [dev-dependencies]

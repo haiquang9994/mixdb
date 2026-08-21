@@ -147,9 +147,163 @@ fn detect_unix(found: &mut Vec<LocalShell>) {
     }
 }
 
+use std::io::{Read, Write};
+use std::path::Path;
+use std::sync::{Arc, Mutex as StdMutex};
+
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
+
+use super::models::{Output, OutputSink, TerminalSize};
+use super::state::Session;
+use super::stream::coalesce;
+use crate::error::AppError;
+
+/// Đệm đọc một lần từ pty. Nhỏ hơn khung IPC nhiều — bộ gom lô mới là chỗ quyết định khung to
+/// bằng nào.
+const READ_BUFFER: usize = 8 * 1024;
+
+fn pty_size(size: TerminalSize) -> PtySize {
+    PtySize {
+        rows: size.rows,
+        cols: size.cols,
+        pixel_width: 0,
+        pixel_height: 0,
+    }
+}
+
+/// Mở một shell trên máy này và trả về tay cầm của nó.
+///
+/// Ba luồng chạy song song sau khi hàm này trả về: một thread đọc pty, một thread ghi vào pty, một
+/// thread đợi tiến trình con. Đường ra chỉ có một, và thứ tự trên đó là thứ tự thật — xem chỗ
+/// `exit_rx` được await bên dưới.
+pub fn spawn(
+    shell: Option<String>,
+    args: Vec<String>,
+    cwd: Option<String>,
+    size: TerminalSize,
+    out: OutputSink,
+) -> Result<Session, AppError> {
+    let program = shell.unwrap_or_else(default_shell);
+
+    /* Một đường dẫn tuyệt đối không còn tồn tại — Git bị gỡ, bản WSL bị xoá — đáng được nói thẳng
+       thay vì để pty trả về một lỗi hệ điều hành không ai đọc. Tên trần như `cmd.exe` thì bỏ qua:
+       nó được tra trong `PATH`, không phải trên đĩa. */
+    if (program.contains('/') || program.contains('\\')) && !Path::new(&program).is_file() {
+        return Err(err!("error.terminalShellNotFound", path = program));
+    }
+
+    let pair = native_pty_system()
+        .openpty(pty_size(size))
+        .map_err(|e| err!("error.terminalSpawnFailed", message = e))?;
+
+    let mut command = CommandBuilder::new(&program);
+    for arg in &args {
+        command.arg(arg);
+    }
+    if let Some(dir) = cwd.as_deref().filter(|dir| Path::new(dir).is_dir()) {
+        command.cwd(dir);
+    }
+    // Cái xterm.js vẽ được. Không đặt thì shell trên Unix coi như terminal câm và tắt cả màu.
+    command.env("TERM", "xterm-256color");
+
+    let mut child = pair
+        .slave
+        .spawn_command(command)
+        .map_err(|e| err!("error.terminalSpawnFailed", message = e))?;
+    // Đầu slave phải buông ngay, nếu không đầu đọc sẽ không bao giờ thấy EOF.
+    drop(pair.slave);
+
+    let mut reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| err!("error.terminalSpawnFailed", message = e))?;
+    let mut writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| err!("error.terminalSpawnFailed", message = e))?;
+    let master = Arc::new(StdMutex::new(pair.master));
+    let killer = child.clone_killer();
+
+    let (raw_tx, raw_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (resize_tx, mut resize_rx) = mpsc::unbounded_channel::<TerminalSize>();
+    let (exit_tx, exit_rx) = oneshot::channel::<Option<i32>>();
+    let kill = CancellationToken::new();
+
+    // Đọc pty. Đây là chỗ duy nhất giữ `raw_tx`, nên thread này kết thúc là bộ gom lô biết hết
+    // byte — và chỉ khi đó `Exit` mới được phát.
+    std::thread::spawn(move || {
+        let mut buffer = vec![0u8; READ_BUFFER];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if raw_tx.send(buffer[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    // Ghi cái người dùng gõ. Kết thúc khi `Session` bị bỏ, vì lúc đó `input_tx` không còn ai giữ.
+    std::thread::spawn(move || {
+        while let Some(bytes) = input_rx.blocking_recv() {
+            if writer.write_all(&bytes).is_err() || writer.flush().is_err() {
+                break;
+            }
+        }
+    });
+
+    // Đổi kích thước. Giữ `master` sống chừng nào phiên còn sống: buông nó là đầu đọc thấy EOF.
+    std::thread::spawn(move || {
+        while let Some(size) = resize_rx.blocking_recv() {
+            let _ = master.lock().unwrap().resize(pty_size(size));
+        }
+    });
+
+    // Đợi tiến trình con, rồi đưa mã thoát cho đường ra — không tự phát, vì lúc này đệm có thể
+    // còn byte chưa đẩy.
+    std::thread::spawn(move || {
+        let code = child.wait().ok().map(|status| status.exit_code() as i32);
+        let _ = exit_tx.send(code);
+    });
+
+    // Đóng tab, hoặc app thoát.
+    tokio::spawn({
+        let kill = kill.clone();
+        async move {
+            kill.cancelled().await;
+            let mut killer = killer;
+            let _ = killer.kill();
+        }
+    });
+
+    // Một đường ra, một thứ tự: hết byte → hết đệm → mới tới `Exit`.
+    tokio::spawn({
+        let out = out.clone();
+        async move {
+            coalesce(raw_rx, |chunk| out(Output::Data(chunk))).await;
+            let code = exit_rx.await.ok().flatten();
+            out(Output::Exit { code, message: None });
+        }
+    });
+
+    Ok(Session {
+        input: input_tx,
+        resize: resize_tx,
+        kill,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_wsl_list;
+    use super::spawn;
+    use crate::modules::terminal::models::{Output, OutputSink, TerminalSize};
+    use std::sync::{Arc, Mutex};
 
     /// `wsl.exe -l -q` in ra UTF-16LE với CRLF — dựng lại đúng thế để test.
     fn utf16le(text: &str) -> Vec<u8> {
@@ -181,5 +335,27 @@ mod tests {
     fn is_not_fooled_by_the_no_distributions_message() {
         let bytes = utf16le("Windows Subsystem for Linux has no installed distributions.\r\n");
         assert!(parse_wsl_list(&bytes).is_empty());
+    }
+
+    /// Mở shell mặc định của máy rồi bỏ tay cầm. Phiên phải chết và phải báo `Exit` — đây là
+    /// đường mà "đóng tab" đi, nên nó không được im lặng.
+    #[tokio::test]
+    async fn dropping_the_session_ends_it_and_says_so() {
+        let seen: Arc<Mutex<Vec<Output>>> = Arc::new(Mutex::new(Vec::new()));
+        let handle = seen.clone();
+        let sink: OutputSink = Arc::new(move |output| handle.lock().unwrap().push(output));
+
+        let session = spawn(None, Vec::new(), None, TerminalSize { cols: 80, rows: 24 }, sink)
+            .expect("shell mặc định phải mở được");
+        drop(session);
+
+        // Giết tiến trình, đọc hết pty, đẩy nốt đệm rồi mới phát Exit — vài trăm ms là dư.
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+
+        let seen = seen.lock().unwrap();
+        assert!(
+            matches!(seen.last(), Some(Output::Exit { .. })),
+            "khung cuối cùng phải là Exit, thấy: {seen:?}",
+        );
     }
 }
