@@ -149,6 +149,24 @@ const restVi: RestDict = {
     historyBodyTooBig: "Response lớn hơn {{limit}} nên không giữ nội dung.",
     duration: "{{ms}} ms",
 
+    // Settings pane
+    settingsTitle: "REST",
+    settingsHistoryGroup: "Lịch sử",
+    settingsKeepBodies: "Lưu nội dung response vào lịch sử",
+    settingsKeepBodiesHint:
+      "Giữ nội dung tới {{limit}} cho mỗi mục. Tắt đi thì xoá luôn phần đã lưu.",
+    settingsClearHistory: "Xoá toàn bộ lịch sử",
+    settingsClearHistoryConfirm: "Xoá sạch?",
+    settingsHistoryCount: "Đang giữ {{n}}/{{max}}",
+    settingsSendGroup: "Gửi",
+    settingsTimeout: "Thời gian chờ",
+    settingsTimeoutUnit: "giây",
+    settingsFollowRedirects: "Đi theo redirect",
+    settingsInvalidCerts: "Chấp nhận chứng chỉ tự ký",
+    settingsInvalidCertsHint:
+      "Tắt kiểm tra chứng chỉ cho mọi request — chỉ bật khi biết rõ máy chủ.",
+    settingsGlobalHint: "Ba mục này áp cho mọi request.",
+
     shortcutScope: "REST",
     shortcutSend: "Gửi request",
     shortcutNewRequest: "Request mới",

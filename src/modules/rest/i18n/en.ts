@@ -161,6 +161,24 @@ const restEn = {
     historyBodyTooBig: "The response was over {{limit}}, so the body was not kept.",
     duration: "{{ms}} ms",
 
+    // Settings pane
+    settingsTitle: "REST",
+    settingsHistoryGroup: "History",
+    settingsKeepBodies: "Keep response bodies",
+    settingsKeepBodiesHint:
+      "Bodies up to {{limit}} are kept with each entry. Turning this off also forgets the ones already kept.",
+    settingsClearHistory: "Clear the history",
+    settingsClearHistoryConfirm: "Clear it all?",
+    settingsHistoryCount: "{{n}} of {{max}} kept",
+    settingsSendGroup: "Sending",
+    settingsTimeout: "Timeout",
+    settingsTimeoutUnit: "seconds",
+    settingsFollowRedirects: "Follow redirects",
+    settingsInvalidCerts: "Accept self-signed certificates",
+    settingsInvalidCertsHint:
+      "Turns certificate checking off for every request — leave it off unless you know the server.",
+    settingsGlobalHint: "These three apply to every request.",
+
     // Shortcuts
     shortcutScope: "REST",
     shortcutSend: "Send the request",
