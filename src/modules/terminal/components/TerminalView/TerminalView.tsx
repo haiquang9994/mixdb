@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Terminal } from "@xterm/xterm";
-import { copyText } from "../../../../core/clipboard";
+import ContextMenu from "../../../../components/ContextMenu";
+import { copyText, readText } from "../../../../core/clipboard";
 import { errorMessage } from "../../../../core/errors";
 import { isClaimed, pressOf, useShortcut } from "../../../../core/shortcuts";
 import { useTranslation } from "../../../../i18n";
@@ -57,6 +58,8 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
   const [searching, setSearching] = useState(false);
   /** Mỗi lần `Ctrl+F` được bấm, kể cả khi thanh đã mở — xem `SearchBar.focusSignal`. */
   const [findSignal, setFindSignal] = useState(0);
+  /** Menu chuột phải đang mở ở đâu, theo toạ độ của cửa sổ. `null` là đang đóng. */
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   /* Cài đặt lúc dựng terminal đi qua ref: đổi cài đặt thì `term.options` được đặt lại tại chỗ —
      xem effect ở cuối — chứ không dựng lại cả màn hình và mở lại cả phiên. */
@@ -176,20 +179,7 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
   /* Chỉ đăng ký khi đang có vùng chọn, và đó là toàn bộ cách `Ctrl+C` biết mình là lệnh nào: không
      chọn gì thì không ai nhận chord, `shellKeeps` trả phím lại cho shell và nó là lệnh huỷ như mọi
      khi. Trên macOS thì `Cmd+C` mang chord này còn `Ctrl+C` không mang gì — không có gì để phân xử. */
-  useShortcut(
-    "terminal.copy",
-    () => {
-      const term = termRef.current;
-      if (!term) return;
-      const text = term.getSelection();
-      if (!text) return;
-      /* Xoá vùng chọn ngay, kể cả khi chép hỏng: để nguyên thì lần `Ctrl+C` sau lại là chép, và
-         không còn đường nào gửi lệnh huỷ xuống shell. */
-      term.clearSelection();
-      void copyText(text).catch((e) => onErrorRef.current(errorMessage(tRef.current, e)));
-    },
-    active && hasSelection,
-  );
+  useShortcut("terminal.copy", copySelection, active && hasSelection);
 
   /* Cùng `Ctrl/Cmd+C`, và hai cái không bao giờ cùng sống: có vùng chọn thì phím là lệnh chép, hết
      phiên mà không chọn gì thì nó đóng màn hình đã đứng im. Nên lần bấm đầu chép và xoá vùng chọn,
@@ -237,6 +227,54 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
     termRef.current?.focus();
   }
 
+  function copySelection() {
+    const term = termRef.current;
+    if (!term) return;
+    const text = term.getSelection();
+    if (!text) return;
+    /* Xoá vùng chọn ngay, kể cả khi chép hỏng: để nguyên thì lần `Ctrl+C` sau lại là chép, và
+       không còn đường nào gửi lệnh huỷ xuống shell. */
+    term.clearSelection();
+    void copyText(text).catch((e) => onErrorRef.current(errorMessage(tRef.current, e)));
+  }
+
+  /* Đường duy nhất phải tự đọc clipboard. `Ctrl+V` không đi qua đây — `shellKeeps` buông phím ra
+     cho webview và xterm nghe sự kiện `paste` của chính nó — nhưng một mục menu thì không có phím
+     nào để buông, nên nó hỏi API và chịu chuyện API có quyền từ chối. */
+  async function pasteFromClipboard() {
+    const term = termRef.current;
+    if (!term) return;
+    try {
+      const text = await readText();
+      // `term.paste` chứ không `writeSession` thẳng: xterm mới là chỗ biết phiên có đang bật chế
+      // độ bracketed paste hay không, và một khối nhiều dòng dán vào `bash` mà thiếu dấu bọc là
+      // một khối lệnh tự chạy.
+      if (text !== "") term.paste(text);
+    } catch (e) {
+      onErrorRef.current(errorMessage(tRef.current, e));
+    }
+  }
+
+  function closeMenu() {
+    setMenu(null);
+    termRef.current?.focus();
+  }
+
+  function handleContextMenu(e: React.MouseEvent) {
+    /* Ô tìm là một ô nhập văn bản thật; menu của webview trên nó là thứ đúng, đúng như
+       `nativeContextMenu.ts` đã quyết cho mọi ô nhập trong app. */
+    if (e.target instanceof HTMLInputElement) return;
+    /* Bắt buộc, và đây là lý do: `core/nativeContextMenu.ts` cố ý tha cho ô nhập văn bản, mà
+       textarea ẩn của xterm *là* một ô nhập văn bản. Không chặn ở đây thì cái hiện ra là menu của
+       webview, và trong đó có Reload — một cú bấm nhầm là mọi kết nối đang mở rụng theo. */
+    e.preventDefault();
+    if (settingsRef.current.rightClickPastes) {
+      void pasteFromClipboard();
+      return;
+    }
+    setMenu({ x: e.clientX, y: e.clientY });
+  }
+
   /* Font đổi là ô chữ đổi, nên số cột và số dòng đổi theo: đo lại rồi báo cho đầu kia. Thiếu bước
      ấy thì `stty size` trong shell nói một đằng còn màn hình vẽ một nẻo, và mọi thứ vẽ theo chiều
      rộng cuối dòng đều lệch.
@@ -274,7 +312,7 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
   }, [active]);
 
   return (
-    <div className={styles.frame}>
+    <div className={styles.frame} onContextMenu={handleContextMenu}>
       {searching && <SearchBar onFind={find} onClose={closeSearch} focusSignal={findSignal} />}
       <div
         ref={hostRef}
@@ -282,6 +320,48 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
         role="application"
         aria-label={t("terminal.screen")}
       />
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={closeMenu}>
+          <button
+            type="button"
+            disabled={!hasSelection}
+            onClick={() => {
+              closeMenu();
+              copySelection();
+            }}
+          >
+            {t("terminal.menuCopy")}
+          </button>
+          <button
+            type="button"
+            disabled={ended}
+            onClick={() => {
+              closeMenu();
+              void pasteFromClipboard();
+            }}
+          >
+            {t("terminal.menuPaste")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              closeMenu();
+              termRef.current?.selectAll();
+            }}
+          >
+            {t("terminal.menuSelectAll")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              closeMenu();
+              termRef.current?.clear();
+            }}
+          >
+            {t("terminal.menuClear")}
+          </button>
+        </ContextMenu>
+      )}
     </div>
   );
 }

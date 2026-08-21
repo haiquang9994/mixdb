@@ -144,6 +144,7 @@ const vi: SharedDict = {
     // Lỗi duy nhất ở đây do webview báo chứ không phải backend. Phải nói rõ, vì nếu im lặng thì
     // người dùng dán ở chỗ khác và nhận đúng thứ đang có sẵn trong clipboard từ trước.
     clipboard: "Chưa sao chép được — clipboard từ chối: {{message}}",
+    clipboardRead: "Chưa dán được — clipboard từ chối: {{message}}",
     /** Dạng lỗi MixDB không nhận ra — hiển thị nguyên trạng thay vì nuốt mất. */
     unknown: "{{message}}",
   },

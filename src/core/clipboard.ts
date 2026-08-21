@@ -55,3 +55,24 @@ export async function copyText(text: string): Promise<void> {
     throw error;
   }
 }
+
+/**
+ * Takes text off the clipboard, rejecting with an `error.clipboardRead` {@link AppError} when the
+ * webview refuses.
+ *
+ * No `execCommand` fallback to match the one {@link copyText} has: `document.execCommand("paste")`
+ * is refused outright by every current engine, and a paste that quietly did nothing reads exactly
+ * like a paste of an empty clipboard. Only a keystroke can reach the clipboard without asking,
+ * which is why the terminal's `Ctrl+V` goes a different route entirely and this is only for the
+ * menu entry, where there is no keystroke to hand over.
+ */
+export async function readText(): Promise<string> {
+  try {
+    // Not `navigator.clipboard?.` — outside a secure context the property is missing altogether,
+    // and reading through it throws rather than resolving, which is what the catch is for.
+    return await navigator.clipboard.readText();
+  } catch (e) {
+    const error: AppError = { code: "error.clipboardRead", params: { message: String(e) } };
+    throw error;
+  }
+}

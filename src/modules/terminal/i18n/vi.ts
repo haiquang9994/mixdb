@@ -73,6 +73,10 @@ const terminalVi = {
     findNext: "Kết quả sau",
     findClose: "Đóng thanh tìm",
     findNoMatch: "Không có kết quả",
+    menuCopy: "Sao chép",
+    menuPaste: "Dán",
+    menuClear: "Xoá màn hình",
+    menuSelectAll: "Chọn tất cả",
   },
   error: {
     terminalSpawnFailed: "Không khởi động được shell: {{message}}",

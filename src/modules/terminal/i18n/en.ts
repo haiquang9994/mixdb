@@ -78,6 +78,10 @@ const terminalEn = {
     findNext: "Next match",
     findClose: "Close the search bar",
     findNoMatch: "No match",
+    menuCopy: "Copy",
+    menuPaste: "Paste",
+    menuClear: "Clear the screen",
+    menuSelectAll: "Select all",
   },
   error: {
     terminalSpawnFailed: "Could not start the shell: {{message}}",
