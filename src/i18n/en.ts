@@ -31,6 +31,7 @@ const en = {
        the menu is built from. */
     moduleDatabase: "Database",
     moduleRest: "REST",
+    moduleTerminal: "Terminal",
   },
   pagination: {
     previousPage: "Previous page",

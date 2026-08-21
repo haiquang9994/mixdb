@@ -4,6 +4,8 @@ import dbEn from "../modules/db/i18n/en";
 import dbVi from "../modules/db/i18n/vi";
 import restEn from "../modules/rest/i18n/en";
 import restVi from "../modules/rest/i18n/vi";
+import terminalEn from "../modules/terminal/i18n/en";
+import terminalVi from "../modules/terminal/i18n/vi";
 
 /*
  * The dictionaries, assembled from the shared half and each module's own.
@@ -22,14 +24,16 @@ export const EN = {
   ...shared,
   ...dbEn,
   ...restEn,
-  error: { ...shared.error, ...dbEn.error, ...restEn.error },
+  ...terminalEn,
+  error: { ...shared.error, ...dbEn.error, ...restEn.error, ...terminalEn.error },
 };
 
 export const VI = {
   ...sharedVi,
   ...dbVi,
   ...restVi,
-  error: { ...sharedVi.error, ...dbVi.error, ...restVi.error },
+  ...terminalVi,
+  error: { ...sharedVi.error, ...dbVi.error, ...restVi.error, ...terminalVi.error },
 };
 
 /* Outside `error`, no two dictionaries may name the same group: the second spread would silently
@@ -39,6 +43,9 @@ export const VI = {
 type Collision =
   | Exclude<Extract<keyof typeof shared, keyof typeof dbEn>, "error">
   | Exclude<Extract<keyof typeof shared, keyof typeof restEn>, "error">
-  | Exclude<Extract<keyof typeof dbEn, keyof typeof restEn>, "error">;
+  | Exclude<Extract<keyof typeof dbEn, keyof typeof restEn>, "error">
+  | Exclude<Extract<keyof typeof shared, keyof typeof terminalEn>, "error">
+  | Exclude<Extract<keyof typeof dbEn, keyof typeof terminalEn>, "error">
+  | Exclude<Extract<keyof typeof restEn, keyof typeof terminalEn>, "error">;
 const noCollision: [Collision] extends [never] ? true : never = true;
 void noCollision;

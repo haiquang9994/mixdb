@@ -27,6 +27,7 @@ const vi: SharedDict = {
     newConnectionTitle: "Kết nối mới",
     moduleDatabase: "Database",
     moduleRest: "REST",
+    moduleTerminal: "Terminal",
   },
   pagination: {
     previousPage: "Trang trước",
