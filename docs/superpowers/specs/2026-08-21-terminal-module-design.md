@@ -106,7 +106,7 @@ tab, hay thoát app, đều không để lại phiên sót.
 | Lệnh | Nhận | Trả |
 | --- | --- | --- |
 | `terminal_open` | `id`, `target`, `size`, `on_event: Channel<TerminalEvent>` | `()` |
-| `terminal_write` | `id`, `data` (base64) | `()` |
+| `terminal_write` | `id`, `data` (chuỗi) | `()` |
 | `terminal_resize` | `id`, `cols`, `rows` | `()` |
 | `terminal_close` | `id` | `()` |
 | `terminal_local_shells` | — | `Vec<LocalShell>` |
@@ -128,23 +128,24 @@ PowerShell, `pwsh`, `cmd.exe`, Git Bash và các bản phân phối WSL; trên m
 ### Byte chảy về UI
 
 `terminal_open` nhận một `Channel` và mọi thứ đầu xa nói ra đi qua đúng kênh đó — mỗi phiên một
-kênh, không phải lọc theo tên sự kiện toàn cục. Kênh chở một enum:
+kênh, không phải lọc theo tên sự kiện toàn cục. Kênh chở hai loại khung, và cùng một kênh nên
+**thứ tự được giữ**: `Exit` chắc chắn tới sau byte cuối cùng. Tách "byte thô một đường, exit một đường" thì sẽ có ngày dòng `logout` hiện ra sau khi
+tab đã báo phiên đóng.
+
+- `Data` là `InvokeResponseBody::Raw` — byte thô, tới JS thành `ArrayBuffer`.
+- `Exit` là `InvokeResponseBody::Json`:
 
 ```rust
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum TerminalEvent {
-    Data { base64: String },
     Exit { code: Option<i32>, message: Option<String> },
 }
 ```
 
-Base64 tốn thêm 33% băng thông so với byte thô, và đây là cái giá trả có chủ đích: **một kênh duy
-nhất giữ đúng thứ tự**, nên `Exit` chắc chắn tới sau byte cuối cùng. Tách "byte thô một đường, exit
-một đường" thì sẽ có ngày dòng `logout` hiện ra sau khi tab đã báo phiên đóng.
-
-Ở việc đầu tiên của đợt 1, kiểm bằng một phiên chạy thật xem `Channel` của Tauri 2 có nhận
-`InvokeResponseBody::Raw` sạch không. Nếu có thì bỏ base64 ở nhánh `Data`; mọi thứ còn lại của
-thiết kế đứng nguyên.
+Base64 từng là đường lui phòng khi `Channel` không nhận byte thô. Không cần nữa:
+`JavaScriptChannelId::channel_on` đánh số thứ tự cho mọi khung và `Channel` phía JS xếp lại theo
+số đó, nên đường `fetch` mà khung lớn phải đi không làm sai thứ tự. Chiều lên cũng bỏ base64:
+`terminal_write` nhận `String`.
 
 ### Gom lô
 
@@ -327,7 +328,7 @@ Mỗi đợt tự viết dòng của nó vào `## [Unreleased]` trong CHANGELOG.
 
 | Rủi ro | Xử lý |
 | --- | --- |
-| `Channel` không nhận byte thô | Đã có đường lui là base64, quyết ở việc đầu tiên của đợt 1 |
+| ~~`Channel` không nhận byte thô~~ | Đã kiểm trong mã nguồn tauri 2.11.5: nhận, và giữ thứ tự bằng `index`. Bỏ base64 |
 | ConPTY trên Windows vẽ sai | `portable-pty` là thứ WezTerm dùng thật; kiểm bằng `vim` ngay đợt 1 |
 | Thông lượng cao làm nghẹt UI | Gom lô ngay từ đợt 1, kiểm bằng `yes` |
 | `portable-pty` kéo theo nhiều phụ thuộc | Kiểm kích thước bundle sau đợt 1 |
