@@ -5,7 +5,7 @@
  * here reads a clock or a clipboard. That is the point — a cURL command is the most error-prone
  * input this app takes, and this is the one file where it can be got wrong under `npm test`.
  */
-import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
+import { DEFAULT_SEND_SETTINGS, buildRequest } from "./buildRequest";
 import { decodeComponent, paramsFromUrl } from "./syncUrlParams";
 import { METHODS } from "./types";
 import type {
@@ -436,7 +436,7 @@ function quote(text: string): string {
  * lines back up, so a command copied out of here pastes back in.
  */
 export function toCurl(request: RestRequest): string {
-  const wire: WireRequest = buildRequest(request, "curl", PHASE_ONE_SETTINGS);
+  const wire: WireRequest = buildRequest(request, "curl", DEFAULT_SEND_SETTINGS);
   const head = ["curl"];
   // Named unless curl would have guessed the same verb from the body — see the test for this.
   if (!(wire.method === "GET" && wire.body.kind === "none")) head.push("-X", wire.method);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PHASE_ONE_SETTINGS, authOverride, buildRequest } from "./buildRequest";
+import { DEFAULT_SEND_SETTINGS, authOverride, buildRequest } from "./buildRequest";
 import { newRequest } from "./requests";
 import type { Body, KeyValue, RestRequest } from "./types";
 
@@ -12,7 +12,7 @@ function request(over: Partial<RestRequest> = {}): RestRequest {
 }
 
 const build = (over: Partial<RestRequest> = {}) =>
-  buildRequest(request(over), "send-1", PHASE_ONE_SETTINGS);
+  buildRequest(request(over), "send-1", DEFAULT_SEND_SETTINGS);
 
 /** The header's value, whatever case it was written in. */
 function header(wire: ReturnType<typeof build>, name: string): string | undefined {

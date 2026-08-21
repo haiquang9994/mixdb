@@ -7,7 +7,7 @@ import { modalDepth, useShortcut } from "../../core/shortcuts";
 import type { ModuleTabProps } from "../../shell/module";
 import { useTranslation } from "../../i18n";
 import { CANCELLED, decodeBase64, restCancel, restSend } from "./api";
-import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
+import { buildRequest } from "./buildRequest";
 import { detectBody, type ViewMode } from "./contentType";
 import { SECRET_MASK, findEnvironment, previewVars, varMap } from "./environments";
 import { addVariables, useEnvironments } from "./environmentsStore";
@@ -45,6 +45,7 @@ import {
   MAX_SPLIT_RATIO,
   MIN_SIDEBAR_WIDTH,
   MIN_SPLIT_RATIO,
+  sendSettings,
   setLastEnvId,
   setSidebarWidth,
   setSplitRatio,
@@ -291,7 +292,7 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     if (!activeRequest || resolved === null || blocked) return;
     const request = activeRequest;
     const sendId = crypto.randomUUID();
-    const wire = buildRequest(resolved.request, sendId, PHASE_ONE_SETTINGS);
+    const wire = buildRequest(resolved.request, sendId, sendSettings(workspace));
 
     setSends((prev) => ({
       ...prev,

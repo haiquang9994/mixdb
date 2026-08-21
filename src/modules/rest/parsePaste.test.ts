@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PHASE_ONE_SETTINGS, buildRequest } from "./buildRequest";
+import { DEFAULT_SEND_SETTINGS, buildRequest } from "./buildRequest";
 import { parseCurl, parsePaste, splitArgs, toCurl } from "./parsePaste";
 import { newRequest } from "./requests";
 import type { RestRequest } from "./types";
@@ -317,7 +317,7 @@ function request(over: Partial<RestRequest> = {}): RestRequest {
 
 /** What would go on the wire, minus the send id, which is minted fresh every time. */
 function wire(source: RestRequest) {
-  const { request_id: _ignored, ...rest } = buildRequest(source, "send", PHASE_ONE_SETTINGS);
+  const { request_id: _ignored, ...rest } = buildRequest(source, "send", DEFAULT_SEND_SETTINGS);
   return rest;
 }
 
