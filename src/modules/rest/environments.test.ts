@@ -3,6 +3,7 @@ import {
   SECRET_MASK,
   addEnvironment,
   findEnvironment,
+  historyVars,
   newEnvironment,
   previewVars,
   removeEnvironment,
@@ -107,5 +108,36 @@ describe("the list", () => {
     const filled = withVariables(dev(), ["token", "apiKey"]);
     expect(filled.vars.map((v) => v.name)).toEqual(["host", "token", "apiKey"]);
     expect(filled.vars[2]).toEqual({ name: "apiKey", value: "", secret: false });
+  });
+});
+
+describe("historyVars", () => {
+  const env = {
+    id: "e1",
+    name: "Dev",
+    vars: [
+      { name: "host", value: "api.example.com", secret: false },
+      { name: "token", value: "s3cret", secret: true },
+      { name: "", value: "ignored", secret: false },
+    ],
+  };
+
+  it("holds the ordinary variables and no secret one", () => {
+    expect(historyVars(env)).toEqual({ host: "api.example.com" });
+  });
+
+  it("is null with no environment, so nothing is resolved at all", () => {
+    expect(historyVars(null)).toBeNull();
+  });
+
+  it("lets the first row of a name decide, exactly as varMap does", () => {
+    const twice = {
+      ...env,
+      vars: [
+        { name: "host", value: "first", secret: false },
+        { name: "host", value: "second", secret: true },
+      ],
+    };
+    expect(historyVars(twice)).toEqual({ host: "first" });
   });
 });

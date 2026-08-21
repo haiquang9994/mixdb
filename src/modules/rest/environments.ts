@@ -61,6 +61,26 @@ export function previewVars(env: Environment | null): Record<string, string> | n
   return env === null ? null : map(env, (v) => (v.secret ? SECRET_MASK : v.value));
 }
 
+/**
+ * The map the history is written with: every ordinary variable, and no secret one.
+ *
+ * A name that is not in the map is left standing in its braces, so `Bearer {{token}}` reads as
+ * `Bearer {{token}}` a week later — which says what was sent without saying what the token was.
+ * Written as its own loop rather than through `map` so that the first row of a name still decides,
+ * exactly as `varMap` has it: a name claimed by a secret row is claimed, not skipped over.
+ */
+export function historyVars(env: Environment | null): Record<string, string> | null {
+  if (env === null) return null;
+  const out: Record<string, string> = {};
+  const claimed = new Set<string>();
+  for (const variable of env.vars) {
+    if (variable.name === "" || claimed.has(variable.name)) continue;
+    claimed.add(variable.name);
+    if (!variable.secret) out[variable.name] = variable.value;
+  }
+  return out;
+}
+
 export function findEnvironment(list: Environment[], id: string | null): Environment | null {
   if (id === null) return null;
   return list.find((env) => env.id === id) ?? null;
