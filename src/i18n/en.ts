@@ -151,7 +151,6 @@ const en = {
     // The one error in here the webview raises rather than the backend. Said out loud because the
     // alternative is a copy that did nothing and a paste, somewhere else, of what was there before.
     clipboard: "Nothing was copied — the clipboard refused: {{message}}",
-    clipboardRead: "Nothing was pasted — the clipboard refused: {{message}}",
     /** An error shape MixDB doesn't recognise \u2014 shown as-is rather than swallowed. */
     unknown: "{{message}}",
   },

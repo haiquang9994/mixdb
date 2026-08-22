@@ -1,10 +1,10 @@
 /**
  * Cỡ chữ của màn hình terminal.
  *
- * Mặc định to hơn cỡ mặc định của xterm một chút, vì đây là chỗ người ta ngồi đọc log hàng phút
- * liền chứ không phải một nhãn trên nút.
+ * Mặc định to hơn hẳn cỡ mặc định của xterm, vì đây là chỗ người ta ngồi đọc log hàng phút liền
+ * chứ không phải một nhãn trên nút.
  */
-export const DEFAULT_FONT_SIZE = 14;
+export const DEFAULT_FONT_SIZE = 16;
 
 /* Hai đầu của khoảng, và cả hai đều là giới hạn thật chứ không phải con số cho đẹp: dưới 8 thì
    chữ hết đọc được, còn trên 32 thì một cửa sổ bình thường chỉ còn khoảng 40 cột — hẹp hơn cả cái

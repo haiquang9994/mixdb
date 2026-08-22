@@ -4,6 +4,7 @@ import { stepFontSize } from "./fontSize";
 import {
   DEFAULT_SETTINGS,
   LEGACY_FONT_SIZE_KEY,
+  sanitizeSettings,
   withLegacyFontSize,
   type TerminalSettings,
 } from "./settings";
@@ -123,7 +124,11 @@ export function loadTerminalSettings(): Promise<TerminalSettings> {
 /** Một lần sửa cài đặt. Một cửa chứ không phải một setter mỗi trường: pane Cài đặt sửa mỗi lần
  *  một trường và không trường nào cần thứ trường khác không cần. */
 export function updateTerminalSettings(patch: Partial<TerminalSettings>): void {
-  write({ ...snapshot, ...patch });
+  /* Lọc cả lúc ghi chứ không chỉ lúc đọc file. Một trường hỏng ở đây không dừng lại ở chỗ nó bị
+     ghi sai: `fontFamily` rỗng đi thẳng vào `term.options.fontFamily`, xterm dựng `ctx.font` từ nó,
+     chuỗi ấy không phân tích được, canvas bỏ qua phép gán và giữ số đo ô chữ cũ — chữ to lên mà
+     dòng đứng nguyên. Đúng một dòng ở đây là mọi cửa ghi đều không mở được lối ấy nữa. */
+  write(sanitizeSettings({ ...snapshot, ...patch }));
 }
 
 /** To lên (`delta` dương) hay nhỏ đi (`delta` âm) một nấc. Chạm đầu khoảng thì không ghi và không

@@ -3,7 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Terminal } from "@xterm/xterm";
 import ContextMenu from "../../../../components/ContextMenu";
-import { copyText, readText } from "../../../../core/clipboard";
+import { copyText } from "../../../../core/clipboard";
 import { errorMessage } from "../../../../core/errors";
 import { isClaimed, pressOf, useShortcut } from "../../../../core/shortcuts";
 import { useTranslation } from "../../../../i18n";
@@ -14,6 +14,7 @@ import {
   writeSession,
   type SessionExit,
 } from "../../api";
+import { readText } from "../../clipboard";
 import { useTerminalSettings, zoomTerminal } from "../../settingsStore";
 import { shellKeeps } from "../../keys";
 import type { TerminalTarget } from "../../types";
@@ -86,6 +87,11 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
     if (!host) return;
 
     const term = new Terminal({
+      /* Bắt buộc, và không phải để cho vui: `registerDecoration` — cái addon tìm kiếm gọi để tô
+         vàng các kết quả — nằm trong nhóm API còn đang đề xuất, và xterm *ném lỗi* khi cờ này tắt.
+         Thiếu nó thì `findNext` văng ngay ở chữ đầu tiên người dùng gõ vào ô tìm, và cả thanh tìm
+         trông như thể không tìm thấy gì. */
+      allowProposedApi: true,
       fontFamily: settingsRef.current.fontFamily,
       fontSize: settingsRef.current.fontSize,
       cursorStyle: settingsRef.current.cursorStyle,
@@ -240,7 +246,8 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
 
   /* Đường duy nhất phải tự đọc clipboard. `Ctrl+V` không đi qua đây — `shellKeeps` buông phím ra
      cho webview và xterm nghe sự kiện `paste` của chính nó — nhưng một mục menu thì không có phím
-     nào để buông, nên nó hỏi API và chịu chuyện API có quyền từ chối. */
+     nào để buông, nên nó phải hỏi hệ điều hành. Qua Rust chứ không qua `navigator.clipboard`; lý do
+     nằm ở `terminal/clipboard.ts`. */
   async function pasteFromClipboard() {
     const term = termRef.current;
     if (!term) return;

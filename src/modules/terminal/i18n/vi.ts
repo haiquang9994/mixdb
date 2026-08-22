@@ -49,7 +49,8 @@ const terminalVi = {
     settingsScreenGroup: "Màn hình",
     settingsFontFamily: "Phông chữ",
     settingsFontFamilyHint:
-      "Một font stack CSS. Để trống thì dùng mặc định; chỉ phông đều nét mới vẽ thẳng được một terminal.",
+      "Chỉ liệt kê những phông đều nét máy này đang có — chỉ loại ấy mới vẽ thẳng được một terminal.",
+    settingsFontSearch: "Tìm phông",
     settingsFontSize: "Cỡ chữ",
     settingsScrollback: "Cuộn ngược",
     settingsScrollbackUnit: "dòng",
@@ -82,6 +83,7 @@ const terminalVi = {
     terminalSpawnFailed: "Không khởi động được shell: {{message}}",
     terminalShellNotFound: "Không có shell nào tại {{path}}.",
     terminalUnknownSession: "Phiên terminal đó không còn mở.",
+    terminalClipboardRead: "Chưa dán được. Clipboard từ chối: {{message}}",
   },
 };
 

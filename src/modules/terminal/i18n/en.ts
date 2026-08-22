@@ -55,7 +55,8 @@ const terminalEn = {
     settingsScreenGroup: "Screen",
     settingsFontFamily: "Font",
     settingsFontFamilyHint:
-      "A CSS font stack. Leave it empty for the default; a monospaced font is the only kind a terminal can draw straight.",
+      "Only the monospaced fonts installed on this machine are listed. They are the kind a terminal can draw straight.",
+    settingsFontSearch: "Search fonts",
     settingsFontSize: "Text size",
     settingsScrollback: "Scrollback",
     settingsScrollbackUnit: "lines",
@@ -87,6 +88,7 @@ const terminalEn = {
     terminalSpawnFailed: "Could not start the shell: {{message}}",
     terminalShellNotFound: "There is no shell at {{path}}.",
     terminalUnknownSession: "That terminal session is no longer open.",
+    terminalClipboardRead: "Nothing was pasted. The clipboard refused: {{message}}",
   },
 };
 

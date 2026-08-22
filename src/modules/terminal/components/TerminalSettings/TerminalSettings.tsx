@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import Button from "../../../../components/Button";
 import Input from "../../../../components/Input";
@@ -6,9 +6,10 @@ import Select from "../../../../components/Select";
 import { errorMessage } from "../../../../core/errors";
 import { useTranslation } from "../../../../i18n";
 import { localShells } from "../../api";
+import { installedFonts } from "../../fontProbe";
 import { MAX_FONT_SIZE, MIN_FONT_SIZE, stepFontSize } from "../../fontSize";
+import { TERMINAL_FONTS, familyOf, fontStack } from "../../fonts";
 import {
-  DEFAULT_FONT_FAMILY,
   MAX_SCROLLBACK,
   MIN_SCROLLBACK,
   clampScrollback,
@@ -35,6 +36,7 @@ function TerminalSettings() {
   const { t } = useTranslation();
   const settings = useTerminalSettings();
   const [shells, setShells] = useState<LocalShell[]>([]);
+  const [fonts, setFonts] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   /** Hai ô số trong lúc đang được gõ, để một số dở dang không bị kẹp giữa chừng. */
   const [fontSizeText, setFontSizeText] = useState<string | null>(null);
@@ -48,6 +50,32 @@ function TerminalSettings() {
       .catch((e) => setError(errorMessage(t, e)));
     // Một lần: danh sách shell của một máy không đổi giữa chừng.
   }, []);
+
+  /* Cũng một lần, và cũng vì cùng lý do — font cài trên máy không mọc thêm trong lúc hộp thoại
+     đang mở. Đo bằng canvas nên nó chỉ chạy được sau khi có DOM, tức là trong effect. */
+  useEffect(() => {
+    let live = true;
+    installedFonts(TERMINAL_FONTS).then((found) => {
+      if (live) setFonts(found);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const family = familyOf(settings.fontFamily);
+
+  /* Font đang dùng luôn có mặt, kể cả khi phép đo không nhận ra nó: một hộp chọn không chỉ vào
+     đâu cả là một hộp chọn nói dối về cái đang chạy. */
+  const fontOptions = useMemo(() => {
+    const names = fonts.includes(family) ? fonts : [family, ...fonts];
+    return names.map((name) => ({
+      value: name,
+      label: name,
+      // Mỗi mục vẽ bằng chính nó: chọn một phông chữ mà không thấy nó thì chọn bằng gì.
+      optionLabel: <span style={{ fontFamily: fontStack(name) }}>{name}</span>,
+    }));
+  }, [fonts, family]);
 
   function commitFontSize(text: string) {
     updateTerminalSettings({ fontSize: stepFontSize(Number(text), 0) });
@@ -71,15 +99,19 @@ function TerminalSettings() {
 
         <div className={styles.row}>
           <span className={styles.label}>{t("terminal.settingsFontFamily")}</span>
-          <Input
+          {/* Hộp chọn chứ không phải ô nhập, và không chỉ vì gõ tên font thì mệt: một ô nhập ghi
+              từng phím, nên nó đi qua cả những giá trị dở dang — kể cả chuỗi rỗng. xterm dựng
+              `ctx.font` từ giá trị ấy, chuỗi hỏng thì canvas lặng lẽ giữ số đo ô chữ cũ, và màn
+              hình cắt ngang mọi dòng. Ở đây mọi giá trị đều đi qua `fontStack`. */}
+          <Select<string>
             size="small"
             className={styles.wide}
-            placeholder={DEFAULT_FONT_FAMILY}
-            value={settings.fontFamily === DEFAULT_FONT_FAMILY ? "" : settings.fontFamily}
-            aria-label={t("terminal.settingsFontFamily")}
-            /* Ghi từng phím được ở đây mà không ghi được ở hai ô số: một font stack dở dang chỉ
-               vẽ ra font mặc định trong chốc lát, còn một con số dở dang thì bị kẹp mất. */
-            onChange={(e) => updateTerminalSettings({ fontFamily: e.target.value })}
+            searchable
+            searchPlaceholder={t("terminal.settingsFontSearch")}
+            value={family}
+            ariaLabel={t("terminal.settingsFontFamily")}
+            options={fontOptions}
+            onChange={(name) => updateTerminalSettings({ fontFamily: fontStack(name) })}
           />
         </div>
         <p className={styles.hint}>{t("terminal.settingsFontFamilyHint")}</p>
