@@ -360,6 +360,16 @@ const dbEn = {
     // box above cut everything out. Telling someone their query came back empty when it did not is
     // the kind of wrong answer they act on.
     noMatchingRows: "No row here matches that.",
+    // The right-click menu over a result. Two halves: what is highlighted, and the whole result —
+    // the second because the commonest reason to open this menu at all is to take the lot.
+    copySelection: "Copy",
+    copySelectionCsv: "Copy as CSV",
+    copySelectionJson: "Copy as JSON",
+    copyAll: "Copy the whole result",
+    copyAllCsv: "Copy the whole result as CSV",
+    copyAllJson: "Copy the whole result as JSON",
+    expandCell: "Open this cell",
+    cellTitle: "{{column}}, row {{n}}",
     // Said when the script was sent with a ceiling it was not written with.
     limitAdded: "A LIMIT of {{limit}} was added to {{n}} of these statements. Write your own LIMIT to ask for something else.",
     // Saved queries, offered back by name as the editor is typed in.

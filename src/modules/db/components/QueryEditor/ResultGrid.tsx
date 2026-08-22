@@ -1,4 +1,14 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import {
   displayValue,
   gridStyle,
@@ -6,9 +16,25 @@ import {
   useVirtualRows,
   widestValues,
 } from "../../../../core/virtualRows";
+import ContextMenu from "../../../../components/ContextMenu";
 import Input from "../../../../components/Input";
+import { copyText } from "../../../../core/clipboard";
+import { errorMessage } from "../../../../core/errors";
+import { csvText, jsonText, tsvText } from "../../../../core/gridText";
 import { useTranslation } from "../../../../i18n";
+import {
+  cutOut,
+  moveSelection,
+  rectOf,
+  selectAll,
+  spanIn,
+  stepSelection,
+  // Shadows the DOM's own `Selection` inside this file. Nothing here calls `window.getSelection()`,
+  // so nothing is lost, and renaming it would leave this the one file that calls it something else.
+  type Selection,
+} from "./resultSelection";
 import { nextSort, viewIndexes, type Sort } from "./resultView";
+import CellDialog from "./CellDialog";
 import styles from "./QueryEditor.module.css";
 
 /** How long a cell value has to be before it is worth a tooltip. Cells are cut off at 320px, which
@@ -85,7 +111,20 @@ interface RowProps {
   /** Where this row sits in the result the server sent — which is what the `#` column counts, and
    *  what it goes on counting once the grid is sorted. */
   index: number;
+  /** Where it sits in what is on screen. The coordinate the selection speaks in, and the one the
+   *  handlers report back. */
+  viewRow: number;
   columns: string[];
+  /** The first and last selected column of this row, or -1 and -1 when none of it is selected.
+   *  Two numbers rather than the pair `spanIn` returns: see `resultSelection.ts` — an object or an
+   *  array crossing this boundary is a memo that never hits. */
+  spanFrom: number;
+  spanTo: number;
+  /** The column the keyboard is on, when it is on this row. -1 otherwise. */
+  focusCol: number;
+  onPick: (viewRow: number, col: number, extend: boolean) => void;
+  onOpen: (viewRow: number, col: number) => void;
+  onMenu: (e: ReactMouseEvent, viewRow: number, col: number) => void;
 }
 
 /**
@@ -97,21 +136,54 @@ interface RowProps {
  * it — a thousand-odd cells for a change of a few hundred, and the difference is visible in a tall
  * pane like the expanded view.
  */
-const ResultRow = memo(function ResultRow({ row, index, columns }: RowProps) {
+const ResultRow = memo(function ResultRow({
+  row,
+  index,
+  viewRow,
+  columns,
+  spanFrom,
+  spanTo,
+  focusCol,
+  onPick,
+  onOpen,
+  onMenu,
+}: RowProps) {
   return (
-    <tr>
+    // Marked with where it sits on screen so the keyboard can scroll it into sight while the grid
+    // is short enough to size its own rows.
+    <tr data-view-row={viewRow}>
       <td className={styles.rowNumber}>{index + 1}</td>
       {columns.map((_, c) => {
         const value = displayValue(row[c]);
         const isNull = row[c] === null || row[c] === undefined;
+        // `spanFrom`/`spanTo` are -1 when none of this row is selected, and no column index is
+        // inside that, so an untouched row needs no branch of its own.
+        const picked = c >= spanFrom && c <= spanTo;
         return (
           <td
             key={c}
-            className={isNull ? styles.cellNull : undefined}
+            className={
+              [
+                isNull && styles.cellNull,
+                picked && styles.cellPicked,
+                c === focusCol && styles.cellFocus,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
             // Only where the cell can actually be cut short. A result of a thousand rows is tens of
             // thousands of cells, and a tooltip on every one of them is weight the grid carries for
             // nothing.
             title={value.length > TOOLTIP_FROM ? value : undefined}
+            onMouseDown={(e) => {
+              // Left button only, and preventDefault so a Shift+click extends the grid's rectangle
+              // instead of sweeping up the browser's own text selection across it.
+              if (e.button !== 0) return;
+              e.preventDefault();
+              onPick(viewRow, c, e.shiftKey);
+            }}
+            onDoubleClick={() => onOpen(viewRow, c)}
+            onContextMenu={(e) => onMenu(e, viewRow, c)}
           >
             {value}
           </td>
@@ -149,6 +221,13 @@ function ResultGrid({ columns, rows }: Props) {
   const { t } = useTranslation();
   const [sort, setSort] = useState<Sort | null>(null);
   const [query, setQuery] = useState("");
+  const [selection, setSelection] = useState<Selection | null>(null);
+  /** The cell the dialog is open on, in view coordinates. */
+  const [expanded, setExpanded] = useState<{ row: number; col: number } | null>(null);
+  /** Where the right-click was, in client coordinates. */
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  /** A clipboard the webview refused, said out loud rather than left as a copy that did nothing. */
+  const [copyFailed, setCopyFailed] = useState("");
 
   /** Which rows are on screen and in what order, as indexes into `rows`. See `resultView.ts` for
    *  why this is a list of indexes and never a list of rows. */
@@ -188,6 +267,137 @@ function ResultGrid({ columns, rows }: Props) {
     setSort(null);
   }, [columns, rows]);
 
+  // Sorting, filtering or a new result moves every row out from under the rectangle. Keeping it at
+  // the same coordinates would leave it highlighting cells nobody chose — worse than losing it.
+  useEffect(() => {
+    setSelection(null);
+    setExpanded(null);
+    setMenu(null);
+    setCopyFailed("");
+  }, [columns, rows, sort, query]);
+
+  const rect = rectOf(selection);
+
+  // All three take no dependencies, so their identity never changes and the memo on `ResultRow`
+  // holds. Which is why each reads the state it needs through a functional update rather than
+  // closing over it.
+  const onPick = useCallback((viewRow: number, col: number, extend: boolean) => {
+    setSelection((current) => moveSelection(current, { row: viewRow, col }, extend));
+  }, []);
+
+  const onOpen = useCallback((viewRow: number, col: number) => {
+    setExpanded({ row: viewRow, col });
+  }, []);
+
+  const onMenu = useCallback((e: ReactMouseEvent, viewRow: number, col: number) => {
+    e.preventDefault();
+    // The selection moves onto the cell first when the click landed outside it, the way the data
+    // tab's table does: every entry in the menu acts on what is highlighted, and a menu acting on
+    // cells other than the highlighted ones would be read as acting on the wrong ones. A right
+    // click *inside* the selection leaves it alone, which is what makes "copy these forty rows"
+    // one gesture.
+    setSelection((current) => {
+      const area = rectOf(current);
+      const inside =
+        area !== null &&
+        viewRow >= area.top &&
+        viewRow <= area.bottom &&
+        col >= area.left &&
+        col <= area.right;
+      return inside ? current : { anchor: { row: viewRow, col }, focus: { row: viewRow, col } };
+    });
+    setMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  /** Puts text on the clipboard, and says so when the webview will not have it — a copy that
+   *  quietly did nothing is the one outcome worth interrupting someone over, since they find out by
+   *  pasting the wrong thing somewhere else. */
+  function copy(text: string) {
+    setMenu(null);
+    void copyText(text)
+      .then(() => setCopyFailed(""))
+      .catch((e) => setCopyFailed(errorMessage(t, e)));
+  }
+
+  /** The whole result, or the rectangle in it — the two things every entry of the menu is one of.
+   *
+   *  The whole result goes through `view` rather than straight through `rows`: "copy the whole
+   *  result" while something is sorted or filtered means what is on screen, not what the server
+   *  sent. */
+  function partOf(whole: boolean): { columns: string[]; rows: unknown[][] } {
+    if (whole) return { columns, rows: view.map((index) => rows[index]) };
+    if (rect === null) return { columns: [], rows: [] };
+    return cutOut(rect, view, rows, columns);
+  }
+
+  function copyPart(whole: boolean, as: "tsv" | "csv" | "json") {
+    const part = partOf(whole);
+    if (part.columns.length === 0) return;
+    const write = as === "csv" ? csvText : as === "json" ? jsonText : tsvText;
+    copy(write(part.columns, part.rows));
+  }
+
+  /** Brings a row into sight after the keyboard has moved onto it. Two routes because there are two
+   *  kinds of grid: a windowed one has every row pinned to `ROW_HEIGHT`, so where the row is can be
+   *  worked out — and it has to be, since the row may not be in the DOM yet. A short one sizes its
+   *  own rows, so the element is asked instead. */
+  function revealRow(viewRow: number) {
+    const box = scrollRef.current;
+    if (!box) return;
+    if (!virtual) {
+      box.querySelector(`[data-view-row="${viewRow}"]`)?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    const head = box.querySelector("thead")?.clientHeight ?? 0;
+    const top = viewRow * ROW_HEIGHT;
+    if (top < box.scrollTop) box.scrollTop = top;
+    else if (top + ROW_HEIGHT > box.scrollTop + box.clientHeight - head) {
+      box.scrollTop = top + ROW_HEIGHT + head - box.clientHeight;
+    }
+  }
+
+  /** The grid's keys, and only while the grid holds the keyboard: this hangs off `.gridWrap`, which
+   *  takes focus when it is clicked. The SQL editor above keeps every key of its own. */
+  function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      setSelection(selectAll(view.length, columns.length));
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "c") {
+      e.preventDefault();
+      copyPart(false, "tsv");
+      return;
+    }
+    if (e.key === "Escape") {
+      setSelection(null);
+      return;
+    }
+    if (e.key === "Enter" && selection !== null) {
+      e.preventDefault();
+      setExpanded({ row: selection.focus.row, col: selection.focus.col });
+      return;
+    }
+    const step =
+      e.key === "ArrowUp"
+        ? { row: -1, col: 0 }
+        : e.key === "ArrowDown"
+          ? { row: 1, col: 0 }
+          : e.key === "ArrowLeft"
+            ? { row: 0, col: -1 }
+            : e.key === "ArrowRight"
+              ? { row: 0, col: 1 }
+              : null;
+    if (step === null) return;
+    e.preventDefault();
+    const next = stepSelection(selection, step, e.shiftKey, view.length, columns.length);
+    setSelection(next);
+    if (next !== null) revealRow(next.focus.row);
+  }
+
   const visible = view.slice(window.first, window.last);
   const spacerSpan = columns.length + 1;
 
@@ -220,6 +430,8 @@ function ResultGrid({ columns, rows }: Props) {
       <div
         className={styles.gridWrap}
         ref={scrollRef}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
         onScroll={virtual ? window.onScroll : undefined}
       >
         <table
@@ -282,11 +494,29 @@ function ResultGrid({ columns, rows }: Props) {
                 <td colSpan={spacerSpan} />
               </tr>
             )}
-            {visible.map((index) => (
-              // Keyed by where the row sits in the result rather than by where it sits on screen, so
-              // a sort moves the rows about instead of rebuilding every one of them.
-              <ResultRow key={index} row={rows[index]} index={index} columns={columns} />
-            ))}
+            {visible.map((index, i) => {
+              const viewRow = window.first + i;
+              // The tuple is pulled apart here and two numbers go on: an array crossing into a
+              // memoised row is a new array on every render, and the memo would never hit.
+              const [spanFrom, spanTo] = spanIn(rect, viewRow);
+              return (
+                // Keyed by where the row sits in the result rather than by where it sits on screen,
+                // so a sort moves the rows about instead of rebuilding every one of them.
+                <ResultRow
+                  key={index}
+                  row={rows[index]}
+                  index={index}
+                  viewRow={viewRow}
+                  columns={columns}
+                  spanFrom={spanFrom}
+                  spanTo={spanTo}
+                  focusCol={selection?.focus.row === viewRow ? selection.focus.col : -1}
+                  onPick={onPick}
+                  onOpen={onOpen}
+                  onMenu={onMenu}
+                />
+              );
+            })}
             {virtual && (
               <tr className={styles.spacer} style={{ height: window.padBottom }} aria-hidden="true">
                 <td colSpan={spacerSpan} />
@@ -300,6 +530,54 @@ function ResultGrid({ columns, rows }: Props) {
           </p>
         )}
       </div>
+      {/* Under the grid rather than up in `.gridTools`: that strip only exists past twenty rows, and
+          a clipboard the webview refused has nothing to do with how many rows came back. */}
+      {copyFailed !== "" && (
+        <p className={styles.copyFailed} role="alert">
+          {copyFailed}
+        </p>
+      )}
+      {menu !== null && rect !== null && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={closeMenu}>
+          <button
+            type="button"
+            onClick={() => {
+              setMenu(null);
+              setExpanded({ row: rect.top, col: rect.left });
+            }}
+          >
+            {t("query.expandCell")}
+          </button>
+          <button type="button" onClick={() => copyPart(false, "tsv")}>
+            {t("query.copySelection")}
+          </button>
+          <button type="button" onClick={() => copyPart(false, "csv")}>
+            {t("query.copySelectionCsv")}
+          </button>
+          <button type="button" onClick={() => copyPart(false, "json")}>
+            {t("query.copySelectionJson")}
+          </button>
+          <button type="button" onClick={() => copyPart(true, "tsv")}>
+            {t("query.copyAll")}
+          </button>
+          <button type="button" onClick={() => copyPart(true, "csv")}>
+            {t("query.copyAllCsv")}
+          </button>
+          <button type="button" onClick={() => copyPart(true, "json")}>
+            {t("query.copyAllJson")}
+          </button>
+        </ContextMenu>
+      )}
+      {expanded !== null && rows[view[expanded.row]] !== undefined && (
+        <CellDialog
+          column={columns[expanded.col]}
+          // The number the `#` column shows for that row, which is its place in the result rather
+          // than its place on screen.
+          rowNumber={view[expanded.row] + 1}
+          value={rows[view[expanded.row]][expanded.col]}
+          onClose={() => setExpanded(null)}
+        />
+      )}
     </div>
   );
 }

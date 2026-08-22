@@ -351,6 +351,16 @@ const dbVi: DbDict = {
     // ở trên đã cắt hết. Bảo người ta là truy vấn rỗng trong khi nó không rỗng là loại câu sai mà
     // người ta sẽ tin và làm theo.
     noMatchingRows: "Không có dòng nào ở đây khớp.",
+    // Menu chuột phải trên kết quả. Hai nửa: phần đang chọn, và cả kết quả — nửa sau vì lý do
+    // thường gặp nhất để mở menu này là lấy hết.
+    copySelection: "Chép",
+    copySelectionCsv: "Chép dạng CSV",
+    copySelectionJson: "Chép dạng JSON",
+    copyAll: "Chép cả kết quả",
+    copyAllCsv: "Chép cả kết quả dạng CSV",
+    copyAllJson: "Chép cả kết quả dạng JSON",
+    expandCell: "Mở ô này",
+    cellTitle: "{{column}}, dòng {{n}}",
     // Nói ra khi script được gửi đi kèm một mức trần mà nó không tự viết.
     limitAdded: "Đã thêm LIMIT {{limit}} vào {{n}} câu lệnh trong số này. Hãy tự viết LIMIT nếu muốn mức khác.",
     // Câu truy vấn đã lưu, gõ tên là gợi ý lại.
