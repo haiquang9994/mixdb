@@ -348,6 +348,12 @@ const dbEn = {
     // without this line a script cut short reads exactly like a script that finished.
     scriptSummary: "{{n}} of {{m}} statements · {{ms}} ms",
     scriptSummaryAll: "{{m}} statements · {{ms}} ms",
+    // The heading's tooltip, which says what one more click does — and says the thing that is
+    // easiest to get wrong about it. Sorting here reorders the rows that came back and nothing
+    // else: a result cut off at 1000 rows, sorted descending, does not show the table's largest.
+    sortAsc: "Sort by {{column}}, smallest first — only the rows already returned",
+    sortDesc: "Sort by {{column}}, largest first — only the rows already returned",
+    sortNone: "Back to the order the server sent",
     // Said when the script was sent with a ceiling it was not written with.
     limitAdded: "A LIMIT of {{limit}} was added to {{n}} of these statements. Write your own LIMIT to ask for something else.",
     // Saved queries, offered back by name as the editor is typed in.

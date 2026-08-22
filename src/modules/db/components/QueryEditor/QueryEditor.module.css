@@ -728,6 +728,28 @@
   font-weight: 600;
 }
 
+/* A heading that sorts. The pointer is the whole affordance — a button inside a `th` would bring
+   its own box model into a table whose columns are measured to the pixel.
+
+   Written as `.grid thead th.sortable` rather than as a bare class because the rule above paints
+   the heading's background: a bare `.sortable:hover` is the weaker selector and would never show. */
+.grid thead th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.grid thead th.sortable:hover {
+  background: var(--hover-bg);
+}
+
+/* Small and half-lit: it marks the one sorted column, and at full weight it would read as more
+   important than the name beside it. */
+.sortMark {
+  margin-left: 0.3rem;
+  font-size: 0.75em;
+  opacity: 0.6;
+}
+
 .grid tbody tr:hover {
   background: var(--hover-bg);
 }

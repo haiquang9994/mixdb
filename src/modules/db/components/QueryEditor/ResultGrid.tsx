@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   displayValue,
   gridStyle,
@@ -6,6 +6,8 @@ import {
   useVirtualRows,
   widestValues,
 } from "../../../../core/virtualRows";
+import { useTranslation } from "../../../../i18n";
+import { nextSort, viewIndexes, type Sort } from "./resultView";
 import styles from "./QueryEditor.module.css";
 
 /** How long a cell value has to be before it is worth a tooltip. Cells are cut off at 320px, which
@@ -73,7 +75,8 @@ function measureLayout(
 
 interface RowProps {
   row: unknown[];
-  /** Where this row sits in the whole set, which is what the `#` column counts. */
+  /** Where this row sits in the result the server sent — which is what the `#` column counts, and
+   *  what it goes on counting once the grid is sorted. */
   index: number;
   columns: string[];
 }
@@ -116,9 +119,6 @@ interface Props {
   /** Positional, the way the backend sends them — an arbitrary SELECT may name the same column
    *  twice, and only a positional row keeps the two apart. */
   rows: unknown[][];
-  /** What is said in place of the rows when there are none. Passed in rather than translated here,
-   *  so this file has nothing to say about language. */
-  emptyLabel: string;
 }
 
 /**
@@ -132,19 +132,30 @@ interface Props {
  *
  * Below that many rows none of it applies and the table sizes itself, as it used to.
  */
-function ResultGrid({ columns, rows, emptyLabel }: Props) {
+function ResultGrid({ columns, rows }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
   /** The measured columns, or null while the table is sizing itself — a small result, or the first
    *  frame of a large one. */
   const [layout, setLayout] = useState<GridLayout | null>(null);
 
-  const total = rows.length;
+  const { t } = useTranslation();
+  const [sort, setSort] = useState<Sort | null>(null);
+
+  /** Which rows are on screen and in what order, as indexes into `rows`. See `resultView.ts` for
+   *  why this is a list of indexes and never a list of rows. */
+  const view = useMemo(() => viewIndexes(rows, sort, ""), [rows, sort]);
+
+  const total = view.length;
   const virtual = total >= VIRTUAL_FROM;
   const window = useVirtualRows(scrollRef, { total, rowHeight: ROW_HEIGHT, enabled: virtual });
 
   // Measured before the browser paints, so the first thing shown is already the fixed layout: a
   // frame of self-sized columns followed by a frame of measured ones would be a visible flinch.
+  //
+  // Measured from `rows`, not from `view`: a column is as wide as the data in it, not as wide as
+  // whatever is being looked at. Measuring the view would make the columns twitch under the pointer
+  // on every keystroke in the filter box added in the next task.
   useLayoutEffect(() => {
     if (!virtual) {
       setLayout(null);
@@ -159,9 +170,9 @@ function ResultGrid({ columns, rows, emptyLabel }: Props) {
   // means nothing to it.
   useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [columns, rows]);
+  }, [columns, rows, sort]);
 
-  const visible = rows.slice(window.first, window.last);
+  const visible = view.slice(window.first, window.last);
   const spacerSpan = columns.length + 1;
 
   return (
@@ -192,11 +203,36 @@ function ResultGrid({ columns, rows, emptyLabel }: Props) {
         <thead>
           <tr>
             <th className={styles.rowNumber}>#</th>
-            {columns.map((column, c) => (
+            {columns.map((column, c) => {
               // Keyed by position: an arbitrary SELECT may well name the same column twice, which
               // is also why the rows are positional.
-              <th key={c}>{column}</th>
-            ))}
+              const active = sort?.column === c ? sort.direction : null;
+              const next = nextSort(sort, c);
+              return (
+                <th
+                  key={c}
+                  className={styles.sortable}
+                  aria-sort={
+                    active === "asc" ? "ascending" : active === "desc" ? "descending" : "none"
+                  }
+                  title={
+                    next === null
+                      ? t("query.sortNone")
+                      : t(next.direction === "asc" ? "query.sortAsc" : "query.sortDesc", { column })
+                  }
+                  onClick={() => setSort(next)}
+                >
+                  {column}
+                  {/* Only on the column that is sorted. An arrow on every heading is twenty arrows
+                      saying nothing, and the width they take is width the values do not get. */}
+                  {active !== null && (
+                    <span className={styles.sortMark} aria-hidden="true">
+                      {active === "asc" ? "▲" : "▼"}
+                    </span>
+                  )}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
@@ -205,13 +241,10 @@ function ResultGrid({ columns, rows, emptyLabel }: Props) {
               <td colSpan={spacerSpan} />
             </tr>
           )}
-          {visible.map((row, i) => (
-            <ResultRow
-              key={window.first + i}
-              row={row}
-              index={window.first + i}
-              columns={columns}
-            />
+          {visible.map((index) => (
+            // Keyed by where the row sits in the result rather than by where it sits on screen, so
+            // a sort moves the rows about instead of rebuilding every one of them.
+            <ResultRow key={index} row={rows[index]} index={index} columns={columns} />
           ))}
           {virtual && (
             <tr className={styles.spacer} style={{ height: window.padBottom }} aria-hidden="true">
@@ -220,7 +253,7 @@ function ResultGrid({ columns, rows, emptyLabel }: Props) {
           )}
         </tbody>
       </table>
-      {total === 0 && <p className={styles.noRows}>{emptyLabel}</p>}
+      {total === 0 && <p className={styles.noRows}>{t("query.noRows")}</p>}
     </div>
   );
 }

@@ -131,11 +131,7 @@ function QueryResults({ results, error, limitsAdded, limit, statementsSent }: Pr
                 // The grid is its own component and its own memo: past a few dozen rows it holds
                 // only the rows on screen, and how it works out which those are is a fair amount of
                 // machinery to keep out of the way of everything else in this file.
-                <ResultGrid
-                  columns={result.columns}
-                  rows={result.rows}
-                  emptyLabel={t("query.noRows")}
-                />
+                <ResultGrid columns={result.columns} rows={result.rows} />
               )}
             </div>
           </section>
