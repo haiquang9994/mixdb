@@ -6,6 +6,10 @@
  * quietly wrong and impossible to see wrong on screen — can be tested on its own.
  */
 
+// Renamed on the way in because this file exports a `csvText` of its own — same name, and rows of a
+// different shape.
+import { csvText as csvGridText, tsvText } from "../../../../core/gridText";
+
 /** A name as it goes into a statement: backticks, with any backtick inside doubled. That is MySQL's
  *  own way of writing a name that holds one, and a table or column can hold one. */
 export function quoteIdentifier(name: string): string {
@@ -144,58 +148,22 @@ export function insertStatements(
 }
 
 /**
- * What separates one cell from the next in each of the two table formats: a tab for what goes
- * straight into a spreadsheet's cells, a comma for what is saved as a `.csv`.
+ * The two delimited formats, on rows keyed by column name.
  *
- * Both are the same shape of text — the difference is only where they are going. Pasting into an
- * open spreadsheet, tabs land in cells without a word about delimiters; a CSV file is read back by
- * everything, but which character a spreadsheet takes as the separator when *opening* one depends
- * on where the machine thinks it is, which is why a paste is not sent as CSV.
+ * The work is in `core/gridText.ts`, which speaks positional rows — the form that survives a result
+ * naming the same column twice. This grid never has that problem, since it is showing one table and
+ * a table's columns are distinct, so the map down is a plain lookup per column.
  */
-const TAB_SEPARATOR = "\t";
-const COMMA_SEPARATOR = ",";
-
-/** CRLF rather than a bare newline: it is what Excel writes itself, what RFC 4180 asks for, and
- *  what every other spreadsheet reads. */
-const ROW_SEPARATOR = "\r\n";
-
-/**
- * One cell of either format.
- *
- * NULL becomes an empty cell — neither format has another way of saying "nothing here", and the
- * word NULL in it would be text somebody has to clear out of a hundred cells by hand.
- *
- * A value holding the separator, a line break or a quote would otherwise break itself into columns
- * or rows of its own. Wrapped in quotes, with its own quotes doubled, it arrives as the single cell
- * it is — the escaping both formats share.
- */
-function delimitedCell(value: unknown, separator: string): string {
-  if (value === null || value === undefined) return "";
-  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
-  const risky = text.includes(separator) || /["\r\n]/.test(text);
-  return risky ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-/** `rows` as a table of text, the column names along the top — without them a copy of six columns
- *  out of forty is six columns of unlabelled numbers. */
-function delimitedText(
-  columns: string[],
-  rows: Record<string, unknown>[],
-  separator: string,
-): string {
-  const lines = [columns.map((c) => delimitedCell(c, separator)).join(separator)];
-  for (const row of rows) {
-    lines.push(columns.map((c) => delimitedCell(row[c], separator)).join(separator));
-  }
-  return lines.join(ROW_SEPARATOR);
+function positional(columns: string[], rows: Record<string, unknown>[]): unknown[][] {
+  return rows.map((row) => columns.map((c) => row[c]));
 }
 
 /** `rows` as the tab-separated text a spreadsheet pastes into cells. */
 export function spreadsheetText(columns: string[], rows: Record<string, unknown>[]): string {
-  return delimitedText(columns, rows, TAB_SEPARATOR);
+  return tsvText(columns, positional(columns, rows));
 }
 
 /** `rows` as CSV, for saving to a file rather than pasting into an open sheet. */
 export function csvText(columns: string[], rows: Record<string, unknown>[]): string {
-  return delimitedText(columns, rows, COMMA_SEPARATOR);
+  return csvGridText(columns, positional(columns, rows));
 }
