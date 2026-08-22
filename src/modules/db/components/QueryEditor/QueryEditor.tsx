@@ -148,6 +148,9 @@ function QueryEditor({
   /** How many statements of the last run were sent with a `LIMIT` they were not written with, so
    *  the results can say so instead of quietly showing fewer rows than were asked for. */
   const [limitsAdded, setLimitsAdded] = useState(0);
+  /** How many statements the last run was split into. Held rather than counted from the results,
+   *  because the point of it is the case where the two differ. */
+  const [statementsSent, setStatementsSent] = useState(0);
   /** A run held up by the confirmation below: the text as it would be sent, and what is alarming
    *  about it. Null when nothing is waiting to be confirmed. */
   const [pending, setPending] = useState<{ text: string; writes: UnguardedWrite[] } | null>(null);
@@ -457,6 +460,7 @@ function QueryEditor({
     // gets one, and the results say how many statements that happened to.
     const { sql: sent, added } = withAutoLimits(text, statements, AUTO_LIMIT, dialect);
     setLimitsAdded(added);
+    setStatementsSent(statements.length);
 
     const startedAt = Date.now();
     // Remembered as the user wrote it, not as it was sent: a `LIMIT` MixDB added is not part of
@@ -771,6 +775,7 @@ function QueryEditor({
               error={error}
               limitsAdded={limitsAdded}
               limit={AUTO_LIMIT}
+              statementsSent={statementsSent}
             />
             {running && (
               <LoadingOverlay label={cancelling ? t("query.cancelling") : t("query.running")} />

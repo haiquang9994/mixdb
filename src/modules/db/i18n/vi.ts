@@ -334,6 +334,11 @@ const dbVi: DbDict = {
     unguardedDropUnnamed: "{{verb}} này xoá luôn thứ nó nhắm tới và mọi thứ bên trong. Ở đây không có gì lấy lại được.",
     unguardedManyMixed: "{{n}} câu lệnh, mỗi câu xoá hoặc ghi đè trọn vẹn thứ nó nhắm tới: {{list}}.",
     unguardedConfirm: "Vẫn chạy",
+    // Trên phần kết quả, khi script có từ hai câu lệnh trở lên: đã chạy mấy câu, và máy chủ tốn bao
+    // lâu cho tất cả. Một câu lệnh lỗi làm dừng những câu sau nó, và không có dòng này thì một
+    // script bị chặn giữa chừng trông y hệt một script chạy xong.
+    scriptSummary: "{{n}} / {{m}} câu lệnh · {{ms}} ms",
+    scriptSummaryAll: "{{m}} câu lệnh · {{ms}} ms",
     // Nói ra khi script được gửi đi kèm một mức trần mà nó không tự viết.
     limitAdded: "Đã thêm LIMIT {{limit}} vào {{n}} câu lệnh trong số này. Hãy tự viết LIMIT nếu muốn mức khác.",
     // Câu truy vấn đã lưu, gõ tên là gợi ý lại.

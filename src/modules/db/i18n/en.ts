@@ -343,6 +343,11 @@ const dbEn = {
     unguardedDropUnnamed: "This {{verb}} removes what it names and everything in it. Nothing here can put it back.",
     unguardedManyMixed: "{{n}} statements each remove or rewrite the whole of what they name: {{list}}.",
     unguardedConfirm: "Run it",
+    // Above the results when a script held more than one statement: how many of them ran, and what
+    // the server spent on them altogether. A statement that fails stops the ones after it, and
+    // without this line a script cut short reads exactly like a script that finished.
+    scriptSummary: "{{n}} of {{m}} statements · {{ms}} ms",
+    scriptSummaryAll: "{{m}} statements · {{ms}} ms",
     // Said when the script was sent with a ceiling it was not written with.
     limitAdded: "A LIMIT of {{limit}} was added to {{n}} of these statements. Write your own LIMIT to ask for something else.",
     // Saved queries, offered back by name as the editor is typed in.
