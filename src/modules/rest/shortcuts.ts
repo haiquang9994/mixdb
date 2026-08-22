@@ -13,8 +13,18 @@ export const REST_SHORTCUTS: ShortcutGroup[] = [
     labelKey: "rest.shortcutScope",
     defs: [
       /* No `whenTyping: "ignore"`: sending from inside the body editor is the whole reason this
-         chord exists, and a body is a textarea. */
-      { id: "rest.send", chord: { key: "enter" }, labelKey: "rest.shortcutSend" },
+         chord exists, and a body is a textarea.
+
+         `Ctrl/Cmd+R` sends as well, as an alias rather than a chord of its own — it is the same
+         gesture spelled the other way round, and the key is free here: `pane.reload` is registered
+         by panes that carry a reload button and a REST pane carries none, while `App.tsx` already
+         keeps the webview from acting on it. */
+      {
+        id: "rest.send",
+        chord: { key: "enter" },
+        alias: [{ key: "r" }],
+        labelKey: "rest.shortcutSend",
+      },
       { id: "rest.newRequest", chord: { key: "n" }, labelKey: "rest.shortcutNewRequest" },
       /* Shares `Ctrl/Cmd+W` with the shell's `app.closeTab`. `decide()` resolves a clash in favour
          of whichever handler started listening last, which is this one — and it is registered only

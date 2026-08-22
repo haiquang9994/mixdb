@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { decide, type Press } from "../core/shortcuts";
 import { ALL_SHORTCUTS, MODULE_TAB_SHORTCUTS, newModuleTabId } from "./shortcuts";
 import { MODULES } from "./registry";
 
@@ -32,5 +33,39 @@ describe("MODULE_TAB_SHORTCUTS", () => {
       .filter((def) => /^[1-9]$/.test(def.chord.key))
       .map((def) => def.chord.key);
     expect(new Set(chords).size).toBe(chords.length);
+  });
+});
+
+/* `Ctrl/Cmd+R` is written down twice — as `pane.reload` in this file, and as an alias of
+   `rest.send` in the REST module — and which of the two a press means is settled against the one
+   assembled catalogue. That is what is worth pinning: either def moving is a change to the
+   other. */
+describe("Ctrl/Cmd+R", () => {
+  const pressR: Press = {
+    key: "r",
+    shift: false,
+    alt: false,
+    mod: true,
+    ctrlOnly: true,
+    typing: false,
+  };
+
+  it("sends the request while a REST tab is listening", () => {
+    const ctx = { modalDepth: 0, enabled: ["rest.send"] };
+    expect(decide(pressR, ALL_SHORTCUTS, ctx)).toEqual({ do: "run", id: "rest.send" });
+  });
+
+  // Sending from inside the body editor is the whole point of the chord this aliases.
+  it("sends from where the request is being typed", () => {
+    const ctx = { modalDepth: 0, enabled: ["rest.send"] };
+    expect(decide({ ...pressR, typing: true }, ALL_SHORTCUTS, ctx)).toEqual({
+      do: "run",
+      id: "rest.send",
+    });
+  });
+
+  it("still reloads the pane everywhere else", () => {
+    const ctx = { modalDepth: 0, enabled: ["pane.reload"] };
+    expect(decide(pressR, ALL_SHORTCUTS, ctx)).toEqual({ do: "run", id: "pane.reload" });
   });
 });
