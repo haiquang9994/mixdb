@@ -45,6 +45,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 - Ctrl/Cmd+R sends the open REST request, the same as Ctrl/Cmd+Enter.
 
+### Fixed
+
+- Opening a terminal tab on Windows no longer flashes up a console window.
+
 ## [0.0.14] - 2026-08-22
 
 ### Added
