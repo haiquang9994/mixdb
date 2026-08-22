@@ -41,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.15] - 2026-08-22
+
 ### Added
 
 - Ctrl/Cmd+R sends the open REST request, the same as Ctrl/Cmd+Enter.
