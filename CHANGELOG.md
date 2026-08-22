@@ -41,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.14] - 2026-08-22
+
 ### Added
 
 - A Terminal tab opens a shell on this machine — PowerShell, Command Prompt, Git Bash, WSL, your login shell — or on a server over SSH, with saved hosts whose passwords stay in the OS credential store.

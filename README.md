@@ -11,7 +11,7 @@ MixDB là ứng dụng desktop (Tauri 2 + React 19 + TypeScript) đóng vai trò
 
 ## Trạng thái hiện tại
 
-Phiên bản mới nhất: **0.0.13** (2026-08-19). Xem [CHANGELOG.md](CHANGELOG.md) để biết chi tiết từng bản; những điểm đáng chú ý gần đây:
+Phiên bản mới nhất: **0.0.14** (2026-08-22). Xem [CHANGELOG.md](CHANGELOG.md) để biết chi tiết từng bản; những điểm đáng chú ý gần đây:
 
 - Query tab là một trình soạn SQL thật: format (`Ctrl+Shift+F`), tìm/thay thế (`Ctrl+F`), `F8` duyệt lỗi, `Ctrl+Click` tên bảng để mở dữ liệu.
 - Câu lệnh nguy hiểm (`UPDATE`/`DELETE`/`TRUNCATE` không có điều kiện, `DROP`, `ALTER` làm mất dữ liệu) sẽ hỏi lại; `SELECT` không có `LIMIT` được tự thêm trần 10.000 dòng.
