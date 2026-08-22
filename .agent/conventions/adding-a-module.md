@@ -1,7 +1,8 @@
 # Adding a module
 
-A module is one kind of thing a tab can hold. Today there is one, `db`. A REST client or a terminal
-would be another.
+A module is one kind of thing a tab can hold. There are three — `db`, `rest` and `terminal` — and
+the steps below are what each of them did. Read the newest one alongside this: `terminal` is the
+module that has been through the fewest changes of mind.
 
 The shell knows only what [`src/shell/module.ts`](../../src/shell/module.ts) declares, so a module
 is a folder plus a line in the registry — see [overview](../architecture/overview.md) for why the
@@ -91,9 +92,16 @@ Get-ChildItem -Recurse src/shell,src/i18n -Include *.ts,*.tsx | Select-String "m
 Expected: only `src/shell/registry.ts` and `src/i18n/dicts.ts` — the two places a module is joined
 to the app, one line per module in each.
 
-## Two things the second module will exercise first
+## What the second and third modules found
 
-- **The `[+]` menu.** With one module the button opens a tab outright; the menu branch in
-  `shell/App.tsx` is written but has never run. Check it.
-- **`shell/registry.ts` naming two modules.** Everything else about the split has been exercised by
-  `db`; this has not.
+All three are settled now, and all three are worth knowing before adding a fourth:
+
+- **The `[+]` menu.** With one module the button opens a tab outright; with more it opens a menu.
+  Both branches are live in `shell/App.tsx`.
+- **Shortcuts are contributed, not registered centrally.** A module's chords go in
+  `src/modules/<id>/shortcuts.ts` and reach the dispatcher through `ModuleDefinition.shortcuts`;
+  `src/core/shortcuts/` may not import from `shell/` or `modules/` at all. See
+  [frontend](../architecture/frontend.md).
+- **Secrets and `ssh/` are shared, host lists are not.** The terminal keeps its own saved hosts
+  rather than reaching into the database module's — two modules wanting the same *shape* is not two
+  modules wanting the same *data*.

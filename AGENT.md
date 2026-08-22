@@ -7,11 +7,15 @@ relevant file there before changing anything in that area.
 
 MixDB is a desktop app built with **Tauri 2 + React 19 + TypeScript** (frontend) and **Rust**
 (backend). It is a **shell** — a tab bar, keyboard shortcuts and a Settings dialog — plus one
-**module** per kind of thing a tab can hold. Today there is one module, `db`: MySQL, PostgreSQL,
-MongoDB and Redis connections, optionally through an SSH tunnel, with saved connections remembered.
+**module** per kind of thing a tab can hold. There are three:
 
-The shell knows nothing about databases. Adding a module (a REST client, a terminal) is a folder
-under `src/modules/` and a line in `src/shell/registry.ts` — see
+- **`db`** — MySQL, PostgreSQL, MongoDB and Redis connections, optionally through an SSH tunnel,
+  with saved connections remembered.
+- **`rest`** — an HTTP client: saved requests, environments, history, and a response pane.
+- **`terminal`** — a shell on this machine or on a server over SSH, with saved hosts.
+
+The shell knows nothing about any of them. Adding a fourth is a folder under `src/modules/` and
+a line in `src/shell/registry.ts` — see
 [.agent/conventions/adding-a-module.md](.agent/conventions/adding-a-module.md).
 
 ## Commands
@@ -54,17 +58,29 @@ src/                 React frontend
     components/      This module's own components
     i18n/            This module's own strings
     db.css  types.ts Its global styles; the types mirroring the Rust models
+  modules/rest/      The REST client
+    RestTab.tsx      Sidebar of saved requests + the request being edited
+    api.ts           The only invoke calls here: rest_send, rest_cancel, secrets_*
+    *.ts  *.test.ts  The pure halves — building a request, interpolating, parsing a paste
+    components/  i18n/  rest.css
+  modules/terminal/  The terminal
+    TerminalTab.tsx  Target form -> a session -> xterm
+    api.ts           terminal_open/write/resize/close, the shell list, and the events Channel
+    components/  i18n/  terminal.css
 src-tauri/src/       Rust backend
   lib.rs             Tauri builder; each module registers its own state
-  error.rs  secrets.rs  ssh/    Shared by every module
+  error.rs  secrets.rs  ssh/    Shared by every module (the tunnel and open_shell both live in ssh/)
   modules/
     mod.rs           handler() — every command of every module, one block each
     db/              commands/, drivers/, models.rs, state.rs
+    rest/            commands.rs, models.rs, state.rs
+    terminal/        commands.rs, local.rs, remote.rs, stream.rs, models.rs, state.rs
 ```
 
 ## Rules that matter most
 
-- **Frontend never talks to a database.** It calls `invoke(...)` through a per-database `api.ts`.
+- **Frontend never touches a network or a disk.** No driver, no HTTP request, no shell: it calls
+  `invoke(...)` through its module's `api.ts` and renders what comes back.
 - **Nothing outside `src/modules/<id>/` knows that module's concepts.** No file in `shell/`,
   `core/`, `components/`, `icons/` or `i18n/` may import from `modules/`, with exactly two
   exceptions — `shell/registry.ts` and `i18n/dicts.ts`, the two places a module is joined to the

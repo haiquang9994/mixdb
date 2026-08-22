@@ -8,19 +8,24 @@ React webview                              Rust process
 ─────────────                              ────────────
 shell/App.tsx    tab bar, no module        lib.rs           plugins, per-module state
   └─ registry ──► modules/db/DbTab.tsx     modules/mod.rs   handler(): every command
-        └─ <db>/api.ts ──invoke──────────► modules/db/commands/<engine>.rs
-                       ◄─JSON result─────    └─► drivers/{mysql,postgres,mongo,redis}.rs ──► server
-                                             └─► ssh/ (optional hop, shared)
+  │     └─ <db>/api.ts ──invoke─────────► modules/db/commands/<engine>.rs
+  │                    ◄─JSON result────    └─► drivers/{mysql,postgres,mongo,redis}.rs ──► server
+  ├─────────────► modules/rest/RestTab.tsx
+  │     └─ rest/api.ts ──invoke─────────► modules/rest/commands.rs ──► reqwest ──► host
+  └─────────────► modules/terminal/TerminalTab.tsx
+        └─ terminal/api.ts ──invoke─────► modules/terminal/commands.rs
+                     ◄─Channel bytes────    └─► local.rs (pty) / remote.rs ──► ssh/
+                                          ssh/ — tunnel and shell, shared by db and terminal
 ```
 
-The split is strict: **no database driver, credential handling or network call exists in the
+The split is strict: **no driver, credential handling, HTTP request or shell exists in the
 frontend**. The webview only ever sends a command name plus JSON arguments and renders what comes
-back.
+back — bar the terminal, whose output arrives on a Tauri `Channel` because a shell talks first.
 
 ## The shell and its modules
 
-Above database sits a module layer. The shell owns the tab bar, the keyboard shortcuts and the
-Settings dialog, and knows only what [`shell/module.ts`](../../src/shell/module.ts) declares:
+The shell owns the tab bar, the keyboard shortcuts and the Settings dialog, and knows only what
+[`shell/module.ts`](../../src/shell/module.ts) declares:
 
 - `ModuleDefinition` — an id, an icon, a label, and the component a tab renders.
 - `ModuleTabProps` — what that component is handed: `active`, `onTitleChange`, `onBadgesChange`.
@@ -72,6 +77,14 @@ it in `DbState.connections`.
    from an unmount cleanup — closing a tab is a disconnect, and the backend hears about it no
    other way.
 
+The other two modules keep state of their own, each behind its own struct and never meeting
+`DbState`. `RestState` holds a `reqwest::Client` per `(follow_redirects, accept_invalid_certs)` pair
+— cloned out, so the second request to a host skips the TLS handshake — and a `CancellationToken`
+per send in flight, which is what `rest_cancel` looks up. `TerminalState` holds a `Session` per
+open tab: the two channels a shell is written to and resized through, plus a token whose `Drop`
+kills the shell, so no path can leak one. Neither has a lifecycle the shell knows about; both are
+undone by the tab unmounting and calling the module's own close command.
+
 Redis is the one kind whose handle reconnects itself: it goes through a `ConnectionManager`, since
 a desktop client idles long enough for a server's `timeout` to close the socket underneath it. The
 selected database is therefore part of the connection info rather than a `SELECT` sent by hand —
@@ -105,7 +118,16 @@ Mongo is configured as a single connection string, not host/port/user/password �
 - **Query history, drafts and snippets** — `tauri-plugin-store`, one file each
   (`query-history.json`, `query-drafts.json`, `query-snippets.json`). The database module's, like
   the connections: a module picks its own store files, and nothing generalises persistence.
+- **The REST module's own files** — `rest-workspace.json` (the sidebar's collections and the open
+  requests), `rest-history.json`, `rest-environments.json`. Same split as the connections: an
+  environment variable marked secret lives in the credential store, not in the file.
+- **The terminal's own files** — `terminal-hosts.json` (a saved SSH host without its secrets) and
+  `terminal-settings.json` (font, scrollback, cursor, default shell). The host's password and key
+  passphrase go through the same `secrets_*` commands.
 - **Theme** (`mixdb-theme`) and **language** (`mixdb-lang`) — `localStorage`, not the store.
+
+Every one of those files is the module's own. There is no shared persistence layer to add a key to,
+and adding one would be the first thing that made two modules care what the other keeps.
 
 ## Security posture
 
@@ -113,13 +135,19 @@ Mongo is configured as a single connection string, not host/port/user/password �
 accepted and its SHA-256 fingerprint written to `known_hosts.json` in the app data directory, and
 a later connection offering a different key is refused with both fingerprints in the message. Its
 own file, not OpenSSH's `~/.ssh/known_hosts`. Accepting a rebuilt server's new key means deleting
-its entry there.
+its entry there. Both ways in go through it: `open_tunnel` for a database behind a hop, and
+`open_shell` for a terminal tab, which is why the file is the app's rather than the database
+module's.
 
-One deliberate tradeoff, marked in the code:
+Two deliberate tradeoffs, marked in the code:
 
 - `drivers/mysql.rs` runs user-authored SQL through `sqlx::AssertSqlSafe`, opting out of sqlx's injection
   guard. This is a database client — arbitrary SQL is the product, not a bug. Identifiers the app
   itself interpolates (database/table/column names) still go through `quote_ident`.
+- `rest_send` will accept an invalid certificate, and will send to any host, when the request asks
+  it to. This is an HTTP client — talking to a server with a self-signed certificate is a thing it
+  is for. The setting is per request, off unless it was turned on, and the client built for it is
+  kept apart from the ordinary one by `RestState`'s key.
 
 The webview itself runs under a CSP (`app.security.csp`, with a looser `devCsp` for Vite's HMR):
 everything loads from `'self'`, and `script-src` allows no inline script — which is why the theme

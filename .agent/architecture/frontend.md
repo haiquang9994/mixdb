@@ -6,8 +6,8 @@ local `useState` plus the i18n context, with the theme and accent hooks persisti
 
 ## Entry path
 
-`main.tsx` → `I18nProvider` → `shell/App` (tab bar) → the registry's module → `modules/db/DbTab`
-(form, then workspace).
+`main.tsx` → `I18nProvider` → `shell/App` (tab bar) → the module the tab names in the registry →
+`modules/db/DbTab` (form, then workspace), `modules/rest/RestTab` or `modules/terminal/TerminalTab`.
 
 ## The shell and its modules
 
@@ -21,9 +21,16 @@ Four directories, and the rule that separates them:
 | `modules/<id>/` | Everything about one module, including its own components, i18n and global CSS | anything above |
 
 Something earns a place in `core/` or `components/` when **(a)** it contains no module's concepts
-and **(b)** another module would have a real use for it. `JsonView` passes — a read-only JSON
-viewer with no BSON in it, which a REST client will want for a response body. `FilterBar` does not,
-despite the general-sounding name: it is built from the SQL and Mongo operator lists.
+and **(b)** another module would have a real use for it. `JsonView` passed on that argument and has
+since made good on it — a read-only JSON viewer with no BSON in it, now drawing the REST response
+body as well as a Mongo document. `TabStrip` is the same story from the other end: it was three
+drifted copies of one set of rules — the app's tab bar, the REST module's open requests, the strips
+inside a REST pane — before it became one component here. `FilterBar` does not qualify, despite
+the general-sounding name: it is built from the SQL and Mongo operator lists.
+
+Extracting **after** the second use exists rather than in anticipation of it is the pattern: the
+drift between the copies is what shows which parts were essential. `Splitter` is the exception that
+proves it — a primitive with one user so far, kept here because nothing in it knows what it splits.
 
 The contract itself is [`shell/module.ts`](../../src/shell/module.ts) — `ModuleDefinition`,
 `ModuleTabProps`, `TabBadge`, `ModuleSettingsSection` — and it deliberately has no lifecycle hooks,
@@ -55,6 +62,26 @@ connection was made.
 matching `.kind-<kind>` colours in `src/modules/db/db.css`, a branch in its workspace switch, the
 new folder, and the backend side (see [backend.md](backend.md)).
 
+## The other two modules
+
+`modules/rest/` and `modules/terminal/` follow the same shape as `modules/db/`, one level flatter
+because neither has a kind:
+
+| File | Role |
+| --- | --- |
+| `<id>/api.ts` | **The only place `invoke` is called** for that module. |
+| `<id>/<Name>Tab.tsx` | What the shell renders: `RestTab` is a sidebar plus the request being edited, `TerminalTab` is a target form that becomes a session. |
+| `<id>/types.ts` | The types mirroring the Rust models. |
+| `<id>/*.ts` + `*.test.ts` | The pure halves, and the reason `npm test` says anything at all: building a request, interpolating a variable, parsing a pasted cURL, the shell list, the key table. |
+| `<id>/*Store.ts` | One store file each, loaded lazily and shared through `useSyncExternalStore`. |
+| `<id>/shortcuts.ts` | The chords the module contributes, collected by `shell/shortcuts.ts`. |
+| `<id>/i18n/` + `<id>.css` | Its own dictionary halves and its own global stylesheet. |
+
+The terminal is the one module whose backend talks first: `api.ts` hands `terminal_open` a Tauri
+`Channel`, and everything the shell prints arrives on it rather than as a return value. **Its
+comments are written in Vietnamese**, as its Rust half is; every other part of the frontend writes
+them in English. Follow whichever the file you are in already uses.
+
 ## Components
 
 `<Name>/` with `<Name>.tsx`, `<Name>.module.css`, `index.ts`, under `src/components/` if it is a
@@ -64,13 +91,18 @@ file. See [component-structure](../conventions/component-structure.md) and
 
 - **`src/components/`** — `Button`, `Input` (+`Textarea`), `Select`, `ItemList`, `Pagination`,
   `ActionBar`, `ErrorBanner`, `LoadingOverlay`, `ConfirmDialog`, `NameDialog`, `ContextMenu`,
-  `Tooltip`, `JsonView`, plus `dialogMotion` and `contextMenuPosition`.
+  `Tooltip`, `JsonView`, `TabStrip`, `Splitter`, plus `dialogMotion` and `contextMenuPosition`.
 - **`src/shell/components/`** — `GlassFilter`, `SettingsModal`, `UpdateToast`: the shell's own.
 - **`src/modules/db/components/`** — the grids (`SqlTable`, `NoSqlTable`), the document views
   (`Document`, `DocumentNode`), the Redis views, `QueryEditor`, `SqlEditor`, `TableStructure`, the
   dialogs, `FilterBar`, `TransferOverlay`, and `ToolsSection` — which the shell's Settings dialog
   renders through `ModuleDefinition.settings`, since a dump tool is `mysqldump`, not an app
   setting.
+- **`src/modules/rest/components/`** — `UrlBar`, `RequestList`, `RequestTabs`, the request panes
+  (`AuthPane`, `BodyEditor`, `KeyValueTable`, `MultipartTable`), the response side (`ResponsePane`,
+  `ResponseStatusBar`, `HexView`, `HtmlPreview`, `TreeView`), the dialogs, and `RestSettings`.
+- **`src/modules/terminal/components/`** — `TargetForm`, `TerminalView` (the xterm host),
+  `SearchBar`, `TerminalSettings`.
 
 ### `Ctrl+R` belongs to the pane, not to the app
 
