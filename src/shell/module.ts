@@ -27,8 +27,11 @@ export interface TabBadge {
 }
 
 export interface ModuleTabProps {
-  /** Whether this is the tab on screen. Every other one stays mounted behind it, so the panes
-   *  below need telling which of them a keyboard shortcut is meant for. */
+  /** Whether this is the tab on screen. Every tab that has been on screen once stays mounted
+   *  behind it, so the panes below need telling which of them a keyboard shortcut is meant for.
+   *  (A tab restored from the last session has not been on screen yet and is not mounted at all —
+   *  see `shell/session.ts`. Nothing a module writes can tell the difference: its first render is
+   *  its first render either way.) */
   active: boolean;
   onTitleChange: (title: string) => void;
   onBadgesChange: (badges: TabBadge[]) => void;

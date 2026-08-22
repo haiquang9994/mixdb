@@ -53,6 +53,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - A read that died with the connection is run again once, after the tunnel has been opened back up. Writes are never repeated.
 - A tunnel that dropped holds its own tab until it is back, offering to try again or to disconnect.
 - Ctrl+Tab moves to the next tab and Ctrl+Shift+Tab to the previous one, wrapping round both ends.
+- MixDB reopens with the tabs that were on the strip when it was last closed. Only the tab that was active comes back open; the rest wait until you pick them.
 
 ## [0.0.13] - 2026-08-19
 

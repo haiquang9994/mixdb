@@ -12,6 +12,7 @@ import { useAccent, useGlass, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
 import { useTranslation } from "../i18n";
 import type { TabBadge } from "./module";
+import { readSession, writeSession } from "./session";
 import { rebadgeTab, retitleTab, tabIdAtOffset, type TabInfo } from "./tabs";
 import { DEFAULT_MODULE_ID, MODULES, moduleById } from "./registry";
 import { ALL_SHORTCUTS, MODULE_TAB_SHORTCUTS } from "./shortcuts";
@@ -28,8 +29,20 @@ function App() {
     return { id: crypto.randomUUID(), moduleId, title: t(def.defaultTitleKey), badges: [] };
   }
 
-  const [tabs, setTabs] = useState<TabInfo[]>([newTab()]);
-  const [activeId, setActiveId] = useState(tabs[0].id);
+  /* What was open when the app was last closed, read once on the way up. Only the strip comes
+     back: a restored tab carries its old name and nothing else, and the module behind it starts
+     from its own front door — see `shell/session.ts`. */
+  const [restored] = useState(readSession);
+  const [tabs, setTabs] = useState<TabInfo[]>(() =>
+    // Badges are never stored; the module reports its own the moment it mounts.
+    restored ? restored.tabs.map((tab) => ({ ...tab, badges: [] })) : [newTab()],
+  );
+  const [activeId, setActiveId] = useState(() => restored?.activeId ?? tabs[0].id);
+  /* The tabs that have been in front at least once this launch — the only ones rendered.
+     Restoring six tabs by mounting six panes would open six connection forms and start six
+     shells at launch, for tabs the user may never come back to; the rest of them sit on the strip
+     and wait, and mount the first time they are looked at. */
+  const [mounted, setMounted] = useState<string[]>(() => [activeId]);
   const [theme, setTheme] = useTheme();
   const [accent, setAccent] = useAccent();
   const [glass, setGlass] = useGlass();
@@ -65,6 +78,7 @@ function App() {
       const next = prev.filter((t) => t.id !== id);
       return next.length > 0 ? next : [newTab()];
     });
+    setMounted((prev) => prev.filter((mountedId) => mountedId !== id));
   }
 
   function renameTab(id: string, title: string) {
@@ -81,6 +95,20 @@ function App() {
     if (!tabs.some((t) => t.id === activeId)) {
       setActiveId(tabs[tabs.length - 1].id);
     }
+  }, [tabs, activeId]);
+
+  // Whatever is in front is mounted, and stays mounted for the rest of the launch — every pane in
+  // the app is written on the understanding that leaving a tab does not throw its state away.
+  useEffect(() => {
+    setMounted((prev) => (prev.includes(activeId) ? prev : [...prev, activeId]));
+  }, [activeId]);
+
+  /* Written as it changes rather than on the way out: a desktop app is closed by the window
+     manager, by a crash, or by an update restarting it, and only the first of those would ever
+     reach a handler. Badge changes bring this round too — they cost a `JSON.stringify` of three
+     fields per tab, which is cheaper than working out whether they mattered. */
+  useEffect(() => {
+    writeSession(tabs, activeId);
   }, [tabs, activeId]);
 
   useEffect(() => {
@@ -188,7 +216,9 @@ function App() {
       )}
 
       <div className="tab-content">
-        {tabs.map((tab) => {
+        {/* Only the tabs that have been looked at. One restored from the last session is drawn on
+            the strip above and has no pane down here until it is picked. */}
+        {tabs.filter((tab) => mounted.includes(tab.id)).map((tab) => {
           const { Tab } = moduleById(tab.moduleId);
           return (
             <div

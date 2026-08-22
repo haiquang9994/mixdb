@@ -27,7 +27,9 @@ contract is as small as it is.
 
 2. **The tab component** takes `ModuleTabProps` — `active`, `onTitleChange`, `onBadgesChange` — and
    nothing else. `active` is false while the tab is behind another, and it stays mounted, so
-   anything that grabs the keyboard has to check it.
+   anything that grabs the keyboard has to check it. (A tab restored from the last session is not
+   mounted until it is first picked — but nothing a module writes can tell: its first render is
+   its first render either way.)
 
    Report a `TabBadge` for each mark the tab should carry. `className` styles the badge;
    `tabClassName` goes on the whole tab, for a mark that tints it. `label` is read aloud and
