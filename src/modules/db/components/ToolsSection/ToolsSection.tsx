@@ -198,6 +198,10 @@ function ToolsSection() {
 
   return (
     <div className={styles.section}>
+      {/* The pane is the database module's and is named after it, so what is in the pane names
+          itself — the way the REST module's groups do. Everything here is still the dump tools and
+          nothing else; the day something else joins them it goes under a heading of its own. */}
+      <span className={styles.sectionLabel}>{t("tools.title")}</span>
       <p className={styles.hint}>{t("tools.intro")}</p>
       {error !== "" && (
         <p className={styles.toolError} role="alert">

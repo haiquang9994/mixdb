@@ -1,4 +1,4 @@
-import { shortcutLabel } from "../../../core/platform";
+import { keyLabel, shortcutLabel } from "../../../core/platform";
 import type { Chord, ShortcutDef } from "../../../core/shortcuts";
 import { useTranslation } from "../../../i18n";
 import { ALL_SHORTCUTS } from "../../shortcuts";
@@ -7,7 +7,11 @@ import styles from "./SettingsModal.module.css";
 /** The chord as this platform spells it — `⌘A` on a Mac, `Ctrl+A` elsewhere. The same function
  *  names the reload button, so the table and the tooltips cannot come to disagree about a key. */
 function chordLabel(chord: Chord): string {
-  return shortcutLabel(chord.key.toUpperCase(), { shift: chord.shift, alt: chord.alt });
+  return shortcutLabel(keyLabel(chord.key), {
+    shift: chord.shift,
+    alt: chord.alt,
+    ctrl: chord.ctrl,
+  });
 }
 
 /**

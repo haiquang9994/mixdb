@@ -8,6 +8,9 @@ const press = (over: Partial<Press> = {}): Press => ({
   shift: false,
   alt: false,
   mod: true,
+  /* Held apart from `mod` on purpose: a Mac is the only machine where the two differ, so a default
+     of `false` beside a `mod` of `true` is the case worth testing against. */
+  ctrlOnly: false,
   typing: false,
   ...over,
 });
@@ -36,6 +39,9 @@ const GROUPS: ShortcutGroup[] = [
         unhandled: "swallow",
       },
       { id: "grid.focusFilter", chord: { key: "f" }, labelKey: "app.settings" },
+      /* The chord that asks for `Ctrl` on every platform rather than for the platform's own
+         modifier — the shape `Ctrl+Tab` needs, since `Cmd+Tab` belongs to macOS itself. */
+      { id: "app.nextTab", chord: { key: "tab", ctrl: true }, labelKey: "app.settings" },
       /* One gesture spelled two ways — the shape zoom needs, where the key that says `+` on it
          answers to `=` unshifted and to `+` shifted. */
       {
@@ -161,6 +167,28 @@ describe("decide", () => {
   // An alias is a whole chord, shift included: `+` on its own is the numpad's key, not this one.
   it("holds an alias to its own shift and alt", () => {
     expect(decide(press({ key: "+" }), GROUPS, ctx(["grid.zoomIn"]))).toEqual({ do: "nothing" });
+  });
+
+  /* A Mac is the whole reason `Chord.ctrl` exists: `mod` is `Cmd` there and `Cmd+Tab` is the App
+     Switcher's, so the chord has to be reachable with the primary modifier *not* held. */
+  it("runs a ctrl chord on a press holding Ctrl and nothing else", () => {
+    const enabled = ctx(["app.nextTab"]);
+    expect(decide(press({ key: "tab", mod: false, ctrlOnly: true }), GROUPS, enabled)).toEqual({
+      do: "run",
+      id: "app.nextTab",
+    });
+  });
+
+  it("leaves a ctrl chord alone on a press holding only the Mac's Cmd", () => {
+    expect(decide(press({ key: "tab" }), GROUPS, ctx(["app.nextTab"]))).toEqual({ do: "nothing" });
+  });
+
+  it("does not let Ctrl alone stand in for the primary modifier", () => {
+    // The other way round: off a Mac the two coincide, but a Mac holding `Ctrl` is opening a
+    // context menu, and select-all is not what it asked for.
+    expect(decide(press({ mod: false, ctrlOnly: true }), GROUPS, ctx(["grid.selectAll"]))).toEqual({
+      do: "nothing",
+    });
   });
 
   it("ignores handlers listening for something else entirely", () => {

@@ -327,15 +327,6 @@ export function KeyboardIcon(props: IconProps) {
   );
 }
 
-/** The outside programs MixDB leans on for dumping and restoring. */
-export function WrenchIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M15.6 3.5a5.2 5.2 0 0 0-4.8 7.2l-6.5 6.5a2.1 2.1 0 0 0 3 3l6.5-6.5a5.2 5.2 0 0 0 6.4-6.6l-2.8 2.8-2.7-.7-.7-2.7 2.8-2.8a5.3 5.3 0 0 0-1.2-.2z" />
-    </Icon>
-  );
-}
-
 /** A status marker rather than an action — currently the "unsaved changes" bullet. Filled, so
  * it reads as a dot at the small sizes it is used at instead of as a thin ring. */
 export function DotIcon(props: IconProps) {

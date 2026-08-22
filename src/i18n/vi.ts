@@ -81,6 +81,8 @@ const vi: SharedDict = {
     newTab: "Tab mới",
     newModuleTab: "Tab {{module}} mới",
     closeTab: "Đóng tab",
+    nextTab: "Tab kế tiếp",
+    prevTab: "Tab liền trước",
     reload: "Tải lại pane đang xem",
   },
   // Tìm, tải và cài bản MixDB mới. Việc tải chạy ngầm; việc cài thì đóng ứng dụng, nên nó chỉ xảy

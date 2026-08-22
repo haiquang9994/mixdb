@@ -87,6 +87,8 @@ const en = {
     // One row per module, filled from the module's own name — see `shell/shortcuts.ts`.
     newModuleTab: "New {{module}} tab",
     closeTab: "Close tab",
+    nextTab: "Next tab",
+    prevTab: "Previous tab",
     reload: "Reload the pane on screen",
   },
   // Finding, fetching and installing a newer MixDB. The download runs in the background; the

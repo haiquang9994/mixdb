@@ -14,6 +14,17 @@ export interface Chord {
   key: string;
   shift?: boolean;
   alt?: boolean;
+  /**
+   * `Ctrl` on every platform, the Mac included — the one exception to everything said above, and
+   * it is the platform itself that forces it.
+   *
+   * `Cmd+Tab` never reaches a Mac application: the window server takes it for the App Switcher
+   * before any process sees the key. So the rule that a chord is whatever the platform writes on
+   * its keyboards has no answer here — the chord the platform writes does not exist. Every browser
+   * on macOS settled this the same way and cycles its tabs on `Ctrl+Tab`, which is what this flag
+   * is for and the only thing it is for.
+   */
+  ctrl?: true;
 }
 
 export interface ShortcutDef {

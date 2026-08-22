@@ -28,10 +28,12 @@ interface SettingsModalProps {
 type SectionId = string;
 
 /** The panes, in the order they are listed: the one a user changes often first, then whatever the
- *  modules contribute, then the errands. Each names itself with the heading its own content used to
- *  carry, so nothing is said twice once the list is on screen.
+ *  modules contribute, then the errands.
  *
- *  A module names its own pane — the shell does not know that "Tools" means `mysqldump`. */
+ *  A module names its own pane, and every one of them names itself after the module — so the
+ *  column reads as the app's parts, and a reader can tell before clicking which entries are the
+ *  dialog's own and which belong to something they opened a tab of. What is *inside* a pane is
+ *  that module's business and carries its own headings; the shell never sees them. */
 const SECTIONS: { id: SectionId; labelKey: TranslationKey; icon: ComponentType<IconProps> }[] = [
   { id: "appearance", labelKey: "settings.appearance", icon: PaletteIcon },
   { id: "shortcuts", labelKey: "shortcuts.title", icon: KeyboardIcon },
@@ -111,7 +113,7 @@ function SettingsModal({
             ))}
           </div>
 
-          {/* Hidden rather than unmounted: a download started under Tools carries on when the user
+          {/* Hidden rather than unmounted: a dump tool downloading under Database carries on when the user
               goes to look at something else, and it has to still be there — with its bar where it
               left it — when they come back. */}
           <div

@@ -38,10 +38,17 @@ nobody has yet is harder to add to than the thing it replaced.
 ## Tabs and connections
 
 `shell/App.tsx` owns a list of tabs — `{ id, moduleId, title, badges }`. Each renders the `Tab`
-component its module supplies, and every tab is kept mounted (hidden with `display: none`) so
-switching tabs never loses a connection or scroll position. `Ctrl/Cmd+T` opens a tab of
-`DEFAULT_MODULE_ID`, `Ctrl/Cmd+W` closes one; closing the last tab spawns a fresh one. With more
-than one module registered, `[+]` opens a menu instead of a tab.
+component its module supplies, and a tab that has been on screen is kept mounted (hidden with
+`display: none`) so switching tabs never loses a connection or scroll position. `Ctrl/Cmd+T` opens
+a tab of `DEFAULT_MODULE_ID`, `Ctrl/Cmd+W` closes one, `Ctrl+Tab` and `Ctrl+Shift+Tab` move along
+the strip; closing the last tab spawns a fresh one. With more than one module registered, `[+]`
+opens a menu instead of a tab.
+
+The strip itself survives a restart: `shell/session.ts` keeps `{ id, moduleId, title }` per tab and
+which one was active in `localStorage`, and nothing else — no connection, no request, no shell. On
+launch only the tab that was active is mounted; the others are names on the strip that mount the
+first time they are picked, so a restored session does not open six connection forms and start six
+shells at once.
 
 A `DbTab` starts as a form. On connect it calls `connect_db` with a `ConnectionConfig`, gets back a
 **connection id** (a UUID string), and swaps itself for the workspace matching the database kind.

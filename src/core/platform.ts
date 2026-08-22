@@ -38,6 +38,17 @@ export function hasPrimaryModifier(e: Pick<KeyboardEvent, "ctrlKey" | "metaKey">
   return IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
 }
 
+/**
+ * `Ctrl` down and `Cmd` up, asked of every platform — what a chord marked `ctrl` is held to.
+ *
+ * Off a Mac this is {@link hasPrimaryModifier} word for word, and that is the point: one flag
+ * covers both platforms because on only one of them do they differ. Why any chord would want it
+ * rather than the primary modifier is written on `Chord.ctrl`.
+ */
+export function hasCtrlOnly(e: Pick<KeyboardEvent, "ctrlKey" | "metaKey">): boolean {
+  return e.ctrlKey && !e.metaKey;
+}
+
 /** The modifier as it is written on the keyboard in front of the user. Exported because a shortcut
  *  drawn one glyph at a time — the `<kbd>` pairs — needs the modifier on its own. */
 export const MODIFIER_LABEL = IS_MAC ? "⌘" : "Ctrl";
@@ -51,11 +62,33 @@ export const MODIFIER_LABEL = IS_MAC ? "⌘" : "Ctrl";
  * written in a tooltip the way no keyboard writes it is one the user has to translate before
  * pressing.
  */
-export function shortcutLabel(key: string, mods: { alt?: boolean; shift?: boolean } = {}): string {
-  if (IS_MAC) return `${mods.alt ? "⌥" : ""}${mods.shift ? "⇧" : ""}⌘${key}`;
+export function shortcutLabel(
+  key: string,
+  mods: { alt?: boolean; shift?: boolean; ctrl?: boolean } = {},
+): string {
+  if (IS_MAC) {
+    const middle = `${mods.alt ? "⌥" : ""}${mods.shift ? "⇧" : ""}`;
+    // `⌃⌥⇧⌘` is the order a Mac writes them in, so the primary glyph sits at whichever end of that
+    // it belongs to: `⌃` opens the run and `⌘` closes it.
+    return mods.ctrl ? `⌃${middle}${key}` : `${middle}⌘${key}`;
+  }
+  // Off a Mac there is nothing to choose between: a `ctrl` chord and a primary-modifier chord are
+  // both written `Ctrl+…` because both are the same key.
   const parts = ["Ctrl"];
   if (mods.alt) parts.push("Alt");
   if (mods.shift) parts.push("Shift");
   parts.push(key);
   return parts.join("+");
+}
+
+/**
+ * A key as this platform writes it on its own keyboards.
+ *
+ * Only the keys that are not simply their own letter need saying: `T` is `T` everywhere, while a
+ * Mac writes `Tab` as `⇥` and everything else spells the word. Here rather than at the call site,
+ * so a chord's glyphs all come from the same file as its modifier's.
+ */
+export function keyLabel(key: string): string {
+  if (key === "tab") return IS_MAC ? "⇥" : "Tab";
+  return key.toUpperCase();
 }

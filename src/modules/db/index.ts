@@ -1,5 +1,5 @@
 import type { ModuleDefinition } from "../../shell/module";
-import { DatabaseGenericIcon, WrenchIcon } from "../../icons";
+import { DatabaseGenericIcon } from "../../icons";
 import DbTab from "./DbTab";
 import ToolsSection from "./components/ToolsSection";
 import { DB_SHORTCUTS } from "./shortcuts";
@@ -11,8 +11,12 @@ export const dbModule: ModuleDefinition = {
   Icon: DatabaseGenericIcon,
   defaultTitleKey: "app.newConnectionTitle",
   Tab: DbTab,
-  /* The dump tools are `mysqldump`, `pg_dump` and `mongodump` — this module's business, shown in
-     the app's Settings because that is where a download belongs, not because the shell owns them. */
-  settings: { labelKey: "tools.title", Icon: WrenchIcon, Section: ToolsSection },
+  /* Named after the module, like every other pane in that list — `labelKey` again rather than a
+     second string saying the same word, so the pane and the `[+]` menu cannot drift apart.
+
+     It was called "Dump tools" and wore a spanner, which read as one of the dialog's own errands
+     sitting between two modules' panes rather than as the database module's. The dump tools are
+     still all that is in there; they are a heading inside the pane now. */
+  settings: { labelKey: "app.moduleDatabase", Icon: DatabaseGenericIcon, Section: ToolsSection },
   shortcuts: DB_SHORTCUTS,
 };

@@ -51,6 +51,23 @@ export const SHELL_SHORTCUTS: ShortcutGroup[] = [
       { id: "app.newTab", chord: { key: "t" }, labelKey: "shortcuts.newTab", inModal: true },
       ...MODULE_TAB_SHORTCUTS.map((entry) => entry.def),
       { id: "app.closeTab", chord: { key: "w" }, labelKey: "shortcuts.closeTab", inModal: true },
+      /* `ctrl` rather than the platform's modifier, because `Cmd+Tab` never reaches a Mac app —
+         see `Chord.ctrl`. Not `inModal`, unlike the three above: those carry the flag because
+         `App.tsx` never guarded them and a refactor is no place to change what a key does, while
+         these two are new and nothing is owed to them. Moving the tab underneath a dialog while
+         the dialog stays where it is would be a screen that disagrees with itself. */
+      {
+        id: "app.nextTab",
+        chord: { key: "tab", ctrl: true },
+        labelKey: "shortcuts.nextTab",
+        unhandled: "swallow",
+      },
+      {
+        id: "app.prevTab",
+        chord: { key: "tab", ctrl: true, shift: true },
+        labelKey: "shortcuts.prevTab",
+        unhandled: "swallow",
+      },
       /* Not `inModal`: the pane behind a dialog is not the one in front, and a reload fired from
          behind a confirmation acts on the very thing being asked about. */
       { id: "pane.reload", chord: { key: "r" }, labelKey: "shortcuts.reload" },

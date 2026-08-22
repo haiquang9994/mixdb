@@ -1,4 +1,4 @@
-/* The four classes below have identical twins in the shell's `SettingsModal.module.css`.
+/* The five classes below have identical twins in the shell's `SettingsModal.module.css`.
    Deliberately copied rather than shared: the Settings dialog is the shell's and this pane is the
    database module's, a CSS Module cannot read another file's classes without importing across that
    boundary, and twenty lines of repetition is the cheaper of the two. */
@@ -6,6 +6,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.sectionLabel {
+  font-size: 0.85em;
+  opacity: 0.6;
 }
 
 .hint {
