@@ -667,6 +667,37 @@
   overflow-wrap: anywhere;
 }
 
+/* The grid and the strip of controls above it as one block, so the filter box keeps still while the
+   grid scrolls under it — sideways included, which is the case that matters: a wide result would
+   otherwise carry the box off the left edge. It takes the sizing `.gridWrap` used to have, and
+   passes the remainder down. */
+.gridBox {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.gridTools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Wide enough for an id or a piece of an email, and no wider: the row it sits on is the pane's, and
+   what the pane is for is the rows underneath. */
+.findInput {
+  width: min(18rem, 100%);
+}
+
+.findCount {
+  font-size: 0.85em;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The one thing in a result that scrolls: sideways so a wide set doesn't drag the results column
    along with it, and downwards within whatever height the card has left. Its height comes from the
    card (`flex`), never from the viewport — a `max-height` in `vh` is unrelated to how much room

@@ -345,6 +345,12 @@ const dbVi: DbDict = {
     sortAsc: "Sắp theo {{column}}, nhỏ trước — chỉ những dòng đã trả về",
     sortDesc: "Sắp theo {{column}}, lớn trước — chỉ những dòng đã trả về",
     sortNone: "Trở lại thứ tự máy chủ đã gửi",
+    findPlaceholder: "Lọc các dòng này...",
+    findCount: "{{n}} / {{m}} dòng",
+    // Không dùng chung câu với `noRows`: câu kia nói truy vấn không tìm được gì, câu này nói ô lọc
+    // ở trên đã cắt hết. Bảo người ta là truy vấn rỗng trong khi nó không rỗng là loại câu sai mà
+    // người ta sẽ tin và làm theo.
+    noMatchingRows: "Không có dòng nào ở đây khớp.",
     // Nói ra khi script được gửi đi kèm một mức trần mà nó không tự viết.
     limitAdded: "Đã thêm LIMIT {{limit}} vào {{n}} câu lệnh trong số này. Hãy tự viết LIMIT nếu muốn mức khác.",
     // Câu truy vấn đã lưu, gõ tên là gợi ý lại.

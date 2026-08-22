@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   displayValue,
   gridStyle,
@@ -6,6 +6,7 @@ import {
   useVirtualRows,
   widestValues,
 } from "../../../../core/virtualRows";
+import Input from "../../../../components/Input";
 import { useTranslation } from "../../../../i18n";
 import { nextSort, viewIndexes, type Sort } from "./resultView";
 import styles from "./QueryEditor.module.css";
@@ -22,6 +23,12 @@ const TOOLTIP_FROM = 24;
  * every time the tab is shown again, since a tab behind another one is `display: none` and has no
  * layout to keep. That is the lag: not the scrolling, but the switching. */
 const VIRTUAL_FROM = 60;
+
+/** How many rows a result needs before the filter box is worth its row of height.
+ *
+ * Below this the whole set is on the screen or one flick of the wheel away, and a box for narrowing
+ * it down is furniture — it costs a line of the pane whether or not anyone types in it. */
+const FIND_FROM = 20;
 
 /**
  * How tall a row of this grid is — stated, never measured. See `virtualRows.ts` for why that
@@ -141,10 +148,11 @@ function ResultGrid({ columns, rows }: Props) {
 
   const { t } = useTranslation();
   const [sort, setSort] = useState<Sort | null>(null);
+  const [query, setQuery] = useState("");
 
   /** Which rows are on screen and in what order, as indexes into `rows`. See `resultView.ts` for
    *  why this is a list of indexes and never a list of rows. */
-  const view = useMemo(() => viewIndexes(rows, sort, ""), [rows, sort]);
+  const view = useMemo(() => viewIndexes(rows, sort, query), [rows, sort, query]);
 
   const total = view.length;
   const virtual = total >= VIRTUAL_FROM;
@@ -170,90 +178,128 @@ function ResultGrid({ columns, rows }: Props) {
   // means nothing to it.
   useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [columns, rows, sort]);
+  }, [columns, rows, sort, query]);
+
+  // A new result is a new set of columns and values, and a needle typed for the last one is very
+  // likely to hide all of this one — with the box scrolled out of sight above and no way to tell
+  // why the grid is empty.
+  useEffect(() => {
+    setQuery("");
+    setSort(null);
+  }, [columns, rows]);
 
   const visible = view.slice(window.first, window.last);
   const spacerSpan = columns.length + 1;
 
+  const filtering = query.trim() !== "";
+  /** Measured on the whole result, not on what is left after filtering: a box that vanished once it
+   *  had done its job would take away the only way to undo it. */
+  const showFind = rows.length >= FIND_FROM;
+
   return (
-    <div
-      className={styles.gridWrap}
-      ref={scrollRef}
-      onScroll={virtual ? window.onScroll : undefined}
-    >
-      <table
-        ref={tableRef}
-        // Rows pinned whenever they are windowed; columns pinned once they have been measured. Two
-        // classes because they answer to different conditions — the measuring can fail in a way the
-        // windowing cannot, and a windowed grid whose rows were left to size themselves is the one
-        // state that must not exist.
-        className={[styles.grid, virtual && styles.gridRows, layout && styles.gridFixed]
-          .filter(Boolean)
-          .join(" ")}
-        style={virtual ? gridStyle(ROW_HEIGHT, layout?.total ?? null) : undefined}
+    <div className={styles.gridBox}>
+      {showFind && (
+        <div className={styles.gridTools}>
+          <Input
+            size="small"
+            className={styles.findInput}
+            value={query}
+            placeholder={t("query.findPlaceholder")}
+            aria-label={t("query.findPlaceholder")}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {/* Only while it is actually filtering. "1000 of 1000 rows" beside an empty box is a
+              number nobody asked for. */}
+          {filtering && (
+            <span className={styles.findCount}>
+              {t("query.findCount", { n: view.length, m: rows.length })}
+            </span>
+          )}
+        </div>
+      )}
+      <div
+        className={styles.gridWrap}
+        ref={scrollRef}
+        onScroll={virtual ? window.onScroll : undefined}
       >
-        {layout && (
-          <colgroup>
-            <col style={{ width: layout.numberWidth }} />
-            {layout.widths.map((width, c) => (
-              <col key={c} style={{ width }} />
+        <table
+          ref={tableRef}
+          // Rows pinned whenever they are windowed; columns pinned once they have been measured. Two
+          // classes because they answer to different conditions — the measuring can fail in a way the
+          // windowing cannot, and a windowed grid whose rows were left to size themselves is the one
+          // state that must not exist.
+          className={[styles.grid, virtual && styles.gridRows, layout && styles.gridFixed]
+            .filter(Boolean)
+            .join(" ")}
+          style={virtual ? gridStyle(ROW_HEIGHT, layout?.total ?? null) : undefined}
+        >
+          {layout && (
+            <colgroup>
+              <col style={{ width: layout.numberWidth }} />
+              {layout.widths.map((width, c) => (
+                <col key={c} style={{ width }} />
+              ))}
+            </colgroup>
+          )}
+          <thead>
+            <tr>
+              <th className={styles.rowNumber}>#</th>
+              {columns.map((column, c) => {
+                // Keyed by position: an arbitrary SELECT may well name the same column twice, which
+                // is also why the rows are positional.
+                const active = sort?.column === c ? sort.direction : null;
+                const next = nextSort(sort, c);
+                return (
+                  <th
+                    key={c}
+                    className={styles.sortable}
+                    aria-sort={
+                      active === "asc" ? "ascending" : active === "desc" ? "descending" : "none"
+                    }
+                    title={
+                      next === null
+                        ? t("query.sortNone")
+                        : t(next.direction === "asc" ? "query.sortAsc" : "query.sortDesc", { column })
+                    }
+                    onClick={() => setSort(next)}
+                  >
+                    {column}
+                    {/* Only on the column that is sorted. An arrow on every heading is twenty arrows
+                        saying nothing, and the width they take is width the values do not get. */}
+                    {active !== null && (
+                      <span className={styles.sortMark} aria-hidden="true">
+                        {active === "asc" ? "▲" : "▼"}
+                      </span>
+                    )}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {virtual && (
+              <tr className={styles.spacer} style={{ height: window.padTop }} aria-hidden="true">
+                <td colSpan={spacerSpan} />
+              </tr>
+            )}
+            {visible.map((index) => (
+              // Keyed by where the row sits in the result rather than by where it sits on screen, so
+              // a sort moves the rows about instead of rebuilding every one of them.
+              <ResultRow key={index} row={rows[index]} index={index} columns={columns} />
             ))}
-          </colgroup>
+            {virtual && (
+              <tr className={styles.spacer} style={{ height: window.padBottom }} aria-hidden="true">
+                <td colSpan={spacerSpan} />
+              </tr>
+            )}
+          </tbody>
+        </table>
+        {total === 0 && (
+          <p className={styles.noRows}>
+            {filtering ? t("query.noMatchingRows") : t("query.noRows")}
+          </p>
         )}
-        <thead>
-          <tr>
-            <th className={styles.rowNumber}>#</th>
-            {columns.map((column, c) => {
-              // Keyed by position: an arbitrary SELECT may well name the same column twice, which
-              // is also why the rows are positional.
-              const active = sort?.column === c ? sort.direction : null;
-              const next = nextSort(sort, c);
-              return (
-                <th
-                  key={c}
-                  className={styles.sortable}
-                  aria-sort={
-                    active === "asc" ? "ascending" : active === "desc" ? "descending" : "none"
-                  }
-                  title={
-                    next === null
-                      ? t("query.sortNone")
-                      : t(next.direction === "asc" ? "query.sortAsc" : "query.sortDesc", { column })
-                  }
-                  onClick={() => setSort(next)}
-                >
-                  {column}
-                  {/* Only on the column that is sorted. An arrow on every heading is twenty arrows
-                      saying nothing, and the width they take is width the values do not get. */}
-                  {active !== null && (
-                    <span className={styles.sortMark} aria-hidden="true">
-                      {active === "asc" ? "▲" : "▼"}
-                    </span>
-                  )}
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {virtual && (
-            <tr className={styles.spacer} style={{ height: window.padTop }} aria-hidden="true">
-              <td colSpan={spacerSpan} />
-            </tr>
-          )}
-          {visible.map((index) => (
-            // Keyed by where the row sits in the result rather than by where it sits on screen, so
-            // a sort moves the rows about instead of rebuilding every one of them.
-            <ResultRow key={index} row={rows[index]} index={index} columns={columns} />
-          ))}
-          {virtual && (
-            <tr className={styles.spacer} style={{ height: window.padBottom }} aria-hidden="true">
-              <td colSpan={spacerSpan} />
-            </tr>
-          )}
-        </tbody>
-      </table>
-      {total === 0 && <p className={styles.noRows}>{t("query.noRows")}</p>}
+      </div>
     </div>
   );
 }

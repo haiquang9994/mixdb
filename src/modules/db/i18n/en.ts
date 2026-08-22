@@ -354,6 +354,12 @@ const dbEn = {
     sortAsc: "Sort by {{column}}, smallest first — only the rows already returned",
     sortDesc: "Sort by {{column}}, largest first — only the rows already returned",
     sortNone: "Back to the order the server sent",
+    findPlaceholder: "Filter these rows...",
+    findCount: "{{n}} of {{m}} rows",
+    // Not the same sentence as `noRows`: that one says the query found nothing, this one says the
+    // box above cut everything out. Telling someone their query came back empty when it did not is
+    // the kind of wrong answer they act on.
+    noMatchingRows: "No row here matches that.",
     // Said when the script was sent with a ceiling it was not written with.
     limitAdded: "A LIMIT of {{limit}} was added to {{n}} of these statements. Write your own LIMIT to ask for something else.",
     // Saved queries, offered back by name as the editor is typed in.
