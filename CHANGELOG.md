@@ -41,6 +41,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Fixed
+
+- Dragging the divider in the Query tab all the way up no longer pushes the bar at the foot of the tab off the screen.
+
 ## [0.0.15] - 2026-08-22
 
 ### Added

@@ -16,14 +16,31 @@ const DEFAULT_HEIGHT = 240;
 /** The floor for a drag. Below this the pane is shorter than one result's own header and summary,
  *  which is a state nobody is aiming for — they are aiming for closed, and closed is not on offer
  *  while there is something to show. */
-const MIN_HEIGHT = 96;
+export const MIN_HEIGHT = 96;
 
 /** What is kept for the editor no matter how far the divider is dragged up. The script is the point
  *  of the tab; a divider that can bury it is a divider that can strand someone. */
-const MIN_EDITOR = 150;
+export const MIN_EDITOR = 150;
 
 /** How far one press of an arrow key moves the divider. */
 const KEY_STEP = 16;
+
+/**
+ * A height kept between its floor and whatever the editor can spare.
+ *
+ * `room` is what the editor and the pane have between them — the two measured together, not the
+ * height of the tab. The difference is the toolbar, the footer bar and the gaps of the column they
+ * all sit in: reserving {@link MIN_EDITOR} out of the tab's height leaves the editor those to pay
+ * for as well, and since the editor will not shrink past its own `min-height`, what pays instead is
+ * the bar at the bottom, pushed off the edge of a tab that does not clip.
+ *
+ * Nothing measured yet is not the same as no room: before the first layout the answer is whatever
+ * was asked for, since clamping against zero would snap the pane to its floor for a frame.
+ */
+export function fitHeight(next: number, room: number): number {
+  const ceiling = room > 0 ? Math.max(MIN_HEIGHT, room - MIN_EDITOR) : Number.POSITIVE_INFINITY;
+  return Math.min(Math.max(Math.round(next), MIN_HEIGHT), ceiling);
+}
 
 export interface ResultsPane {
   /** The pane's height in pixels — what the slot animates to when the results appear, and what the
@@ -58,8 +75,15 @@ export interface ResultsPane {
  *
  * Pointer capture rather than window listeners: once the divider owns the pointer, every move and
  * the release come back to it even when the pointer has run off the top of the app.
+ *
+ * It is handed the editor pane and the slot, not the tab that holds them: what bounds the pane is
+ * the room those two share, and the tab's own height counts a toolbar and a footer bar the divider
+ * has no claim on.
  */
-export function useResultsPane(root: RefObject<HTMLElement | null>): ResultsPane {
+export function useResultsPane(
+  editor: RefObject<HTMLElement | null>,
+  slot: RefObject<HTMLElement | null>
+): ResultsPane {
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const [dragging, setDragging] = useState(false);
   const [shut, setShut] = useState(false);
@@ -68,15 +92,16 @@ export function useResultsPane(root: RefObject<HTMLElement | null>): ResultsPane
    *  height does not jump it. */
   const from = useRef({ y: 0, height: 0 });
 
-  /** Kept between its floor and whatever the tab can spare — measured at the moment it is asked,
-   *  since the window is resizable and the answer is different after every resize. */
+  /** The room the two of them share, measured at the moment it is asked — the window is resizable
+   *  and the answer is different after every resize. Their sum is the same number whichever way the
+   *  divider has split it, mid-transition included: the editor takes whatever the pane is not
+   *  using, so what one loses the other has. */
   const fit = useCallback(
     (next: number) => {
-      const room = root.current?.clientHeight ?? 0;
-      const ceiling = room > 0 ? Math.max(MIN_HEIGHT, room - MIN_EDITOR) : Number.POSITIVE_INFINITY;
-      return Math.min(Math.max(Math.round(next), MIN_HEIGHT), ceiling);
+      const room = (editor.current?.clientHeight ?? 0) + (slot.current?.clientHeight ?? 0);
+      return fitHeight(next, room);
     },
-    [root]
+    [editor, slot]
   );
 
   const onPointerDown = useCallback(

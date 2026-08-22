@@ -160,10 +160,13 @@ function QueryEditor({
    *  element either way, never a second copy of it. */
   const resultsRef = useRef<HTMLDivElement>(null);
   const zoom = useResultsZoom(resultsRef);
-  /** The whole tab, measured when the divider is dragged: how tall the results may be is a question
-   *  about how much room there is, and this is the room. */
-  const tabRef = useRef<HTMLDivElement>(null);
-  const pane = useResultsPane(tabRef);
+  /** The two halves the divider shares out, measured when it is dragged: how tall the results may
+   *  be is a question about how much room there is, and the room is these two together. Not the
+   *  tab — the toolbar and the bar at the bottom are in that, and neither is the divider's to
+   *  spend. */
+  const editorPaneRef = useRef<HTMLDivElement>(null);
+  const slotRef = useRef<HTMLDivElement>(null);
+  const pane = useResultsPane(editorPaneRef, slotRef);
 
   /** Whether this tab has ever been the one on screen.
    *
@@ -556,7 +559,7 @@ function QueryEditor({
   const showResults = hasResults && !pane.shut;
 
   return (
-    <div ref={tabRef} className={styles.queryEditor}>
+    <div className={styles.queryEditor}>
       <div className={styles.toolbar}>
         {/* The only Run there is. What it runs is decided by the selection, not by a second
             button: the whole script, or exactly the text picked out of it. */}
@@ -625,7 +628,7 @@ function QueryEditor({
 
       {/* The editor and the strip naming it are one framed surface: the tab opens on an empty
           editor, and the frame is what tells you where the script goes. */}
-      <div className={styles.editorPane}>
+      <div ref={editorPaneRef} className={styles.editorPane}>
         <div className={styles.editorBar}>
           <span>{t("query.editorHeading")}</span>
           {/* One shortcut, because there is one way to run: what it sends is chosen by selecting,
@@ -729,6 +732,7 @@ function QueryEditor({
           growing this uncovers it from the bottom up instead of laying out a thousand rows again on
           every frame of the movement. */}
       <div
+        ref={slotRef}
         className={[
           styles.resultsSlot,
           showResults ? "" : styles.resultsSlotShut,

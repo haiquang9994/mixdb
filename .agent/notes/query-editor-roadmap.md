@@ -298,12 +298,12 @@ that from mattering.
 Found while reviewing the pane rework of 2026-08-11 and left standing — both are reachable only by
 driving a control to its limit, and neither loses any work.
 
-- **The divider can push the footer bar out of view.** `MIN_EDITOR` in
-  [resultsPane.ts](../../src/modules/db/components/QueryEditor/resultsPane.ts) reserves 150px, but measures it
-  against `tabRef` — the whole tab, toolbar and footer bar included — while `.editorPane` has a
-  `min-height` of `6rem` it will not shrink past and `.queryEditor` has no `overflow: hidden` to
-  clip what overflows. Drag the divider all the way up and the bar goes off the bottom edge. The fix
-  is to measure the room the editor actually has rather than the room the tab has.
+- ~~**The divider can push the footer bar out of view.**~~ **Fixed 2026-08-22.** `MIN_EDITOR`
+  reserved its 150px out of the whole tab, toolbar and footer bar included, so the editor was left
+  paying for those as well — and since `.editorPane` will not shrink past its `min-height` and
+  `.queryEditor` does not clip, what went off the bottom edge was the bar. The ceiling is now
+  measured from the editor pane and the slot together, which is the room the divider actually
+  shares out, and the clamp is a pure `fitHeight(next, room)` with a test.
 - **Expand and Hide do not exclude each other.** Expand stays enabled while the pane is shut, so
   results just put away can be lifted over the window; Hide stays enabled while the pane is up
   there, and closing it then flies the box home to a slot that has since collapsed. Either disable
