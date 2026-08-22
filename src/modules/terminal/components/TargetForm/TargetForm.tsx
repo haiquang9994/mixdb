@@ -8,6 +8,7 @@ import { useTranslation } from "../../../../i18n";
 import { localShells } from "../../api";
 import { ShellIcon } from "../../icons";
 import { addHost, removeHost, updateHost, useSavedHosts } from "../../savedHostsStore";
+import { loadTerminalSettings } from "../../settingsStore";
 import { shellLabel } from "../../shells";
 import type { LocalShell, SavedHost, SshAuth, SshConfig, TerminalChoice } from "../../types";
 import SavedHostList from "./SavedHostList";
@@ -71,11 +72,21 @@ function TargetForm({ onOpen, onError, initial }: Props) {
   );
 
   useEffect(() => {
-    localShells()
-      .then((found) => {
+    /* Hai lượt đọc song song chứ không nối tiếp, và `loadTerminalSettings` chứ không
+       `currentTerminalSettings`: store nạp file bất đồng bộ, nên hỏi nó ngay lúc này thường nhận
+       về giá trị mặc định chứ không phải shell người dùng đã chọn. */
+    Promise.all([localShells(), loadTerminalSettings()])
+      .then(([found, settings]) => {
         setShells(found);
-        // Cái đầu tiên là cái Rust gợi ý, và cũng là cái `default_shell()` sẽ chọn.
-        setPath((current) => current || (found[0]?.path ?? ""));
+        const preferred = settings.defaultShell
+          ? found.find((shell) => shell.name === settings.defaultShell)
+          : undefined;
+        /* `current ||` giữ nguyên cái `initial` đã đặt: một lần mở hỏng rồi thử lại phải quay về
+           đúng shell vừa thử, không phải về shell mặc định. Shell mặc định đã gỡ khỏi máy thì
+           `preferred` là `undefined` và cái Rust gợi ý đầu danh sách nhận chỗ. */
+        setPath((current) => current || preferred?.path || (found[0]?.path ?? ""));
+        const dir = settings.defaultCwd;
+        if (dir) setCwd((current) => current || dir);
       })
       .catch((e) => onError(errorMessage(t, e)));
     // Chỉ chạy một lần: danh sách shell của một máy không đổi giữa chừng.

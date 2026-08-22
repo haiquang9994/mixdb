@@ -8,6 +8,7 @@
     "opener:default",
     "dialog:default",
     "store:default",
+    "clipboard-manager:allow-read-text",
     "updater:default",
     "process:allow-restart"
   ]
