@@ -9,6 +9,10 @@ export interface Press {
   alt: boolean;
   /** What `hasPrimaryModifier` said. */
   mod: boolean;
+  /** `Ctrl` down and `Cmd` up, asked of every platform rather than of this one. Off a Mac it is
+   *  the same answer `mod` gives; on a Mac it is the only way to spell a chord at all for the
+   *  handful of keys `Cmd` cannot reach — see {@link Chord.ctrl}. */
+  ctrlOnly: boolean;
   /** What `isTextEntry` said. */
   typing: boolean;
 }
@@ -30,7 +34,10 @@ function chordMatches(chord: Chord, press: Press): boolean {
   return (
     chord.key === press.key &&
     (chord.shift ?? false) === press.shift &&
-    (chord.alt ?? false) === press.alt
+    (chord.alt ?? false) === press.alt &&
+    // Off a Mac the two flags carry the same answer, so nothing already in the catalogue changes
+    // meaning by this line existing.
+    (chord.ctrl ? press.ctrlOnly : press.mod)
   );
 }
 
@@ -47,7 +54,9 @@ function matches(def: ShortcutDef, press: Press): boolean {
  * pure logic and nothing else, so the logic is what everything worth being wrong about goes into.
  */
 export function decide(press: Press, groups: ShortcutGroup[], ctx: ShortcutContext): Decision {
-  if (!press.mod) return { do: "nothing" };
+  // Neither modifier down and there is no chord here to find; which of the two counts is then
+  // `chordMatches`'s question, one def at a time.
+  if (!press.mod && !press.ctrlOnly) return { do: "nothing" };
 
   const candidates = groups
     .flatMap((group) => group.defs)

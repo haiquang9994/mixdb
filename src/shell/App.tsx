@@ -12,7 +12,7 @@ import { useAccent, useGlass, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
 import { useTranslation } from "../i18n";
 import type { TabBadge } from "./module";
-import { rebadgeTab, retitleTab, type TabInfo } from "./tabs";
+import { rebadgeTab, retitleTab, tabIdAtOffset, type TabInfo } from "./tabs";
 import { DEFAULT_MODULE_ID, MODULES, moduleById } from "./registry";
 import { ALL_SHORTCUTS, MODULE_TAB_SHORTCUTS } from "./shortcuts";
 import "./App.css";
@@ -44,6 +44,8 @@ function App() {
   // Always listening — the tab bar is there on every screen the app has.
   useShortcut("app.newTab", () => openTab(), true);
   useShortcut("app.closeTab", () => closeTab(activeId), true);
+  useShortcut("app.nextTab", () => setActiveId(tabIdAtOffset(tabs, activeId, 1)), true);
+  useShortcut("app.prevTab", () => setActiveId(tabIdAtOffset(tabs, activeId, -1)), true);
   /* One number key per module — `Ctrl/Cmd+1` for the first in the registry, `2` for the second.
      Hooks in a loop, which is safe here and only here: `MODULE_TAB_SHORTCUTS` is a module-level
      constant, so the count and the order are fixed for the life of the app. Reading the list rather

@@ -3,7 +3,7 @@ import type { Press } from "../../core/shortcuts";
 import { shellKeeps } from "./keys";
 
 function press(over: Partial<Press>): Press {
-  return { key: "a", shift: false, alt: false, mod: false, typing: true, ...over };
+  return { key: "a", shift: false, alt: false, mod: false, ctrlOnly: false, typing: true, ...over };
 }
 
 describe("shellKeeps", () => {
@@ -34,5 +34,16 @@ describe("shellKeeps", () => {
   it("always steps aside for paste", () => {
     expect(shellKeeps(press({ key: "v", mod: true }), false)).toBe(false);
     expect(shellKeeps(press({ key: "v", mod: true, shift: true }), false)).toBe(false);
+  });
+
+  /* Trên Mac, `Ctrl+Tab` tới với `mod` tắt vì `mod` ở đó là `⌘`. Không hỏi `ctrlOnly` thì terminal
+     giữ luôn phím và tab không bao giờ đổi. */
+  it("hands over a Ctrl chord the app claims, even with the primary modifier up", () => {
+    expect(shellKeeps(press({ key: "tab", ctrlOnly: true }), true)).toBe(false);
+  });
+
+  it("keeps a Ctrl chord nobody claims — Ctrl+V on a Mac is the shell's, not a paste", () => {
+    expect(shellKeeps(press({ key: "v", ctrlOnly: true }), false)).toBe(true);
+    expect(shellKeeps(press({ key: "r", ctrlOnly: true }), false)).toBe(true);
   });
 });

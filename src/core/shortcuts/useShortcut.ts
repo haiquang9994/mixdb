@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { hasPrimaryModifier } from "../platform";
+import { hasCtrlOnly, hasPrimaryModifier } from "../platform";
 import { isTextEntry } from "../textEntry";
 import { decide, type Press } from "./decide";
 import { currentCatalogue, enabledIds, modalDepth, register, run, setCatalogue } from "./store";
@@ -35,6 +35,7 @@ export function pressOf(e: KeyboardEvent): Press {
     shift: e.shiftKey,
     alt: e.altKey,
     mod: hasPrimaryModifier(e),
+    ctrlOnly: hasCtrlOnly(e),
     typing: isTextEntry(e.target),
   };
 }

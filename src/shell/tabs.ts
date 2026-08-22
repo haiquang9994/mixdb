@@ -19,6 +19,24 @@ export interface TabInfo {
   badges: TabBadge[];
 }
 
+/**
+ * The tab `delta` places along from the active one, wrapping round both ends.
+ *
+ * Strip order rather than the order tabs were last looked at: that is what every browser's
+ * `Ctrl+Tab` does, and a cycle whose next stop depends on where you have been is one you cannot
+ * find your way round by looking at the strip.
+ *
+ * Hands back `activeId` when there is nowhere else to go — no tabs, one tab, or an id that is not
+ * in the list — so the caller has nothing to check for.
+ */
+export function tabIdAtOffset(tabs: TabInfo[], activeId: string, delta: number): string {
+  const at = tabs.findIndex((t) => t.id === activeId);
+  if (at < 0 || tabs.length === 0) return activeId;
+  // `+ tabs.length` before the modulo: JavaScript's `%` keeps the sign of its left side, so -1
+  // would land on -1 rather than on the last tab.
+  return tabs[(at + delta + tabs.length) % tabs.length].id;
+}
+
 export function retitleTab(tabs: TabInfo[], id: string, title: string): TabInfo[] {
   const tab = tabs.find((t) => t.id === id);
   if (tab === undefined || tab.title === title) return tabs;

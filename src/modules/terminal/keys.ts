@@ -11,11 +11,15 @@ import type { Press } from "../../core/shortcuts";
  * Hàm thuần, không DOM, không xterm: quy tắc thì đáng test còn chỗ nối vào xterm thì không.
  */
 export function shellKeeps(press: Press, claimed: boolean): boolean {
-  // Không giữ phím tắt thì không có gì để tranh: gõ là gõ.
-  if (!press.mod) return true;
   /* Dán là ngoại lệ duy nhất không hỏi catalogue. Không có handler nào cả — buông tay ra là webview
      tự dán vào textarea của xterm, và xterm vốn đã nghe sự kiện `paste` ở đó. Bắt lấy rồi tự đọc
-     clipboard chỉ là viết lại một thứ đang chạy sẵn, bằng một API mà webview có quyền từ chối. */
-  if (press.key === "v") return false;
+     clipboard chỉ là viết lại một thứ đang chạy sẵn, bằng một API mà webview có quyền từ chối.
+
+     Buộc vào `mod` chứ không vào `ctrlOnly`: trên Mac, dán là `⌘V` còn `Ctrl+V` là chèn nguyên ký
+     tự điều khiển của readline — hai phím khác nhau, và cái sau là của shell. */
+  if (press.mod && press.key === "v") return false;
+  /* Không giữ phím tắt thì không có gì để tranh: gõ là gõ. Hỏi cả `ctrlOnly` vì có chord chạy bằng
+     `Ctrl` trên mọi nền tảng — `Ctrl+Tab` — nên trên Mac `mod` một mình sẽ bỏ sót nó. */
+  if (!press.mod && !press.ctrlOnly) return true;
   return !claimed;
 }
