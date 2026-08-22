@@ -472,6 +472,9 @@ const dbEn = {
     // single row under the pointer and one for a selection — there is no plural rule in `t()`, and
     // "Copy 1 rows" is worse than a second key.
     copyCellValue: "Copy cell value",
+    // The header has a menu of its own, holding this one entry: the column names cannot be
+    // selected with the pointer, so this is the only way to take one.
+    copyColumnName: "Copy column name",
     openReferencedRow: "Open the referenced row in {{table}}",
     copyInsert: "Copy as INSERT statement",
     copyInsertRows: "Copy {{n}} rows as INSERT statements",

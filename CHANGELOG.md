@@ -49,11 +49,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - A script of several statements says how many of them ran and how long the server spent on them.
 - Rows in the Data tab copy as JSON as well as TSV and CSV, and Ctrl/Cmd+C copies the selected ones.
 - A cell of the Data tab's table opens in a dialog, the same one the Query tab's results use.
+- Right-clicking a column heading in the Data tab copies the column name.
+
+### Changed
+
+- Right-clicking text you have selected now offers the usual Copy menu instead of nothing.
 
 ### Fixed
 
 - Dragging the divider in the Query tab all the way up no longer pushes the bar at the foot of the tab off the screen.
 - The Query tab's Expand and Hide buttons no longer contradict each other: results that are put away cannot be lifted, and results over the window cannot be put away from behind them.
+- Double-clicking a column name in the Structure tab no longer takes the PK, IX or AI badge beside it along with the name.
 
 ## [0.0.15] - 2026-08-22
 

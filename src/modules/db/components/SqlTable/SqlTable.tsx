@@ -502,6 +502,11 @@ function SqlTable({
   /** The right-click menu, and where it was opened — see {@link CellMenu}. */
   const [menu, setMenu] = useState<CellMenu | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  /** The header's own right-click menu: which column it was opened on, and where the pointer was.
+   *  Separate from {@link CellMenu} rather than a variant of it — nothing in the cell menu means
+   *  anything without a row, and every entry there would have to learn it might not have one. */
+  const [headerMenu, setHeaderMenu] = useState<{ col: string; x: number; y: number } | null>(null);
+  const closeHeaderMenu = useCallback(() => setHeaderMenu(null), []);
   /** The cell being read in a dialog of its own, by row on the page and column. Held rather than
    *  its value: an edit committed underneath it should be what the dialog shows. */
   const [expandedCell, setExpandedCell] = useState<{ rowIndex: number; col: string } | null>(null);
@@ -694,6 +699,7 @@ function SqlTable({
   useEffect(() => {
     clearSelection();
     setMenu(null);
+    setHeaderMenu(null);
     setExpandedCell(null);
   }, [selectedDb, selectedTable, page, pageSize, sort, appliedFilters, reloadToken]);
 
@@ -1092,6 +1098,7 @@ function SqlTable({
    *  nothing and a paste of whatever was there before. */
   function copyToClipboard(text: string) {
     closeMenu();
+    closeHeaderMenu();
     void copyText(text).catch((e) => onError(errorMessage(t, e)));
   }
 
@@ -1121,7 +1128,7 @@ function SqlTable({
     // selection as well would be two things done by one key, and the selection is what the menu is
     // about to act on. The cell dialog is the same story: it takes Escape, and what it was opened
     // from is still selected behind it.
-    if (menu !== null || expandedCell !== null) return;
+    if (menu !== null || headerMenu !== null || expandedCell !== null) return;
     // Ctrl/Cmd+C puts the selected rows on the clipboard as TSV — the same thing the menu's TSV
     // entry does, and the same chord the query tab's result answers.
     //
@@ -1403,7 +1410,20 @@ function SqlTable({
                       // `aria-sort` is what tells a screen reader the grid is ordered by this
                       // column; the chevron only says it to the eye.
                       aria-sort={sorted ? (sorted.desc ? "descending" : "ascending") : "none"}
-                      onClick={() => void toggleSort(c)}
+                      // On a Mac the secondary click is also `Ctrl+Click`, which WebKit reports as
+                      // an ordinary click on top of the `contextmenu` — without this, asking the
+                      // header for its menu would re-sort the grid underneath it.
+                      onClick={(e) => {
+                        if (IS_MAC && e.ctrlKey) return;
+                        void toggleSort(c);
+                      }}
+                      // The header name cannot be selected — `.headerCell` turns that off so that
+                      // clicking a column repeatedly to cycle its sort does not start highlighting
+                      // it — so the menu is the only way to take a copy of it.
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setHeaderMenu({ col: c, x: e.clientX, y: e.clientY });
+                      }}
                     >
                       {/* Around the name rather than around the whole cell, and not only because a
                           hook cannot be called from this loop: the FK chip beside it has a tooltip
@@ -1623,6 +1643,13 @@ function SqlTable({
           }}
         />
       </div>
+      {headerMenu !== null && (
+        <ContextMenu x={headerMenu.x} y={headerMenu.y} onClose={closeHeaderMenu}>
+          <button type="button" onClick={() => copyToClipboard(headerMenu.col)}>
+            {t("sqlTable.copyColumnName")}
+          </button>
+        </ContextMenu>
+      )}
       {menu !== null && menuRow !== null && (
         <ContextMenu x={menu.x} y={menu.y} onClose={closeMenu}>
           <button

@@ -236,6 +236,11 @@
   opacity: 0.8;
   vertical-align: 0.05em;
   cursor: help;
+  /* Out of the selection, because the badge sits against the name with only a margin between them:
+     to the browser `id` and `PK` are one word, so a double-click on the name takes the badge with
+     it and a copy of the column name comes back as `idPK`. Every badge here is the app talking
+     about the value beside it — none of them is text anybody means to copy. */
+  user-select: none;
 }
 
 /* The badge on a key that organises the table: the primary key, and the columns in it. */

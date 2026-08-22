@@ -461,6 +461,9 @@ const dbVi: DbDict = {
     // dưới con trỏ, một cho nhiều dòng đang chọn — `t()` không có quy tắc số nhiều, và đặt {{n}}
     // vào một chuỗi duy nhất thì câu cho một dòng đọc không xuôi.
     copyCellValue: "Sao chép giá trị ô",
+    // Hàng tiêu đề có menu riêng, chỉ gồm mục này: tên cột không bôi đen được bằng chuột, nên đây
+    // là cách duy nhất để sao chép nó.
+    copyColumnName: "Sao chép tên cột",
     openReferencedRow: "Mở dòng được tham chiếu trong {{table}}",
     copyInsert: "Sao chép câu lệnh INSERT",
     copyInsertRows: "Sao chép {{n}} dòng thành câu lệnh INSERT",
