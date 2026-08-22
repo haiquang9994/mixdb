@@ -362,14 +362,13 @@ const dbEn = {
     noMatchingRows: "No row here matches that.",
     // The right-click menu over a result. Two halves: what is highlighted, and the whole result —
     // the second because the commonest reason to open this menu at all is to take the lot.
-    copySelection: "Copy",
+    copySelectionTsv: "Copy as TSV",
     copySelectionCsv: "Copy as CSV",
     copySelectionJson: "Copy as JSON",
-    copyAll: "Copy the whole result",
+    copyAllTsv: "Copy the whole result as TSV",
     copyAllCsv: "Copy the whole result as CSV",
     copyAllJson: "Copy the whole result as JSON",
     expandCell: "Open this cell",
-    cellTitle: "{{column}}, row {{n}}",
     // Said when the script was sent with a ceiling it was not written with.
     limitAdded: "A LIMIT of {{limit}} was added to {{n}} of these statements. Write your own LIMIT to ask for something else.",
     // Saved queries, offered back by name as the editor is typed in.
@@ -482,6 +481,9 @@ const dbEn = {
     copyRowsAsTsv: "Copy {{n}} rows as TSV",
     copyAsCsv: "Copy row as CSV",
     copyRowsAsCsv: "Copy {{n}} rows as CSV",
+    copyAsJson: "Copy row as JSON",
+    copyRowsAsJson: "Copy {{n}} rows as JSON",
+    expandCell: "Open this cell",
     // What the operator does in words, with the SQL it stands for in brackets — the four that
     // are all LIKE underneath are told apart by the shape of the pattern each one builds.
     op: {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { modalDepth } from "../../../../core/shortcuts";
 
 /** How long the box takes to rise, and to settle back. Coming back is quicker on purpose: going up
  *  is worth watching because it says where the box went, while coming back is only getting out of
@@ -63,7 +64,8 @@ export interface ResultsZoom {
  * this is used on: a results pane holding several grids of a thousand rows is thousands of elements
  * whose second copy would cost more than the animation.
  *
- * Escape closes it, and so does anything else that calls {@link ResultsZoom.close}.
+ * Escape closes it — unless a dialog or a menu is up, which answers for itself; see the listener
+ * below. Anything else that calls {@link ResultsZoom.close} closes it too.
  */
 export function useResultsZoom(box: RefObject<HTMLElement | null>): ResultsZoom {
   const [phase, setPhase] = useState<"resting" | "up" | "falling">("resting");
@@ -131,7 +133,13 @@ export function useResultsZoom(box: RefObject<HTMLElement | null>): ResultsZoom 
     if (phase !== "up") return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
-      // Taken from whatever else is listening: the box is over everything, so Escape is putting it
+      // Unless something is over the box in turn. This listener is in the capture phase, so it sees
+      // the key before any dialog opened out of the box below it — a cell of a result, expanded —
+      // and without this it would put the box away while leaving that dialog standing over the tab
+      // it came from. Escape belongs to whatever is on top, and `modalDepth` is what the rest of
+      // the app asks to find out whether that is still this.
+      if (modalDepth() !== 0) return;
+      // Taken from whatever else is listening: nothing is over the box, so Escape is putting it
       // back and doing nothing else.
       e.stopPropagation();
       close();

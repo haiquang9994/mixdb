@@ -1,136 +1,117 @@
 /**
- * The rectangle of cells the result grid has selected, and cutting that rectangle out as data.
+ * Which rows of a result the grid has chosen, and cutting those rows out as data.
  *
- * Cells rather than rows, which is where this parts company with the data tab's table. There the
- * unit is a row, because everything done next — copy as INSERT, delete, clone — is done to a whole
- * row, and a row of a table has an identity to be done it to. A query result has neither: an
- * arbitrary SELECT has no primary key and no table to write back to, and what someone reaches into
- * it for is usually three columns out of twenty.
+ * Rows, the way the data tab's table does it — a plain click takes one, the platform's own modifier
+ * toggles one, Shift takes everything between the anchor and here. What someone reaches into a
+ * result for is a set of rows to paste somewhere else, and a rectangle of cells made that the one
+ * thing they could not have: half a row is not a record.
  *
- * Every coordinate here is a **view** coordinate — which row down the screen, which column across —
- * not an index into the rows the server sent. The two differ the moment anything is sorted or
- * filtered, and {@link cutOut} is the single place the one is turned back into the other.
+ * Every coordinate here is a **view** coordinate — which row down the screen — not an index into
+ * the rows the server sent. The two differ the moment anything is sorted or filtered, and
+ * {@link cutOut} is the single place the one is turned back into the other.
  */
-
-/** One cell, by where it sits on screen. */
-export interface Cell {
-  row: number;
-  col: number;
-}
 
 /**
- * A selection as the two cells that made it: where it started and where it has been dragged to.
+ * The chosen rows, plus the two positions a list selection has to remember.
  *
- * Kept this way round rather than as a rectangle because the anchor has to survive: Shift+click
- * and Shift+arrow both mean "from where I started to here", and a rectangle has forgotten which of
- * its corners the user actually put down.
+ * `rows` alone would not do: Shift+click means "from where I started to here", and a bare set has
+ * forgotten where that was. `focus` is where an arrow key moves from, which is not the anchor the
+ * moment Shift has been held once.
  */
 export interface Selection {
-  anchor: Cell;
-  focus: Cell;
+  rows: ReadonlySet<number>;
+  /** Where a Shift range measures from. */
+  anchor: number;
+  /** The row the keyboard is on. */
+  focus: number;
 }
 
-/** The same selection with its corners the right way round, whichever way it was dragged. */
-export interface Rect {
-  top: number;
-  left: number;
-  bottom: number;
-  right: number;
+/** The two modifiers a click can carry. `extend` is Shift; `toggle` is Ctrl, or ⌘ on a Mac. */
+export interface Modifiers {
+  extend: boolean;
+  toggle: boolean;
 }
-
-/** What a row that has nothing selected in it reports. Two numbers, and a shared constant so no
- *  caller has to build a throwaway array to say "nothing here". */
-const NOTHING: [number, number] = [-1, -1];
 
 function clamp(value: number, last: number): number {
   return Math.min(Math.max(value, 0), last);
 }
 
+/** Every row between two, either way round. */
+function range(from: number, to: number): number[] {
+  const [low, high] = from <= to ? [from, to] : [to, from];
+  const out: number[] = [];
+  for (let i = low; i <= high; i++) out.push(i);
+  return out;
+}
+
 /**
- * A click landing on a cell. `extend` is Shift held: the anchor stays and the focus moves, which is
- * what draws a rectangle out of two clicks.
+ * A click landing on a row.
  *
- * There is no Ctrl+click here and no list of rectangles. One rectangle is the thing that pastes
- * into a spreadsheet as a block; several disjoint ones have no such shape, and offering a selection
- * that cannot be copied usefully is worse than not offering it.
+ * Shift extends from the anchor, which stays where it was. Shift with the modifier adds that stretch
+ * to what is already chosen rather than replacing it — which is how a list is asked for two blocks
+ * of rows out of the middle of it.
  */
-export function moveSelection(current: Selection | null, cell: Cell, extend: boolean): Selection {
-  if (!extend || current === null) return { anchor: cell, focus: cell };
-  return { anchor: current.anchor, focus: cell };
-}
-
-/** Every cell there is, or nothing when there are none — an empty grid has no cell to anchor on. */
-export function selectAll(rowCount: number, columnCount: number): Selection | null {
-  if (rowCount === 0 || columnCount === 0) return null;
-  return { anchor: { row: 0, col: 0 }, focus: { row: rowCount - 1, col: columnCount - 1 } };
-}
-
-export function rectOf(selection: Selection | null): Rect | null {
-  if (selection === null) return null;
-  const { anchor, focus } = selection;
-  return {
-    top: Math.min(anchor.row, focus.row),
-    left: Math.min(anchor.col, focus.col),
-    bottom: Math.max(anchor.row, focus.row),
-    right: Math.max(anchor.col, focus.col),
-  };
+export function pickRow(current: Selection | null, row: number, mods: Modifiers): Selection {
+  if (mods.extend && current !== null) {
+    const stretch = range(current.anchor, row);
+    const rows = mods.toggle ? new Set([...current.rows, ...stretch]) : new Set(stretch);
+    return { rows, anchor: current.anchor, focus: row };
+  }
+  if (mods.toggle && current !== null) {
+    const rows = new Set(current.rows);
+    if (!rows.delete(row)) rows.add(row);
+    return { rows, anchor: row, focus: row };
+  }
+  return { rows: new Set([row]), anchor: row, focus: row };
 }
 
 /**
- * Which of a row's columns are inside the rectangle: `[from, to]`, or `[-1, -1]` when the row is
- * untouched.
+ * An arrow key. `delta` is how many rows to move; `extend` is Shift held, which stretches the
+ * selection from its anchor instead of moving it.
  *
- * Two numbers rather than an object, and the caller pulls them apart before handing them on. Every
- * row on screen asks this on every render, and a fresh object — or a fresh array — crossing into a
- * memoised row is a memo that never hits: sixty rows rebuilt for every cell the pointer crosses.
- */
-export function spanIn(rect: Rect | null, viewRow: number): [number, number] {
-  if (rect === null || viewRow < rect.top || viewRow > rect.bottom) return NOTHING;
-  return [rect.left, rect.right];
-}
-
-/**
- * An arrow key. `step` is how far to go in each direction; `extend` is Shift held, which stretches
- * the selection from its anchor instead of moving it.
- *
- * From nothing, the first press lands on the first cell rather than one step past it — the key was
+ * From nothing, the first press lands on the first row rather than one step past it — the key was
  * asking to get into the grid, not to move within it.
  */
-export function stepSelection(
+export function stepRow(
   current: Selection | null,
-  step: Cell,
+  delta: number,
   extend: boolean,
-  rowCount: number,
-  columnCount: number
+  rowCount: number
 ): Selection | null {
-  if (rowCount === 0 || columnCount === 0) return null;
-  if (current === null) return { anchor: { row: 0, col: 0 }, focus: { row: 0, col: 0 } };
-  const cell = {
-    row: clamp(current.focus.row + step.row, rowCount - 1),
-    col: clamp(current.focus.col + step.col, columnCount - 1),
+  if (rowCount === 0) return null;
+  if (current === null) return { rows: new Set([0]), anchor: 0, focus: 0 };
+  const row = clamp(current.focus + delta, rowCount - 1);
+  return pickRow(current, row, { extend, toggle: false });
+}
+
+/** Every row there is, or nothing when there are none — an empty grid has no row to anchor on. */
+export function allRows(rowCount: number): Selection | null {
+  if (rowCount === 0) return null;
+  return {
+    rows: new Set(range(0, rowCount - 1)),
+    anchor: 0,
+    focus: rowCount - 1,
   };
-  return moveSelection(current, cell, extend);
 }
 
 /**
- * The rectangle as data of its own, in the shape `gridText` takes.
+ * The chosen rows as data of their own, in the shape `gridText` takes.
  *
  * The one place view coordinates go back to being rows of the result: `view[r]` is which row the
- * server actually sent, and the order they come out in is the order they are on screen — a copy of
- * a sorted grid pastes the way the grid looks.
+ * server actually sent, and they come out in the order they are on screen rather than the order
+ * they were clicked — a copy of a sorted grid pastes the way the grid looks.
  */
 export function cutOut(
-  rect: Rect,
+  selection: Selection,
   view: number[],
   rows: unknown[][],
   columns: string[]
 ): { columns: string[]; rows: unknown[][] } {
-  const picked = columns.slice(rect.left, rect.right + 1);
   const out: unknown[][] = [];
-  for (let r = rect.top; r <= rect.bottom; r++) {
+  for (let r = 0; r < view.length; r++) {
+    if (!selection.rows.has(r)) continue;
     const row = rows[view[r]];
-    if (row === undefined) continue;
-    out.push(row.slice(rect.left, rect.right + 1));
+    if (row !== undefined) out.push(row);
   }
-  return { columns: picked, rows: out };
+  return { columns, rows: out };
 }

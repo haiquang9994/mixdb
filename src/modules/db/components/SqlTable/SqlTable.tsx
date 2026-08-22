@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ActionBar from "../../../../components/ActionBar";
+import CellDialog from "../../../../components/CellDialog";
 import ConfirmDialog from "../../../../components/ConfirmDialog";
 import ContextMenu from "../../../../components/ContextMenu";
 import FilterBar, { type FilterBarHandle } from "../FilterBar";
@@ -38,7 +39,7 @@ import {
   type TableCache,
   type TableRequest,
 } from "./request";
-import { csvText, insertStatements, spreadsheetText } from "./rowText";
+import { csvText, insertStatements, jsonText, spreadsheetText } from "./rowText";
 import type { SqlColumnMeta } from "../../types";
 import styles from "./SqlTable.module.css";
 
@@ -501,6 +502,9 @@ function SqlTable({
   /** The right-click menu, and where it was opened — see {@link CellMenu}. */
   const [menu, setMenu] = useState<CellMenu | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  /** The cell being read in a dialog of its own, by row on the page and column. Held rather than
+   *  its value: an edit committed underneath it should be what the dialog shows. */
+  const [expandedCell, setExpandedCell] = useState<{ rowIndex: number; col: string } | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteWholeTable, setDeleteWholeTable] = useState(false);
   const [resetAutoIncrement, setResetAutoIncrement] = useState(false);
@@ -684,10 +688,13 @@ function SqlTable({
   // new table — drops the selection rather than carrying it onto different rows.
   //
   // The right-click menu goes with it: it is opened on one row of one page, and every entry in it
-  // acts on the selection the same indices name.
+  // acts on the selection the same indices name. So does an open cell dialog, which names a row the
+  // same way — left up, it would go on showing a heading from the old page over a value from the
+  // new one.
   useEffect(() => {
     clearSelection();
     setMenu(null);
+    setExpandedCell(null);
   }, [selectedDb, selectedTable, page, pageSize, sort, appliedFilters, reloadToken]);
 
   const request: TableRequest = {
@@ -1112,8 +1119,25 @@ function SqlTable({
     if (editingCellRef.current) return;
     // The right-click menu answers the keyboard while it is up — Escape closes it. Clearing the
     // selection as well would be two things done by one key, and the selection is what the menu is
-    // about to act on.
-    if (menu !== null) return;
+    // about to act on. The cell dialog is the same story: it takes Escape, and what it was opened
+    // from is still selected behind it.
+    if (menu !== null || expandedCell !== null) return;
+    // Ctrl/Cmd+C puts the selected rows on the clipboard as TSV — the same thing the menu's TSV
+    // entry does, and the same chord the query tab's result answers.
+    //
+    // Not a registered shortcut, because it must not answer from wherever the focus happens to be:
+    // Ctrl+C in the filter bar copies the text in the box, and copying forty rows instead would be
+    // this grid taking a key that was never about it. Here it is the grid's own, and only while
+    // the grid holds the keyboard.
+    if (hasPrimaryModifier(e) && (e.key === "c" || e.key === "C")) {
+      // A value dragged out of a cell is still the browser's copy to make. The grid keeps the
+      // keyboard through such a drag — clicking a row is what hands it over — so without this the
+      // chord would put whole rows on the clipboard instead of the words under the pointer.
+      if (selectedRows.size === 0 || (window.getSelection()?.toString() ?? "") !== "") return;
+      e.preventDefault();
+      copyToClipboard(spreadsheetText(columns, selectedRowsInOrder()));
+      return;
+    }
     if (e.key === "Escape" && selectedRows.size > 0) {
       e.preventDefault();
       clearSelection();
@@ -1601,6 +1625,15 @@ function SqlTable({
       </div>
       {menu !== null && menuRow !== null && (
         <ContextMenu x={menu.x} y={menu.y} onClose={closeMenu}>
+          <button
+            type="button"
+            onClick={() => {
+              setExpandedCell({ rowIndex: menu.rowIndex, col: menu.col });
+              closeMenu();
+            }}
+          >
+            {t("sqlTable.expandCell")}
+          </button>
           <button type="button" onClick={() => copyToClipboard(displayValue(menuRow[menu.col]))}>
             {t("sqlTable.copyCellValue")}
           </button>
@@ -1658,6 +1691,11 @@ function SqlTable({
             {menuRows.length === 1
               ? t("sqlTable.copyAsCsv")
               : t("sqlTable.copyRowsAsCsv", { n: menuRows.length })}
+          </button>
+          <button type="button" onClick={() => copyToClipboard(jsonText(columns, menuRows))}>
+            {menuRows.length === 1
+              ? t("sqlTable.copyAsJson")
+              : t("sqlTable.copyRowsAsJson", { n: menuRows.length })}
           </button>
           <div className="context-menu-separator" />
           <button
@@ -1727,6 +1765,19 @@ function SqlTable({
             </div>
           )}
         </ConfirmDialog>
+      )}
+      {/* The row is looked up at render time rather than held in state, so a value edited or
+          reloaded underneath the dialog is the one it shows. A reload that drops the row — a page
+          that came back shorter — closes it rather than showing a blank. */}
+      {expandedCell !== null && rows[expandedCell.rowIndex] !== undefined && (
+        <CellDialog
+          column={expandedCell.col}
+          // The rows here are one page of a table somebody may have sorted and filtered, so there
+          // is no number that means anything outside this screenful.
+          rowNumber={null}
+          value={rows[expandedCell.rowIndex][expandedCell.col]}
+          onClose={() => setExpandedCell(null)}
+        />
       )}
     </div>
   );

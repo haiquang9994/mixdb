@@ -44,6 +44,10 @@ const vi: SharedDict = {
   errorBanner: {
     dismiss: "Đóng thông báo lỗi",
   },
+  cellDialog: {
+    title: "{{column}}, dòng {{n}}",
+    copy: "Chép",
+  },
   settings: {
     title: "Cài đặt",
     close: "Đóng",

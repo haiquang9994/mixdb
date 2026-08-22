@@ -1,14 +1,18 @@
 /**
  * Rows of the grid as text somebody can paste somewhere else: the SQL that would put them back
- * into a table, and the tab-separated form a spreadsheet reads.
+ * into a table, and the TSV, CSV and JSON a spreadsheet or an editor reads.
  *
  * Kept out of the component and free of React so the escaping — the part that is easy to get
  * quietly wrong and impossible to see wrong on screen — can be tested on its own.
  */
 
-// Renamed on the way in because this file exports a `csvText` of its own — same name, and rows of a
-// different shape.
-import { csvText as csvGridText, tsvText } from "../../../../core/gridText";
+// Renamed on the way in because this file exports a `csvText` and a `jsonText` of its own — same
+// names, and rows of a different shape.
+import {
+  csvText as csvGridText,
+  jsonText as jsonGridText,
+  tsvText,
+} from "../../../../core/gridText";
 
 /** A name as it goes into a statement: backticks, with any backtick inside doubled. That is MySQL's
  *  own way of writing a name that holds one, and a table or column can hold one. */
@@ -148,7 +152,7 @@ export function insertStatements(
 }
 
 /**
- * The two delimited formats, on rows keyed by column name.
+ * The three copy formats, on rows keyed by column name.
  *
  * The work is in `core/gridText.ts`, which speaks positional rows — the form that survives a result
  * naming the same column twice. This grid never has that problem, since it is showing one table and
@@ -166,4 +170,10 @@ export function spreadsheetText(columns: string[], rows: Record<string, unknown>
 /** `rows` as CSV, for saving to a file rather than pasting into an open sheet. */
 export function csvText(columns: string[], rows: Record<string, unknown>[]): string {
   return csvGridText(columns, positional(columns, rows));
+}
+
+/** `rows` as a JSON array of objects — what goes into a request body or a fixture rather than into
+ *  a spreadsheet. */
+export function jsonText(columns: string[], rows: Record<string, unknown>[]): string {
+  return jsonGridText(columns, positional(columns, rows));
 }

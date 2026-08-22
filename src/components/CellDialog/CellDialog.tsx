@@ -1,21 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { CloseIcon } from "../../../../icons";
-import { useTranslation } from "../../../../i18n";
-import Button from "../../../../components/Button";
-import JsonView from "../../../../components/JsonView";
-import { useDialogExit } from "../../../../components/dialogMotion";
-import { copyText } from "../../../../core/clipboard";
-import { displayValue } from "../../../../core/virtualRows";
-import { errorMessage } from "../../../../core/errors";
-import styles from "./QueryEditor.module.css";
+import { CloseIcon } from "../../icons";
+import { useTranslation } from "../../i18n";
+import Button from "../Button";
+import JsonView from "../JsonView";
+import { useDialogExit } from "../dialogMotion";
+import { copyText } from "../../core/clipboard";
+import { displayValue } from "../../core/virtualRows";
+import { errorMessage } from "../../core/errors";
+import styles from "./CellDialog.module.css";
 
 interface Props {
   /** The column the cell is in, for the heading. */
   column: string;
-  /** Which row of the result it came from — the number the `#` column shows, so the dialog and the
-   *  grid behind it agree about where this is. */
-  rowNumber: number;
+  /** Which row it came from, when the grid behind numbers its rows — the query tab's result shows
+   *  that number in its `#` column, so the dialog and the grid agree about where this is. `null`
+   *  where there is no such number: the data tab's table is a page of a table somebody may have
+   *  sorted and filtered, and "row 3" there would name a different row on every visit. */
+  rowNumber: number | null;
   value: unknown;
   onClose: () => void;
 }
@@ -43,14 +45,15 @@ function asJson(value: unknown): unknown | null {
 }
 
 /**
- * One cell of a result, big enough to read.
+ * One cell of a grid, big enough to read.
  *
- * The grid cuts every cell off at 320px and puts the rest in a tooltip, which is right for scanning
- * a table and useless for a value that is a paragraph, a stack trace or a document. This is where
+ * A grid cuts every cell off at 320px and puts the rest in a tooltip, which is right for scanning a
+ * table and useless for a value that is a paragraph, a stack trace or a document. This is where
  * that value is actually read — and copied, since selecting text out of a 320px cell is not a thing
  * anyone manages.
  *
- * Read-only, and it is meant to be: a query result has no way back to the table it came from.
+ * Read-only, and it is meant to be: this is opened from the query tab's result, which has no way
+ * back to the table it came from, and from the data tab's table, where a cell is edited in place.
  */
 function CellDialog({ column, rowNumber, value, onClose }: Props) {
   const { t } = useTranslation();
@@ -71,17 +74,17 @@ function CellDialog({ column, rowNumber, value, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [close, onClose]);
 
-  const title = t("query.cellTitle", { column, n: rowNumber });
+  const title = rowNumber === null ? column : t("cellDialog.title", { column, n: rowNumber });
 
   return createPortal(
     <>
       <div className={cls(styles.overlay)} onClick={() => close(onClose)} />
-      <div className={cls(styles.cellDialog)} role="dialog" aria-modal="true" aria-label={title}>
-        <div className={styles.historyHeader}>
-          <h3 className={styles.historyTitle}>{title}</h3>
+      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={title}>
+        <div className={styles.header}>
+          <h3 className={styles.title}>{title}</h3>
           <button
             type="button"
-            className={styles.historyClose}
+            className={styles.close}
             onClick={() => close(onClose)}
             title={t("common.close")}
             aria-label={t("common.close")}
@@ -90,17 +93,17 @@ function CellDialog({ column, rowNumber, value, onClose }: Props) {
           </button>
         </div>
 
-        <div className={styles.cellBody}>
-          {json === null ? <pre className={styles.cellText}>{text}</pre> : <JsonView value={json} />}
+        <div className={styles.body}>
+          {json === null ? <pre className={styles.text}>{text}</pre> : <JsonView value={json} />}
         </div>
 
         {failed !== "" && (
-          <p className={styles.copyFailed} role="alert">
+          <p className={styles.failed} role="alert">
             {failed}
           </p>
         )}
 
-        <div className={styles.cellActions}>
+        <div className={styles.actions}>
           <Button
             size="large"
             onClick={() => {
@@ -109,7 +112,7 @@ function CellDialog({ column, rowNumber, value, onClose }: Props) {
                 .catch((e) => setFailed(errorMessage(t, e)));
             }}
           >
-            {t("query.copySelection")}
+            {t("cellDialog.copy")}
           </Button>
         </div>
       </div>

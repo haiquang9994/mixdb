@@ -353,14 +353,13 @@ const dbVi: DbDict = {
     noMatchingRows: "Không có dòng nào ở đây khớp.",
     // Menu chuột phải trên kết quả. Hai nửa: phần đang chọn, và cả kết quả — nửa sau vì lý do
     // thường gặp nhất để mở menu này là lấy hết.
-    copySelection: "Chép",
+    copySelectionTsv: "Chép dạng TSV",
     copySelectionCsv: "Chép dạng CSV",
     copySelectionJson: "Chép dạng JSON",
-    copyAll: "Chép cả kết quả",
+    copyAllTsv: "Chép cả kết quả dạng TSV",
     copyAllCsv: "Chép cả kết quả dạng CSV",
     copyAllJson: "Chép cả kết quả dạng JSON",
     expandCell: "Mở ô này",
-    cellTitle: "{{column}}, dòng {{n}}",
     // Nói ra khi script được gửi đi kèm một mức trần mà nó không tự viết.
     limitAdded: "Đã thêm LIMIT {{limit}} vào {{n}} câu lệnh trong số này. Hãy tự viết LIMIT nếu muốn mức khác.",
     // Câu truy vấn đã lưu, gõ tên là gợi ý lại.
@@ -471,6 +470,9 @@ const dbVi: DbDict = {
     copyRowsAsTsv: "Sao chép {{n}} dòng dạng TSV",
     copyAsCsv: "Sao chép dòng dạng CSV",
     copyRowsAsCsv: "Sao chép {{n}} dòng dạng CSV",
+    copyAsJson: "Sao chép dòng dạng JSON",
+    copyRowsAsJson: "Sao chép {{n}} dòng dạng JSON",
+    expandCell: "Mở ô này",
     // Nghĩa tiếng Việt đứng trước, ký hiệu/từ khóa SQL trong ngoặc — người dùng đọc được ngay
     // toán tử làm gì mà vẫn thấy đúng thứ câu lệnh sẽ chạy.
     op: {

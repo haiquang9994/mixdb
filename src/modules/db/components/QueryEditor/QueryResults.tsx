@@ -54,6 +54,13 @@ function QueryResults({ results, error, limitsAdded, limit, statementsSent }: Pr
     }
   }
 
+  /** Whether this result has a grid under it — which is where its summary goes when it does. The
+   *  grid already stands a strip of its own for the filter box, and a line of text above that strip
+   *  saying the same kind of thing spent two lines of the pane on one sentence. */
+  function hasGrid(result: SqlStatementResult): boolean {
+    return result.kind === "rows" && result.columns.length > 0;
+  }
+
   /** What the server spent on the statements that ran, added up. Wall-clock time would be a bigger
    *  number — the round trip and the decoding are in it — and would not agree with the per-statement
    *  figures in the headers below. Numbers that add up are what make the line readable. */
@@ -118,20 +125,27 @@ function QueryResults({ results, error, limitsAdded, limit, statementsSent }: Pr
             </header>
 
             <div className={styles.resultBody}>
-              {result.error === null ? (
-                <p className={styles.resultSummary}>{summary(result)}</p>
-              ) : (
+              {result.error !== null && (
                 <div className={styles.resultError} role="alert">
                   <p>{result.error}</p>
                   <p className={styles.resultErrorNote}>{t("query.statementFailed")}</p>
                 </div>
+              )}
+              {/* Only for the results with no grid to carry it: a statement that changed rows, one
+                  that returned no columns at all, or one that failed. */}
+              {result.error === null && !hasGrid(result) && (
+                <p className={styles.resultSummary}>{summary(result)}</p>
               )}
 
               {result.kind === "rows" && result.columns.length > 0 && (
                 // The grid is its own component and its own memo: past a few dozen rows it holds
                 // only the rows on screen, and how it works out which those are is a fair amount of
                 // machinery to keep out of the way of everything else in this file.
-                <ResultGrid columns={result.columns} rows={result.rows} />
+                <ResultGrid
+                  columns={result.columns}
+                  rows={result.rows}
+                  summary={summary(result)}
+                />
               )}
             </div>
           </section>
