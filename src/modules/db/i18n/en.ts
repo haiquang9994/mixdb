@@ -343,6 +343,32 @@ const dbEn = {
     unguardedDropUnnamed: "This {{verb}} removes what it names and everything in it. Nothing here can put it back.",
     unguardedManyMixed: "{{n}} statements each remove or rewrite the whole of what they name: {{list}}.",
     unguardedConfirm: "Run it",
+    // Above the results when a script held more than one statement: how many of them ran, and what
+    // the server spent on them altogether. A statement that fails stops the ones after it, and
+    // without this line a script cut short reads exactly like a script that finished.
+    scriptSummary: "{{n}} of {{m}} statements · {{ms}} ms",
+    scriptSummaryAll: "{{m}} statements · {{ms}} ms",
+    // The heading's tooltip, which says what one more click does — and says the thing that is
+    // easiest to get wrong about it. Sorting here reorders the rows that came back and nothing
+    // else: a result cut off at 1000 rows, sorted descending, does not show the table's largest.
+    sortAsc: "Sort by {{column}}, smallest first — only the rows already returned",
+    sortDesc: "Sort by {{column}}, largest first — only the rows already returned",
+    sortNone: "Back to the order the server sent",
+    findPlaceholder: "Filter these rows...",
+    findCount: "{{n}} of {{m}} rows",
+    // Not the same sentence as `noRows`: that one says the query found nothing, this one says the
+    // box above cut everything out. Telling someone their query came back empty when it did not is
+    // the kind of wrong answer they act on.
+    noMatchingRows: "No row here matches that.",
+    // The right-click menu over a result. Two halves: what is highlighted, and the whole result —
+    // the second because the commonest reason to open this menu at all is to take the lot.
+    copySelectionTsv: "Copy as TSV",
+    copySelectionCsv: "Copy as CSV",
+    copySelectionJson: "Copy as JSON",
+    copyAllTsv: "Copy the whole result as TSV",
+    copyAllCsv: "Copy the whole result as CSV",
+    copyAllJson: "Copy the whole result as JSON",
+    expandCell: "Open this cell",
     // Said when the script was sent with a ceiling it was not written with.
     limitAdded: "A LIMIT of {{limit}} was added to {{n}} of these statements. Write your own LIMIT to ask for something else.",
     // Saved queries, offered back by name as the editor is typed in.
@@ -455,6 +481,9 @@ const dbEn = {
     copyRowsAsTsv: "Copy {{n}} rows as TSV",
     copyAsCsv: "Copy row as CSV",
     copyRowsAsCsv: "Copy {{n}} rows as CSV",
+    copyAsJson: "Copy row as JSON",
+    copyRowsAsJson: "Copy {{n}} rows as JSON",
+    expandCell: "Open this cell",
     // What the operator does in words, with the SQL it stands for in brackets — the four that
     // are all LIKE underneath are told apart by the shape of the pattern each one builds.
     op: {

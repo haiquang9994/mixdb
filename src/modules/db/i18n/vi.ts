@@ -334,6 +334,32 @@ const dbVi: DbDict = {
     unguardedDropUnnamed: "{{verb}} này xoá luôn thứ nó nhắm tới và mọi thứ bên trong. Ở đây không có gì lấy lại được.",
     unguardedManyMixed: "{{n}} câu lệnh, mỗi câu xoá hoặc ghi đè trọn vẹn thứ nó nhắm tới: {{list}}.",
     unguardedConfirm: "Vẫn chạy",
+    // Trên phần kết quả, khi script có từ hai câu lệnh trở lên: đã chạy mấy câu, và máy chủ tốn bao
+    // lâu cho tất cả. Một câu lệnh lỗi làm dừng những câu sau nó, và không có dòng này thì một
+    // script bị chặn giữa chừng trông y hệt một script chạy xong.
+    scriptSummary: "{{n}} / {{m}} câu lệnh · {{ms}} ms",
+    scriptSummaryAll: "{{m}} câu lệnh · {{ms}} ms",
+    // Tooltip của tiêu đề cột, nói xem bấm thêm một cái nữa thì được gì — và nói luôn chỗ dễ hiểu
+    // nhầm nhất. Sắp ở đây chỉ sắp lại những dòng đã về: một kết quả bị cắt ở 1000 dòng, sắp giảm
+    // dần, không cho ra giá trị lớn nhất của bảng.
+    sortAsc: "Sắp theo {{column}}, nhỏ trước — chỉ những dòng đã trả về",
+    sortDesc: "Sắp theo {{column}}, lớn trước — chỉ những dòng đã trả về",
+    sortNone: "Trở lại thứ tự máy chủ đã gửi",
+    findPlaceholder: "Lọc các dòng này...",
+    findCount: "{{n}} / {{m}} dòng",
+    // Không dùng chung câu với `noRows`: câu kia nói truy vấn không tìm được gì, câu này nói ô lọc
+    // ở trên đã cắt hết. Bảo người ta là truy vấn rỗng trong khi nó không rỗng là loại câu sai mà
+    // người ta sẽ tin và làm theo.
+    noMatchingRows: "Không có dòng nào ở đây khớp.",
+    // Menu chuột phải trên kết quả. Hai nửa: phần đang chọn, và cả kết quả — nửa sau vì lý do
+    // thường gặp nhất để mở menu này là lấy hết.
+    copySelectionTsv: "Chép dạng TSV",
+    copySelectionCsv: "Chép dạng CSV",
+    copySelectionJson: "Chép dạng JSON",
+    copyAllTsv: "Chép cả kết quả dạng TSV",
+    copyAllCsv: "Chép cả kết quả dạng CSV",
+    copyAllJson: "Chép cả kết quả dạng JSON",
+    expandCell: "Mở ô này",
     // Nói ra khi script được gửi đi kèm một mức trần mà nó không tự viết.
     limitAdded: "Đã thêm LIMIT {{limit}} vào {{n}} câu lệnh trong số này. Hãy tự viết LIMIT nếu muốn mức khác.",
     // Câu truy vấn đã lưu, gõ tên là gợi ý lại.
@@ -444,6 +470,9 @@ const dbVi: DbDict = {
     copyRowsAsTsv: "Sao chép {{n}} dòng dạng TSV",
     copyAsCsv: "Sao chép dòng dạng CSV",
     copyRowsAsCsv: "Sao chép {{n}} dòng dạng CSV",
+    copyAsJson: "Sao chép dòng dạng JSON",
+    copyRowsAsJson: "Sao chép {{n}} dòng dạng JSON",
+    expandCell: "Mở ô này",
     // Nghĩa tiếng Việt đứng trước, ký hiệu/từ khóa SQL trong ngoặc — người dùng đọc được ngay
     // toán tử làm gì mà vẫn thấy đúng thứ câu lệnh sẽ chạy.
     op: {

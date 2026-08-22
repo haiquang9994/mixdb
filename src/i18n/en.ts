@@ -48,6 +48,10 @@ const en = {
   errorBanner: {
     dismiss: "Dismiss error",
   },
+  cellDialog: {
+    title: "{{column}}, row {{n}}",
+    copy: "Copy",
+  },
   settings: {
     title: "Settings",
     close: "Close",

@@ -667,6 +667,36 @@
   overflow-wrap: anywhere;
 }
 
+/* The grid and the strip of controls above it as one block, so the filter box keeps still while the
+   grid scrolls under it — sideways included, which is the case that matters: a wide result would
+   otherwise carry the box off the left edge. It takes the sizing `.gridWrap` used to have, and
+   passes the remainder down. */
+.gridBox {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* One strip above the grid, carrying both the line that says what the result did and the box that
+   narrows it down. They used to be two lines, which is a line of the pane spent on chrome for every
+   result on screen. */
+.gridTools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Wide enough for an id or a piece of an email, and no wider: the row it sits on is the pane's, and
+   what the pane is for is the rows underneath. Pushed to the far end so the sentence on the left
+   keeps the place the eye already looks for it. */
+.findInput {
+  width: min(18rem, 100%);
+  margin-left: auto;
+}
+
 /* The one thing in a result that scrolls: sideways so a wide set doesn't drag the results column
    along with it, and downwards within whatever height the card has left. Its height comes from the
    card (`flex`), never from the viewport — a `max-height` in `vh` is unrelated to how much room
@@ -696,6 +726,11 @@
 
 .grid th,
 .grid td {
+  /* Stated rather than inherited, and this is what `ROW_HEIGHT` in `ResultGrid.tsx` counts on: a
+     glyph the body font has no room for — the sort arrows are the ones that do it — is drawn from
+     whatever fallback face has it, and that face's own line box would otherwise make the one
+     heading holding it taller than every other. */
+  line-height: 24px;
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   padding: 3px 8px;
@@ -726,6 +761,31 @@
   -webkit-backdrop-filter: var(--rail-filter);
   backdrop-filter: var(--rail-filter);
   font-weight: 600;
+}
+
+/* A heading that sorts. The pointer is the whole affordance — a button inside a `th` would bring
+   its own box model into a table whose columns are measured to the pixel.
+
+   Written as `.grid thead th.sortable` rather than as a bare class because the rule above paints
+   the heading's background: a bare `.sortable:hover` is the weaker selector and would never show. */
+.grid thead th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.grid thead th.sortable:hover {
+  background: var(--hover-bg);
+}
+
+/* Half-lit: it marks the one sorted column, and at full weight it would read as more important
+   than the name beside it. The box is the same size on every heading whether or not it holds a
+   chevron — see the `th` that renders it — and the same shape the data tab gives its own. */
+.sortMark {
+  display: inline-block;
+  width: 1em;
+  margin-left: 0.25em;
+  vertical-align: -0.15em;
+  opacity: 0.6;
 }
 
 .grid tbody tr:hover {
@@ -814,6 +874,31 @@
 .cellNull {
   opacity: 0.5;
   font-style: italic;
+}
+
+/* A chosen row. A wash rather than a border: a border would redraw the grid's own rules a pixel
+   out of place, and a run of rows reads as a block anyway. The same wash and the same deepening on
+   hover the data tab paints its selected rows with — the two grids are chosen in the same gesture
+   and should not be two different colours. */
+.grid tbody tr.rowPicked {
+  background: rgb(var(--accent-rgb) / 0.18);
+}
+
+.grid tbody tr.rowPicked:hover {
+  background: rgb(var(--accent-rgb) / 0.26);
+}
+
+/* The grid holds the keyboard while it is focused; without this there is nothing on screen saying
+   so, and Ctrl+C would work or not work for no visible reason. Inset, because an outline on a box
+   that scrolls is drawn outside it and cut off by whatever the box sits in. */
+.gridWrap:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Said in the same voice as a failed run above the results, because it is the same kind of news. */
+.copyFailed {
+  composes: error;
 }
 
 /* A result set that came back with no rows at all: said inside the frame the rows would have

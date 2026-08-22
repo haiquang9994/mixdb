@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { csvText, insertStatements, quoteIdentifier, spreadsheetText, sqlLiteral } from "./rowText";
+import {
+  csvText,
+  insertStatements,
+  jsonText,
+  quoteIdentifier,
+  spreadsheetText,
+  sqlLiteral,
+} from "./rowText";
 
 describe("quoteIdentifier", () => {
   it("wraps a name in backticks", () => {
@@ -183,5 +190,35 @@ describe("csvText", () => {
 
   it("is the header alone when nothing is selected", () => {
     expect(csvText(columns, [])).toBe("id,name");
+  });
+});
+
+describe("jsonText", () => {
+  const columns = ["id", "name"];
+
+  it("writes an object per row, keyed by column name", () => {
+    expect(jsonText(columns, [{ id: 1, name: "Ann" }])).toBe(
+      '[\n  {\n    "id": 1,\n    "name": "Ann"\n  }\n]',
+    );
+  });
+
+  it("keeps a NULL cell as a key with no value rather than dropping it", () => {
+    expect(jsonText(columns, [{ id: 1, name: null }])).toBe(
+      '[\n  {\n    "id": 1,\n    "name": null\n  }\n]',
+    );
+  });
+
+  it("writes a JSON column as JSON rather than as its text", () => {
+    expect(jsonText(["doc"], [{ doc: { a: 1 } }])).toBe('[\n  {\n    "doc": {\n      "a": 1\n    }\n  }\n]');
+  });
+
+  it("is an empty array when nothing is selected", () => {
+    expect(jsonText(columns, [])).toBe("[]");
+  });
+
+  // Only the columns on screen, in the order they are on screen — the same rule the two delimited
+  // formats follow, and the reason the rows are mapped down positionally first.
+  it("takes only the named columns", () => {
+    expect(jsonText(["name"], [{ id: 1, name: "Ann" }])).toBe('[\n  {\n    "name": "Ann"\n  }\n]');
   });
 });

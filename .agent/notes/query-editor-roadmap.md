@@ -284,14 +284,51 @@ that from mattering.
   them to the backend as binds — `mysql_run_script` gains an optional `params` argument and
   rewrites `:name` to `?` per statement — over substituting text on the client, which means writing
   our own escaper.
-- **Result grid work**: sort by column, find within results, hide columns, expand one cell as
-  formatted JSON/text, and copy or export as CSV, JSON or `INSERT` statements. Follow whatever
-  [SqlTable](../../src/modules/db/components/SqlTable/SqlTable.tsx) already does rather than inventing a
-  second grid.
+- ~~**Result grid work**~~ **Shipped 2026-08-22**: sort theo cột, ô lọc dòng, chọn dòng và chép ra
+  TSV/CSV/JSON, mở rộng một ô ra dialog. Spec:
+  [2026-08-22-query-result-grid-design.md](../../docs/superpowers/specs/2026-08-22-query-result-grid-design.md).
+
+  Ba chỗ đi khác kế hoạch cũ, đều có lý do trong spec. *Không ẩn cột* — nằm ngoài phạm vi đã chốt,
+  và còn nợ lại. *Không xuất ra `INSERT`* — không có tên bảng để `INSERT INTO` cái gì; `SqlTable`
+  làm được vì nó biết mình đang xem bảng nào. *Không xuất ra file* — chỉ chép vào clipboard, vì ghi
+  file cần dialog lưu của Tauri và đó là một bề mặt riêng.
+
+  Dòng "Result grid work" cũ bảo *"Follow whatever SqlTable already does rather than inventing a
+  second grid"*. Bản đầu **không** theo, và đã sai: lập luận lúc đó là một `SELECT` tuỳ ý không có
+  khoá chính, không có bảng để ghi lại, và thứ người ta lấy ra thường là ba cột trong hai mươi — nên
+  chọn theo **ô**, thành một vùng chữ nhật. Lập luận ấy đúng về *thứ người ta lấy ra* nhưng sai về
+  *cử chỉ*: cả app dạy người dùng rằng ấn vào một dòng là chọn dòng đó, và nửa dòng thì không còn là
+  một bản ghi để dán đi đâu. Chủ dự án gọi ra ngay khi dùng thật, và **2026-08-22** nó được đổi sang
+  chọn theo dòng đúng như `SqlTable`: ấn chọn một dòng, `Ctrl`/`⌘` bật tắt từng dòng, `Shift` lấy cả
+  quãng, `Ctrl+A` lấy tất cả, và mũi tên lên xuống đi theo dòng. Chép luôn là chép cả dòng, đủ mọi
+  cột. Chọn theo ô thì mất; mở một ô ra đọc vẫn còn, qua nhấp đúp và qua menu chuột phải — hai cử chỉ
+  đó tự biết mình đang ở cột nào, còn `Enter` thì không nên nó bị bỏ.
+
+  Phần dùng chung được là phần escape, và nó đã ra
+  [`src/core/gridText.ts`](../../src/core/gridText.ts) cho cả hai lưới.
+
+  Cùng ngày, chiều đi ngược lại cũng mở ra: `SqlTable` lấy về `Ctrl`/`⌘+C` chép các dòng đang chọn
+  ra TSV, mục *Mở ô này* trong menu chuột phải, và mục chép ra JSON. Hộp xem một ô vì thế không còn
+  là của riêng tab Query nữa — nó dọn sang
+  [`src/components/CellDialog/`](../../src/components/CellDialog/) cùng CSS và chuỗi dịch của nó
+  (`cellDialog.*` trong từ điển của shell). `rowNumber` thành `number | null`: kết quả truy vấn có
+  cột `#` để chỉ, còn bảng dữ liệu chỉ là một trang của một bảng người dùng có thể đã sắp và lọc,
+  nên "dòng 3" ở đó mỗi lần mở lại là một dòng khác.
+
+  `Ctrl+C` bên `SqlTable` **không** đăng ký vào bảng phím tắt: nó phải chỉ trả lời khi lưới đang giữ
+  bàn phím. `Ctrl+C` trong ô lọc là chép chữ trong ô lọc, và nó cũng nhường khi đang có vùng chữ
+  được bôi đen — lưới vẫn giữ focus suốt cú kéo chọn chữ đó.
+
+  **Còn nợ:** ẩn cột; xuất ra file; mở một ô bằng bàn phím (không còn con trỏ ô để `Enter` mở); và
+  `Esc` xoá vùng chọn khi kết quả đang phóng to — `resultsZoom` bắt `Esc` ở pha capture nên lưới bên
+  dưới không thấy phím đó.
 - **Transaction bar**: `BEGIN` / `COMMIT` / `ROLLBACK` buttons with an indicator when the session is
   inside a transaction. The script already runs on one connection, so this works as-is.
 - **Multiple query tabs** per connection, each with its own draft and results.
-- Total script time and an "N of M statements" line above the results.
+- ~~Total script time and an "N of M statements" line above the results.~~ **Shipped 2026-08-22**,
+  bên cạnh dòng `limitAdded` và ngoài cột cuộn. Tổng là tổng `durationMs` đo phía máy chủ, không
+  phải thời gian người dùng chờ — chênh lệch là round trip và giải mã — nên các con số trong header
+  từng câu lệnh cộng lại đúng bằng nó. Chỉ hiện từ hai câu lệnh trở lên.
 
 ## Known rough edges in the results pane
 

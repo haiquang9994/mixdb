@@ -8,6 +8,10 @@ import styles from "./QueryEditor.module.css";
 interface Props {
   /** One result per statement, or null before anything has been run. */
   results: SqlStatementResult[] | null;
+  /** How many statements the script was split into and sent as. Not `results.length`: a statement
+   *  that fails stops the script, so what came back can be fewer than what went out — which is the
+   *  whole reason the summary line exists. */
+  statementsSent: number;
   /** A failure to run the script at all. Per-statement errors travel inside `results`. */
   error: string;
   /** How many statements of this run were sent with a `LIMIT` they were not written with. Said out
@@ -29,7 +33,7 @@ interface Props {
  * The editor no longer re-renders as it is typed in, and this no longer re-renders when it does.
  * Both halves matter: one of them alone leaves the other free to bring the problem back.
  */
-function QueryResults({ results, error, limitsAdded, limit }: Props) {
+function QueryResults({ results, error, limitsAdded, limit, statementsSent }: Props) {
   const { t } = useTranslation();
 
   /** The one line under a result's header that says what it did. */
@@ -50,8 +54,34 @@ function QueryResults({ results, error, limitsAdded, limit }: Props) {
     }
   }
 
+  /** Whether this result has a grid under it — which is where its summary goes when it does. The
+   *  grid already stands a strip of its own for the filter box, and a line of text above that strip
+   *  saying the same kind of thing spent two lines of the pane on one sentence. */
+  function hasGrid(result: SqlStatementResult): boolean {
+    return result.kind === "rows" && result.columns.length > 0;
+  }
+
+  /** What the server spent on the statements that ran, added up. Wall-clock time would be a bigger
+   *  number — the round trip and the decoding are in it — and would not agree with the per-statement
+   *  figures in the headers below. Numbers that add up are what make the line readable. */
+  const totalMs = results?.reduce((sum, result) => sum + result.durationMs, 0) ?? 0;
+
   return (
     <>
+      {/* Only for a script of more than one statement. One statement has its time in its own header
+          a few pixels below, and a line repeating it says nothing. Which also keeps this clear of
+          having to say "1 statement" in two languages. */}
+      {results !== null && statementsSent > 1 && (
+        <p className={styles.note}>
+          {results.length === statementsSent
+            ? t("query.scriptSummaryAll", { m: statementsSent, ms: totalMs })
+            : t("query.scriptSummary", {
+                n: results.length,
+                m: statementsSent,
+                ms: totalMs,
+              })}
+        </p>
+      )}
       {/* Above the results rather than inside one of them: the ceiling was put on the script, and
           which statements it touched is visible in the statement each result quotes.
 
@@ -95,13 +125,16 @@ function QueryResults({ results, error, limitsAdded, limit }: Props) {
             </header>
 
             <div className={styles.resultBody}>
-              {result.error === null ? (
-                <p className={styles.resultSummary}>{summary(result)}</p>
-              ) : (
+              {result.error !== null && (
                 <div className={styles.resultError} role="alert">
                   <p>{result.error}</p>
                   <p className={styles.resultErrorNote}>{t("query.statementFailed")}</p>
                 </div>
+              )}
+              {/* Only for the results with no grid to carry it: a statement that changed rows, one
+                  that returned no columns at all, or one that failed. */}
+              {result.error === null && !hasGrid(result) && (
+                <p className={styles.resultSummary}>{summary(result)}</p>
               )}
 
               {result.kind === "rows" && result.columns.length > 0 && (
@@ -111,7 +144,7 @@ function QueryResults({ results, error, limitsAdded, limit }: Props) {
                 <ResultGrid
                   columns={result.columns}
                   rows={result.rows}
-                  emptyLabel={t("query.noRows")}
+                  summary={summary(result)}
                 />
               )}
             </div>

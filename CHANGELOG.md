@@ -41,6 +41,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- Results in the Query tab sort by clicking a column heading, and a filter box narrows them to the rows holding what you type.
+- Result rows can be selected and copied as TSV, CSV or JSON, from the keyboard or the right-click menu.
+- Double-clicking a result cell opens it in a dialog, with JSON coloured.
+- A script of several statements says how many of them ran and how long the server spent on them.
+- Rows in the Data tab copy as JSON as well as TSV and CSV, and Ctrl/Cmd+C copies the selected ones.
+- A cell of the Data tab's table opens in a dialog, the same one the Query tab's results use.
+
 ### Fixed
 
 - Dragging the divider in the Query tab all the way up no longer pushes the bar at the foot of the tab off the screen.
