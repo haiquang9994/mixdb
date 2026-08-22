@@ -55,6 +55,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - Ctrl+Tab moves to the next tab and Ctrl+Shift+Tab to the previous one, wrapping round both ends.
 - MixDB reopens with the tabs that were on the strip when it was last closed. Only the tab that was active comes back open; the rest wait until you pick them.
 
+### Changed
+
+- Settings lists the database module's pane as **Database**, beside REST and Terminal. The dump tools are a heading inside it.
+
 ## [0.0.13] - 2026-08-19
 
 ### Added

@@ -34,5 +34,4 @@ export {
   TerminalIcon,
   TrashIcon,
   UploadIcon,
-  WrenchIcon,
 } from "./icons";
