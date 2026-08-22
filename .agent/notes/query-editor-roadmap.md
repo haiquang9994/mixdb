@@ -284,14 +284,31 @@ that from mattering.
   them to the backend as binds — `mysql_run_script` gains an optional `params` argument and
   rewrites `:name` to `?` per statement — over substituting text on the client, which means writing
   our own escaper.
-- **Result grid work**: sort by column, find within results, hide columns, expand one cell as
-  formatted JSON/text, and copy or export as CSV, JSON or `INSERT` statements. Follow whatever
-  [SqlTable](../../src/modules/db/components/SqlTable/SqlTable.tsx) already does rather than inventing a
-  second grid.
+- ~~**Result grid work**~~ **Shipped 2026-08-22**: sort theo cột, ô lọc dòng, chọn vùng ô và chép ra
+  TSV/CSV/JSON, mở rộng một ô ra dialog. Spec:
+  [2026-08-22-query-result-grid-design.md](../../docs/superpowers/specs/2026-08-22-query-result-grid-design.md).
+
+  Ba chỗ đi khác kế hoạch cũ, đều có lý do trong spec. *Không ẩn cột* — nằm ngoài phạm vi đã chốt,
+  và còn nợ lại. *Không xuất ra `INSERT`* — không có tên bảng để `INSERT INTO` cái gì; `SqlTable`
+  làm được vì nó biết mình đang xem bảng nào. *Không xuất ra file* — chỉ chép vào clipboard, vì ghi
+  file cần dialog lưu của Tauri và đó là một bề mặt riêng.
+
+  Dòng "Result grid work" cũ bảo *"Follow whatever SqlTable already does rather than inventing a
+  second grid"*. Chỗ này không theo được, và đó là điều đáng ghi lại: `SqlTable` chọn theo **dòng**
+  vì mọi việc nó làm sau đó — `INSERT`, xoá, clone — là việc trên cả dòng, còn một `SELECT` tuỳ ý
+  không có khoá chính, không có bảng để ghi lại, và thứ người ta lấy ra thường là ba cột trong hai
+  mươi. Nên lưới này chọn theo **ô**. Phần dùng chung được là phần escape, và nó đã ra
+  [`src/core/gridText.ts`](../../src/core/gridText.ts) cho cả hai.
+
+  **Còn nợ:** ẩn cột; xuất ra file; và gộp hai mô hình selection nếu có ngày nào cả hai lưới cần
+  cùng một thứ.
 - **Transaction bar**: `BEGIN` / `COMMIT` / `ROLLBACK` buttons with an indicator when the session is
   inside a transaction. The script already runs on one connection, so this works as-is.
 - **Multiple query tabs** per connection, each with its own draft and results.
-- Total script time and an "N of M statements" line above the results.
+- ~~Total script time and an "N of M statements" line above the results.~~ **Shipped 2026-08-22**,
+  bên cạnh dòng `limitAdded` và ngoài cột cuộn. Tổng là tổng `durationMs` đo phía máy chủ, không
+  phải thời gian người dùng chờ — chênh lệch là round trip và giải mã — nên các con số trong header
+  từng câu lệnh cộng lại đúng bằng nó. Chỉ hiện từ hai câu lệnh trở lên.
 
 ## Known rough edges in the results pane
 
