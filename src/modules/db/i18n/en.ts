@@ -321,8 +321,12 @@ const dbEn = {
     hideResults: "Hide the results",
     showResults: "Show the results",
     resultsEmpty: "Nothing has been run yet — there are no results to put away.",
+    // The two exclude each other: results lifted over the window cannot be put away from a bar
+    // underneath them, and results put away cannot be lifted.
+    resultsZoomed: "The results are over the window — close them first.",
     zoom: "Expand the results",
     zoomEmpty: "Nothing has been run yet — there are no results to expand.",
+    zoomShut: "The results are put away — show them first.",
     zoomTitle: "Results",
     // The chip in the toolbar, and what happens when a write is attempted anyway.
     readOnly: "Read-only",

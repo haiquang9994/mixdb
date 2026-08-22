@@ -791,8 +791,12 @@ function QueryEditor({
               // Points the way the pane will move: down to put it away, up to bring it back.
               icon: showResults ? ChevronDownIcon : ChevronUpIcon,
               label: showResults ? t("query.hideResults") : t("query.showResults"),
-              disabled: !hasResults,
-              disabledHint: t("query.resultsEmpty"),
+              // Out while the box is up there. The veil already covers this bar, so a pointer
+              // cannot reach the button at all — this is what makes the keyboard agree, and it
+              // spares the descent that would otherwise fly the box home to a slot closing under
+              // it.
+              disabled: !hasResults || zoom.zoomed,
+              disabledHint: zoom.zoomed ? t("query.resultsZoomed") : t("query.resultsEmpty"),
               onClick: pane.toggle,
             },
             {
@@ -800,9 +804,11 @@ function QueryEditor({
               icon: ExpandIcon,
               label: t("query.zoom"),
               // Nothing to lift is not the same as a button that does nothing: an icon with no
-              // text has to say why it is grey.
-              disabled: results === null || results.length === 0,
-              disabledHint: t("query.zoomEmpty"),
+              // text has to say why it is grey. Results put away are nothing to lift either —
+              // lifting them would take them from a slot that is not on screen, and put them back
+              // into it.
+              disabled: results === null || results.length === 0 || pane.shut,
+              disabledHint: pane.shut ? t("query.zoomShut") : t("query.zoomEmpty"),
               onClick: zoom.open,
             },
           ]}

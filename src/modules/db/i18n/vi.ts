@@ -313,8 +313,10 @@ const dbVi: DbDict = {
     hideResults: "Ẩn phần kết quả",
     showResults: "Hiện phần kết quả",
     resultsEmpty: "Chưa chạy gì cả — chưa có kết quả để ẩn.",
+    resultsZoomed: "Kết quả đang nằm trên cửa sổ — đóng lại trước đã.",
     zoom: "Mở rộng kết quả",
     zoomEmpty: "Chưa chạy gì cả — chưa có kết quả để mở rộng.",
+    zoomShut: "Kết quả đang ẩn — hiện lên trước đã.",
     zoomTitle: "Kết quả",
     // Chip trên thanh công cụ, và điều xảy ra khi vẫn cố ghi.
     readOnly: "Chỉ đọc",

@@ -295,8 +295,9 @@ that from mattering.
 
 ## Known rough edges in the results pane
 
-Found while reviewing the pane rework of 2026-08-11 and left standing — both are reachable only by
-driving a control to its limit, and neither loses any work.
+Found while reviewing the pane rework of 2026-08-11 and left standing for a while — both were
+reachable only by driving a control to its limit, and neither lost any work. Both are fixed now;
+what they were is kept here because each says something about the pane that is still true.
 
 - ~~**The divider can push the footer bar out of view.**~~ **Fixed 2026-08-22.** `MIN_EDITOR`
   reserved its 150px out of the whole tab, toolbar and footer bar included, so the editor was left
@@ -304,10 +305,11 @@ driving a control to its limit, and neither loses any work.
   `.queryEditor` does not clip, what went off the bottom edge was the bar. The ceiling is now
   measured from the editor pane and the slot together, which is the room the divider actually
   shares out, and the clamp is a pure `fitHeight(next, room)` with a test.
-- **Expand and Hide do not exclude each other.** Expand stays enabled while the pane is shut, so
-  results just put away can be lifted over the window; Hide stays enabled while the pane is up
-  there, and closing it then flies the box home to a slot that has since collapsed. Either disable
-  each against the other's state, or have Hide close the zoom on its way.
+- ~~**Expand and Hide do not exclude each other.**~~ **Fixed 2026-08-22**, by disabling each
+  against the other's state — the first of the two options. Hide had a second reason to go: the
+  zoom veil already covers the footer bar, so the button was unreachable by pointer and answered
+  the keyboard alone. Both greyed states name their reason (`query.zoomShut`,
+  `query.resultsZoomed`), since an icon with no text has to say why it is out.
 
 ## Cross-cutting rules
 
