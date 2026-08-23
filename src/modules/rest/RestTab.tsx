@@ -40,8 +40,10 @@ import {
   pinRequest,
   saveRequest,
   useRequestLists,
+  useRequestListsLoaded,
 } from "./requestsStore";
 import { paramsFromUrl, urlWithParams } from "./syncUrlParams";
+import { parseRestTabState } from "./tabState";
 import type { RestRequest } from "./types";
 import {
   MAX_SIDEBAR_WIDTH,
@@ -70,7 +72,7 @@ type RequestTabKey = "params" | "body" | "headers" | "auth";
  * open is the only state that lives in this component, and it is the only state the app does not
  * remember — the shell keeps no tabs either.
  */
-function RestTab({ active, onTitleChange }: ModuleTabProps) {
+function RestTab({ active, onTitleChange, restored, onStateChange }: ModuleTabProps) {
   const { t } = useTranslation();
   const lists = useRequestLists();
   const workspace = useWorkspace();
@@ -83,6 +85,18 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
 
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  /* Which requests were open here last launch, taken once. A snapshot and not a live read: this
+     tab writes a new value the moment the strip moves. */
+  const [restoredState] = useState(() => parseRestTabState(restored));
+  const requestsLoaded = useRequestListsLoaded();
+  /** Whether the restore below has had its one turn — and, because the write is an effect, the
+   *  gate that keeps an empty strip from being written before that turn comes. */
+  const restoreTried = useRef(false);
+  /** The ids the restore handed to `setOpenIds`, held until the render that has them. `setOpenIds`
+   *  does not take effect in the commit that calls it, so without this the write effect below runs
+   *  once more against the empty strip it is about to replace — and writes "forget it" over the
+   *  very state that was just read back. */
+  const restoreApplied = useRef<string[] | null>(null);
   const [requestTabs, setRequestTabs] = useState<Record<string, RequestTabKey>>({});
   const [sends, setSends] = useState<Record<string, SendState>>({});
   const [preferredModes, setPreferredModes] = useState<Record<string, ViewMode>>({});
@@ -187,6 +201,43 @@ function RestTab({ active, onTitleChange }: ModuleTabProps) {
     urlRef.current?.focus();
     setFocusUrlFor(null);
   }, [focusUrlFor, activeRequest]);
+
+  /* The strip coming back to what was on it, once, when the request list has actually been read.
+     Before that the list is empty and every id would look deleted. Ids whose request has gone are
+     dropped — including a blank request the store swept away on load, which is the common case —
+     and the choice falls to the last tab left when the one that was in front is one of them. */
+  useEffect(() => {
+    if (restoreTried.current) return;
+    // Nothing to restore still has to open the gate, or the write below never runs.
+    if (restoredState !== null && !requestsLoaded) return;
+    restoreTried.current = true;
+    if (restoredState === null) return;
+    const ids = restoredState.openIds.filter((id) => findRequest(lists, id) !== undefined);
+    // Every one of them gone is a strip that really is empty, and the write below says so.
+    if (ids.length === 0) return;
+    restoreApplied.current = ids;
+    setOpenIds(ids);
+    setActiveId(
+      restoredState.activeId !== null && ids.includes(restoredState.activeId)
+        ? restoredState.activeId
+        : ids[ids.length - 1],
+    );
+  }, [restoredState, requestsLoaded, lists]);
+
+  /* Written from an effect rather than from each of the handlers that move the strip — there are
+     six of them, and one forgotten is a tab that comes back wrong. `currentId` and not `activeId`
+     because that is the tab actually on screen. `onStateChange` is deliberately not a dependency:
+     `App` hands down a fresh closure every render, and the shell compares state by identity, so
+     depending on it is the render loop named at the top of `shell/tabs.ts`. */
+  useEffect(() => {
+    if (!restoreTried.current) return;
+    if (restoreApplied.current !== null) {
+      // `setOpenIds` was handed exactly this array, so identity is the signal that it has landed.
+      if (openIds !== restoreApplied.current) return;
+      restoreApplied.current = null;
+    }
+    onStateChange(openIds.length === 0 ? undefined : { openIds, activeId: currentId });
+  }, [openIds, currentId]);
 
   function open(id: string) {
     setOpenIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
