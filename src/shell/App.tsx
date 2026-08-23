@@ -13,7 +13,7 @@ import { useUpdateCheck } from "./update";
 import { useTranslation } from "../i18n";
 import type { TabBadge } from "./module";
 import { readSession, writeSession } from "./session";
-import { rebadgeTab, retitleTab, tabIdAtOffset, type TabInfo } from "./tabs";
+import { rebadgeTab, restateTab, retitleTab, tabIdAtOffset, type TabInfo } from "./tabs";
 import { DEFAULT_MODULE_ID, MODULES, moduleById } from "./registry";
 import { ALL_SHORTCUTS, MODULE_TAB_SHORTCUTS } from "./shortcuts";
 import "./App.css";
@@ -29,9 +29,10 @@ function App() {
     return { id: crypto.randomUUID(), moduleId, title: t(def.defaultTitleKey), badges: [] };
   }
 
-  /* What was open when the app was last closed, read once on the way up. Only the strip comes
-     back: a restored tab carries its old name and nothing else, and the module behind it starts
-     from its own front door — see `shell/session.ts`. */
+  /* What was open when the app was last closed, read once on the way up. The strip and, per tab,
+     one opaque value the module behind it asked to have kept — the shell carries it and does not
+     read it. What a module does with its own is up to the module, and it does not do it until the
+     tab is first looked at. See `shell/session.ts`. */
   const [restored] = useState(readSession);
   const [tabs, setTabs] = useState<TabInfo[]>(() =>
     // Badges are never stored; the module reports its own the moment it mounts.
@@ -87,6 +88,10 @@ function App() {
 
   function setTabBadges(id: string, badges: TabBadge[]) {
     setTabs((prev) => rebadgeTab(prev, id, badges));
+  }
+
+  function setTabState(id: string, state: unknown) {
+    setTabs((prev) => restateTab(prev, id, state));
   }
 
   // Keeps activeId pointing at a real tab whenever the active one disappears
@@ -230,6 +235,8 @@ function App() {
                 active={tab.id === activeId}
                 onTitleChange={(title) => renameTab(tab.id, title)}
                 onBadgesChange={(badges) => setTabBadges(tab.id, badges)}
+                restored={tab.state}
+                onStateChange={(state) => setTabState(tab.id, state)}
               />
             </div>
           );

@@ -17,6 +17,9 @@ export interface TabInfo {
   /** What the module asked the tab bar to show for it. Reported rather than worked out up here:
    *  only the module knows what its own state means — see {@link TabBadge}. */
   badges: TabBadge[];
+  /** Whatever the module asked to have kept for this tab between launches. Opaque here: the shell
+   *  carries it to `localStorage` and back and never reads it — see `shell/session.ts`. */
+  state?: unknown;
 }
 
 /**
@@ -49,4 +52,18 @@ export function rebadgeTab(tabs: TabInfo[], id: string, badges: TabBadge[]): Tab
   const tab = tabs.find((t) => t.id === id);
   if (tab === undefined || tab.badges === badges) return tabs;
   return tabs.map((t) => (t === tab ? { ...t, badges } : t));
+}
+
+/**
+ * What the module wants remembered for this tab, or `undefined` to forget it.
+ *
+ * Compared with `Object.is`, exactly as {@link rebadgeTab} compares badges and for the same
+ * reason: this is fed from a module's effect, `App` hands down a fresh callback on every render,
+ * and a `setTabs` that always allocates closes the loop. Which means the module must not build a
+ * new state object on every render either — the bail-out here can only catch what is handed to it.
+ */
+export function restateTab(tabs: TabInfo[], id: string, state: unknown): TabInfo[] {
+  const tab = tabs.find((t) => t.id === id);
+  if (tab === undefined || Object.is(tab.state, state)) return tabs;
+  return tabs.map((t) => (t === tab ? { ...t, state } : t));
 }

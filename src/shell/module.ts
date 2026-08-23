@@ -35,6 +35,23 @@ export interface ModuleTabProps {
   active: boolean;
   onTitleChange: (title: string) => void;
   onBadgesChange: (badges: TabBadge[]) => void;
+  /**
+   * What this module wrote for this tab the last time the app was open, or `undefined`.
+   *
+   * **Read it once, at mount** — a `useState` initializer — and work from that snapshot. It is a
+   * prop rather than an argument only because there is nowhere else to put it: read it reactively
+   * and the module overwrites itself the moment it writes. Nothing here can enforce that; it is a
+   * rule, and it is in `.agent/conventions/adding-a-module.md` too.
+   *
+   * Reading once is not the same as acting once. A module whose store still has a file to read
+   * waits for it before deciding whether what it is pointing at is gone.
+   */
+  restored?: unknown;
+  /** What to hand back next launch. `undefined` means "forget it", not "unchanged". Must be
+   *  called from an event handler, or from an effect that does not depend on this callback: the
+   *  shell compares by identity, and the loop that catches otherwise is named in `shell/tabs.ts`.
+   *  Ids only — see the spec this came from, linked at the top of `shell/session.ts`. */
+  onStateChange: (state: unknown) => void;
 }
 
 /** A pane a module adds to the app's Settings dialog. */
@@ -47,9 +64,13 @@ export interface ModuleSettingsSection {
 /**
  * One thing MixDB can open a tab of.
  *
- * Deliberately without lifecycle hooks, a persistence API, or an event bus between modules: a
- * module cleans up in its own `useEffect` and saves through its own store, and inventing a need
- * nobody has yet is how a shell ends up harder to add to than what it was meant to simplify.
+ * Deliberately without lifecycle hooks or an event bus between modules: a module cleans up in its
+ * own `useEffect` and saves through its own store, and inventing a need nobody has yet is how a
+ * shell ends up harder to add to than what it was meant to simplify.
+ *
+ * The one thing it does keep for a module is a single opaque slot per tab — `restored` and
+ * `onStateChange` in {@link ModuleTabProps} — so a tab can come back to what it had open. That is
+ * not a persistence API: the shell writes the value and hands it back, and has no idea what it is.
  */
 export interface ModuleDefinition {
   id: string;

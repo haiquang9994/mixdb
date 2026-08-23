@@ -4,11 +4,16 @@ import type { TabInfo } from "./tabs";
 /**
  * Which tabs were open when the app was last closed, and which of them was in front.
  *
- * Only what the tab bar itself draws: a tab's id, the module it holds, and the name it was
- * carrying. Nothing about what was *inside* it — no connection, no request, no shell. A restored
- * tab is a place on the strip, and the module behind it starts from its own front door the moment
- * the tab is first looked at. That is the whole of the promise this file makes, and saying so here
- * is what keeps the next person from reading more into a stored title than it means.
+ * What the tab bar itself draws — a tab's id, the module it holds, the name it was carrying — and
+ * one opaque slot per tab that the module behind it filled in. This file does not know what is in
+ * that slot and never looks: only the module that wrote it can say whether `{ savedId: "…" }` is a
+ * connection that still exists, and a shell that could tell would be a shell that knows the
+ * database module by name. Everything about the shape of it, and about what may go in there, is in
+ * `docs/superpowers/specs/2026-08-23-tab-session-context-design.md` — §4 in particular: ids only,
+ * because this is `localStorage`.
+ *
+ * A restored tab is a place on the strip, and the module behind it decides what to do with its own
+ * slot the first time the tab is looked at.
  *
  * Badges are left out because they cannot be stored: a badge holds a React element. They come back
  * the moment the module mounts and reports them, which is the only time anything knows what they
@@ -27,6 +32,9 @@ export interface StoredTab {
   id: string;
   moduleId: string;
   title: string;
+  /** The module's own, written by it and read back by it. Never inspected here — see the note at
+   *  the top of the file. Absent in a session from before there was one. */
+  state?: unknown;
 }
 
 export interface StoredSession {
@@ -76,7 +84,10 @@ export function parseSession(raw: string | null, knownModuleIds: string[]): Stor
 
   const tabs = session.tabs
     .filter((tab): tab is StoredTab => isStoredTab(tab, knownModuleIds))
-    .map(({ id, moduleId, title }) => ({ id, moduleId, title }));
+    // `state` is copied across without a look at it. Whatever came out of `JSON.parse` can go back
+    // in, so there is nothing to guard against at this level; a module handed something it does
+    // not recognise simply does not restore, and its neighbours never hear about it.
+    .map(({ id, moduleId, title, state }) => ({ id, moduleId, title, state }));
   if (tabs.length === 0) return null;
 
   // A dropped module can take the active tab with it, and a session with no valid active tab is
@@ -101,7 +112,7 @@ export function readSession(): StoredSession | null {
 
 export function writeSession(tabs: TabInfo[], activeId: string): void {
   const session: StoredSession = {
-    tabs: tabs.map(({ id, moduleId, title }) => ({ id, moduleId, title })),
+    tabs: tabs.map(({ id, moduleId, title, state }) => ({ id, moduleId, title, state })),
     activeId,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
