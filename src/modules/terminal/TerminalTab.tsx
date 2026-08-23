@@ -121,19 +121,18 @@ function TerminalTab({ active, onTitleChange, onBadgesChange, restored, onStateC
     }
 
     restoreTried.current = true;
-    let cancelled = false;
+    /* Không có cờ huỷ, và cố ý: `restoreTried` đã bảo đảm `localShells()` chỉ chạy đúng một lần,
+       nên thứ duy nhất một cleanup huỷ được lại chính là lần thử ấy — StrictMode tháo rồi gắn lại
+       ngay khi mount, cleanup bắn trước khi dò xong, và tab không bao giờ về lại shell của nó.
+       Bỏ đi cũng không mất gì: tab đóng giữa chừng thì `start` ghi vào một component đã gỡ, React
+       không làm gì cả, và `restateTab` bên shell bỏ qua id không còn trong danh sách. */
     localShells()
       .then((shells) => {
         const shell = shells.find((s) => s.name === restoredState.shellName);
-        if (!cancelled && shell !== undefined) {
-          start({ kind: "local", shell, cwd: restoredState.cwd });
-        }
+        if (shell !== undefined) start({ kind: "local", shell, cwd: restoredState.cwd });
       })
       // Dò shell hỏng thì tab mở ra là form, đúng như trước khi có tính năng này.
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
   }, [restoredState, savedHostsLoaded, savedHosts]);
 
   function reconnect() {
