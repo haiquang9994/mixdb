@@ -1,5 +1,6 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
+import { useRef, type ButtonHTMLAttributes, type HTMLAttributes, type MouseEvent, type ReactNode } from "react";
 import { CloseIcon } from "../../icons";
+import { useTabSlide } from "./slide";
 import styles from "./TabStrip.module.css";
 
 /**
@@ -26,8 +27,12 @@ interface TabStripProps extends HTMLAttributes<HTMLDivElement> {
 
 export function TabStrip({ size = "normal", className, children, ...rest }: TabStripProps) {
   const classes = [styles.strip, size === "small" && styles.small, className];
+  const ref = useRef<HTMLDivElement>(null);
+  // Costs one measurement per render and does nothing at all to a strip whose tabs never move —
+  // a pane strip carries no `data-tab-id` and so has nothing to measure. See `slide.ts`.
+  useTabSlide(ref);
   return (
-    <div className={classes.filter(Boolean).join(" ")} {...rest}>
+    <div ref={ref} className={classes.filter(Boolean).join(" ")} {...rest}>
       {children}
     </div>
   );
@@ -35,8 +40,8 @@ export function TabStrip({ size = "normal", className, children, ...rest }: TabS
 
 interface TabProps extends HTMLAttributes<HTMLDivElement> {
   active: boolean;
-  /** Given, a close button appears at the end of the tab. Omitted, the tab cannot be closed —
-   *  which is what a pane tab is. */
+  /** Given, a close button appears at the end of the tab, and the middle mouse button closes it
+   *  too. Omitted, the tab cannot be closed — which is what a pane tab is. */
   onClose?: () => void;
   /** What the close button is called, to anyone reading the screen and to anyone hovering it. */
   closeLabel?: string;
@@ -46,14 +51,42 @@ interface TabProps extends HTMLAttributes<HTMLDivElement> {
  * One tab.
  *
  * A `div` rather than a `button`, because a tab that can be closed carries a button inside it and
- * a button inside a button is not markup a browser will keep. Selection, keyboard and middle-click
- * are the caller's — pass `role`, `onClick`, `onKeyDown` and `onAuxClick` through as the strip
- * needs them.
+ * a button inside a button is not markup a browser will keep. Selection and keyboard are the
+ * caller's — pass `role`, `onClick` and `onKeyDown` through as the strip needs them.
+ *
+ * Middle-click is not: it closes the tab wherever a tab closes at all. It is the same gesture with
+ * the same meaning in every strip and in every browser the user already has open, and leaving it
+ * to callers is how the app ended up with it on one strip and not the other.
+ *
+ * A tab that can be dragged into a new place says so through what `useTabReorder` spreads onto it,
+ * and is marked `data-dragging` by that hook while it is in hand — see `TabStrip.module.css`.
  */
-export function Tab({ active, onClose, closeLabel, className, children, ...rest }: TabProps) {
+export function Tab({
+  active,
+  onClose,
+  closeLabel,
+  className,
+  children,
+  onMouseDown,
+  onAuxClick,
+  ...rest
+}: TabProps) {
   const classes = [styles.tab, active && styles.tabActive, className];
   return (
-    <div className={classes.filter(Boolean).join(" ")} {...rest}>
+    <div
+      className={classes.filter(Boolean).join(" ")}
+      onMouseDown={(e: MouseEvent<HTMLDivElement>) => {
+        // Chromium answers a middle press with the autoscroll cursor, which then eats the release
+        // this tab is waiting for. Refused here rather than in `onAuxClick`, which comes too late.
+        if (e.button === 1 && onClose !== undefined) e.preventDefault();
+        onMouseDown?.(e);
+      }}
+      onAuxClick={(e: MouseEvent<HTMLDivElement>) => {
+        if (e.button === 1 && onClose !== undefined) onClose();
+        onAuxClick?.(e);
+      }}
+      {...rest}
+    >
       {children}
       {onClose !== undefined && (
         <button

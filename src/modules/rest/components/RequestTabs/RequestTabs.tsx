@@ -1,4 +1,12 @@
-import { Tab, TabAction, TabStrip, TabTitle, tabKeyDown } from "../../../../components/TabStrip";
+import {
+  Tab,
+  TabAction,
+  TabStrip,
+  TabTitle,
+  tabKeyDown,
+  useTabReorder,
+  type DropSide,
+} from "../../../../components/TabStrip";
 import { PlusIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import type { RestRequest } from "../../types";
@@ -8,6 +16,9 @@ interface Props {
   activeId: string | null;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
+  /** A tab was dragged and let go against one edge of another. The order lives in the workspace,
+   *  not here, so the move goes back to whoever keeps it. */
+  onReorder: (fromId: string, toId: string, side: DropSide) => void;
   onNew: () => void;
   /** What a request with neither name nor URL is called. */
   label: (request: RestRequest) => string;
@@ -24,12 +35,14 @@ interface Props {
  * a different app.
  *
  * Closing asks nothing: there is no unsaved state to lose, because every edit is written through
- * to the request as it is made. Middle-click closes too, which is what a tab strip does.
+ * to the request as it is made. Middle-click closes too, and the tabs drag into any order — both
+ * come from the shared strip, so this one and the shell's cannot drift apart on either.
  */
-function RequestTabs({ tabs, activeId, onSelect, onClose, onNew, label, className }: Props) {
+function RequestTabs({ tabs, activeId, onSelect, onClose, onReorder, onNew, label, className }: Props) {
   const { t } = useTranslation();
+  const reorder = useTabReorder(onReorder);
   return (
-    <TabStrip role="tablist" className={className}>
+    <TabStrip role="tablist" className={className} {...reorder.strip}>
       {tabs.map((request) => (
         <Tab
           key={request.id}
@@ -41,9 +54,7 @@ function RequestTabs({ tabs, activeId, onSelect, onClose, onNew, label, classNam
           closeLabel={t("rest.shortcutCloseRequest")}
           onClick={() => onSelect(request.id)}
           onKeyDown={tabKeyDown(() => onSelect(request.id))}
-          onAuxClick={(e) => {
-            if (e.button === 1) onClose(request.id);
-          }}
+          {...reorder.tab(request.id)}
         >
           <span className={`rest-method rest-method-${request.method}`}>{request.method}</span>
           <TabTitle>{label(request)}</TabTitle>

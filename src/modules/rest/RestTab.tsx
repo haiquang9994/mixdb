@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import Splitter, { clampRatio, clampSize } from "../../components/Splitter";
-import { Tab, TabStrip, tabKeyDown } from "../../components/TabStrip";
+import { moveId, Tab, TabStrip, tabKeyDown } from "../../components/TabStrip";
 import { errorMessage } from "../../core/errors";
 import { modalDepth, useShortcut } from "../../core/shortcuts";
 import type { ModuleTabProps } from "../../shell/module";
@@ -541,6 +541,9 @@ function RestTab({ active, onTitleChange, restored, onStateChange }: ModuleTabPr
             activeId={currentId}
             onSelect={setActiveId}
             onClose={close}
+            onReorder={(fromId, toId, side) =>
+              setOpenIds((prev) => moveId(prev, fromId, toId, side))
+            }
             onNew={makeRequest}
             label={label}
           />

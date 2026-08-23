@@ -51,6 +51,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - A cell of the Data tab's table opens in a dialog, the same one the Query tab's results use.
 - Right-clicking a column heading in the Data tab copies the column name.
 - Tabs come back to what they had open — a saved connection, the requests on a REST strip, a local shell or saved host — the first time you click them after a restart.
+- Tabs drag into any order, on the app's tab bar and on the REST tab's request strip.
+- The middle mouse button closes a tab on the app's tab bar, as it already did on the REST tab's request strip.
 
 ### Changed
 

@@ -3,7 +3,7 @@ import GlassFilter from "./components/GlassFilter";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
 import ContextMenu from "../components/ContextMenu";
-import { Tab, TabAction, TabStrip, TabTitle } from "../components/TabStrip";
+import { moveTab, Tab, TabAction, TabStrip, TabTitle, useTabReorder } from "../components/TabStrip";
 import { PlusIcon, SettingsIcon } from "../icons";
 import { isBlockedReload } from "../core/reload";
 import { useScrollAcceleration } from "../core/scroll";
@@ -82,6 +82,13 @@ function App() {
     setMounted((prev) => prev.filter((mountedId) => mountedId !== id));
   }
 
+  /* Dragging a tab along the strip. The order is the tab list itself, so a move is a new list and
+     everything that follows the list follows the move — `Ctrl+Tab` walks the strip as it is drawn,
+     and the session file is written the moment it changes. */
+  const reorder = useTabReorder((fromId, toId, side) => {
+    setTabs((prev) => moveTab(prev, fromId, toId, side));
+  });
+
   function renameTab(id: string, title: string) {
     setTabs((prev) => retitleTab(prev, id, title));
   }
@@ -136,7 +143,7 @@ function App() {
           outlive any one of them. Left out entirely while the setting is off, so a look nobody
           asked for costs nothing to have shipped. */}
       {glass && <GlassFilter />}
-      <TabStrip>
+      <TabStrip {...reorder.strip}>
         {/* The app's name is also its settings button, which nothing about a bare word at 70%
             opacity said — so it wears a surface, a border and a gear, and reads as something to
             press before it is hovered.
@@ -162,6 +169,7 @@ function App() {
             onClose={() => closeTab(tab.id)}
             closeLabel={t("app.closeTab")}
             onClick={() => setActiveId(tab.id)}
+            {...reorder.tab(tab.id)}
           >
             {/* Ahead of the name, where the eye lands first: a mark is there to be seen before a
                 statement is typed, not after the connection has been identified. What each one

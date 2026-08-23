@@ -15,6 +15,9 @@
   overflow-x: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+  /* So a tab's `offsetLeft` is measured from the strip, which is the one coordinate space both
+     halves of a reorder agree on — see `useTabReorder.ts` and `slide.ts`. */
+  position: relative;
 }
 
 .tab {
@@ -37,6 +40,13 @@
   transition: background-color 120ms ease;
 }
 
+/* A tab that can be dragged is a tab you take hold of, and taking hold of a word in a browser
+   selects it. `data-tab-id` is what a reorderable tab carries — see `useTabReorder.ts`. Only
+   those: a pane tab is still text on a page. */
+.tab[data-tab-id] {
+  user-select: none;
+}
+
 .tab:hover:not(.tabActive) {
   background: var(--hover-bg);
   border-color: transparent;
@@ -56,6 +66,34 @@
   background: var(--surface-bg);
   box-shadow: inset 0 2px 0 var(--tab-accent, var(--accent));
   font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   IN HAND
+
+   This is the tab itself, not a picture of it: `useTabReorder` translates the real element under
+   the pointer, and the strip reorders live around it. So there is no line to draw showing where it
+   would go, and no ghost to explain — the only thing left to say is that it has been picked up.
+
+   Which needs a surface of its own. An unselected tab is transparent, and a transparent thing
+   passing over the tabs it is being carried across shows both at once. Raised out of the strip
+   with the surface colour, a shadow and a layer above its neighbours; the transform that moves it
+   is set on the element, and must not be transitioned or it would lag behind the hand. */
+
+.tab[data-dragging] {
+  position: relative;
+  z-index: 1;
+  background: var(--surface-bg);
+  box-shadow: 0 0 12px rgb(0 0 0 / 0.24);
+  cursor: grabbing;
+  transition: none;
+}
+
+/* The open tab keeps its accent bar while it travels. */
+.tabActive[data-dragging] {
+  box-shadow:
+    inset 0 2px 0 var(--tab-accent, var(--accent)),
+    0 0 12px rgb(0 0 0 / 0.24);
 }
 
 .title {
@@ -152,5 +190,16 @@
       inset 0 2px 0 var(--tab-accent, var(--accent)),
       inset 1px 1px 1.5px -0.5px var(--glass-rim-lit),
       inset 0 0 0 1px var(--glass-rim-hairline);
+  }
+
+  /* The same rim, plus the shadow of a tab in hand — restated because the rule above out-names the
+     plain one, and a tab that lost its lift the moment it was picked up would be the wrong way
+     round. */
+  :global(:root[data-glass="on"]) .strip:not(.small) .tabActive[data-dragging] {
+    box-shadow:
+      inset 0 2px 0 var(--tab-accent, var(--accent)),
+      inset 1px 1px 1.5px -0.5px var(--glass-rim-lit),
+      inset 0 0 0 1px var(--glass-rim-hairline),
+      0 0 12px rgb(0 0 0 / 0.24);
   }
 }
