@@ -37,6 +37,10 @@ function getSnapshot(): SavedHost[] {
   return snapshot;
 }
 
+function getLoaded(): boolean {
+  return loaded;
+}
+
 /** Đọc một lần. Tab nào hỏi trước thì bắt đầu, tab nào mount trong lúc đó thì đi cùng một promise
  *  chứ không mở lượt đọc thứ hai. Đọc hỏng thì `loaded` ở lại `false` — tab sau thử lại. */
 function ensureLoaded(): Promise<void> {
@@ -59,6 +63,13 @@ export function useSavedHosts(): SavedHost[] {
     ensureLoaded().catch(() => {});
   }, []);
   return useSyncExternalStore(subscribe, getSnapshot);
+}
+
+/** Đã đọc xong file chưa. Danh sách rỗng lúc chưa đọc và danh sách rỗng khi không có host nào là
+ *  hai thứ khác nhau, mà nhìn vào danh sách thì không phân biệt được. Ai coi "không có trong danh
+ *  sách" là "đã bị xoá" — một tab đang khôi phục host nó mở dở — phải hỏi cái này trước. */
+export function useSavedHostsLoaded(): boolean {
+  return useSyncExternalStore(subscribe, getLoaded);
 }
 
 /* Ghi thì đi qua module vẫn ghi từ trước — nó là chỗ giữ ranh giới giữa `terminal-hosts.json` và

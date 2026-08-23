@@ -6,8 +6,10 @@ import {
   removeConnection,
   updateConnection,
   useSavedConnections,
+  useSavedConnectionsLoaded,
 } from "./savedConnectionsStore";
 import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
+import { parseDbTabState } from "./tabState";
 import SqlWorkspace from "./sql/SqlWorkspace";
 import { SqlProvider } from "./sql/context";
 import type { SqlApi } from "./sql/api";
@@ -166,7 +168,7 @@ interface TunnelStatus {
   message: string;
 }
 
-function DbTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
+function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange }: ModuleTabProps) {
   const { t, lang } = useTranslation();
   const [kind, setKind] = useState<DbKind>("mysql");
   const [host, setHost] = useState("127.0.0.1");
@@ -200,6 +202,15 @@ function DbTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   const [connectionId, setConnectionId] = useState<string | null>(null);
+  /* What this tab was connected to last launch, taken once. A snapshot and not a live read: the
+     moment this tab connects it writes a new value, and reading that back would be the tab
+     restoring itself from itself. */
+  const [restoredState] = useState(() => parseDbTabState(restored));
+  const savedConnectionsLoaded = useSavedConnectionsLoaded();
+  /** Whether the restore below has had its one turn — win or lose. Without it, another tab saving
+   *  a connection publishes a new list, the effect runs again, and this tab opens a second
+   *  connection to the same server. */
+  const restoreTried = useRef(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus | null>(null);
@@ -542,19 +553,34 @@ function DbTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
     }
   }
 
-  async function connect(overrideConfig?: ConnectionConfig, title?: string) {
+  /**
+   * Opens the connection and puts the workspace on screen.
+   *
+   * `savedId` is a parameter and not a read of `editingId` on purpose: `openAndConnect` applies
+   * the saved connection to the form and calls this in the same tick, so `setEditingId` has not
+   * taken effect and this closure still sees whatever was there before. Passing it in is also what
+   * makes the hand-typed branch say `undefined` deliberately rather than by omission.
+   */
+  async function connect(overrideConfig?: ConnectionConfig, title?: string, savedId?: string) {
     setError("");
     setStatus(t("connection.connecting"));
     const config = overrideConfig ?? buildConnectionConfig();
     try {
       const id = await invoke<string>("connect_db", { config });
       setConnectionId(id);
+      /* Written on both branches, so where this tab points does not depend on `disconnect` having
+         run first: connecting to something else replaces it, and connecting to a config nobody
+         saved clears it. An id and nothing else — see `tabState.ts`. */
+      onStateChange(savedId === undefined ? undefined : { savedId });
       setStatus(t("connection.connectedStatus", { id: id.slice(0, 8) }));
       const titleHost = config.kind === "mongo" ? mongoUriHost(config.uri ?? "") : config.host;
       onTitleChange(
         title ?? (saveAsName.trim() || t("connection.fallbackTitle", { kind: config.kind, host: titleHost })),
       );
     } catch (e) {
+      /* The state is left alone. A server that is off, or a VPN that is not up, is not the user
+         having moved away from that connection — the banner says so and the tab still points
+         where it pointed. */
       setStatus("");
       setError(errorMessage(t, e));
     }
@@ -562,8 +588,21 @@ function DbTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
 
   function openAndConnect(entry: SavedConnection) {
     applySavedConnection(entry);
-    connect(entry.config, entry.name);
+    connect(entry.config, entry.name, entry.id);
   }
+
+  /* The tab coming back to what it had open, once, the first time it is looked at — which for a
+     tab restored from the last session is the first time it is mounted at all.
+     `savedConnectionsLoaded` is the whole reason this waits: the list is empty until the file has
+     been read, and acting on it before then would read "the connection was deleted" every launch.
+     A connection that really has gone leaves the form as it opens, with no banner — nothing failed.
+     `openAndConnect` is deliberately not a dependency; it is rebuilt every render. */
+  useEffect(() => {
+    if (restoreTried.current || restoredState === null || !savedConnectionsLoaded) return;
+    restoreTried.current = true;
+    const entry = savedConnections.find((c) => c.id === restoredState.savedId);
+    if (entry !== undefined) openAndConnect(entry);
+  }, [restoredState, savedConnectionsLoaded, savedConnections]);
 
   async function updateSidebarWidth(width: number) {
     if (!editingId) return;
@@ -583,6 +622,8 @@ function DbTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
     if (!connectionId) return;
     await invoke("disconnect_db", { id: connectionId });
     setConnectionId(null);
+    // Leaving a connection is the one thing that means "do not come back here".
+    onStateChange(undefined);
     setStatus("");
     onTitleChange(t("app.newConnectionTitle"));
   }

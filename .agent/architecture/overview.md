@@ -28,32 +28,39 @@ The shell owns the tab bar, the keyboard shortcuts and the Settings dialog, and 
 [`shell/module.ts`](../../src/shell/module.ts) declares:
 
 - `ModuleDefinition` — an id, an icon, a label, and the component a tab renders.
-- `ModuleTabProps` — what that component is handed: `active`, `onTitleChange`, `onBadgesChange`.
+- `ModuleTabProps` — what that component is handed: `active`, `onTitleChange`, `onBadgesChange`,
+  and the pair that lets a tab come back to what it had open, `restored` / `onStateChange`.
 - `TabBadge` — a mark the module wants drawn on its own tab. The shell draws it without knowing
   what it means. The engine logo and the read-only lock are two of these; before the split they
   were `tab.kind` and `tab.readOnly`, which put `DbKind` into the tab bar.
 
-The contract deliberately has **no lifecycle hooks, no persistence API and no event bus**. A module
-cleans up in its own `useEffect` and saves through its own store, and a shell that guesses at needs
-nobody has yet is harder to add to than the thing it replaced.
+The contract deliberately has **no lifecycle hooks and no event bus**. A module cleans up in its
+own `useEffect` and saves through its own store, and a shell that guesses at needs nobody has yet
+is harder to add to than the thing it replaced.
+
+The one exception is a single **opaque slot per tab**: the module writes a value through
+`onStateChange`, the shell stores it with the session and hands it back as `restored` next launch,
+and nothing in `src/shell/` ever looks inside it. Ids only — the shape and the reasons are in
+[the spec](../../docs/superpowers/specs/2026-08-23-tab-session-context-design.md).
 
 [`shell/registry.ts`](../../src/shell/registry.ts) lists the modules and is the only file outside
 `src/modules/` that names one.
 
 ## Tabs and connections
 
-`shell/App.tsx` owns a list of tabs — `{ id, moduleId, title, badges }`. Each renders the `Tab`
+`shell/App.tsx` owns a list of tabs — `{ id, moduleId, title, badges, state }`. Each renders the `Tab`
 component its module supplies, and a tab that has been on screen is kept mounted (hidden with
 `display: none`) so switching tabs never loses a connection or scroll position. `Ctrl/Cmd+T` opens
 a tab of `DEFAULT_MODULE_ID`, `Ctrl/Cmd+W` closes one, `Ctrl+Tab` and `Ctrl+Shift+Tab` move along
 the strip; closing the last tab spawns a fresh one. With more than one module registered, `[+]`
 opens a menu instead of a tab.
 
-The strip itself survives a restart: `shell/session.ts` keeps `{ id, moduleId, title }` per tab and
-which one was active in `localStorage`, and nothing else — no connection, no request, no shell. On
-launch only the tab that was active is mounted; the others are names on the strip that mount the
-first time they are picked, so a restored session does not open six connection forms and start six
-shells at once.
+The strip survives a restart, and so does what each tab had open: `shell/session.ts` keeps
+`{ id, moduleId, title, state }` per tab and which one was active in `localStorage`. `state` is the
+module's own — a saved connection's id, the ids of the requests on a REST strip, a saved host's id
+or the name of a local shell — and the shell neither reads nor validates it. On launch only the
+tab that was active is mounted; the others are names on the strip that mount the first time they
+are picked, so nothing reconnects until a tab is actually looked at.
 
 A `DbTab` starts as a form. On connect it calls `connect_db` with a `ConnectionConfig`, gets back a
 **connection id** (a UUID string), and swaps itself for the workspace matching the database kind.

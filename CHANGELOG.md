@@ -50,6 +50,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - Rows in the Data tab copy as JSON as well as TSV and CSV, and Ctrl/Cmd+C copies the selected ones.
 - A cell of the Data tab's table opens in a dialog, the same one the Query tab's results use.
 - Right-clicking a column heading in the Data tab copies the column name.
+- Tabs come back to what they had open — a saved connection, the requests on a REST strip, a local shell or saved host — the first time you click them after a restart.
 
 ### Changed
 

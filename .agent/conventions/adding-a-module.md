@@ -26,16 +26,32 @@ contract is as small as it is.
    };
    ```
 
-2. **The tab component** takes `ModuleTabProps` — `active`, `onTitleChange`, `onBadgesChange` — and
-   nothing else. `active` is false while the tab is behind another, and it stays mounted, so
-   anything that grabs the keyboard has to check it. (A tab restored from the last session is not
-   mounted until it is first picked — but nothing a module writes can tell: its first render is
-   its first render either way.)
+2. **The tab component** takes `ModuleTabProps` — `active`, `onTitleChange`, `onBadgesChange`,
+   `restored`, `onStateChange` — and nothing else. `active` is false while the tab is behind
+   another, and it stays mounted, so anything that grabs the keyboard has to check it. (A tab
+   restored from the last session is not mounted until it is first picked — but nothing a module
+   writes can tell: its first render is its first render either way.)
 
    Report a `TabBadge` for each mark the tab should carry. `className` styles the badge;
    `tabClassName` goes on the whole tab, for a mark that tints it. `label` is read aloud and
    `title` is the tooltip — the database module leaves `title` off the engine logo and sets it on
    the lock, which is what those two did before there was a contract.
+
+   `restored` / `onStateChange` are how a tab comes back to what it had open. Three rules, none of
+   them typechecked:
+
+   - **Read `restored` once, at mount** — a `useState` initializer — and work from that snapshot.
+     Read it reactively and the module overwrites itself the moment it writes. Reading once is not
+     acting once: a module whose store still has a file to read waits for it, which is what
+     `useSavedConnectionsLoaded()` and its two siblings are for, and it keeps a ref so a snapshot
+     published by another tab does not restore a second time.
+   - **Call `onStateChange` from an event handler**, or from an effect that does not list it as a
+     dependency. The shell compares state by identity, `App` hands down a fresh closure every
+     render, and the two together are the loop named at the top of `shell/tabs.ts`.
+   - **Ids only.** This is `localStorage`: no host, no password, no URL, no token. Put the shape in
+     `modules/<id>/tabState.ts` with a `parseXTabState(value: unknown)` beside it — the shell
+     passes the slot through without validating it, so that function is where the checking lives.
+     See [the spec](../../docs/superpowers/specs/2026-08-23-tab-session-context-design.md).
 
 3. **One line in [`src/shell/registry.ts`](../../src/shell/registry.ts)**, in `MODULES`. This is
    the only file outside `src/modules/` that may name a module.

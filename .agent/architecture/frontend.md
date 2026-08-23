@@ -33,9 +33,10 @@ drift between the copies is what shows which parts were essential. `Splitter` is
 proves it — a primitive with one user so far, kept here because nothing in it knows what it splits.
 
 The contract itself is [`shell/module.ts`](../../src/shell/module.ts) — `ModuleDefinition`,
-`ModuleTabProps`, `TabBadge`, `ModuleSettingsSection` — and it deliberately has no lifecycle hooks,
-no persistence API and no event bus. See [overview](overview.md) and
-[adding-a-module](../conventions/adding-a-module.md).
+`ModuleTabProps`, `TabBadge`, `ModuleSettingsSection` — and it deliberately has no lifecycle hooks
+and no event bus. It keeps exactly one thing for a module: an opaque per-tab slot, `restored` and
+`onStateChange`, which the shell writes to `localStorage` with the session and never reads. See
+[overview](overview.md) and [adding-a-module](../conventions/adding-a-module.md).
 
 **The boundary is not typechecked.** A primitive that imports from `modules/db/` compiles fine.
 What catches it is a grep, which is part of adding a module.

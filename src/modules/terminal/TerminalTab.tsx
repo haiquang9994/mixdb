@@ -1,18 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Button from "../../components/Button";
 import ErrorBanner from "../../components/ErrorBanner";
 import { TerminalIcon } from "../../icons";
 import type { ModuleTabProps } from "../../shell/module";
 import { useTranslation } from "../../i18n";
-import type { SessionExit } from "./api";
+import { localShells, type SessionExit } from "./api";
 import TargetForm from "./components/TargetForm";
 import TerminalView from "./components/TerminalView";
+import { useSavedHosts, useSavedHostsLoaded } from "./savedHostsStore";
+import { parseTerminalTabState, tabStateFor } from "./tabState";
 import { terminalBadgeMarks, terminalTarget, terminalTitle } from "./session";
 import type { TerminalChoice } from "./types";
 import "./terminal.css";
 
 /** Terminal: một tab, một phiên. Form đứng trước, phiên thay chỗ nó khi người dùng bấm Mở. */
-function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) {
+function TerminalTab({ active, onTitleChange, onBadgesChange, restored, onStateChange }: ModuleTabProps) {
   const { t } = useTranslation();
   const [choice, setChoice] = useState<TerminalChoice | null>(null);
   /* Cái tab vừa thử mở. Khác `choice` ở chỗ nó không bị xoá khi phiên hỏng — form cần nó để dựng
@@ -25,6 +27,16 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
   /* Bấm "Kết nối lại" là bơm số này lên: `TerminalView` mount lại, sinh id mới, mở phiên mới. Nội
      dung cũ đi theo instance cũ — đúng thế, vì nó là màn hình của một shell không còn nữa. */
   const [generation, setGeneration] = useState(0);
+  /* Tab này đang ở đâu lần mở app trước, chụp đúng một lần. Chụp chứ không đọc sống: `start` ghi
+     giá trị mới ngay khi phiên mở, mà đọc lại cái đó thì tab tự khôi phục từ chính nó. */
+  const [restoredState] = useState(() => parseTerminalTabState(restored));
+  /* Gọi `useSavedHosts` ở đây là thứ khởi động lượt đọc mà `useSavedHostsLoaded` đang chờ — từ
+     trước tới giờ chỉ `TargetForm` gọi nó, mà form thì không có mặt khi tab đang khôi phục. */
+  const savedHosts = useSavedHosts();
+  const savedHostsLoaded = useSavedHostsLoaded();
+  /** Việc khôi phục đã có lượt của nó chưa — thắng hay thua đều tính. Thiếu cái này thì một tab
+   *  khác lưu thêm host là snapshot mới, effect chạy lại, và tab này mở phiên thứ hai. */
+  const restoreTried = useRef(false);
 
   useEffect(() => {
     onTitleChange(choice ? terminalTitle(choice) : t("terminal.newTabTitle"));
@@ -72,14 +84,56 @@ function TerminalTab({ active, onTitleChange, onBadgesChange }: ModuleTabProps) 
     setExit(null);
     setOpening(true);
     setChoice(next);
+    /* Gọi từ event handler chứ không từ render, nên một object mới mỗi lần là đúng: shell so theo
+       tham chiếu và chỉ ghi một lần cho mỗi lần mở phiên. */
+    onStateChange(tabStateFor(next));
   }
 
   /* Bỏ phiên đã chết và quay về màn hình chọn đích. `lastTried` ở lại, nên form dựng lại đúng
-     những gì vừa mở — mở lại cái cũ là một lần bấm, mà đổi sang cái khác cũng vậy. */
+     những gì vừa mở — mở lại cái cũ là một lần bấm, mà đổi sang cái khác cũng vậy.
+
+     Đây là chỗ duy nhất quên ngữ cảnh: bấm nút này là nói "tôi rời khỏi đây". Phiên chết mà chưa
+     bấm thì giữ — màn hình "phiên đã kết thúc" với nút Kết nối lại vẫn là màn hình của đích ấy —
+     và `failed` cũng giữ, vì SSH hỏng không phải là rời đi. */
   function dismiss() {
     setExit(null);
     setChoice(null);
+    onStateChange(undefined);
   }
+
+  /* Tab quay lại đúng chỗ nó đang ở, một lần, lần đầu nó được nhìn tới — với một tab khôi phục từ
+     phiên trước thì đó cũng là lần đầu nó được mount.
+
+     Hai nhánh chờ hai thứ khác nhau. `ssh` chờ danh sách host đọc xong: trước đó danh sách rỗng và
+     mọi id đều trông như đã bị xoá. `local` chờ `localShells()` — shell dò lại mỗi lần chạy, nên
+     một distro WSL đã gỡ hay một shell đã xoá đơn giản là không có trong danh sách. Không tìm thấy
+     thì về `TargetForm`, không banner: không có gì hỏng cả. */
+  useEffect(() => {
+    if (restoreTried.current || restoredState === null) return;
+
+    if (restoredState.kind === "ssh") {
+      if (!savedHostsLoaded) return;
+      restoreTried.current = true;
+      const host = savedHosts.find((h) => h.id === restoredState.hostId);
+      // `config` ở đây đã đầy đủ — `savedHosts.ts` ghép bí mật từ keyring vào trước khi trao ra.
+      if (host !== undefined) start({ kind: "ssh", config: host.config, hostId: host.id });
+      return;
+    }
+
+    restoreTried.current = true;
+    /* Không có cờ huỷ, và cố ý: `restoreTried` đã bảo đảm `localShells()` chỉ chạy đúng một lần,
+       nên thứ duy nhất một cleanup huỷ được lại chính là lần thử ấy — StrictMode tháo rồi gắn lại
+       ngay khi mount, cleanup bắn trước khi dò xong, và tab không bao giờ về lại shell của nó.
+       Bỏ đi cũng không mất gì: tab đóng giữa chừng thì `start` ghi vào một component đã gỡ, React
+       không làm gì cả, và `restateTab` bên shell bỏ qua id không còn trong danh sách. */
+    localShells()
+      .then((shells) => {
+        const shell = shells.find((s) => s.name === restoredState.shellName);
+        if (shell !== undefined) start({ kind: "local", shell, cwd: restoredState.cwd });
+      })
+      // Dò shell hỏng thì tab mở ra là form, đúng như trước khi có tính năng này.
+      .catch(() => {});
+  }, [restoredState, savedHostsLoaded, savedHosts]);
 
   function reconnect() {
     setExit(null);
