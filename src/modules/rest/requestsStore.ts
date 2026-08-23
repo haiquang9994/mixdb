@@ -44,6 +44,10 @@ function subscribe(listener: () => void) {
   };
 }
 
+function getLoaded(): boolean {
+  return loaded;
+}
+
 function ensureLoaded(): Promise<void> {
   if (loaded) return Promise.resolve();
   if (!inFlight) {
@@ -61,6 +65,12 @@ export function useRequestLists(): RequestLists {
     ensureLoaded().catch(() => {});
   }, []);
   return useSyncExternalStore(subscribe, () => snapshot);
+}
+
+/** Whether the read has finished. Empty-because-unread and empty-because-nothing-is-saved look
+ *  the same in the lists; a tab restoring the requests it had open needs them told apart. */
+export function useRequestListsLoaded(): boolean {
+  return useSyncExternalStore(subscribe, getLoaded);
 }
 
 /** What the store currently holds, for callers outside a component — the send path, which needs

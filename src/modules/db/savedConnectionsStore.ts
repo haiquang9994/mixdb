@@ -45,6 +45,10 @@ function getSnapshot(): SavedConnection[] {
   return snapshot;
 }
 
+function getLoaded(): boolean {
+  return loaded;
+}
+
 /**
  * Reads the list once. The first tab to ask starts the read and every tab that mounts while it is
  * running joins the same promise rather than starting a second one.
@@ -73,6 +77,17 @@ export function useSavedConnections(): SavedConnection[] {
     ensureLoaded().catch(() => {});
   }, []);
   return useSyncExternalStore(subscribe, getSnapshot);
+}
+
+/**
+ * Whether the read has finished.
+ *
+ * The list is empty before the file has been read and empty after it when nothing is saved, and
+ * nothing looking only at the list can tell those two apart. Anything that treats "not in the
+ * list" as "deleted" — a tab restoring the connection it had open — has to ask this first.
+ */
+export function useSavedConnectionsLoaded(): boolean {
+  return useSyncExternalStore(subscribe, getLoaded);
 }
 
 /* Writes go through the module they always did — it owns the split between `connections.json` and
