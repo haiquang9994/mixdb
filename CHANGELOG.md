@@ -41,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.16] - 2026-08-23
+
 ### Added
 
 - Results in the Query tab sort by clicking a column heading, and a filter box narrows them to the rows holding what you type.

@@ -1,6 +1,6 @@
 [package]
 name = "mixdb"
-version = "0.0.15"
+version = "0.0.16"
 description = "MixDB - multi-database desktop client (MySQL, MongoDB, Redis)"
 authors = ["you"]
 edition = "2021"
