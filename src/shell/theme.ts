@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { IS_MAC, IS_WINDOWS } from "../core/platform";
 
 export type ThemeMode = "light" | "dark" | "system";
 
@@ -74,6 +75,24 @@ function applyAccent(accent: AccentColor): void {
   }
 }
 
+/* Which webview is drawing the window, as an attribute CSS can select on.
+ *
+ * Not a preference and not stored anywhere: it is written every load from the user agent, and it
+ * exists for the one question `glass.css` has that a media query cannot ask — the same tint over
+ * the same blur lets a different amount of the page through on WebKit than it does on WebView2,
+ * so the glass has to know which of the two it is being drawn by. Every platform is named rather
+ * than just the one that needs it, so the next rule that has to split does not have to add the
+ * other half of the answer first.
+ *
+ * Written out in full, unlike the three above, because there is no default to be the absence of:
+ * a root with no `data-platform` is a root the script has not run on yet. */
+function applyPlatform(): void {
+  document.documentElement.setAttribute(
+    "data-platform",
+    IS_MAC ? "mac" : IS_WINDOWS ? "windows" : "linux",
+  );
+}
+
 /* Same shape again — the default is the bare `:root`, so "off" is the absence of the attribute
    rather than a value of its own. */
 function applyGlass(on: boolean): void {
@@ -89,6 +108,7 @@ function applyGlass(on: boolean): void {
 
 /* Read before React mounts: the stored choice has to be on the root element for the very first
    paint, otherwise the window flashes the default accent on every launch. */
+applyPlatform();
 applyAccent(readStoredAccent());
 applyGlass(readStoredGlass());
 

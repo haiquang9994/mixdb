@@ -56,6 +56,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - Letting go of a tab you have dragged no longer opens it as well.
 - A short tab drags past longer ones, instead of only swapping with tabs about its own width.
 - The requests on a REST tab's strip no longer slide out from the left edge each time you come back to the tab.
+- Liquid glass menus, tooltips and toasts are less see-through, noticeably so on macOS.
 
 ## [0.0.16] - 2026-08-23
 
