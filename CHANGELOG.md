@@ -41,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.17] - 2026-08-27
+
 ### Added
 
 - A Disconnect button at the end of a connection's tabs closes it and brings the connection form back, still on the connection you left.

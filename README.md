@@ -17,7 +17,7 @@ Các loại database đều có workspace riêng:
 
 ## Trạng thái hiện tại
 
-Phiên bản mới nhất: **0.0.16** (2026-08-23). Xem [CHANGELOG.md](CHANGELOG.md) để biết chi tiết từng bản; những điểm đáng chú ý gần đây:
+Phiên bản mới nhất: **0.0.17** (2026-08-27). Xem [CHANGELOG.md](CHANGELOG.md) để biết chi tiết từng bản; những điểm đáng chú ý gần đây:
 
 **Toàn app**
 
