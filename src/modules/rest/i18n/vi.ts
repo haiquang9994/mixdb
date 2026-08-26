@@ -2,7 +2,6 @@ import type { RestDict } from "./en";
 
 const restVi: RestDict = {
   rest: {
-    newTabTitle: "Request mới",
     newRequest: "Request mới",
     untitled: "Request chưa đặt tên",
     saved: "Đã lưu",

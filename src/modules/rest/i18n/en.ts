@@ -7,7 +7,6 @@
  */
 const restEn = {
   rest: {
-    newTabTitle: "New request",
     newRequest: "New request",
     untitled: "Untitled request",
     saved: "Saved",

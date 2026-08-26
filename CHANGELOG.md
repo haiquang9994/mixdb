@@ -45,6 +45,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 - Ctrl/Cmd+R reloads a Redis connection: the key list, or the open key's value once you are reading one.
 
+### Changed
+
+- A REST tab is called REST and wears the globe, instead of taking the name of whichever request is open in it.
+
+### Fixed
+
+- The requests on a REST tab's strip no longer slide out from the left edge each time you come back to the tab.
+
 ## [0.0.16] - 2026-08-23
 
 ### Added

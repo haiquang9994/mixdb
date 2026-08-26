@@ -1,4 +1,12 @@
 /* This module's layout. Component-scoped rules live in each component's CSS Module instead. */
+
+/* The globe on the shell's tab, which is the module's own mark rather than anything about what
+   is open in the tab. Dimmed a little against the word beside it: the mark is there to be
+   recognised at a glance, not to outshout the name it belongs to. */
+.tab-rest {
+  opacity: 0.75;
+}
+
 .rest-tab {
   display: flex;
   flex: 1;

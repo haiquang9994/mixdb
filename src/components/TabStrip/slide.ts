@@ -28,6 +28,13 @@ export function useTabSlide(strip: RefObject<HTMLDivElement | null>) {
   useLayoutEffect(() => {
     const el = strip.current;
     if (el === null) return;
+    /* A strip on a tab that is not in front is laid out at nothing: the shell hides the panel above
+       it with `display: none`, and every tab underneath reports an `offsetLeft` of zero. Measured,
+       that would be recorded as a strip whose tabs are all stacked on the left — and the render
+       that brings the tab back to the front would then play every one of them sliding out from
+       under the first. So a hidden strip is not measured at all: the places its tabs were in when
+       it was last on screen are the places it comes back to. */
+    if (el.offsetParent === null) return;
     const now = new Map<string, number>();
     for (const tab of el.querySelectorAll<HTMLElement>("[data-tab-id]")) {
       const left = tab.offsetLeft;
