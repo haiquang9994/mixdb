@@ -41,6 +41,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- Ctrl/Cmd+R reloads a Redis connection: the key list, or the open key's value once you are reading one.
+
 ## [0.0.16] - 2026-08-23
 
 ### Added

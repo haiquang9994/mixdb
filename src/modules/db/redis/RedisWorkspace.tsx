@@ -21,8 +21,13 @@ import keyListStyles from "../components/RedisKeyList/RedisKeyList.module.css";
 import { ReloadIcon } from "../../../icons";
 import { useTranslation } from "../../../i18n";
 import { errorMessage } from "../../../core/errors";
+import { useReloadShortcut, withReloadShortcut } from "../../../core/reload";
+import { reloadTarget, type ReloadPane } from "./reloadTarget";
 
 interface Props {
+  /** Whether this connection's tab is the one on show. What keeps `Ctrl+R` unambiguous: every
+   *  other connection stays mounted behind this one and would otherwise answer the same key. */
+  active: boolean;
   connectionId: string;
   /** The database index the connection was opened on, as typed into the connection form. */
   initialDatabase?: string;
@@ -113,6 +118,7 @@ const RELOAD_DATABASES = -1;
  * way, for the same reason on the scanned types.
  */
 function RedisWorkspace({
+  active,
   connectionId,
   initialDatabase,
   error,
@@ -158,6 +164,10 @@ function RedisWorkspace({
   // Bumped to rescan on the same pattern: pressing reload twice is a request to look again, and
   // an unchanged pattern alone would be a no-op.
   const [scanId, setScanId] = useState(0);
+  // Which half the user last reached into, or null before they have touched either. Both halves
+  // have a reload of their own, so `Ctrl+R` has to be pointed at one of them — see
+  // {@link reloadTarget}, which is where the rule itself is written down and tested.
+  const [reloadFocus, setReloadFocus] = useState<ReloadPane | null>(null);
 
   const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   const resizing = useRef(false);
@@ -357,6 +367,20 @@ function RedisWorkspace({
     setScanId((n) => n + 1);
   }, [pattern]);
 
+  // The right pane only has something to re-read while it is showing a value: the prompt to pick a
+  // key has nothing behind it, and the group pane is built out of the names the sidebar already
+  // scanned, so reloading it is the sidebar's reload under another name.
+  const valueOpen = contentMode === "data" && selectedKey !== null;
+  const target = reloadTarget(reloadFocus, valueOpen);
+
+  // The keyspace's half of `Ctrl+R`. The value pane registers the other half under `reloadActive`
+  // below, and the two are mutually exclusive by construction: `target` names one pane or the
+  // other, so the key is never claimed twice. Gated on the same state the button is.
+  useReloadShortcut(active && target === "left", () => {
+    if (keysLoading) return;
+    rescan();
+  });
+
   /** Moves the connection to another numbered database. The selection only takes effect once
    * the server has acknowledged it — the key list read afterwards would otherwise be the old
    * database's, under the new database's heading. */
@@ -507,7 +531,15 @@ function RedisWorkspace({
       )}
 
       <div className="redis-body">
-        <aside className="redis-sidebar" style={{ flexBasis: width }}>
+        {/* Reaching into a pane is what says `Ctrl+R` means that pane — a click on the pattern
+            box or a key in the list points it here, the same gesture on the value points it
+            there. Capture, so a click anywhere inside counts and no child forwards one up. */}
+        <aside
+          className="redis-sidebar"
+          style={{ flexBasis: width }}
+          onMouseDownCapture={() => setReloadFocus("left")}
+          onFocusCapture={() => setReloadFocus("left")}
+        >
           <div className="redis-sidebar-search">
             <Input
               size="normal"
@@ -559,6 +591,9 @@ function RedisWorkspace({
             onSelect={(name) => {
               setSelectedKey(name);
               setContentMode("data");
+              // Opening a key is a request to read it, so the shortcut follows the value that
+              // just appeared — even for a user who had been working in the sidebar until now.
+              setReloadFocus("right");
             }}
             emptyMessage={keysEmptyMessage}
             scanning={keysLoading}
@@ -584,7 +619,10 @@ function RedisWorkspace({
               {
                 key: "reload",
                 icon: ReloadIcon,
-                label: t("redis.reloadKeys"),
+                label:
+                  target === "left"
+                    ? withReloadShortcut(t("redis.reloadKeys"))
+                    : t("redis.reloadKeys"),
                 disabled: keysLoading,
                 busy: keysLoading,
                 onClick: rescan,
@@ -603,7 +641,11 @@ function RedisWorkspace({
           title={t("redis.resizeSidebarTooltip")}
         />
 
-        <section className="redis-content">
+        <section
+          className="redis-content"
+          onMouseDownCapture={() => setReloadFocus("right")}
+          onFocusCapture={() => setReloadFocus("right")}
+        >
           {contentMode === "data" && !selectedKey && <p className="muted">{t("redis.selectKeyPrompt")}</p>}
           {contentMode === "data" && selectedKey && (
             <RedisValue
@@ -613,6 +655,7 @@ function RedisWorkspace({
               connectionId={connectionId}
               keyName={selectedKey}
               readOnly={readOnly}
+              reloadActive={active && target === "right"}
               onError={setLocalError}
               onDeleted={(name) => handleKeysDeleted([name])}
             />

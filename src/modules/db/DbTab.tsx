@@ -1044,6 +1044,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
   const activeSavedConnection = savedConnections.find((c) => c.id === editingId);
   return (
     <RedisWorkspace
+      active={active}
       connectionId={connectionId}
       initialDatabase={database}
       status={status}

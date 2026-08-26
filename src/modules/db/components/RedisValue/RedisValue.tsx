@@ -13,6 +13,7 @@ import LoadingOverlay from "../../../../components/LoadingOverlay";
 import { ReloadIcon, TrashIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import { errorMessage } from "../../../../core/errors";
+import { useReloadShortcut, withReloadShortcut } from "../../../../core/reload";
 import styles from "./RedisValue.module.css";
 
 interface Props {
@@ -25,6 +26,14 @@ interface Props {
   onError: (message: string) => void;
   /** Called once the key is gone, so the sidebar can drop it and clear the selection. */
   onDeleted: (key: string) => void;
+  /**
+   * `Ctrl+R` is pointed at this pane rather than at the keyspace beside it.
+   *
+   * Decided by the workspace, which is the only place that can see both halves at once — see
+   * `redis/reloadTarget.ts`. It also names the button, so the pane the key would press is the one
+   * saying so.
+   */
+  reloadActive?: boolean;
 }
 
 /** How many items one page of a value holds. A hint for the scanned types (set, hash), an exact
@@ -109,7 +118,14 @@ function CellValue({ text }: { text: string }) {
  * with no notion of a page number to jump to — and having the other three behave the same way
  * keeps one control for all of them.
  */
-function RedisValue({ connectionId, keyName, readOnly = false, onError, onDeleted }: Props) {
+function RedisValue({
+  connectionId,
+  keyName,
+  readOnly = false,
+  onError,
+  onDeleted,
+  reloadActive = false,
+}: Props) {
   const { t } = useTranslation();
   const [page, setPage] = useState<RedisValuePage | null>(null);
   const [items, setItems] = useState<RedisValueItem[]>([]);
@@ -188,6 +204,13 @@ function RedisValue({ connectionId, keyName, readOnly = false, onError, onDelete
   const isUnsupported = type !== "" && type !== "none" && type !== "string" && !isCollection;
   const busy = loading || deleting;
 
+  // Gated on the same state the button is: a re-read asked for while one is already out, or over a
+  // key mid-delete, is one the button would refuse.
+  useReloadShortcut(reloadActive, () => {
+    if (busy) return;
+    load();
+  });
+
   const ttlText =
     page === null
       ? ""
@@ -227,7 +250,9 @@ function RedisValue({ connectionId, keyName, readOnly = false, onError, onDelete
             {
               key: "reload",
               icon: ReloadIcon,
-              label: t("redisValue.reload"),
+              label: reloadActive
+                ? withReloadShortcut(t("redisValue.reload"))
+                : t("redisValue.reload"),
               disabled: busy,
               busy: loading,
               onClick: load,
