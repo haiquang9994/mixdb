@@ -48,7 +48,8 @@ describe("moveTab", () => {
 });
 
 /** Four tabs 100px wide, 2px apart, starting at x=10 — `a` spans 10..110, `b` 112..212, `c`
- *  214..314 and `d` 316..416. Two thirds of one of them is 66.7px. */
+ *  214..314 and `d` 316..416. All one width, so a tab moves at two thirds of a tab's travel:
+ *  66.7px. */
 const BOXES: TabBox[] = IDS.map((id, i) => ({ id, left: 10 + i * 102, width: 100 }));
 
 describe("dropTargetAt", () => {
@@ -88,6 +89,46 @@ describe("dropTargetAt", () => {
     expect(dropTargetAt(112, BOXES, "b")).toBeNull(); // exactly where it is laid out
     expect(dropTargetAt(150, BOXES, "b")).toBeNull(); // 36px into `c`
     expect(dropTargetAt(80, BOXES, "b")).toBeNull(); // 30px into `a`
+  });
+
+  /* A strip of tabs that are not all one width, which is every REST strip: `GET` beside a short
+     name and `DELETE` beside a long one are nowhere near the same size. `a` spans 0..40, `b`
+     42..242 and `c` 244..444. */
+  const MIXED: TabBox[] = [
+    { id: "a", left: 0, width: 40 },
+    { id: "b", left: 42, width: 200 },
+    { id: "c", left: 244, width: 200 },
+  ];
+
+  it("carries a narrow tab past a wide one, which it can never cover two thirds of", () => {
+    /* With `a` lifted out, `b` starts at 2 and its middle is at 102; a sixth of `a` — the
+       narrower of the two — is 6.7 further. This is the case that could not be dragged at all
+       while the rule was about how much of `b` was covered: 40px of tab has no two thirds of a
+       200px one to cover, however far it is taken. */
+    expect(dropTargetAt(108, MIXED, "a")).toBeNull();
+    expect(dropTargetAt(109, MIXED, "a")).toEqual({ id: "b", side: "after" });
+    // And on past the second wide one, to the end of the strip.
+    expect(dropTargetAt(311, MIXED, "a")).toEqual({ id: "c", side: "after" });
+  });
+
+  it("carries a wide tab past a narrow one, on the narrow one's measure", () => {
+    /* `b` lifted out leaves `a` where it is: middle at 20, less a sixth of the narrower of the
+       two — `a` again — which is 6.7. The narrow tab decides it whichever of the two is the one
+       in hand, so `b` clears `a` in as much travel as `a` needs to clear `b`. */
+    expect(dropTargetAt(14, MIXED, "b")).toBeNull();
+    expect(dropTargetAt(13, MIXED, "b")).toEqual({ id: "a", side: "before" });
+  });
+
+  it("leaves a tab where a move has just put it, wherever the hand is", () => {
+    /* The move in the first case above, applied — `a` is now after `b` — with the hand still
+       exactly where it was when it asked for it. Asked again, the answer has to be "nowhere":
+       anything else and the two tabs swap back and forth for as long as the hand is held there. */
+    const swapped: TabBox[] = [
+      { id: "b", left: 0, width: 200 },
+      { id: "a", left: 202, width: 40 },
+      { id: "c", left: 244, width: 200 },
+    ];
+    expect(dropTargetAt(109, swapped, "a")).toBeNull();
   });
 
   it("offers nothing on an empty strip, or for a tab that is no longer on it", () => {

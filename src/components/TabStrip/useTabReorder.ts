@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, type MouseEvent, type PointerEvent } from "react";
 import { dropTargetAt, type DropSide, type TabBox } from "./reorder";
 
 /**
@@ -26,11 +26,16 @@ import { dropTargetAt, type DropSide, type TabBox } from "./reorder";
  * yet. Letting go only ends the drag, and `Escape` does the same: the tabs have already moved and
  * stay moved — they were never anywhere else to be put back to.
  *
- * **Where the tab is decides, not where the pointer is.** It takes a neighbour's place once it
- * covers two thirds of it — see `dropTargetAt`. The two part company as soon as the tab is up
- * against either end of the strip, and it is the tab the eye is following.
+ * **Where the tab is decides, not where the pointer is.** It takes a neighbour's place once it is
+ * carried past the middle of it — see `dropTargetAt`, which is where the exact line is drawn. The
+ * two part company as soon as the tab is up against either end of the strip, and it is the tab the
+ * eye is following.
  *
  * A press only becomes a drag after {@link THRESHOLD}, so a tab is still something you can click.
+ * Once it has become one it is no longer a click: letting go of a tab that has been carried — a
+ * hand's width or four pixels, far enough to move it or not — does not also select it. Every strip
+ * in the app opens something when a tab is picked, and a tab put back where it came from was never
+ * a request to open it. That is what `onClickCapture` below is for.
  */
 
 /** How far the pointer travels before a press on a tab is a drag rather than a click. */
@@ -74,6 +79,9 @@ export interface StripDragProps {
 export interface TabDragProps {
   "data-tab-id": string;
   onPointerDown: (e: PointerEvent<HTMLElement>) => void;
+  /** Swallows the click a finished drag leaves behind. In the capture phase, which is what stops
+   *  it reaching the `onClick` the caller put on the same tab. */
+  onClickCapture: (e: MouseEvent<HTMLElement>) => void;
 }
 
 export interface TabReorder {
@@ -85,6 +93,11 @@ export function useTabReorder(
   onMove: (fromId: string, toId: string, side: DropSide) => void,
 ): TabReorder {
   const held = useRef<Held | null>(null);
+  /* Set when a drag ends, cleared by the click it leaves behind — or by the next press, for the
+     drags that leave none: a tab let go over the window rather than over itself sends its click to
+     whatever the two presses have in common, which is not the tab. Left standing, that would eat
+     the next real click on a tab instead of this one's. */
+  const dragged = useRef(false);
   /* The listeners below are put up once, when the press lands, and outlive the render that put
      them up. Reported through a ref, so a drag always answers to the current caller. */
   const move = useRef(onMove);
@@ -151,6 +164,7 @@ export function useTabReorder(
     h.stop.abort();
     cancelAnimationFrame(h.frame);
     if (!h.dragging) return;
+    dragged.current = true;
     h.el.removeAttribute("data-dragging");
     /* Let go a few pixels off its gap, because the pointer was never exactly on one. It falls the
        rest of the way rather than snapping there — the same slide the other tabs have been making
@@ -171,7 +185,16 @@ export function useTabReorder(
     tab: (id) => ({
       "data-tab-id": id,
 
+      onClickCapture: (e) => {
+        if (!dragged.current) return;
+        dragged.current = false;
+        e.stopPropagation();
+      },
+
       onPointerDown: (e) => {
+        /* Ahead of the button check below, so that a press this hook takes no further interest in
+           still clears what the last drag left behind. */
+        dragged.current = false;
         // The close button is a press of its own, and so is anything else a caller puts in a tab.
         if (e.button !== 0 || (e.target as HTMLElement).closest("button") !== null) return;
         const el = e.currentTarget;
