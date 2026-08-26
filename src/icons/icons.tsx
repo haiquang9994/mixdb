@@ -357,6 +357,17 @@ export function SendIcon(props: IconProps) {
 }
 
 /** Cancel something already in flight — the same button as {@link SendIcon}, mid-request. */
+/** Turn this off: the power symbol, on the button that closes a database connection. Read the
+ *  same way on every appliance anyone owns, which no drawing of a plug manages at 14px. */
+export function PowerIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3.5v8" />
+      <path d="M6.8 8.3A7 7 0 1 0 17.2 8.3" />
+    </Icon>
+  );
+}
+
 export function StopIcon(props: IconProps) {
   return (
     <Icon {...props}>

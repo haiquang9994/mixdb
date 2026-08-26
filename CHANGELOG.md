@@ -43,11 +43,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
+- A Disconnect button at the end of a connection's tabs closes it and brings the connection form back, still on the connection you left.
 - Ctrl/Cmd+R reloads a Redis connection: the key list, or the open key's value once you are reading one.
 
 ### Changed
 
 - A REST tab is called REST and wears the globe, instead of taking the name of whichever request is open in it.
+- Every tab on the tab bar carries a mark: its module's icon until it has one of its own, which a new tab and one restored from the last session did not.
 
 ### Fixed
 

@@ -37,6 +37,9 @@ contract is as small as it is.
    `title` is the tooltip — the database module leaves `title` off the engine logo and sets it on
    the lock, which is what those two did before there was a contract.
 
+   Report none and the shell draws the module's `Icon` instead, so a module that has no mark of
+   its own needs no badge at all — and neither does one whose only mark would be that icon.
+
    `restored` / `onStateChange` are how a tab comes back to what it had open. Three rules, none of
    them typechecked:
 

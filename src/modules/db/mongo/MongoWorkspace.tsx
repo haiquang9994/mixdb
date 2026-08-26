@@ -18,6 +18,7 @@ import DatabaseStats from "../components/DatabaseStats";
 import type { StatsCache } from "../components/DatabaseStats";
 import TransferOverlay from "../components/TransferOverlay";
 import ErrorBanner from "../../../components/ErrorBanner";
+import DisconnectTab from "../components/DisconnectTab";
 import TunnelBanner from "../components/TunnelBanner";
 import { useWorkspaceError } from "../workspaceError";
 import Input from "../../../components/Input";
@@ -599,6 +600,7 @@ function MongoWorkspace({
               {t(labelKey)}
             </button>
           ))}
+          <DisconnectTab onDisconnect={onDisconnect} />
         </div>
       </div>
 

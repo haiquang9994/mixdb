@@ -408,6 +408,29 @@ fieldset .row input {
   background: rgb(var(--accent-rgb) / 0.08);
 }
 
+/* The way out of a connection, sitting after the tabs and deliberately not looking like one: the
+   tabs choose which pane is on screen, this takes all of them away. A rule to stand it off the
+   last tab, and square corners where a tab is rounded — enough to read as a different kind of
+   thing before it is hovered, without a colour shouting from a row nobody is looking at yet.
+
+   Later in this file than `.method-tab`, which is how it wins: same specificity, and both rules
+   are here rather than one of them being somewhere Vite decides the order of. */
+.method-tab-disconnect {
+  margin-left: 0.5rem;
+  padding-left: 0.9em;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+}
+
+/* Red only under the pointer, where the click would land — the same bargain the destructive
+   actions in `ActionBar` strike, and the same red, because a user who has learnt it there has
+   learnt it here. Not red at rest: leaving a connection loses nothing, and a row of tabs with a
+   red one on the end would read as a warning about the tabs. */
+.method-tab-disconnect:hover {
+  color: #d32f2f;
+  background: rgb(211 47 47 / 0.15);
+}
+
 /* The view's own padding is a hairline — enough for the panes below, but this is the first thing
    in the form and it would otherwise start hard against the top edge. The sidebar beside it opens
    with a heading, whose line box gives it that breathing room for free; a bare input has none, so

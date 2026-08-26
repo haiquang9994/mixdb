@@ -27,6 +27,7 @@ export {
   PinIcon,
   PlayIcon,
   PlusIcon,
+  PowerIcon,
   ReloadIcon,
   SendIcon,
   SettingsIcon,

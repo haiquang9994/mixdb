@@ -12,6 +12,9 @@ const dbEn = {
     tunnelOk: "\u2713 Tunnel OK \u2014 SSH auth succeeded",
     tunnelFailed: "\u2717 {{error}}",
     connecting: "Connecting...",
+    // On the button at the end of the workspace tabs. What it does is not "disconnect" alone —
+    // the connection form comes back, still holding this connection, so it says where you land.
+    disconnectHint: "Close this connection and go back to the connection form",
     connectedStatus: "Connected ({{id}})",
     fallbackTitle: "{{kind}} \u00b7 {{host}}",
     nameLabel: "Name",

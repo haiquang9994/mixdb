@@ -370,6 +370,14 @@ body {
   flex: none;
 }
 
+/* The one mark the shell draws for itself: the module's icon, on a tab that has no badge of its
+   own yet. Held back from the name beside it, which is the thing to read — this says no more than
+   which of the app's modules the tab belongs to, and a mark at full strength would be claiming to
+   say something about the tab in particular. */
+.tab-module {
+  opacity: 0.55;
+}
+
 /* Deliberately unpadded: each view below pads itself instead (`--view-padding`), so that a veil
    covering a whole view reaches the window's edges rather than stopping at a frame of padding. */
 .tab-content {

@@ -10,6 +10,7 @@ import {
 } from "./api";
 import Select from "../../../components/Select";
 import ErrorBanner from "../../../components/ErrorBanner";
+import DisconnectTab from "../components/DisconnectTab";
 import TunnelBanner from "../components/TunnelBanner";
 import { useWorkspaceError } from "../workspaceError";
 import Input from "../../../components/Input";
@@ -521,6 +522,7 @@ function RedisWorkspace({
               {t("redis.groupTab")}
             </button>
           )}
+          <DisconnectTab onDisconnect={onDisconnect} />
         </div>
       </div>
 

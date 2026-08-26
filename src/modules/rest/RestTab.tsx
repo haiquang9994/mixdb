@@ -3,7 +3,6 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import Splitter, { clampRatio, clampSize } from "../../components/Splitter";
 import { moveId, Tab, TabStrip, tabKeyDown } from "../../components/TabStrip";
 import { errorMessage } from "../../core/errors";
-import { GlobeIcon } from "../../icons";
 import { modalDepth, useShortcut } from "../../core/shortcuts";
 import type { ModuleTabProps } from "../../shell/module";
 import { useTranslation } from "../../i18n";
@@ -73,13 +72,7 @@ type RequestTabKey = "params" | "body" | "headers" | "auth";
  * open is the only state that lives in this component, and it is the only state the app does not
  * remember — the shell keeps no tabs either.
  */
-function RestTab({
-  active,
-  onTitleChange,
-  onBadgesChange,
-  restored,
-  onStateChange,
-}: ModuleTabProps) {
+function RestTab({ active, onTitleChange, restored, onStateChange }: ModuleTabProps) {
   const { t } = useTranslation();
   const lists = useRequestLists();
   const workspace = useWorkspace();
@@ -186,31 +179,12 @@ function RestTab({
      It used to carry the active request's name — which is a name this module already draws, on
      the request strip inside, beside the other requests that are open. Up on the shell strip it
      had no such company: it sat between a connection and a terminal saying "users", and nothing
-     said which of the app's three modules it belonged to. One word and the globe beside it now,
-     the same pair the [+] menu opens it from. */
+     said which of the app's three modules it belonged to. One word now, with the globe the shell
+     puts beside a tab that reports no badges of its own — the pair the [+] menu opens it from. */
   const title = t("app.moduleRest");
   useEffect(() => {
     onTitleChange(title);
   }, [title, onTitleChange]);
-
-  /* A `useMemo`, and the effect below does not take `onBadgesChange` as a dependency: the shell
-     compares badge lists by reference, so a fresh array is a `setTabs`, and `App` hands down a
-     fresh closure on every render. Together those are a loop that feeds itself until React cuts
-     it off. Same shape, and for the same reason, as the one in `TerminalTab`. */
-  const badges = useMemo(
-    () => [
-      {
-        id: "rest",
-        icon: <GlobeIcon size={14} />,
-        label: t("app.moduleRest"),
-        className: "tab-rest",
-      },
-    ],
-    [t],
-  );
-  useEffect(() => {
-    onBadgesChange(badges);
-  }, [badges]);
 
   // A tab whose request is gone stops being open, and the keyboard lands on the one beside it.
   useEffect(() => {

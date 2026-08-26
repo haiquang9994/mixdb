@@ -161,34 +161,50 @@ function App() {
           MixDB
           <SettingsIcon className="brand-gear" size={14} />
         </button>
-        {tabs.map((tab) => (
-          <Tab
-            key={tab.id}
-            active={tab.id === activeId}
-            className={tab.badges.map((b) => b.tabClassName).filter(Boolean).join(" ")}
-            onClose={() => closeTab(tab.id)}
-            closeLabel={t("app.closeTab")}
-            onClick={() => setActiveId(tab.id)}
-            {...reorder.tab(tab.id)}
-          >
-            {/* Ahead of the name, where the eye lands first: a mark is there to be seen before a
-                statement is typed, not after the connection has been identified. What each one
-                means is the module's business — the shell only puts it where it goes. The tab is
-                not a control with a name of its own, so the word travels with the mark for anyone
-                who can't see it. */}
-            {tab.badges.map((badge) => (
-              <span
-                key={badge.id}
-                className={badge.className ? `tab-badge ${badge.className}` : "tab-badge"}
-                title={badge.title}
-              >
-                {badge.icon}
-                <span className="visually-hidden">{badge.label}</span>
-              </span>
-            ))}
-            <TabTitle>{tab.title}</TabTitle>
-          </Tab>
-        ))}
+        {tabs.map((tab) => {
+          const def = moduleById(tab.moduleId);
+          return (
+            <Tab
+              key={tab.id}
+              active={tab.id === activeId}
+              className={tab.badges.map((b) => b.tabClassName).filter(Boolean).join(" ")}
+              onClose={() => closeTab(tab.id)}
+              closeLabel={t("app.closeTab")}
+              onClick={() => setActiveId(tab.id)}
+              {...reorder.tab(tab.id)}
+            >
+              {/* A tab with nothing of its own to say still says which module it is, and most of
+                  them have a spell of having nothing to say: a database tab wears no engine until
+                  it is connected to one, a terminal none until a shell is picked, and a tab
+                  restored from the last session has no module running behind it at all until it is
+                  first looked at — it is a name on the strip and nothing else. So the module's own
+                  mark stands in, the one the [+] menu opens it from, dimmer than a badge that was
+                  actually asked for. */}
+              {tab.badges.length === 0 && (
+                <span className="tab-badge tab-module" title={t(def.labelKey)}>
+                  <def.Icon size={14} />
+                  <span className="visually-hidden">{t(def.labelKey)}</span>
+                </span>
+              )}
+              {/* Ahead of the name, where the eye lands first: a mark is there to be seen before a
+                  statement is typed, not after the connection has been identified. What each one
+                  means is the module's business — the shell only puts it where it goes. The tab is
+                  not a control with a name of its own, so the word travels with the mark for anyone
+                  who can't see it. */}
+              {tab.badges.map((badge) => (
+                <span
+                  key={badge.id}
+                  className={badge.className ? `tab-badge ${badge.className}` : "tab-badge"}
+                  title={badge.title}
+                >
+                  {badge.icon}
+                  <span className="visually-hidden">{badge.label}</span>
+                </span>
+              ))}
+              <TabTitle>{tab.title}</TabTitle>
+            </Tab>
+          );
+        })}
         <TabAction
           onClick={(e) => {
             // One module and a menu would be a list of one, so the button just opens it — which is

@@ -618,14 +618,35 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     await updateConnection({ ...entry, redisScanLimit: limit });
   }
 
+  /**
+   * Leave this connection: the workspace goes, the form comes back.
+   *
+   * The form comes back holding this same connection, and the sidebar still has it marked — the
+   * one thing not cleared here is `editingId`. So the way back in is Connect, not finding it in
+   * the list again, which is what makes this reversible enough to reach from a tab strip.
+   *
+   * The backend is told and not listened to, the same bargain the unmount above strikes: a
+   * connection it has already forgotten is not a reason to keep a dead workspace on screen, and
+   * leaving was the user's decision rather than a request that can be refused.
+   */
   async function disconnect() {
     if (!connectionId) return;
-    await invoke("disconnect_db", { id: connectionId });
+    await invoke("disconnect_db", { id: connectionId }).catch(() => {});
     setConnectionId(null);
     // Leaving a connection is the one thing that means "do not come back here".
     onStateChange(undefined);
     setStatus("");
-    onTitleChange(t("app.newConnectionTitle"));
+    /* Named after what the form is holding, which is what every other tab in the app is named
+       after and what disconnecting has not changed: the saved connection is still loaded, still
+       marked in the sidebar, and Connect is still all it takes to go back in. A tab that renamed
+       itself "New Connection" over the top of that was the one thing on screen disagreeing with
+       the rest of it. The entry's name and not the name box, which may be holding an edit nobody
+       has saved — that has not renamed the connection, only proposed a new name for it.
+
+       Nothing saved is loaded when a connection was typed in by hand, and then the form really
+       is a new one and says so. */
+    const entry = savedConnections.find((c) => c.id === editingId);
+    onTitleChange(entry?.name ?? t("app.newConnectionTitle"));
   }
 
   const connectionForm = (
