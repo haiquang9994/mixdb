@@ -43,13 +43,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
-- A saved SSH host can carry the commands to run the moment you land — `cd ~/project-a/frontend`, `nvm use` — typed for you once the shell answers.
+- Anything a terminal tab opens can be saved now — a shell on this machine as well as an SSH server — in one list.
+- A saved terminal target carries the commands to run the moment you land: `cd ~/project-a/frontend`, `nvm use`.
+- Save as new turns a saved terminal target into a variant of itself without touching the original.
 - Ctrl/Cmd+click a link in the terminal to open it in your browser. http and https only.
 - The REST response Preview can run the page's own scripts — a switch beside it, off every time the pane is drawn.
+
+### Changed
+
+- Update in the terminal's target form is dead until something in the form actually differs from what was saved.
 
 ### Fixed
 
 - A database tab that was left at the connection form comes back to that same connection, loaded and marked in the list, instead of reopening blank under the name of it.
+- Leaving a terminal session comes back to the form with the saved target still loaded and named, instead of an empty Name box.
 
 ## [0.0.17] - 2026-08-27
 

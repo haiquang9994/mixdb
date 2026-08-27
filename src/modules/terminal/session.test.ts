@@ -11,12 +11,16 @@ const bash: TerminalChoice = {
   kind: "local",
   shell: { name: "git-bash", path: "C:\\Program Files\\Git\\bin\\bash.exe", args: [] },
   cwd: null,
+  targetId: null,
+  runOnConnect: null,
 };
 
 const ubuntu: TerminalChoice = {
   kind: "local",
   shell: { name: "wsl:Ubuntu", path: "C:\\Windows\\System32\\wsl.exe", args: ["-d", "Ubuntu"] },
   cwd: "D:\\work",
+  targetId: null,
+  runOnConnect: null,
 };
 
 const config: SshConfig = {
@@ -26,7 +30,7 @@ const config: SshConfig = {
   auth: { type: "password", password: "hunter2" },
 };
 
-const remote: TerminalChoice = { kind: "ssh", config, hostId: null, runOnConnect: null };
+const remote: TerminalChoice = { kind: "ssh", config, targetId: null, runOnConnect: null };
 
 describe("terminalTarget", () => {
   it("sends the path and the args, not the display name", () => {

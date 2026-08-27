@@ -1,17 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import Button from "../../../../components/Button";
 import Input, { Textarea } from "../../../../components/Input";
 import Select from "../../../../components/Select";
 import { errorMessage } from "../../../../core/errors";
+import { stableStringify } from "../../../../core/stableStringify";
 import { useTranslation } from "../../../../i18n";
 import { localShells } from "../../api";
 import { ShellIcon } from "../../icons";
-import { addHost, removeHost, updateHost, useSavedHosts } from "../../savedHostsStore";
+import {
+  addTarget,
+  removeTarget,
+  updateTarget,
+  useSavedTargets,
+  useSavedTargetsLoaded,
+} from "../../savedTargetsStore";
 import { loadTerminalSettings } from "../../settingsStore";
 import { shellLabel } from "../../shells";
-import type { LocalShell, SavedHost, SshAuth, SshConfig, TerminalChoice } from "../../types";
-import SavedHostList from "./SavedHostList";
+import type { LocalShell, SavedTarget, SshAuth, SshConfig, TerminalChoice } from "../../types";
+import SavedTargetList from "./SavedTargetList";
 import styles from "./TargetForm.module.css";
 
 /** Đường dẫn khoá riêng trông như thế nào trên máy đang chạy — một gợi ý, không phải một chuỗi
@@ -24,6 +31,19 @@ const PRIVATE_KEY_PLACEHOLDER = navigator.userAgent.includes("Windows")
 
 const DEFAULT_SSH_PORT = 22;
 
+/**
+ * Một đích đã lưu rút xuống đúng phần "nó là cái gì" — không có `id`.
+ *
+ * Bỏ `id` ra là điều làm cho *Lưu thành mới* so sánh được: entry mới mang id khác mà nội dung y
+ * hệt, và nút Cập nhật phải đọc ra "chưa đổi gì" ngay sau đó. Đi qua `stableStringify` vì thứ tự
+ * khoá của một object form vừa dựng và của cùng object ấy sau một vòng qua JSON không giống nhau —
+ * xem `core/stableStringify.ts`.
+ */
+function snapshotOf(target: SavedTarget): string {
+  const { id: _id, ...body } = target;
+  return stableStringify(body);
+}
+
 interface Props {
   onOpen: (choice: TerminalChoice) => void;
   onError: (message: string) => void;
@@ -35,20 +55,26 @@ interface Props {
 /** Màn hình một tab terminal hiện trước khi có phiên: chọn máy này hay một máy chủ. */
 function TargetForm({ onOpen, onError, initial }: Props) {
   const { t } = useTranslation();
-  const hosts = useSavedHosts();
+  const targets = useSavedTargets();
+  const targetsLoaded = useSavedTargetsLoaded();
 
   const [kind, setKind] = useState<"local" | "ssh">(initial?.kind ?? "local");
 
+  /** Đích đã lưu mà form đang giữ, hoặc `null` khi nó là một cái gõ tay. */
+  const [targetId, setTargetId] = useState<string | null>(initial?.targetId ?? null);
+  const [name, setName] = useState("");
+  /** Ảnh chụp của đích đã lưu lúc nó được nạp, để nút Cập nhật biết đã có gì đổi hay chưa. */
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
+  const [runOnConnect, setRunOnConnect] = useState(initial?.runOnConnect ?? "");
+
   // Máy này
   const [shells, setShells] = useState<LocalShell[]>([]);
-  const [path, setPath] = useState(initial?.kind === "local" ? initial.shell.path : "");
+  /* Tên chứ không phải đường dẫn, ở cả state lẫn giá trị của `Select`: tên là cái đi xuống đĩa, nên
+     một dòng đã lưu nạp được vào form ngay cả khi danh sách shell của máy chưa đọc xong. */
+  const [shellName, setShellName] = useState(initial?.kind === "local" ? initial.shell.name : "");
   const [cwd, setCwd] = useState(initial?.kind === "local" ? (initial.cwd ?? "") : "");
 
   // SSH
-  const [hostId, setHostId] = useState<string | null>(
-    initial?.kind === "ssh" ? initial.hostId : null,
-  );
-  const [name, setName] = useState("");
   const [host, setHost] = useState(initial?.kind === "ssh" ? initial.config.host : "");
   const [port, setPort] = useState(initial?.kind === "ssh" ? initial.config.port : DEFAULT_SSH_PORT);
   const [username, setUsername] = useState(initial?.kind === "ssh" ? initial.config.username : "");
@@ -70,9 +96,6 @@ function TargetForm({ onOpen, onError, initial }: Props) {
       ? (initial.config.auth.passphrase ?? "")
       : "",
   );
-  const [runOnConnect, setRunOnConnect] = useState(
-    initial?.kind === "ssh" ? (initial.runOnConnect ?? "") : "",
-  );
 
   useEffect(() => {
     /* Hai lượt đọc song song chứ không nối tiếp, và `loadTerminalSettings` chứ không
@@ -87,7 +110,7 @@ function TargetForm({ onOpen, onError, initial }: Props) {
         /* `current ||` giữ nguyên cái `initial` đã đặt: một lần mở hỏng rồi thử lại phải quay về
            đúng shell vừa thử, không phải về shell mặc định. Shell mặc định đã gỡ khỏi máy thì
            `preferred` là `undefined` và cái Rust gợi ý đầu danh sách nhận chỗ. */
-        setPath((current) => current || preferred?.path || (found[0]?.path ?? ""));
+        setShellName((current) => current || preferred?.name || (found[0]?.name ?? ""));
         const dir = settings.defaultCwd;
         if (dir) setCwd((current) => current || dir);
       })
@@ -95,7 +118,41 @@ function TargetForm({ onOpen, onError, initial }: Props) {
     // Chỉ chạy một lần: danh sách shell của một máy không đổi giữa chừng.
   }, []);
 
-  const chosenShell = shells.find((shell) => shell.path === path);
+  /** Đã đi tìm cái tên cho `initial` chưa — thắng hay thua đều tính, nên nó chỉ có một lượt. */
+  const namedInitial = useRef(false);
+
+  /**
+   * Cái tên và ảnh chụp của đích mà tab này vừa rời khỏi.
+   *
+   * `TerminalChoice` mang được mọi thứ dựng lại form *trừ tên*: tên thuộc về entry đã lưu, không
+   * thuộc về phiên. Thiếu bước này thì rời một phiên xong, form quay lại với đúng địa chỉ và đúng
+   * mật khẩu nhưng ô Tên trống và nút Cập nhật chết — dòng trong cột có sáng lên thì cũng không ai
+   * đọc ra rằng nó đang được giữ.
+   *
+   * Chỉ đặt tên và ảnh chụp, cố ý không nạp đè cả entry: cái người dùng vừa gõ phải ở nguyên đó.
+   * Một lần mở hỏng vì sai mật khẩu mà form tự thay lại mật khẩu cũ là một form cãi lại người dùng.
+   * Và vì ảnh chụp lấy từ entry chứ không từ form, một mật khẩu vừa sửa làm nút Cập nhật sống dậy —
+   * đúng như nó phải thế.
+   *
+   * Chờ `targetsLoaded` vì danh sách rỗng cho tới khi file đọc xong, và trước đó mọi id đều trông
+   * như đã bị xoá.
+   */
+  useEffect(() => {
+    if (namedInitial.current || targetId === null || !targetsLoaded) return;
+    namedInitial.current = true;
+    const entry = targets.find((target) => target.id === targetId);
+    if (entry === undefined) {
+      /* Dòng ấy đã bị xoá trong lúc phiên đang chạy. Form giữ nguyên mọi thứ đang có — nó vẫn mở
+         lại được — nhưng thôi trỏ vào một id không còn gì, để nút không còn nói "Cập nhật" về một
+         entry không tồn tại. */
+      setTargetId(null);
+      return;
+    }
+    setName(entry.name);
+    setSavedSnapshot(snapshotOf(entry));
+  }, [targetsLoaded, targets]);
+
+  const chosenShell = shells.find((shell) => shell.name === shellName);
 
   async function browseDirectory() {
     const picked = await openDialog({ directory: true, multiple: false });
@@ -117,18 +174,76 @@ function TargetForm({ onOpen, onError, initial }: Props) {
     return { host: host.trim(), port, username: username.trim(), auth: buildAuth() };
   }
 
+  /** Form đang mô tả đích nào, dưới cái id được đưa vào. Ô rỗng ghi ra `undefined` chứ không phải
+   *  `""`: vắng mặt là mặc định, nên một entry chưa dùng tới ô ấy không mang theo một dòng chết. */
+  function buildTarget(id: string): SavedTarget {
+    const trimmedName = name.trim();
+    const opening = runOnConnect.trim() || undefined;
+    if (kind === "local") {
+      return {
+        id,
+        name: trimmedName,
+        kind: "local",
+        shellName,
+        cwd: cwd.trim() || null,
+        runOnConnect: opening,
+      };
+    }
+    return { id, name: trimmedName, kind: "ssh", config: buildConfig(), runOnConnect: opening };
+  }
+
   /** Đủ để một lần thử có nghĩa: địa chỉ, người dùng, và cái mà cách xác thực đang chọn cần. */
   const sshReady =
     host.trim() !== "" &&
     username.trim() !== "" &&
     (authType === "password" ? password !== "" : keyPath.trim() !== "");
 
-  function applyHost(entry: SavedHost) {
-    // Cột host luôn ở đó, kể cả khi form đang ở "Máy này" — bấm một host mà form không đổi sang
-    // SSH thì cú bấm ấy trông như không có tác dụng gì.
-    setKind("ssh");
-    setHostId(entry.id);
+  /** Cái đang mở, dựng từ form. `null` khi form chưa đủ để một lần thử có nghĩa. */
+  function buildChoice(): TerminalChoice | null {
+    const opening = runOnConnect.trim() || null;
+    if (kind === "local") {
+      return chosenShell
+        ? {
+            kind: "local",
+            shell: chosenShell,
+            cwd: cwd.trim() || null,
+            targetId,
+            runOnConnect: opening,
+          }
+        : null;
+    }
+    return sshReady ? { kind: "ssh", config: buildConfig(), targetId, runOnConnect: opening } : null;
+  }
+
+  /** Đủ để lưu: một cái tên, và với máy này thì một shell có thật để lưu tên của nó. */
+  const savable = name.trim() !== "" && (kind === "ssh" || chosenShell !== undefined);
+
+  /* Nút Cập nhật chết khi form đang giữ đúng cái đã lưu. Chỉ hỏi câu này khi có entry để so: một
+     đích gõ tay thì nút là Lưu, và Lưu thì không bao giờ vô nghĩa. */
+  const unchanged = targetId !== null && savedSnapshot === snapshotOf(buildTarget(""));
+
+  function applyTarget(entry: SavedTarget) {
+    // Cột đích luôn ở đó, kể cả khi form đang ở loại kia — bấm một dòng mà form không đổi loại thì
+    // cú bấm ấy trông như không có tác dụng gì.
+    setKind(entry.kind);
+    setTargetId(entry.id);
     setName(entry.name);
+    setRunOnConnect(entry.runOnConnect ?? "");
+    setSavedSnapshot(snapshotOf(entry));
+    // Cái tên đã tìm rồi, và nó là cái này. Effect trên không còn lượt nào để ghi đè.
+    namedInitial.current = true;
+    if (entry.kind === "local") {
+      setShellName(entry.shellName);
+      setCwd(entry.cwd ?? "");
+      /* Và dọn nhánh kia. Không dọn thì bấm sang tab SSH sau đó hiện ra địa chỉ và mật khẩu của
+         một máy chủ khác — cái vừa được nạp trước đó — trong khi cột bên trái đang tô một dòng
+         local, và nút Cập nhật thì sẵn sàng biến dòng ấy thành máy chủ. */
+      resetSshFields();
+      return;
+    }
+    // Đối xứng: thư mục bắt đầu của một dòng local khác không có việc gì ở đây nữa. Tên shell thì
+    // ở lại — nó không thuộc về dòng nào cả, nó là cái tab "Máy này" mặc định mở ra.
+    setCwd("");
     setHost(entry.config.host);
     setPort(entry.config.port);
     setUsername(entry.config.username);
@@ -138,24 +253,27 @@ function TargetForm({ onOpen, onError, initial }: Props) {
     setPassphrase(
       entry.config.auth.type === "privatekey" ? (entry.config.auth.passphrase ?? "") : "",
     );
-    setRunOnConnect(entry.runOnConnect ?? "");
   }
 
-  /** Nháy đúp một host: nạp nó vào form rồi mở luôn. Cấu hình lấy thẳng từ mục được bấm chứ không
-   *  từ state — `applyHost` vừa gọi `setState`, mà state thì phải sang lần render sau mới đổi. */
-  function openHost(entry: SavedHost) {
-    applyHost(entry);
-    onOpen({
-      kind: "ssh",
-      config: entry.config,
-      hostId: entry.id,
-      runOnConnect: entry.runOnConnect ?? null,
-    });
+  /** Nháy đúp một dòng: nạp nó vào form rồi mở luôn. Cấu hình lấy thẳng từ mục được bấm chứ không
+   *  từ state — `applyTarget` vừa gọi `setState`, mà state thì phải sang lần render sau mới đổi. */
+  function openTarget(entry: SavedTarget) {
+    applyTarget(entry);
+    const opening = entry.runOnConnect ?? null;
+    if (entry.kind === "ssh") {
+      onOpen({ kind: "ssh", config: entry.config, targetId: entry.id, runOnConnect: opening });
+      return;
+    }
+    /* Shell đã gỡ khỏi máy — một distro WSL bị xoá, một Git Bash gỡ đi. Form đã nạp xong và ô shell
+       đang trống, nên người dùng thấy ngay là phải chọn cái khác; không có gì hỏng để báo. */
+    const shell = shells.find((s) => s.name === entry.shellName);
+    if (shell === undefined) return;
+    onOpen({ kind: "local", shell, cwd: entry.cwd, targetId: entry.id, runOnConnect: opening });
   }
 
-  function clearHostForm() {
-    setHostId(null);
-    setName("");
+  /** Nửa SSH của form về trắng. Riêng ra vì `applyTarget` cũng cần nó: nạp một dòng local mà để lại
+   *  thông tin đăng nhập của máy chủ vừa xem là để chúng nằm sau một tab chỉ cách một cú bấm. */
+  function resetSshFields() {
     setHost("");
     setPort(DEFAULT_SSH_PORT);
     setUsername("");
@@ -163,58 +281,70 @@ function TargetForm({ onOpen, onError, initial }: Props) {
     setPassword("");
     setKeyPath("");
     setPassphrase("");
+  }
+
+  /** Bỏ form về trắng. Loại đang chọn ở lại: "+" là "một cái mới thuộc loại tôi đang xem", và cả
+   *  hai loại giờ đều lưu được. */
+  function clearForm() {
+    setTargetId(null);
+    setName("");
+    setSavedSnapshot(null);
     setRunOnConnect("");
+    setCwd("");
+    resetSshFields();
   }
 
-  async function saveHost() {
-    const trimmed = name.trim();
-    if (!trimmed) return;
+  async function saveTarget() {
+    if (!savable) return;
     try {
-      // Ô trống ghi ra `undefined` chứ không phải `""`: vắng mặt là mặc định, đúng như `pinned`
-      // bên module db, nên một host chưa từng dùng tới ô này không mang theo một dòng chết.
-      const opening = runOnConnect.trim() || undefined;
-      if (hostId) {
-        await updateHost({ id: hostId, name: trimmed, config: buildConfig(), runOnConnect: opening });
+      const entry = buildTarget(targetId ?? crypto.randomUUID());
+      if (targetId) {
+        await updateTarget(entry);
       } else {
-        const entry: SavedHost = {
-          id: crypto.randomUUID(),
-          name: trimmed,
-          config: buildConfig(),
-          runOnConnect: opening,
-        };
-        await addHost(entry);
-        setHostId(entry.id);
+        await addTarget(entry);
+        setTargetId(entry.id);
       }
+      setSavedSnapshot(snapshotOf(entry));
     } catch (e) {
       onError(errorMessage(t, e));
     }
   }
 
-  async function deleteHost(id: string) {
+  /** Cùng nội dung, id mới, và form chuyển sang giữ bản sao — cái đã lưu ở lại y như nó vốn có. */
+  async function saveAsNew() {
+    if (!savable) return;
     try {
-      await removeHost(id);
-      if (hostId === id) clearHostForm();
+      const entry = buildTarget(crypto.randomUUID());
+      await addTarget(entry);
+      setTargetId(entry.id);
+      setSavedSnapshot(snapshotOf(entry));
     } catch (e) {
       onError(errorMessage(t, e));
     }
   }
+
+  async function deleteTarget(id: string) {
+    try {
+      await removeTarget(id);
+      if (targetId === id) clearForm();
+    } catch (e) {
+      onError(errorMessage(t, e));
+    }
+  }
+
+  const choice = buildChoice();
 
   return (
     <div className={styles.layout}>
       {/* Luôn hiện, không chỉ ở tab SSH: đây là danh sách những chỗ người dùng hay tới, và một danh
           sách chỉ hiện ra sau khi đã bấm đúng tab thì không đỡ được ai lần bấm nào. */}
-      <SavedHostList
-        hosts={hosts}
-        selectedId={kind === "ssh" ? hostId : null}
-        onSelect={applyHost}
-        onOpen={openHost}
-        onDelete={(id) => void deleteHost(id)}
-        onNew={() => {
-          // "+" là "một máy chủ mới", nên nó cũng mang form sang bên SSH; `clearHostForm` một mình
-          // thì không, vì nó còn được gọi khi host đang chọn bị xoá.
-          setKind("ssh");
-          clearHostForm();
-        }}
+      <SavedTargetList
+        targets={targets}
+        selectedId={targetId}
+        onSelect={applyTarget}
+        onOpen={openTarget}
+        onDelete={(id) => void deleteTarget(id)}
+        onNew={clearForm}
       />
 
       <div className={styles.form}>
@@ -241,15 +371,30 @@ function TargetForm({ onOpen, onError, initial }: Props) {
           </button>
         </div>
 
+        {/* Ngoài hai nhánh: cả hai loại đều lưu được, nên cả hai đều có tên. */}
+        <div className={styles.row}>
+          <label htmlFor="terminal-target-name">{t("terminal.targetName")}</label>
+          <Input
+            id="terminal-target-name"
+            value={name}
+            placeholder={
+              kind === "local"
+                ? t("terminal.targetNamePlaceholderLocal")
+                : t("terminal.targetNamePlaceholderSsh")
+            }
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+
         {kind === "local" ? (
           <>
             <div className={styles.row}>
               {/* `Select` không nhận `id`, nên nhãn của nó là `ariaLabel` chứ không phải `htmlFor` */}
               <span>{t("terminal.shell")}</span>
               <Select
-                value={path}
+                value={shellName}
                 options={shells.map((shell) => ({
-                  value: shell.path,
+                  value: shell.name,
                   label: (
                     <span className={styles.shellOption}>
                       <ShellIcon name={shell.name} />
@@ -259,9 +404,14 @@ function TargetForm({ onOpen, onError, initial }: Props) {
                   // Nhãn là node nên ô tìm kiếm không đọc được nó; đây là chữ nó đọc.
                   searchText: shellLabel(shell.name),
                 }))}
-                onChange={setPath}
+                onChange={setShellName}
                 ariaLabel={t("terminal.shell")}
-                placeholder={t("terminal.noShells")}
+                /* Máy không dò ra shell nào, và một dòng đã lưu trỏ tới shell đã gỡ khỏi máy, đều
+                   hiện ra là ô trống — nhưng chúng không phải một chuyện, và "không tìm thấy shell
+                   nào" nói sai hẳn khi danh sách bên dưới đang có năm cái. */
+                placeholder={
+                  shells.length === 0 ? t("terminal.noShells") : t("terminal.pickShell")
+                }
               />
             </div>
 
@@ -277,29 +427,9 @@ function TargetForm({ onOpen, onError, initial }: Props) {
                 <Button onClick={() => void browseDirectory()}>{t("terminal.browse")}</Button>
               </div>
             </div>
-
-            <Button
-              variant="primary"
-              disabled={!chosenShell}
-              onClick={() =>
-                chosenShell && onOpen({ kind: "local", shell: chosenShell, cwd: cwd.trim() || null })
-              }
-            >
-              {t("terminal.open")}
-            </Button>
           </>
         ) : (
           <>
-            <div className={styles.row}>
-              <label htmlFor="terminal-host-name">{t("terminal.hostName")}</label>
-              <Input
-                id="terminal-host-name"
-                value={name}
-                placeholder={t("terminal.hostNamePlaceholder")}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-
             <div className={styles.columns}>
               <div className={styles.row}>
                 <label htmlFor="terminal-host">{t("terminal.host")}</label>
@@ -373,39 +503,39 @@ function TargetForm({ onOpen, onError, initial }: Props) {
                 </div>
               </>
             )}
-
-            <div className={styles.row}>
-              <label htmlFor="terminal-run-on-connect">{t("terminal.runOnConnect")}</label>
-              <Textarea
-                id="terminal-run-on-connect"
-                value={runOnConnect}
-                placeholder={t("terminal.runOnConnectPlaceholder")}
-                onChange={(e) => setRunOnConnect(e.target.value)}
-              />
-              <p className={styles.hint}>{t("terminal.runOnConnectHint")}</p>
-            </div>
-
-            <div className={styles.actions}>
-              <Button disabled={!name.trim()} onClick={() => void saveHost()}>
-                {hostId ? t("terminal.updateHost") : t("terminal.saveHost")}
-              </Button>
-              <Button
-                variant="primary"
-                disabled={!sshReady}
-                onClick={() =>
-                  onOpen({
-                    kind: "ssh",
-                    config: buildConfig(),
-                    hostId,
-                    runOnConnect: runOnConnect.trim() || null,
-                  })
-                }
-              >
-                {t("terminal.connect")}
-              </Button>
-            </div>
           </>
         )}
+
+        {/* Ngoài hai nhánh, đúng như ô Tên: một shell trên máy này cũng có mấy dòng phải gõ lại mỗi
+            lần mở, và `cd` bằng ô Bắt đầu ở chỉ làm được dòng đầu tiên trong số đó. */}
+        <div className={styles.row}>
+          <label htmlFor="terminal-run-on-connect">{t("terminal.runOnConnect")}</label>
+          <Textarea
+            id="terminal-run-on-connect"
+            value={runOnConnect}
+            placeholder={t("terminal.runOnConnectPlaceholder")}
+            onChange={(e) => setRunOnConnect(e.target.value)}
+          />
+          <p className={styles.hint}>{t("terminal.runOnConnectHint")}</p>
+        </div>
+
+        <div className={styles.actions}>
+          <Button disabled={!savable || unchanged} onClick={() => void saveTarget()}>
+            {targetId ? t("terminal.updateTarget") : t("terminal.saveTarget")}
+          </Button>
+          {targetId && (
+            <Button disabled={!savable} onClick={() => void saveAsNew()}>
+              {t("terminal.saveAsNew")}
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            disabled={choice === null}
+            onClick={() => choice && onOpen(choice)}
+          >
+            {kind === "local" ? t("terminal.open") : t("terminal.connect")}
+          </Button>
+        </div>
       </div>
     </div>
   );

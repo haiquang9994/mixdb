@@ -31,6 +31,7 @@ import { DatabaseIcon } from "./icons";
 import { IS_MAC, IS_WINDOWS } from "../../core/platform";
 import { useTranslation, type TranslationKey } from "../../i18n";
 import { errorMessage } from "../../core/errors";
+import { stableStringify } from "../../core/stableStringify";
 import type { ModuleTabProps, TabBadge } from "../../shell/module";
 import { dbBadgeMarks } from "./badges";
 /* The module's own global stylesheet: the connection form, the saved list and the three
@@ -64,21 +65,6 @@ type SqlKind = keyof typeof SQL_ENGINES;
 /** Whether this kind opens the SQL workspace, and — to TypeScript — which of them it is. */
 function isSqlKind(kind: DbKind): kind is SqlKind {
   return kind in SQL_ENGINES;
-}
-
-// Key order isn't stable across sources (object literals vs. values that
-// round-tripped through the Tauri store's JSON), so a plain JSON.stringify
-// comparison would flag identical configs as different. Sort keys
-// recursively — and drop `undefined` props, matching JSON.stringify's own
-// behavior — to get an order-independent snapshot instead.
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj)
-    .filter((k) => obj[k] !== undefined)
-    .sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
 }
 
 // The Mongo form is a single connection string, so the two things the rest of the app used to
@@ -563,10 +549,12 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
   /**
    * Opens the connection and puts the workspace on screen.
    *
-   * `savedId` is a parameter and not a read of `editingId` on purpose: `openAndConnect` applies
-   * the saved connection to the form and calls this in the same tick, so `setEditingId` has not
-   * taken effect and this closure still sees whatever was there before. Passing it in is also what
-   * makes the hand-typed branch say `undefined` deliberately rather than by omission.
+   * `savedId` is a parameter and not merely a read of `editingId`: `openAndConnect` applies the
+   * saved connection to the form and calls this in the same tick, so `setEditingId` has not taken
+   * effect and this closure still sees whatever was there before. It is an override rather than
+   * the only source — the Connect button passes nothing and has to fall back to `editingId`, or
+   * the commonest path of all (click a connection, press Connect) would leave the tab pointing at
+   * nothing and reopening blank next launch.
    */
   async function connect(overrideConfig?: ConnectionConfig, title?: string, savedId?: string) {
     setError("");
@@ -575,10 +563,16 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     try {
       const id = await invoke<string>("connect_db", { config });
       setConnectionId(id);
-      /* Written on both branches, so where this tab points does not depend on `disconnect` having
-         run first: connecting to something else replaces it, and connecting to a config nobody
-         saved clears it. An id and a flag — see `tabState.ts`. */
-      onStateChange(savedId === undefined ? undefined : { savedId, connected: true });
+      /* Where the tab points is whatever the form is holding: the entry passed in, or the one
+         loaded in the sidebar. Written on both branches, so it does not depend on `disconnect`
+         having run first — connecting to something else replaces it, and connecting to a config
+         nobody saved clears it. An id and a flag — see `tabState.ts`.
+
+         A connection loaded and then edited by hand still points at what it was loaded from. The
+         edit is not saved anywhere and cannot be restored; the name in the box and the row marked
+         in the sidebar both say that entry, so the tab says it too. */
+      const pointsAt = savedId ?? editingId;
+      onStateChange(pointsAt === null ? undefined : { savedId: pointsAt, connected: true });
       setStatus(t("connection.connectedStatus", { id: id.slice(0, 8) }));
       const titleHost = config.kind === "mongo" ? mongoUriHost(config.uri ?? "") : config.host;
       onTitleChange(

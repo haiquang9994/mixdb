@@ -7,7 +7,7 @@ import { useTranslation } from "../../i18n";
 import { localShells, type SessionExit } from "./api";
 import TargetForm from "./components/TargetForm";
 import TerminalView from "./components/TerminalView";
-import { useSavedHosts, useSavedHostsLoaded } from "./savedHostsStore";
+import { useSavedTargets, useSavedTargetsLoaded } from "./savedTargetsStore";
 import { parseTerminalTabState, tabStateFor } from "./tabState";
 import { terminalBadgeMarks, terminalTarget, terminalTitle } from "./session";
 import type { TerminalChoice } from "./types";
@@ -30,12 +30,12 @@ function TerminalTab({ active, onTitleChange, onBadgesChange, restored, onStateC
   /* Tab này đang ở đâu lần mở app trước, chụp đúng một lần. Chụp chứ không đọc sống: `start` ghi
      giá trị mới ngay khi phiên mở, mà đọc lại cái đó thì tab tự khôi phục từ chính nó. */
   const [restoredState] = useState(() => parseTerminalTabState(restored));
-  /* Gọi `useSavedHosts` ở đây là thứ khởi động lượt đọc mà `useSavedHostsLoaded` đang chờ — từ
+  /* Gọi `useSavedTargets` ở đây là thứ khởi động lượt đọc mà `useSavedTargetsLoaded` đang chờ — từ
      trước tới giờ chỉ `TargetForm` gọi nó, mà form thì không có mặt khi tab đang khôi phục. */
-  const savedHosts = useSavedHosts();
-  const savedHostsLoaded = useSavedHostsLoaded();
+  const savedTargets = useSavedTargets();
+  const savedTargetsLoaded = useSavedTargetsLoaded();
   /** Việc khôi phục đã có lượt của nó chưa — thắng hay thua đều tính. Thiếu cái này thì một tab
-   *  khác lưu thêm host là snapshot mới, effect chạy lại, và tab này mở phiên thứ hai. */
+   *  khác lưu thêm một đích là snapshot mới, effect chạy lại, và tab này mở phiên thứ hai. */
   const restoreTried = useRef(false);
 
   useEffect(() => {
@@ -104,30 +104,42 @@ function TerminalTab({ active, onTitleChange, onBadgesChange, restored, onStateC
   /* Tab quay lại đúng chỗ nó đang ở, một lần, lần đầu nó được nhìn tới — với một tab khôi phục từ
      phiên trước thì đó cũng là lần đầu nó được mount.
 
-     Hai nhánh chờ hai thứ khác nhau. `ssh` chờ danh sách host đọc xong: trước đó danh sách rỗng và
+     Hai nhánh chờ hai thứ khác nhau. `ssh` chờ danh sách đích đọc xong: trước đó danh sách rỗng và
      mọi id đều trông như đã bị xoá. `local` chờ `localShells()` — shell dò lại mỗi lần chạy, nên
-     một distro WSL đã gỡ hay một shell đã xoá đơn giản là không có trong danh sách. Không tìm thấy
-     thì về `TargetForm`, không banner: không có gì hỏng cả. */
+     một distro WSL đã gỡ hay một shell đã xoá đơn giản là không có trong danh sách; nó chỉ chờ
+     thêm danh sách đích khi nó thật sự trỏ tới một dòng. Không tìm thấy thì về `TargetForm`, không
+     banner: không có gì hỏng cả.
+
+     Lệnh mở màn tra trên entry đang sống chứ không đọc từ `localStorage` — sửa nó một lần là tab
+     nào trỏ tới đó cũng theo. Entry đã bị xoá thì nhánh `local` vẫn mở đúng shell của nó, chỉ là
+     không còn lệnh nào để gõ hộ. */
   useEffect(() => {
     if (restoreTried.current || restoredState === null) return;
 
     if (restoredState.kind === "ssh") {
-      if (!savedHostsLoaded) return;
+      if (!savedTargetsLoaded) return;
       restoreTried.current = true;
-      const host = savedHosts.find((h) => h.id === restoredState.hostId);
-      // `config` ở đây đã đầy đủ — `savedHosts.ts` ghép bí mật từ keyring vào trước khi trao ra.
-      if (host !== undefined) {
-        start({
-          kind: "ssh",
-          config: host.config,
-          hostId: host.id,
-          runOnConnect: host.runOnConnect ?? null,
-        });
-      }
+      const entry = savedTargets.find((target) => target.id === restoredState.targetId);
+      // Một dòng đổi từ máy chủ sang máy này giữa hai lần mở app: id còn đó nhưng nó không còn mở
+      // được một phiên SSH nào, nên tab về form đúng như khi entry đã bị xoá hẳn.
+      if (entry === undefined || entry.kind !== "ssh") return;
+      // `config` ở đây đã đầy đủ — `savedTargets.ts` ghép bí mật từ keyring vào trước khi trao ra.
+      start({
+        kind: "ssh",
+        config: entry.config,
+        targetId: entry.id,
+        runOnConnect: entry.runOnConnect ?? null,
+      });
       return;
     }
 
+    /* Chỉ một tab local từng được lưu thành một dòng mới phải chờ danh sách: cái còn lại không có
+       gì để tra, và bắt nó chờ là bắt nó không mở lại được khi lượt đọc file hỏng. */
+    if (restoredState.targetId !== undefined && !savedTargetsLoaded) return;
     restoreTried.current = true;
+    const saved = restoredState.targetId
+      ? savedTargets.find((target) => target.id === restoredState.targetId)
+      : undefined;
     /* Không có cờ huỷ, và cố ý: `restoreTried` đã bảo đảm `localShells()` chỉ chạy đúng một lần,
        nên thứ duy nhất một cleanup huỷ được lại chính là lần thử ấy — StrictMode tháo rồi gắn lại
        ngay khi mount, cleanup bắn trước khi dò xong, và tab không bao giờ về lại shell của nó.
@@ -136,11 +148,18 @@ function TerminalTab({ active, onTitleChange, onBadgesChange, restored, onStateC
     localShells()
       .then((shells) => {
         const shell = shells.find((s) => s.name === restoredState.shellName);
-        if (shell !== undefined) start({ kind: "local", shell, cwd: restoredState.cwd });
+        if (shell === undefined) return;
+        start({
+          kind: "local",
+          shell,
+          cwd: restoredState.cwd,
+          targetId: saved?.id ?? null,
+          runOnConnect: saved?.kind === "local" ? (saved.runOnConnect ?? null) : null,
+        });
       })
       // Dò shell hỏng thì tab mở ra là form, đúng như trước khi có tính năng này.
       .catch(() => {});
-  }, [restoredState, savedHostsLoaded, savedHosts]);
+  }, [restoredState, savedTargetsLoaded, savedTargets]);
 
   function reconnect() {
     setExit(null);
@@ -160,7 +179,7 @@ function TerminalTab({ active, onTitleChange, onBadgesChange, restored, onStateC
           <TerminalView
             key={generation}
             target={target}
-            runOnConnect={choice?.kind === "ssh" ? choice.runOnConnect : null}
+            runOnConnect={choice?.runOnConnect ?? null}
             active={active}
             onOpened={opened}
             onExit={setExit}

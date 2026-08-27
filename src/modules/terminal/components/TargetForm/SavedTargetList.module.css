@@ -80,6 +80,19 @@
   box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
+/* Dấu hiệu rồi mới tới tên, và tên co lại chứ không đẩy dấu hiệu ra khỏi thẻ. */
+.title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mark {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
 .item strong {
   overflow: hidden;
   text-overflow: ellipsis;

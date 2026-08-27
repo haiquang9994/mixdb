@@ -26,21 +26,45 @@ export interface SshConfig {
   auth: SshAuth;
 }
 
-/** Một máy chủ người dùng đã lưu lại. `config` ở đây luôn đầy đủ — `savedHosts.ts` ghép phần bí
- *  mật từ kho thông tin đăng nhập vào trước khi trao nó cho ai. */
-export interface SavedHost {
+/**
+ * Một đích người dùng đã lưu lại: một shell trên máy này, hoặc một máy chủ SSH.
+ *
+ * Cột bên trái `TargetForm` là danh sách này, và nó cố ý trộn chung hai loại: nó là *những chỗ tôi
+ * hay mở*, không phải danh sách máy chủ — nên nó vẫn hiện khi form đang ở "Máy này", đúng như nó
+ * vẫn hiện từ trước.
+ *
+ * Entry ghi bởi bản cũ không có `kind`. `parseSavedTarget` đọc chúng là `ssh`, vì hồi ấy không có
+ * loại nào khác — không có bước chuyển đổi nào, và file chỉ đổi hình khi người dùng lưu lại.
+ */
+export type SavedTarget = SavedLocalTarget | SavedSshTarget;
+
+interface SavedTargetBase {
   id: string;
   name: string;
-  config: SshConfig;
   /**
-   * Lệnh gõ hộ ngay khi shell bên kia sẵn sàng — `cd ~/project-a/frontend`, `nvm use`, mấy dòng
-   * đầu tiên vẫn phải gõ lại mỗi lần vào máy ấy. Mỗi dòng là một lệnh.
+   * Lệnh gõ hộ ngay khi shell lên tiếng — `cd ~/project-a/frontend`, `nvm use`, mấy dòng đầu tiên
+   * vẫn phải gõ lại mỗi lần vào. Mỗi dòng là một lệnh; `openingKeystrokes` bên `session.ts` biến ô
+   * này thành phím.
    *
-   * Ngoài `config` chứ không nằm trong: `SshConfig` là gương của kiểu bên Rust, còn cái này Rust
-   * không bao giờ thấy — nó đi xuống pty như phím người dùng bấm. Và nó nằm nguyên văn trong
-   * `terminal-hosts.json`, nên nó không phải chỗ để mật khẩu; xem đầu `savedHosts.ts`.
+   * Rust không bao giờ thấy nó: nó đi xuống pty như phím người dùng bấm. Và nó nằm nguyên văn
+   * trong `terminal-hosts.json`, nên nó không phải chỗ để mật khẩu; xem đầu `savedTargets.ts`.
    */
   runOnConnect?: string;
+}
+
+/** Một shell trên máy này. `shellName` chứ không phải đường dẫn — `powershell`, `wsl:Ubuntu`: tên
+ *  là định danh bền, còn đường dẫn thì đổi theo máy, đúng như `TerminalTabState` đã quyết. */
+export interface SavedLocalTarget extends SavedTargetBase {
+  kind: "local";
+  shellName: string;
+  cwd: string | null;
+}
+
+/** Một máy chủ SSH. `config` ở đây luôn đầy đủ — `savedTargets.ts` ghép phần bí mật từ kho thông
+ *  tin đăng nhập vào trước khi trao nó cho ai. */
+export interface SavedSshTarget extends SavedTargetBase {
+  kind: "ssh";
+  config: SshConfig;
 }
 
 /** Đích của một phiên, đúng hình dạng `TerminalTarget` bên Rust. Nhánh `ssh` trải phẳng bốn trường
@@ -50,9 +74,21 @@ export type TerminalTarget =
   | ({ type: "ssh" } & SshConfig);
 
 /**
- * Cái người dùng chọn trong form. Rộng hơn `TerminalTarget`: giữ cả `LocalShell` để đặt tên tab và
- * `hostId` để biết phiên này đến từ host đã lưu nào — hai thứ Rust không cần biết.
+ * Cái người dùng chọn trong form. Rộng hơn `TerminalTarget`: giữ cả `LocalShell` để đặt tên tab,
+ * `targetId` để biết phiên này đến từ đích đã lưu nào, và `runOnConnect` để gõ hộ mấy dòng đầu —
+ * ba thứ Rust không cần biết.
  */
 export type TerminalChoice =
-  | { kind: "local"; shell: LocalShell; cwd: string | null }
-  | { kind: "ssh"; config: SshConfig; hostId: string | null; runOnConnect: string | null };
+  | {
+      kind: "local";
+      shell: LocalShell;
+      cwd: string | null;
+      targetId: string | null;
+      runOnConnect: string | null;
+    }
+  | {
+      kind: "ssh";
+      config: SshConfig;
+      targetId: string | null;
+      runOnConnect: string | null;
+    };

@@ -128,9 +128,11 @@ Mongo is configured as a single connection string, not host/port/user/password �
 - **The REST module's own files** — `rest-workspace.json` (the sidebar's collections and the open
   requests), `rest-history.json`, `rest-environments.json`. Same split as the connections: an
   environment variable marked secret lives in the credential store, not in the file.
-- **The terminal's own files** — `terminal-hosts.json` (a saved SSH host without its secrets) and
-  `terminal-settings.json` (font, scrollback, cursor, default shell). The host's password and key
-  passphrase go through the same `secrets_*` commands.
+- **The terminal's own files** — `terminal-hosts.json` (a saved target without its secrets: a shell
+  on this machine or an SSH server, each with the commands to run on connect) and
+  `terminal-settings.json` (font, scrollback, cursor, default shell). A server's password and key
+  passphrase go through the same `secrets_*` commands; a local shell has nothing to put there. The
+  file keeps its name from when the list held only servers.
 - **Theme** (`mixdb-theme`) and **language** (`mixdb-lang`) — `localStorage`, not the store.
 
 Every one of those files is the module's own. There is no shared persistence layer to add a key to,
