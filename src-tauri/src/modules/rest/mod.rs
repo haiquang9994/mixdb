@@ -6,11 +6,15 @@
 
 pub mod commands;
 pub mod models;
+pub mod preview;
 pub mod state;
 
-/// Puts this module's own state in the app. Called once, from `lib.rs`.
+/// Puts this module's own state in the app, and the scheme the response Preview is served from.
+/// Called once, from `lib.rs`.
 ///
 /// Tauri keys managed state by type, so this never meets `db`'s.
 pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
-    builder.manage(state::RestState::default())
+    builder
+        .manage(state::RestState::default())
+        .register_uri_scheme_protocol(preview::SCHEME, preview::respond)
 }

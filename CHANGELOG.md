@@ -41,6 +41,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Fixed
+
+- The response Preview's *Run scripts* and *Load external resources* switches now work in the
+  installed app, not only in a development build.
+- An image response shows again in the Preview tab.
+
 ## [0.0.18] - 2026-08-27
 
 ### Added

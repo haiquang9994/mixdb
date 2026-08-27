@@ -162,3 +162,12 @@ The webview itself runs under a CSP (`app.security.csp`, with a looser `devCsp` 
 everything loads from `'self'`, and `script-src` allows no inline script — which is why the theme
 preload lives in [public/theme-preload.js](../../public/theme-preload.js) rather than in
 `index.html`. Adding a `<script>` to the HTML will silently not run.
+
+That policy reaches further than the app's own document. A frame with no response of its own —
+`srcdoc`, `data:`, `blob:` — inherits it, and nothing inside such a frame can lift it: CSP policies
+intersect, so a `<meta http-equiv>` there only ever tightens. The REST response Preview needs the
+opposite, so it is **served**: `modules/rest/preview.rs` registers the `mixdb-preview` scheme and
+answers with the response body under a policy of its own, which is what the pane's two switches
+actually pick. `frame-src` in the config names that scheme in both its forms — `mixdb-preview:` and
+the `http://mixdb-preview.localhost` that Windows and Android rewrite it to — and it is the only
+frame source the app allows.

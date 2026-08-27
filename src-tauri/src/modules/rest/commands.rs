@@ -183,3 +183,26 @@ pub async fn rest_cancel(state: State<'_, RestState>, request_id: String) -> Res
     }
     Ok(())
 }
+
+/// Puts an HTML response where the preview scheme can serve it, and hands back the id it lives
+/// under. The frontend turns that into a URL with `convertFileSrc`.
+///
+/// The two flags are the pane's two switches, and they pick the policy the document is served
+/// with — see `preview.rs`. They are not a hint the document can talk its way out of: the
+/// document never sees them.
+#[tauri::command]
+pub fn rest_preview_open(
+    state: State<'_, RestState>,
+    html: String,
+    external: bool,
+    scripts: bool,
+) -> String {
+    super::preview::open(&state, html, external, scripts)
+}
+
+/// Drops one, for when the pane closes or either switch is flipped. An id that is already gone is
+/// not an error.
+#[tauri::command]
+pub fn rest_preview_close(state: State<'_, RestState>, id: String) {
+    super::preview::close(&state, &id);
+}

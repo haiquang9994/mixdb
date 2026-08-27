@@ -112,6 +112,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // ── rest ──
         rest::commands::rest_send,
         rest::commands::rest_cancel,
+        rest::commands::rest_preview_open,
+        rest::commands::rest_preview_close,
         // ── terminal ──
         terminal::commands::terminal_local_shells,
         terminal::commands::terminal_open,

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { RestResponse, WireRequest } from "./types";
 
@@ -22,6 +22,43 @@ export function restSend(req: WireRequest): Promise<RestResponse> {
 /** Cuts a send short by the `request_id` it was given. Never rejects for a send already finished. */
 export function restCancel(requestId: string): Promise<void> {
   return invoke("rest_cancel", { requestId });
+}
+
+/**
+ * The scheme `preview.rs` serves the response Preview from.
+ *
+ * Three places have to agree on it: `frame-src` in `src-tauri/tauri.conf.json`, `SCHEME` in
+ * `src-tauri/src/modules/rest/preview.rs`, and here. Change it in one and the frame loads nothing,
+ * with a CSP violation in the console as the only sign.
+ */
+const PREVIEW_SCHEME = "mixdb-preview";
+
+/** A document the Preview frame can load: the `url` to point it at, and the `id` to hand back to
+ *  {@link previewClose} when the pane is done with it. */
+export interface PreviewDoc {
+  id: string;
+  url: string;
+}
+
+/**
+ * Parks an HTML response where the preview scheme can serve it.
+ *
+ * The two flags are the pane's two switches, and they pick the CSP the document is served with.
+ * The frame needs a served document rather than `srcdoc` precisely so that policy can differ from
+ * the app's — see the header of `preview.rs`.
+ */
+export async function previewOpen(
+  html: string,
+  external: boolean,
+  scripts: boolean,
+): Promise<PreviewDoc> {
+  const id = await invoke<string>("rest_preview_open", { html, external, scripts });
+  return { id, url: convertFileSrc(id, PREVIEW_SCHEME) };
+}
+
+/** Drops a parked document. An id already gone is not an error. */
+export function previewClose(id: string): Promise<void> {
+  return invoke("rest_preview_close", { id });
 }
 
 /** The response body as bytes. Everything downstream — decoding to text, sniffing the type,

@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "../../../../i18n";
+import { previewClose, previewOpen } from "../../api";
+import { previewDocument } from "../../previewDocument";
 import styles from "./HtmlPreview.module.css";
 
 interface Props {
@@ -24,16 +26,41 @@ interface Props {
  * the server again. *Run scripts* adds `allow-scripts`, so the page's own script runs — on the app's
  * main thread, which is the honest reason it stays a per-response decision: a response that loops
  * forever takes the window with it, and the way out is not a checkbox you can still click.
+ *
+ * The document is **served**, not handed over as `srcdoc`. A `srcdoc` frame inherits the app's CSP
+ * and neither switch can lift it, so in a packaged build both did nothing at all; `preview.rs`
+ * carries the whole reason. What that costs here is a round trip before the frame has anything to
+ * point at, and one parked document to drop when the pane goes.
  */
 function HtmlPreview({ html, finalUrl }: Props) {
   const { t } = useTranslation();
   const [external, setExternal] = useState(false);
   const [scripts, setScripts] = useState(false);
+  const [src, setSrc] = useState("");
 
-  const document =
-    external && finalUrl !== ""
-      ? html.replace(/<head([^>]*)>/i, `<head$1><base href="${finalUrl.replace(/"/g, "&quot;")}">`)
-      : html;
+  useEffect(() => {
+    let live = true;
+    let opened: string | null = null;
+    setSrc("");
+
+    previewOpen(previewDocument(html, finalUrl, external), external, scripts)
+      .then((doc) => {
+        opened = doc.id;
+        // The pane was closed, or a switch flipped, while the document was being parked. Nothing
+        // will ever load it, so it goes straight back rather than waiting on the cap in `preview.rs`.
+        if (live) setSrc(doc.url);
+        else void previewClose(doc.id);
+      })
+      .catch(() => {
+        // The one call that cannot fail on its own terms: it hands a string to the backend and
+        // gets an id. If it did, an empty frame is what is left to show.
+      });
+
+    return () => {
+      live = false;
+      if (opened !== null) void previewClose(opened);
+    };
+  }, [html, finalUrl, external, scripts]);
 
   return (
     <div className={styles.preview}>
@@ -51,15 +78,17 @@ function HtmlPreview({ html, finalUrl }: Props) {
           {t("rest.runScripts")}
         </label>
       </div>
-      <iframe
-        // Remounted when either switch is flipped: a `<base>` added to a document already loaded
-        // changes nothing about what it already fetched, and a sandbox is read once at load.
-        key={`${external ? "external" : "isolated"}-${scripts ? "scripts" : "inert"}`}
-        className={styles.frame}
-        sandbox={scripts ? "allow-scripts" : ""}
-        srcDoc={document}
-        title={t("rest.previewTab")}
-      />
+      {src !== "" && (
+        <iframe
+          // Remounted when either switch is flipped: a sandbox is read once at load, and the
+          // document behind `src` is a different one — served under a different policy.
+          key={`${external ? "external" : "isolated"}-${scripts ? "scripts" : "inert"}`}
+          className={styles.frame}
+          sandbox={scripts ? "allow-scripts" : ""}
+          src={src}
+          title={t("rest.previewTab")}
+        />
+      )}
     </div>
   );
 }
