@@ -43,6 +43,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- Closing a database tab while it is still connecting now closes the connection it was opening.
+- Pressing Connect twice no longer opens a second connection that stays open for the rest of the session.
 - Closing a terminal tab while it is still connecting now closes the session it was opening, instead of leaving it running.
 - An SSH tab whose shell has exited now closes the connection to the server instead of holding it open until MixDB quits.
 - A script that leaves a transaction open no longer breaks the tables list and the table data beside it.

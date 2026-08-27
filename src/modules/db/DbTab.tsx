@@ -212,8 +212,14 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
   useEffect(() => {
     connectionIdRef.current = connectionId;
   }, [connectionId]);
+  /** Whether this tab is gone. The cleanup below can only disconnect what has already arrived, and
+   *  a `connect_db` still in flight has not: the id lands in a closure nobody is left to read, and
+   *  the pool and the tunnel behind it stay in `DbState` until the app quits. `connect` reads this
+   *  when its await comes back and hangs up on itself. */
+  const closedRef = useRef(false);
   useEffect(
     () => () => {
+      closedRef.current = true;
       const id = connectionIdRef.current;
       // Nothing is left to show an error to, and a connection the backend has already forgotten is
       // not a failure worth reporting anywhere.
@@ -221,6 +227,14 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     },
     [],
   );
+
+  /* One dial at a time. The state disables the button; the ref is what a second call reads, because
+     the two ways in do not both go through a click — `openAndConnect` runs from an effect and from
+     a row's double click, and a state set moments earlier is not there yet in either. Without it a
+     second connection opens under the same tab and the first id is overwritten in `setConnectionId`,
+     leaving a pool nobody can name and only the app quitting can close. */
+  const connectingRef = useRef(false);
+  const [connecting, setConnecting] = useState(false);
 
   /**
    * Whether the tab bar should be showing a lock for this tab.
@@ -557,11 +571,22 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
    * nothing and reopening blank next launch.
    */
   async function connect(overrideConfig?: ConnectionConfig, title?: string, savedId?: string) {
+    if (connectingRef.current) return;
+    connectingRef.current = true;
+    setConnecting(true);
     setError("");
     setStatus(t("connection.connecting"));
     const config = overrideConfig ?? buildConnectionConfig();
     try {
       const id = await invoke<string>("connect_db", { config });
+      /* The tab was closed while this was dialling — over an SSH tunnel to a server that is slow to
+         answer, that is a wait long enough to close a tab in. This is the only moment anyone knows
+         the id: the unmount cleanup ran while it was still `null`, and nothing else will ever be
+         told about it. */
+      if (closedRef.current) {
+        invoke("disconnect_db", { id }).catch(() => {});
+        return;
+      }
       setConnectionId(id);
       /* Where the tab points is whatever the form is holding: the entry passed in, or the one
          loaded in the sidebar. Written on both branches, so it does not depend on `disconnect`
@@ -582,8 +607,12 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
       /* The state is left alone. A server that is off, or a VPN that is not up, is not the user
          having moved away from that connection — the banner says so and the tab still points
          where it pointed. */
+      if (closedRef.current) return;
       setStatus("");
       setError(errorMessage(t, e));
+    } finally {
+      connectingRef.current = false;
+      setConnecting(false);
     }
   }
 
@@ -893,7 +922,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
         </div>
         <div className="row-actions-right">
           <span>{status}</span>
-          <Button variant="primary" onClick={() => connect()}>
+          <Button variant="primary" onClick={() => connect()} disabled={connecting}>
             {t("common.connect")}
           </Button>
         </div>
