@@ -10,7 +10,7 @@ import {
 } from "../../queryHistory";
 import Button from "../../../../components/Button";
 import Input from "../../../../components/Input";
-import { useDialogExit } from "../../../../components/dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import styles from "./QueryEditor.module.css";
 
 interface Props {
@@ -49,7 +49,7 @@ function QueryHistoryDialog({ profileId, onPick, onClose }: Props) {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close(onClose);
+      if (isUnhandledEscape(e)) close(onClose);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

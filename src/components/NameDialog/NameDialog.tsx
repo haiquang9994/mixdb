@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Button from "../Button";
 import Input from "../Input";
-import { useDialogExit } from "../dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../dialogMotion";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../core/errors";
 import styles from "./NameDialog.module.css";
@@ -66,7 +66,7 @@ function NameDialog({
     function onKeyDown(e: KeyboardEvent) {
       // Not while the request is in flight: closing then would leave the user with no way to see
       // how it went.
-      if (e.key === "Escape" && !saving) close(onCancel);
+      if (isUnhandledEscape(e) && !saving) close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

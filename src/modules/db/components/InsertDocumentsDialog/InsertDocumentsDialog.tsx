@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Button from "../../../../components/Button";
 import Document from "../Document";
-import { useDialogExit } from "../../../../components/dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import { PlusIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import { errorMessage } from "../../../../core/errors";
@@ -123,14 +123,16 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
+      // `isUnhandledEscape` is where the first half of this used to be written out by hand: a
+      // value editor inside a card takes Escape and marks it handled, and the form is not what
+      // that press was aimed at.
+      if (!isUnhandledEscape(e)) return;
       // Not while the insert is in flight: it would leave the user with no way to see how it went.
       if (saving) return;
-      // Escape inside a card backs that edit out — the value editor takes it and marks it
-      // handled, and a rename input takes it from its own field. Either way the form itself
-      // is not what the user is trying to close.
+      // A rename input takes Escape from its own field without marking it, so that one is still
+      // read off the target.
       const target = e.target as HTMLElement | null;
-      if (e.defaultPrevented || target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
       close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);

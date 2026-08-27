@@ -4,7 +4,7 @@ import { CloseIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import Button from "../Button";
 import JsonView from "../JsonView";
-import { useDialogExit } from "../dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../dialogMotion";
 import { copyText } from "../../core/clipboard";
 import { displayValue } from "../../core/virtualRows";
 import { errorMessage } from "../../core/errors";
@@ -68,7 +68,7 @@ function CellDialog({ column, rowNumber, value, onClose }: Props) {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close(onClose);
+      if (isUnhandledEscape(e)) close(onClose);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

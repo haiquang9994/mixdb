@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import Button from "../../../../components/Button";
 import ConfirmDialog from "../../../../components/ConfirmDialog";
 import Input from "../../../../components/Input";
-import { useDialogExit } from "../../../../components/dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import { CloseIcon, EyeIcon, EyeOffIcon, PlusIcon, TrashIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import { useDraftFocus } from "../../draftFocus";
@@ -60,7 +60,7 @@ function EnvironmentDialog({ initialId, onClose }: Props) {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       // Not while the confirm is up: that dialog owns Escape, and it answers it itself.
-      if (e.key === "Escape" && !confirmDelete) close(done);
+      if (isUnhandledEscape(e) && !confirmDelete) close(done);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

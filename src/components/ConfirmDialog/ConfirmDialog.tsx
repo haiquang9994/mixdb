@@ -2,7 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "../../i18n";
 import Button from "../Button";
-import { useDialogExit } from "../dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../dialogMotion";
 import styles from "./ConfirmDialog.module.css";
 
 interface ConfirmDialogProps {
@@ -43,7 +43,7 @@ function ConfirmDialog({
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close(onCancel);
+      if (isUnhandledEscape(e)) close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

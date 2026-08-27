@@ -6,6 +6,22 @@ import styles from "./dialogMotion.module.css";
 const EXIT_MS = 130;
 
 /**
+ * Whether this Escape is still going spare, or has already been spent on something.
+ *
+ * A dialog listens on `window`, so it hears every Escape in the app — including the ones a control
+ * inside it has already answered. A `Select` with its menu open answers Escape by closing that
+ * menu and marks the press handled; without this the same press also closed the dialog around it,
+ * which on `ColumnDialog` or `IndexDialog` meant a filled-in form thrown away for the sin of
+ * picking a collation.
+ *
+ * `defaultPrevented` and not a list of elements to exclude: it is the one signal that means
+ * *somebody has already dealt with this*, whoever they were, and it costs them nothing to raise.
+ */
+export function isUnhandledEscape(e: KeyboardEvent): boolean {
+  return e.key === "Escape" && !e.defaultPrevented;
+}
+
+/**
  * Lets a dialog see itself out.
  *
  * Without this there is no exit animation to speak of: callers render a dialog as

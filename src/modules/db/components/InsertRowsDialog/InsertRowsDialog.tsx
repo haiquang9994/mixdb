@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Button from "../../../../components/Button";
-import { useDialogExit } from "../../../../components/dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import { PlusIcon, TrashIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import { errorMessage } from "../../../../core/errors";
@@ -126,7 +126,7 @@ function InsertRowsDialog({ table, columns, columnMeta, seedRows, onCancel, onSu
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       // Not while the insert is in flight: it would leave the user with no way to see how it went.
-      if (e.key === "Escape" && !saving) close(onCancel);
+      if (isUnhandledEscape(e) && !saving) close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

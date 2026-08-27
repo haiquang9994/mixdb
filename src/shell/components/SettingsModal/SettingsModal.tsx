@@ -7,7 +7,7 @@ import { CloseIcon, DownloadIcon, KeyboardIcon, PaletteIcon } from "../../../ico
 import { useTranslation } from "../../../i18n";
 import type { UpdateCheck } from "../../update";
 import { MODULES } from "../../registry";
-import { useDialogExit } from "../../../components/dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../../../components/dialogMotion";
 import AppearanceSection from "./AppearanceSection";
 import ShortcutsSection from "./ShortcutsSection";
 import UpdateSection from "./UpdateSection";
@@ -69,7 +69,7 @@ function SettingsModal({
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close(onClose);
+      if (isUnhandledEscape(e)) close(onClose);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

@@ -296,7 +296,13 @@ function Select<T extends string | number>({
         break;
       case "Escape":
         if (open) {
+          /* Both halves matter. `preventDefault` marks the press spent for anyone who asks —
+             `isUnhandledEscape` does — and `stopPropagation` keeps it from reaching the `window`
+             listeners that do not: React's own listener sits on the root container, so stopping
+             there is stopping before `window` ever hears it. A dialog around this select would
+             otherwise close on the press that only meant to close this menu. */
           e.preventDefault();
+          e.stopPropagation();
           close();
         }
         break;

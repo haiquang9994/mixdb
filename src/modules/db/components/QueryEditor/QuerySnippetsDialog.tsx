@@ -5,7 +5,7 @@ import { useTranslation } from "../../../../i18n";
 import { removeSnippet, saveSnippet, useQuerySnippets } from "../../querySnippets";
 import Button from "../../../../components/Button";
 import Input from "../../../../components/Input";
-import { useDialogExit } from "../../../../components/dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import styles from "./QueryEditor.module.css";
 
 interface Props {
@@ -43,7 +43,7 @@ function QuerySnippetsDialog({ sql, onPick, onClose }: Props) {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && !saving) close(onClose);
+      if (isUnhandledEscape(e) && !saving) close(onClose);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

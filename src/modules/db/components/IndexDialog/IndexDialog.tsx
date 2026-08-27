@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import Button from "../../../../components/Button";
 import Input from "../../../../components/Input";
 import Select from "../../../../components/Select";
-import { useDialogExit } from "../../../../components/dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import { MinusIcon, PlusIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import { errorMessage } from "../../../../core/errors";
@@ -102,7 +102,7 @@ function IndexDialog({ table, columns, index, onCancel, onSubmit }: Props) {
     function onKeyDown(e: KeyboardEvent) {
       // Not while the ALTER is in flight: closing then would leave the user with no way to see
       // how it went.
-      if (e.key === "Escape" && !saving) close(onCancel);
+      if (isUnhandledEscape(e) && !saving) close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Button from "../../../../components/Button";
 import Input from "../../../../components/Input";
-import { useDialogExit } from "../../../../components/dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import { CloseIcon, TrashIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import { decodeBase64 } from "../../api";
@@ -53,7 +53,7 @@ function HistoryDialog({ onOpenRequest, onClose }: Props) {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close(onClose);
+      if (isUnhandledEscape(e)) close(onClose);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

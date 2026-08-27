@@ -5,7 +5,7 @@ import CollationSelect from "../CollationSelect";
 import Input from "../../../../components/Input";
 import Select from "../../../../components/Select";
 import type { SelectOption } from "../../../../components/Select";
-import { useDialogExit } from "../../../../components/dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import { useTranslation } from "../../../../i18n";
 import { errorMessage } from "../../../../core/errors";
 import type { SqlCollation, SqlColumnSpec, SqlStructureColumn } from "../../types";
@@ -209,7 +209,7 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
     function onKeyDown(e: KeyboardEvent) {
       // Not while the ALTER is in flight: closing then would leave the user with no way to see
       // how it went.
-      if (e.key === "Escape" && !saving) close(onCancel);
+      if (isUnhandledEscape(e) && !saving) close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

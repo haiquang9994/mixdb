@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Button from "../../../../components/Button";
-import { useDialogExit } from "../../../../components/dialogMotion";
+import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import { useTranslation } from "../../../../i18n";
 import type { SqlDumpMode } from "../../sql/api";
 import styles from "./DumpDialog.module.css";
@@ -30,7 +30,7 @@ function DumpDialog({ database, onCancel, onSubmit }: Props) {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close(onCancel);
+      if (isUnhandledEscape(e)) close(onCancel);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
