@@ -14,8 +14,8 @@
 #     workflow is the "verify" step of that procedure.
 #   - **Before a release**, if the pins have not been exercised in a while — a vendor can withdraw
 #     a file without anyone touching this repository.
-#   - **Whenever `src-tauri/src/db/tools.rs` changes** in a way that affects what is copied out of
-#     an archive.
+#   - **Whenever `src-tauri/src/modules/db/drivers/tools.rs` changes** in a way that affects what is
+#     copied out of an archive.
 #
 # Two ways to start it: press "Run workflow" on the Actions tab, or push to the `ci/tool-downloads`
 # branch, which exists for exactly this and is never merged. Working on the pins on a feature
@@ -25,7 +25,7 @@
 #
 # A job that says "no archive for this platform" passed correctly: not every suite is published for
 # every platform, and the test treats the vendor's answer as the expected one. Which platform gets
-# which download is `archive_source` in `src-tauri/src/db/tools.rs`.
+# which download is `archive_source` in `src-tauri/src/modules/db/drivers/tools.rs`.
 
 name: Tool downloads
 
@@ -89,8 +89,28 @@ jobs:
       # they cover the layout the downloaded files are put into, and a failure in one of those
       # explains a failure in the download tests standing next to it.
       #
-      # Filtered to `db::tools` so the rest of the suite's failures cannot be mistaken for a broken
-      # download — this workflow answers one question and should not report on any other.
+      # Filtered to this one module so the rest of the suite's failures cannot be mistaken for a
+      # broken download — this workflow answers one question and should not report on any other.
+      #
+      # The filter is counted before it is trusted. `cargo test` treats one that matches nothing as
+      # a run of no tests and exits 0, which is how this workflow spent its whole life passing
+      # without downloading anything: it said `db::tools`, and the module is
+      # `modules::db::drivers::tools`. A green tick meaning "nothing was checked" is worse than no
+      # workflow, so the three tests this exists for are counted by name first.
+      #
+      # `shell: bash` for all four platforms: the Windows runner's default is PowerShell, and Git
+      # Bash is there on every image.
       - name: Download, unpack and run the pinned tools
         working-directory: ./src-tauri
-        run: cargo test --lib db::tools -- --include-ignored --nocapture
+        shell: bash
+        env:
+          FILTER: modules::db::drivers::tools
+        run: |
+          listed=$(cargo test --lib "$FILTER" -- --include-ignored --list)
+          echo "$listed"
+          downloads=$(echo "$listed" | grep -c '_download_still_installs_and_runs: test' || true)
+          if [ "$downloads" -lt 3 ]; then
+            echo "::error::'$FILTER' matched $downloads download tests, expected one per suite. The module was renamed or moved; fix the filter rather than this check."
+            exit 1
+          fi
+          cargo test --lib "$FILTER" -- --include-ignored --nocapture
