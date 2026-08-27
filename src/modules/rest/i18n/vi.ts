@@ -108,6 +108,9 @@ const restVi: RestDict = {
     loadExternal: "Tải tài nguyên ngoài",
     loadExternalHint:
       "Mặc định tắt: bật lên là trang tự gọi ảnh, CSS và cả pixel theo dõi tới máy chủ của nó.",
+    runScripts: "Chạy script",
+    runScriptsHint:
+      "Mặc định tắt, và tắt lại mỗi lần mở khung này: bật lên là script của trang chạy. Nó vẫn không với tới app — nhưng một script lặp vô tận sẽ kéo cả cửa sổ theo.",
     truncatedNotice: "Đang hiện {{shown}} đầu trong {{total}}.",
     sourceTooBig: "Body lớn hơn {{limit}} \u2014 tắt cây để app không treo. Raw vẫn xem được.",
     binaryBody: "{{mime}} \u00b7 {{size}}",

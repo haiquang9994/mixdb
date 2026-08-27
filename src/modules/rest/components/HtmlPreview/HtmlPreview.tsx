@@ -11,17 +11,24 @@ interface Props {
 /**
  * A rendered HTML response, behind the tightest sandbox there is.
  *
- * `sandbox` is present and **empty**: no `allow-scripts`, no `allow-same-origin`, no forms and no
- * top-level navigation. A script in the response does not run, and there is no path from the
- * frame to Tauri's IPC. Nothing about this is configurable.
+ * `sandbox` is present and starts **empty**: no scripts, no same-origin, no forms and no top-level
+ * navigation. Two switches loosen it, both off every time this pane is drawn, and both deliberately
+ * here rather than in Settings — a decision about a response belongs beside that response, not in a
+ * dialog where it was made three weeks ago about something else.
  *
- * No `<base href>` by default either, so images, stylesheets and tracking pixels do not load and
- * the page shown is its own markup and inline CSS. Turning that on is a decision to let the app
- * call the server again, which is why it is a checkbox and why it starts off.
+ * Neither switch ever adds `allow-same-origin`. That flag next to `allow-scripts` is not a looser
+ * sandbox, it is no sandbox: the frame would share the app's origin and from there reach Tauri's
+ * IPC. Nothing here offers it.
+ *
+ * *Load external resources* adds a `<base href>`, so images, stylesheets and tracking pixels reach
+ * the server again. *Run scripts* adds `allow-scripts`, so the page's own script runs — on the app's
+ * main thread, which is the honest reason it stays a per-response decision: a response that loops
+ * forever takes the window with it, and the way out is not a checkbox you can still click.
  */
 function HtmlPreview({ html, finalUrl }: Props) {
   const { t } = useTranslation();
   const [external, setExternal] = useState(false);
+  const [scripts, setScripts] = useState(false);
 
   const document =
     external && finalUrl !== ""
@@ -30,16 +37,26 @@ function HtmlPreview({ html, finalUrl }: Props) {
 
   return (
     <div className={styles.preview}>
-      <label className={styles.toolbar} title={t("rest.loadExternalHint")}>
-        <input type="checkbox" checked={external} onChange={(e) => setExternal(e.target.checked)} />
-        {t("rest.loadExternal")}
-      </label>
+      <div className={styles.toolbar}>
+        <label className={styles.switch} title={t("rest.loadExternalHint")}>
+          <input
+            type="checkbox"
+            checked={external}
+            onChange={(e) => setExternal(e.target.checked)}
+          />
+          {t("rest.loadExternal")}
+        </label>
+        <label className={styles.switch} title={t("rest.runScriptsHint")}>
+          <input type="checkbox" checked={scripts} onChange={(e) => setScripts(e.target.checked)} />
+          {t("rest.runScripts")}
+        </label>
+      </div>
       <iframe
-        // Remounted when the switch is flipped: a `<base>` added to a document already loaded
-        // changes nothing about what it already fetched.
-        key={external ? "external" : "isolated"}
+        // Remounted when either switch is flipped: a `<base>` added to a document already loaded
+        // changes nothing about what it already fetched, and a sandbox is read once at load.
+        key={`${external ? "external" : "isolated"}-${scripts ? "scripts" : "inert"}`}
         className={styles.frame}
-        sandbox=""
+        sandbox={scripts ? "allow-scripts" : ""}
         srcDoc={document}
         title={t("rest.previewTab")}
       />

@@ -41,6 +41,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- The REST response Preview can run the page's own scripts — a switch beside it, off every time the pane is drawn.
+
 ## [0.0.17] - 2026-08-27
 
 ### Added

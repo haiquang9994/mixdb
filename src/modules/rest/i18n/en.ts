@@ -118,6 +118,9 @@ const restEn = {
     loadExternal: "Load external resources",
     loadExternalHint:
       "Off by default: turning it on lets the page fetch images, styles and tracking pixels from the server it came from.",
+    runScripts: "Run scripts",
+    runScriptsHint:
+      "Off by default, and off again every time this pane is drawn: turning it on runs the page's own script. It still cannot reach the app — but a script that loops forever takes the window with it.",
     truncatedNotice: "Showing the first {{shown}} of {{total}}.",
     sourceTooBig:
       "The body is over {{limit}} \u2014 the tree is off so the app stays responsive. Raw still works.",
