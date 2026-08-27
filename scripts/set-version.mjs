@@ -1,5 +1,5 @@
 /**
- * Sets MixDB's version in the five files that carry it, and cuts the changelog for it.
+ * Sets MixDB's version in the six files that carry it, and cuts the changelog for it.
  *
  *   node scripts/set-version.mjs 0.2.0
  *   node scripts/set-version.mjs 0.2.0 --no-notes    # a release with nothing user-facing in it
@@ -12,7 +12,13 @@
  * README.md's "Phiên bản mới nhất" line is the fifth: nothing depends on it, but it is the first
  * thing anyone reads about the project, so a stale one is a claim rather than a missing update.
  *
- * CHANGELOG.md is the sixth: its `## [Unreleased]` section becomes `## [0.2.0] - <today>` here,
+ * `package-lock.json` is the sixth, and the one this script used to miss. It carries the version
+ * twice — at the root and again under `packages[""]` — and npm rewrites both from `package.json`
+ * on the next install, so a lock left behind does not stay behind: it resurfaces as a version bump
+ * inside whatever unrelated commit happened to install something. `npm ci` also refuses to run at
+ * all when the two files disagree, which is how CI would find out.
+ *
+ * CHANGELOG.md is the seventh: its `## [Unreleased]` section becomes `## [0.2.0] - <today>` here,
  * and release.yml reads that section back out to fill in the draft release's notes. An empty
  * `## [Unreleased]` stops the bump rather than passing silently, since a release nobody can read
  * the notes of is the thing that file exists to prevent — `--no-notes` is the way past it for a
@@ -38,15 +44,24 @@ if (!version || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
   process.exit(1);
 }
 
-/** Rewrites one file, and says so. Throws when the pattern is not there, since a silent no-op is
- *  exactly the half-bumped state this script exists to prevent. */
-function patch(relative, pattern, replacement) {
+/**
+ * Rewrites one file, and says so.
+ *
+ * Throws unless the pattern is found exactly `expected` times, since a silent no-op is exactly the
+ * half-bumped state this script exists to prevent — and one of these files carries the version
+ * twice, where finding it once would be as wrong as finding it not at all.
+ */
+function patch(relative, pattern, replacement, expected = 1) {
   const path = join(root, relative);
   const before = readFileSync(path, "utf8");
-  if (!pattern.test(before)) {
-    throw new Error(`Cannot find the version in ${relative} — the file's shape has changed.`);
+  const every = new RegExp(pattern.source, `${pattern.flags.replace("g", "")}g`);
+  const found = [...before.matchAll(every)].length;
+  if (found !== expected) {
+    throw new Error(
+      `Expected the version ${expected}× in ${relative}, found it ${found}× — the file's shape has changed.`,
+    );
   }
-  const after = before.replace(pattern, replacement);
+  const after = before.replace(every, replacement);
   if (after !== before) writeFileSync(path, after);
   console.log(`${after === before ? "already" : "set    "} ${relative}`);
 }
@@ -58,6 +73,15 @@ cutChangelog();
 
 patch("package.json", /("version"\s*:\s*)"[^"]*"/, `$1"${version}"`);
 patch("src-tauri/tauri.conf.json", /("version"\s*:\s*)"[^"]*"/, `$1"${version}"`);
+
+// Both of the lock's own entries, found by the name above them so no dependency is touched. Two
+// and not one: the root object and `packages[""]` each carry it, and npm keeps them equal.
+patch(
+  "package-lock.json",
+  /("name": "mixdb",\r?\n\s*"version": )"[^"]*"/,
+  `$1"${version}"`,
+  2,
+);
 
 // Only the `[package]` block at the top — every dependency below it has a version too.
 patch("src-tauri/Cargo.toml", /(\[package\][\s\S]*?\nversion\s*=\s*)"[^"]*"/, `$1"${version}"`);
