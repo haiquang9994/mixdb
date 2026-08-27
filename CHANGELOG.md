@@ -43,6 +43,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- “Check now” no longer throws away an update already downloaded and waiting for the restart.
+- The update dot and its panel no longer blink off while a re-check is running.
 - Escape now closes only the dropdown it was pressed on, instead of also closing the dialog around it and losing the form.
 - One dropped connection through an SSH tunnel no longer takes the whole tunnel down with it, silently, for the rest of the session.
 - A PostgreSQL script is no longer cut in half at an `E'...'` string, which sent broken halves to the server.

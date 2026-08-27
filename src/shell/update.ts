@@ -73,6 +73,38 @@ export type UpdateStatus =
   | "installing"
   | "error";
 
+/**
+ * Whether the plugin's handle is in someone's hands: a download running, a bundle on disk waiting
+ * for the restart, an install under way.
+ *
+ * A check closes that handle and puts a new one in its place, so it must not run while any of
+ * these is true. `downloaded` is the one this used to be missing: the button stayed enabled with
+ * the bundle already fetched, and pressing it threw the download away and dropped the offer back
+ * to "available" — the user had waited for the whole thing and was asked to wait for it again.
+ */
+export function holdsUpdate(status: UpdateStatus): boolean {
+  return status === "downloading" || status === "downloaded" || status === "installing";
+}
+
+/**
+ * Whether there is an update to tell the user about — the dot on the brand button, the panel in
+ * the corner.
+ *
+ * `checking` is in the list because a re-check does not un-find what was found: the release being
+ * shown is still the release, and the handle is still there. Without it the dot and the panel blink
+ * off for the length of the request and come back, which reads as a bug about a version rather than
+ * a check about to answer.
+ *
+ * An `error` only counts when there was already a release to fail at. A check that failed on its
+ * own is Settings' business and not an interruption, which is what `hasRelease` is doing here.
+ */
+export function isPending(status: UpdateStatus, hasRelease: boolean, isSkipped: boolean): boolean {
+  if (!hasRelease || isSkipped) return false;
+  return (
+    status === "available" || status === "checking" || status === "error" || holdsUpdate(status)
+  );
+}
+
 /** The version the user has told MixDB to stop mentioning, if any. */
 export function readSkippedVersion(): string {
   return localStorage.getItem(SKIPPED_KEY) ?? "";
@@ -121,6 +153,10 @@ export interface UpdateCheck {
   pending: boolean;
   /** The same, and not yet waved away — what shows the panel in the corner. */
   announcing: boolean;
+  /** Whether *Check now* may be pressed: no check already out, and nothing holding the handle a
+   *  check would replace. Answered here rather than read off `status` by whoever draws the button,
+   *  because the rule is about what the hook is doing with that handle. */
+  canCheck: boolean;
   check: () => void;
   /** Fetches the bundle. The app carries on running throughout. */
   download: () => void;
@@ -287,10 +323,7 @@ export function useUpdateCheck(): UpdateCheck {
 
   const version = release?.version ?? "";
   const isSkipped = version !== "" && version === skipped;
-  const busy = status === "downloading" || status === "downloaded" || status === "installing";
-  /* An error only belongs in the panel when it happened to an update the panel was already showing;
-     a check that failed on its own is Settings' business, not an interruption. */
-  const pending = release !== null && !isSkipped && (status === "available" || busy || status === "error");
+  const pending = isPending(status, release !== null, isSkipped);
 
   return {
     current,
@@ -302,6 +335,7 @@ export function useUpdateCheck(): UpdateCheck {
     progress: total > 0 ? Math.min(downloaded / total, 1) : -1,
     pending,
     announcing: pending && !dismissed,
+    canCheck: status !== "checking" && !holdsUpdate(status),
     check,
     download,
     install,

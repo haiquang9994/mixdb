@@ -23,9 +23,6 @@ function UpdateSection({ update }: Props) {
   const { t } = useTranslation();
   const { status, release, error, lastChecked, current, skipped, progress } = update;
   const busy = status === "checking";
-  /* No second check while the first update is being fetched or put in place: the handle the
-     download is using would be replaced underneath it. */
-  const working = status === "downloading" || status === "installing";
 
   function statusLine(): string {
     if (busy) return t("update.checking");
@@ -76,7 +73,11 @@ function UpdateSection({ update }: Props) {
               {t("update.openPage")}
             </button>
           )}
-          <button type="button" className={styles.toolButton} disabled={busy || working} onClick={update.check}>
+          {/* Whether a check may start is the hook's answer, not this component's: it turns on
+              what the download and the install are doing with the plugin's handle, which only the
+              hook holds. Worked out here, it left the button live while a bundle sat downloaded —
+              and pressing it threw that download away. */}
+          <button type="button" className={styles.toolButton} disabled={!update.canCheck} onClick={update.check}>
             {busy ? t("update.checking") : t("update.checkNow")}
           </button>
         </div>
