@@ -97,19 +97,25 @@ contract is as small as it is.
 ## Check the boundary before you commit
 
 No file outside `src/modules/<id>/` may know that module's concepts, and **nothing typechecks
-this** — a primitive importing from `modules/db/` compiles perfectly. Two greps:
+this** — a primitive importing from `modules/db/` compiles perfectly. One command:
 
-```powershell
-Get-ChildItem -Recurse src/components,src/core,src/icons -Include *.ts,*.tsx |
-  Select-String "modules/"
 ```
-Expected: nothing.
+npm run check:boundary
+```
 
-```powershell
-Get-ChildItem -Recurse src/shell,src/i18n -Include *.ts,*.tsx | Select-String "modules/"
-```
-Expected: only `src/shell/registry.ts` and `src/i18n/dicts.ts` — the two places a module is joined
-to the app, one line per module in each.
+It reads every `.ts`/`.tsx` under `src/components`, `src/core`, `src/icons`, `src/shell` and
+`src/i18n` and fails on any import naming a module, printing the file, the line and the import
+itself. `src/shell/registry.ts` and `src/i18n/dicts.ts` are the two exceptions — the places a
+module is joined to the app, one line per module in each.
+
+CI runs it on every push, ahead of `npm ci`, so the boundary no longer depends on anyone
+remembering this page.
+
+It matches import *specifiers* rather than the text `modules/`, which the two PowerShell greps
+that used to be here did. Those matched any mention at all, including the prose in
+`src/shell/shortcuts.ts` explaining this very rule — so they reported two violations on a
+perfectly clean tree. A check that is red when the code is fine gets ignored, and then it catches
+nothing.
 
 ## What the second and third modules found
 

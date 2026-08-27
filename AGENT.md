@@ -27,6 +27,7 @@ a line in `src/shell/registry.ts` — see
 | `npm run dev` | Frontend only in a browser; every `invoke` fails, UI-only work |
 | `npm run build` | Typecheck + build frontend (`tsc && vite build`) — the fastest check |
 | `npm test` | Run the vitest suite (`vitest run`) |
+| `npm run check:boundary` | Fail if anything outside `src/modules/` imports a module |
 | `npm run build:app` | Full production bundle into `src-tauri/target/release/bundle/` |
 | `npm run notes` | Commits since the last tag, grouped — a draft for `## [Unreleased]` |
 | `npm run set-version <v>` | Bump the six files that carry the version and cut the changelog |
@@ -36,8 +37,13 @@ Releasing is [docs/RELEASING.md](docs/RELEASING.md); the steps are the first sec
 There is no linter config. `npm run build` is the fastest verification step; TypeScript runs
 `strict`, `noUnusedLocals` and `noUnusedParameters`, so it catches most mistakes. `npm test` runs
 vitest over the pure-logic modules (virtual rows, SQL statement splitting and guards, column
-parsing, request building, tab badges). Neither says anything about CSS or about whether a Tauri
-command is registered — only `npm run dev:app` and a click do.
+parsing, request building, tab badges). None of them say anything about CSS or about whether a
+Tauri command is registered — only `npm run dev:app` and a click do.
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs all of it on every push and every
+pull request — `check:boundary`, `build` and `test` in one job, `cargo clippy -D warnings` and
+`cargo test` in another. Linux only, and it bundles nothing; `release.yml` is still what proves
+all three platforms package.
 
 ## Layout
 
@@ -84,8 +90,8 @@ src-tauri/src/       Rust backend
 - **Nothing outside `src/modules/<id>/` knows that module's concepts.** No file in `shell/`,
   `core/`, `components/`, `icons/` or `i18n/` may import from `modules/`, with exactly two
   exceptions — `shell/registry.ts` and `i18n/dicts.ts`, the two places a module is joined to the
-  app. `tsc` compiles a broken boundary happily, so it is checked by grep — see
-  [adding-a-module](.agent/conventions/adding-a-module.md).
+  app. `tsc` compiles a broken boundary happily, so `npm run check:boundary` is what says no,
+  in CI and locally — see [adding-a-module](.agent/conventions/adding-a-module.md).
 - **Every user-visible string goes through `t("...")`**, added to both `en.ts` and `vi.ts`.
 - **Components use CSS Modules** and live in their own folder — see
   [.agent/conventions/component-structure.md](.agent/conventions/component-structure.md).
