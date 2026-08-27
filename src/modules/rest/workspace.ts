@@ -1,5 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
-import { Store } from "@tauri-apps/plugin-store";
+import { createStore, jsonFile, useStore } from "../../core/jsonStore";
 import { DEFAULT_SEND_SETTINGS, type SendSettings } from "./buildRequest";
 
 /**
@@ -54,8 +53,6 @@ export const DEFAULT_SPLIT_RATIO = 0.5;
 export const MIN_SPLIT_RATIO = 0.2;
 export const MAX_SPLIT_RATIO = 0.8;
 
-const FILE = "rest-workspace.json";
-const KEY = "workspace";
 const DEFAULTS: Workspace = {
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   splitRatio: DEFAULT_SPLIT_RATIO,
@@ -64,87 +61,53 @@ const DEFAULTS: Workspace = {
   ...DEFAULT_SEND_SETTINGS,
 };
 
-let storePromise: Promise<Store> | null = null;
+/* Spread over the defaults on the way in, not replaced by them: a file written by a version that
+   had one fewer switch is still the user's furniture, and the field it never heard of takes its
+   default rather than the whole file being thrown away. */
+const file = jsonFile<Partial<Workspace>>("rest-workspace.json", "workspace", {});
+const store = createStore<Workspace>({
+  defaults: DEFAULTS,
+  load: async () => ({ ...DEFAULTS, ...(await file.load()) }),
+  persist: file.persist,
+});
 
-function getStore(): Promise<Store> {
-  if (!storePromise) storePromise = Store.load(FILE);
-  return storePromise;
-}
-
-let snapshot: Workspace = DEFAULTS;
-let loaded = false;
-let inFlight: Promise<void> | null = null;
-const listeners = new Set<() => void>();
-
-function publish(next: Workspace) {
-  snapshot = next;
-  loaded = true;
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-function ensureLoaded(): Promise<void> {
-  if (loaded) return Promise.resolve();
-  if (!inFlight) {
-    inFlight = getStore()
-      .then(async (store) => publish({ ...DEFAULTS, ...(await store.get<Workspace>(KEY)) }))
-      .finally(() => {
-        inFlight = null;
-      });
-  }
-  return inFlight;
-}
-
+/** Publish, and write behind. Nothing here is worth an error in front of the user: a sidebar width
+ *  that did not reach the disk is a sidebar width that comes back to its default next launch. */
 function write(next: Workspace): void {
-  publish(next);
-  void getStore()
-    .then(async (store) => {
-      await store.set(KEY, next);
-      await store.save();
-    })
-    .catch(() => {});
+  void store.save(next).catch(() => {});
 }
 
 export function useWorkspace(): Workspace {
-  useEffect(() => {
-    ensureLoaded().catch(() => {});
-  }, []);
-  return useSyncExternalStore(subscribe, () => snapshot);
+  return useStore(store);
 }
 
 export function setSidebarWidth(sidebarWidth: number): void {
-  write({ ...snapshot, sidebarWidth });
+  write({ ...store.get(), sidebarWidth });
 }
 
 export function setSplitRatio(splitRatio: number): void {
-  write({ ...snapshot, splitRatio });
+  write({ ...store.get(), splitRatio });
 }
 
 /** Whether the file has been read yet. A tab seeds its environment from `lastEnvId` the moment
  *  this turns true, and never again — which is not something a defaulted value can be told apart
  *  from a stored one. */
 export function workspaceLoaded(): boolean {
-  return loaded;
+  return store.isLoaded();
 }
 
 export function setLastEnvId(lastEnvId: string | null): void {
-  write({ ...snapshot, lastEnvId });
+  write({ ...store.get(), lastEnvId });
 }
 
 /** What the store holds now, for a caller that is not a component — the send path, which reads the
  *  settings as they stand rather than as they were when its handler was made. */
 export function currentWorkspace(): Workspace {
-  return snapshot;
+  return store.get();
 }
 
 /** A settings change. One entry point rather than a setter each: the Settings pane changes one
  *  field at a time and none of them needs anything the others do not. */
 export function updateWorkspace(patch: Partial<Workspace>): void {
-  write({ ...snapshot, ...patch });
+  write({ ...store.get(), ...patch });
 }

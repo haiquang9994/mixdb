@@ -1,4 +1,3 @@
-import { useEffect, useSyncExternalStore } from "react";
 import {
   addSavedConnection,
   loadSavedConnections,
@@ -6,6 +5,7 @@ import {
   updateSavedConnection,
 } from "./savedConnections";
 import type { SavedConnection } from "./types";
+import { createStore, useStore, useStoreLoaded } from "../../core/jsonStore";
 
 /**
  * The saved connection list, shared by every tab.
@@ -21,62 +21,14 @@ import type { SavedConnection } from "./types";
  * frame — there is nothing left to arrive.
  */
 
-/** What every subscriber currently sees. Replaced wholesale, never mutated: `useSyncExternalStore`
- *  decides whether to re-render by comparing this reference with the last one it read. */
-let snapshot: SavedConnection[] = [];
-let loaded = false;
-let inFlight: Promise<void> | null = null;
-const listeners = new Set<() => void>();
-
-function publish(list: SavedConnection[]) {
-  snapshot = list;
-  loaded = true;
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-function getSnapshot(): SavedConnection[] {
-  return snapshot;
-}
-
-function getLoaded(): boolean {
-  return loaded;
-}
-
-/**
- * Reads the list once. The first tab to ask starts the read and every tab that mounts while it is
- * running joins the same promise rather than starting a second one.
- *
- * A failed read leaves `loaded` false and clears the promise, so the next tab to open tries again
- * — the alternative is an app that shows an empty connection list for the rest of the session
- * because one read failed.
- */
-function ensureLoaded(): Promise<void> {
-  if (loaded) return Promise.resolve();
-  if (!inFlight) {
-    inFlight = loadSavedConnections()
-      .then(publish)
-      .finally(() => {
-        inFlight = null;
-      });
-  }
-  return inFlight;
-}
+/* No `persist`: every write goes through `savedConnections.ts`, which writes and hands the new
+   list back. The snapshot is what it returns, not something assembled here. The mechanics — read
+   once, replace wholesale, `loaded` kept apart from the value — are `core/jsonStore.ts`. */
+const store = createStore<SavedConnection[]>({ defaults: [], load: loadSavedConnections });
 
 /** The shared list, kept in step across every tab that calls this. */
 export function useSavedConnections(): SavedConnection[] {
-  useEffect(() => {
-    // Nothing here can show a read failure — the sidebar simply stays empty, and the next tab
-    // retries. Swallowed rather than left to reject so it doesn't surface as an unhandled promise.
-    ensureLoaded().catch(() => {});
-  }, []);
-  return useSyncExternalStore(subscribe, getSnapshot);
+  return useStore(store);
 }
 
 /**
@@ -87,20 +39,20 @@ export function useSavedConnections(): SavedConnection[] {
  * list" as "deleted" — a tab restoring the connection it had open — has to ask this first.
  */
 export function useSavedConnectionsLoaded(): boolean {
-  return useSyncExternalStore(subscribe, getLoaded);
+  return useStoreLoaded(store);
 }
 
 /* Writes go through the module they always did — it owns the split between `connections.json` and
    the OS credential store — and the list it hands back becomes the new shared snapshot. */
 
 export async function addConnection(entry: SavedConnection): Promise<void> {
-  publish(await addSavedConnection(entry));
+  store.publish(await addSavedConnection(entry));
 }
 
 export async function updateConnection(entry: SavedConnection): Promise<void> {
-  publish(await updateSavedConnection(entry));
+  store.publish(await updateSavedConnection(entry));
 }
 
 export async function removeConnection(id: string): Promise<void> {
-  publish(await removeSavedConnection(id));
+  store.publish(await removeSavedConnection(id));
 }

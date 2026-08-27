@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { createStore, useStore, useStoreLoaded } from "../../core/jsonStore";
 import type { ParsedRequest } from "./parsePaste";
 import {
   addRecent,
@@ -26,64 +26,32 @@ import type { RequestLists, RestRequest } from "./types";
 
 const EMPTY: RequestLists = { saved: [], recent: [] };
 
-let snapshot: RequestLists = EMPTY;
-let loaded = false;
-let inFlight: Promise<void> | null = null;
-const listeners = new Set<() => void>();
-
-function publish(lists: RequestLists) {
-  snapshot = lists;
-  loaded = true;
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-function getLoaded(): boolean {
-  return loaded;
-}
-
-function ensureLoaded(): Promise<void> {
-  if (loaded) return Promise.resolve();
-  if (!inFlight) {
-    inFlight = loadRequests()
-      .then(publish)
-      .finally(() => {
-        inFlight = null;
-      });
-  }
-  return inFlight;
-}
+/* No `persist` here: `persistRequests` in `requests.ts` owns the file, and every writer below
+   already calls it. The mechanics — read once, replace wholesale, `loaded` kept apart from the
+   value — are `core/jsonStore.ts`. */
+const store = createStore<RequestLists>({ defaults: EMPTY, load: loadRequests });
 
 export function useRequestLists(): RequestLists {
-  useEffect(() => {
-    ensureLoaded().catch(() => {});
-  }, []);
-  return useSyncExternalStore(subscribe, () => snapshot);
+  return useStore(store);
 }
 
 /** Whether the read has finished. Empty-because-unread and empty-because-nothing-is-saved look
  *  the same in the lists; a tab restoring the requests it had open needs them told apart. */
 export function useRequestListsLoaded(): boolean {
-  return useSyncExternalStore(subscribe, getLoaded);
+  return useStoreLoaded(store);
 }
 
 /** What the store currently holds, for callers outside a component — the send path, which needs
  *  the request as it stands rather than as it was when a handler was made. */
 export function currentLists(): RequestLists {
-  return snapshot;
+  return store.get();
 }
 
 /** A fresh request at the top of Saved, returned so the caller can open a tab on it. */
 export function createRequest(): RestRequest {
   const request = newRequest(crypto.randomUUID(), Date.now());
-  const lists = addSaved(snapshot, request);
-  publish(lists);
+  const lists = addSaved(store.get(), request);
+  store.publish(lists);
   persistRequests(lists);
   return request;
 }
@@ -95,15 +63,15 @@ export function createRequest(): RestRequest {
  * whether to keep anything, because every edit lands here as it is made.
  */
 export function saveRequest(request: RestRequest): void {
-  const lists = updateRequest(snapshot, request);
-  publish(lists);
+  const lists = updateRequest(store.get(), request);
+  store.publish(lists);
   persistRequests(lists);
 }
 
 /** Adds a request that is not in either group yet — a duplicate, and from Phase 2 a paste. */
 export function addRequest(request: RestRequest): void {
-  const lists = addSaved(snapshot, request);
-  publish(lists);
+  const lists = addSaved(store.get(), request);
+  store.publish(lists);
   persistRequests(lists);
 }
 
@@ -117,15 +85,15 @@ export function addRequest(request: RestRequest): void {
  */
 export function pasteRequest(parsed: ParsedRequest): RestRequest {
   const now = Date.now();
-  const existing = findRecentTarget(snapshot, parsed.method, parsed.url);
+  const existing = findRecentTarget(store.get(), parsed.method, parsed.url);
   const lists = existing
-    ? bumpRecent(snapshot, existing.id, now)
-    : addRecent(snapshot, {
+    ? bumpRecent(store.get(), existing.id, now)
+    : addRecent(store.get(), {
         ...newRequest(crypto.randomUUID(), now),
         ...parsed,
         origin: "paste",
       });
-  publish(lists);
+  store.publish(lists);
   persistRequests(lists);
   // After a bump the row is a new object carrying the new stamp; the one found before it is stale.
   return existing === undefined
@@ -149,29 +117,29 @@ export function pasteRequest(parsed: ParsedRequest): RestRequest {
  */
 export function pasteOverBlank(blank: RestRequest, parsed: ParsedRequest): RestRequest {
   const now = Date.now();
-  const existing = findRecentTarget(snapshot, parsed.method, parsed.url);
+  const existing = findRecentTarget(store.get(), parsed.method, parsed.url);
   if (existing !== undefined) {
-    const lists = removeRequest(bumpRecent(snapshot, existing.id, now), blank.id);
-    publish(lists);
+    const lists = removeRequest(bumpRecent(store.get(), existing.id, now), blank.id);
+    store.publish(lists);
     persistRequests(lists);
     return findRequest(lists, existing.id) ?? existing;
   }
   const filled: RestRequest = { ...blank, ...parsed };
-  const lists = moveToRecent(snapshot, filled, now);
-  publish(lists);
+  const lists = moveToRecent(store.get(), filled, now);
+  store.publish(lists);
   persistRequests(lists);
   return findRequest(lists, blank.id) ?? filled;
 }
 
 /** Pinning a Recent request: it moves to Saved and stops being something that can be evicted. */
 export function pinRequest(id: string): void {
-  const lists = pinToSaved(snapshot, id);
-  publish(lists);
+  const lists = pinToSaved(store.get(), id);
+  store.publish(lists);
   persistRequests(lists);
 }
 
 export function deleteRequest(id: string): void {
-  const lists = removeRequest(snapshot, id);
-  publish(lists);
+  const lists = removeRequest(store.get(), id);
+  store.publish(lists);
   persistRequests(lists);
 }

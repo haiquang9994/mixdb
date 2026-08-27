@@ -1,5 +1,5 @@
-import { useEffect, useSyncExternalStore } from "react";
 import { Store } from "@tauri-apps/plugin-store";
+import { createStore, useStore } from "../../core/jsonStore";
 import { stepFontSize } from "./fontSize";
 import {
   DEFAULT_SETTINGS,
@@ -12,9 +12,8 @@ import {
 /**
  * Cài đặt hiển thị đang dùng, chung cho mọi tab terminal và nhớ lại giữa các lần mở.
  *
- * Bản sao khuôn của `rest/workspace.ts`, chép có chủ đích: ranh giới module cấm hai module dùng
- * chung một store, và cái đáng tách ra `core/` là *cơ chế* `useSyncExternalStore` chứ không phải
- * ba chục dòng nối nó với một file JSON. Chỗ thứ ba xuất hiện thì tách.
+ * Cơ chế nằm ở `core/jsonStore.ts`. Ở đây chỉ còn phần riêng: lượt đọc *ghi lại ngay*, vì nó vừa
+ * nhấc cỡ chữ ra khỏi `localStorage` và xoá khoá cũ đi — không ghi thì một lần thoát app là mất.
  */
 
 const FILE = "terminal-settings.json";
@@ -25,24 +24,6 @@ let storePromise: Promise<Store> | null = null;
 function getStore(): Promise<Store> {
   if (!storePromise) storePromise = Store.load(FILE);
   return storePromise;
-}
-
-let snapshot: TerminalSettings = DEFAULT_SETTINGS;
-let loaded = false;
-let inFlight: Promise<void> | null = null;
-const listeners = new Set<() => void>();
-
-function publish(next: TerminalSettings) {
-  snapshot = next;
-  loaded = true;
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
 }
 
 /** Cỡ chữ mà đợt trước để lại, và cùng lúc dọn nó đi. Đọc trong `try` vì `localStorage` ném ở
@@ -58,51 +39,41 @@ function takeLegacyFontSize(): string | null {
   }
 }
 
-function ensureLoaded(): Promise<void> {
-  if (loaded) return Promise.resolve();
-  if (!inFlight) {
-    inFlight = getStore()
-      .then(async (store) => {
-        const raw = await store.get(KEY);
-        const settings = withLegacyFontSize(raw, takeLegacyFontSize());
-        publish(settings);
-        /* Ghi lại ngay sau khi nạp, chứ không đợi lần sửa đầu tiên: khoá `localStorage` vừa bị
-           xoá, nên cỡ chữ cũ giờ chỉ còn tồn tại trong `snapshot`. Không ghi thì một lần thoát
-           app là nó mất. */
-        await store.set(KEY, settings);
-        await store.save();
-      })
-      .finally(() => {
-        inFlight = null;
-      });
-  }
-  return inFlight;
-}
+const shared = createStore<TerminalSettings>({
+  defaults: DEFAULT_SETTINGS,
+  load: async () => {
+    const store = await getStore();
+    const settings = withLegacyFontSize(await store.get(KEY), takeLegacyFontSize());
+    /* Ghi lại ngay sau khi nạp, chứ không đợi lần sửa đầu tiên: khoá `localStorage` vừa bị xoá,
+       nên cỡ chữ cũ giờ chỉ còn tồn tại ở đây. Không ghi thì một lần thoát app là nó mất. */
+    await store.set(KEY, settings);
+    await store.save();
+    return settings;
+  },
+  persist: async (next) => {
+    const store = await getStore();
+    await store.set(KEY, next);
+    await store.save();
+  },
+});
 
+/** Trên màn hình ngay, xuống đĩa sau. Không có gì ở đây đáng dựng một lỗi trước mặt người dùng:
+ *  một cỡ chữ không tới được đĩa là một cỡ chữ trở về mặc định ở lần mở sau. */
 function write(next: TerminalSettings): void {
-  publish(next);
-  void getStore()
-    .then(async (store) => {
-      await store.set(KEY, next);
-      await store.save();
-    })
-    .catch(() => {});
+  void shared.save(next).catch(() => {});
 }
 
 /** Cài đặt dùng chung, giữ đồng bộ giữa mọi nơi gọi nó. */
 export function useTerminalSettings(): TerminalSettings {
-  useEffect(() => {
-    // Đọc hỏng thì `loaded` ở lại `false` và màn hình chạy bằng mặc định; không có chỗ nào ở đây
-    // báo được lỗi, và một terminal vẽ bằng cỡ chữ mặc định vẫn là một terminal dùng được.
-    ensureLoaded().catch(() => {});
-  }, []);
-  return useSyncExternalStore(subscribe, () => snapshot);
+  // Đọc hỏng thì `loaded` ở lại `false` và màn hình chạy bằng mặc định; không có chỗ nào ở đây báo
+  // được lỗi, và một terminal vẽ bằng cỡ chữ mặc định vẫn là một terminal dùng được.
+  return useStore(shared);
 }
 
 /** Cái store đang giữ ngay lúc này, cho chỗ gọi không phải component — một handler chuột phải đọc
  *  công tắc của nó ở thời điểm bấm, chứ không ở thời điểm handler được dựng. */
 export function currentTerminalSettings(): TerminalSettings {
-  return snapshot;
+  return shared.get();
 }
 
 /**
@@ -115,9 +86,9 @@ export function currentTerminalSettings(): TerminalSettings {
  * Đọc hỏng vẫn trả về một bộ cài đặt — bộ mặc định — chứ không ném: form vẫn phải mở ra được.
  */
 export function loadTerminalSettings(): Promise<TerminalSettings> {
-  return ensureLoaded().then(
-    () => snapshot,
-    () => snapshot,
+  return shared.ready().then(
+    () => shared.get(),
+    () => shared.get(),
   );
 }
 
@@ -128,13 +99,14 @@ export function updateTerminalSettings(patch: Partial<TerminalSettings>): void {
      ghi sai: `fontFamily` rỗng đi thẳng vào `term.options.fontFamily`, xterm dựng `ctx.font` từ nó,
      chuỗi ấy không phân tích được, canvas bỏ qua phép gán và giữ số đo ô chữ cũ — chữ to lên mà
      dòng đứng nguyên. Đúng một dòng ở đây là mọi cửa ghi đều không mở được lối ấy nữa. */
-  write(sanitizeSettings({ ...snapshot, ...patch }));
+  write(sanitizeSettings({ ...shared.get(), ...patch }));
 }
 
 /** To lên (`delta` dương) hay nhỏ đi (`delta` âm) một nấc. Chạm đầu khoảng thì không ghi và không
  *  ai được báo — không có gì đổi thì không có gì để vẽ lại. */
 export function zoomTerminal(delta: number): void {
-  const fontSize = stepFontSize(snapshot.fontSize, delta);
-  if (fontSize === snapshot.fontSize) return;
-  write({ ...snapshot, fontSize });
+  const settings = shared.get();
+  const fontSize = stepFontSize(settings.fontSize, delta);
+  if (fontSize === settings.fontSize) return;
+  write({ ...settings, fontSize });
 }

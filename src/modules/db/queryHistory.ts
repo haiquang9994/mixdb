@@ -1,5 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
-import { Store } from "@tauri-apps/plugin-store";
+import { createStore, jsonFile, useStore } from "../../core/jsonStore";
 
 /**
  * Every script the Query tab has run, newest first.
@@ -34,69 +33,19 @@ export interface QueryHistoryEntry {
  *  file stays something the app reads once at startup without thinking about it. */
 const MAX_ENTRIES = 300;
 
-const FILE = "query-history.json";
-const KEY = "entries";
+const store = createStore<QueryHistoryEntry[]>({
+  defaults: [],
+  ...jsonFile<QueryHistoryEntry[]>("query-history.json", "entries", []),
+});
 
-let storePromise: Promise<Store> | null = null;
-
-function getStore(): Promise<Store> {
-  if (!storePromise) storePromise = Store.load(FILE);
-  return storePromise;
+/** Publish and write behind. A history that could not be written is not worth interrupting anyone
+ *  over, and it is still right in memory. */
+function keep(list: QueryHistoryEntry[]): void {
+  void store.save(list).catch(() => {});
 }
 
-let snapshot: QueryHistoryEntry[] = [];
-let loaded = false;
-let inFlight: Promise<void> | null = null;
-const listeners = new Set<() => void>();
-
-/** The list every reader sees from now on. Says nothing about whether the file has been read — only
- *  {@link publish} may claim that. */
-function remember(list: QueryHistoryEntry[]) {
-  snapshot = list;
-  for (const listener of listeners) listener();
-}
-
-function publish(list: QueryHistoryEntry[]) {
-  loaded = true;
-  remember(list);
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-function ensureLoaded(): Promise<void> {
-  if (loaded) return Promise.resolve();
-  if (!inFlight) {
-    inFlight = getStore()
-      .then(async (store) => publish((await store.get<QueryHistoryEntry[]>(KEY)) ?? []))
-      .finally(() => {
-        inFlight = null;
-      });
-  }
-  return inFlight;
-}
-
-/** Writes the list as it now stands. Failures are swallowed: a history that could not be saved is
- *  not worth interrupting someone's work over, and it is still correct in memory. */
-function persist(list: QueryHistoryEntry[]): void {
-  void getStore()
-    .then(async (store) => {
-      await store.set(KEY, list);
-      await store.save();
-    })
-    .catch(() => {});
-}
-
-/** The whole history, kept in step across every tab. */
 export function useQueryHistory(): QueryHistoryEntry[] {
-  useEffect(() => {
-    ensureLoaded().catch(() => {});
-  }, []);
-  return useSyncExternalStore(subscribe, () => snapshot);
+  return useStore(store);
 }
 
 /**
@@ -108,6 +57,7 @@ export function useQueryHistory(): QueryHistoryEntry[] {
  * is a separate occasion, and its place in the order is what makes it findable.
  */
 function withEntry(entry: QueryHistoryEntry): QueryHistoryEntry[] {
+  const snapshot = store.get();
   const first = snapshot[0];
   const repeat =
     first !== undefined &&
@@ -126,15 +76,11 @@ function withEntry(entry: QueryHistoryEntry): QueryHistoryEntry[] {
  * history, and everything from every earlier session would be gone.
  */
 export function recordQuery(entry: QueryHistoryEntry): void {
-  void ensureLoaded().then(
-    () => {
-      const list = withEntry(entry);
-      publish(list);
-      persist(list);
-    },
+  void store.ready().then(
+    () => keep(withEntry(entry)),
     // The file could not be read. The run is still worth showing for the rest of the session, but
     // nothing is written back: what is on disk is unknown, and writing over it would lose it.
-    () => remember(withEntry(entry))
+    () => store.remember(withEntry(entry))
   );
 }
 
@@ -147,17 +93,18 @@ export function recordQuery(entry: QueryHistoryEntry): void {
  * millisecond.
  */
 export function removeQueryHistoryEntry(entry: QueryHistoryEntry): void {
-  void ensureLoaded().then(
-    () => {
-      const list = snapshot.filter(
-        (kept) =>
-          kept.startedAt !== entry.startedAt ||
-          kept.profileId !== entry.profileId ||
-          kept.sql !== entry.sql
-      );
-      publish(list);
-      persist(list);
-    },
+  void store.ready().then(
+    () =>
+      keep(
+        store
+          .get()
+          .filter(
+            (kept) =>
+              kept.startedAt !== entry.startedAt ||
+              kept.profileId !== entry.profileId ||
+              kept.sql !== entry.sql
+          )
+      ),
     () => {}
   );
 }
@@ -170,12 +117,8 @@ export function removeQueryHistoryEntry(entry: QueryHistoryEntry): void {
  * button nobody could trust. There is no undo, which is why it asks first.
  */
 export function clearQueryHistory(profileId: string): void {
-  void ensureLoaded().then(
-    () => {
-      const list = snapshot.filter((entry) => entry.profileId !== profileId);
-      publish(list);
-      persist(list);
-    },
+  void store.ready().then(
+    () => keep(store.get().filter((entry) => entry.profileId !== profileId)),
     () => {}
   );
 }

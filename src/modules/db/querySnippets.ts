@@ -1,5 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
-import { Store } from "@tauri-apps/plugin-store";
+import { createStore, jsonFile, useStore } from "../../core/jsonStore";
 
 /**
  * Named queries, saved by hand and offered back by name as the editor is typed in.
@@ -18,58 +17,14 @@ export interface QuerySnippet {
   sql: string;
 }
 
-const FILE = "query-snippets.json";
-const KEY = "snippets";
-
-let storePromise: Promise<Store> | null = null;
-
-function getStore(): Promise<Store> {
-  if (!storePromise) storePromise = Store.load(FILE);
-  return storePromise;
-}
-
-let snapshot: QuerySnippet[] = [];
-let loaded = false;
-let inFlight: Promise<void> | null = null;
-const listeners = new Set<() => void>();
-
-function publish(list: QuerySnippet[]) {
-  snapshot = list;
-  loaded = true;
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-function ensureLoaded(): Promise<void> {
-  if (loaded) return Promise.resolve();
-  if (!inFlight) {
-    inFlight = getStore()
-      .then(async (store) => publish((await store.get<QuerySnippet[]>(KEY)) ?? []))
-      .finally(() => {
-        inFlight = null;
-      });
-  }
-  return inFlight;
-}
-
-async function persist(list: QuerySnippet[]): Promise<void> {
-  const store = await getStore();
-  await store.set(KEY, list);
-  await store.save();
-}
+const store = createStore<QuerySnippet[]>({
+  defaults: [],
+  ...jsonFile<QuerySnippet[]>("query-snippets.json", "snippets", []),
+});
 
 /** Every snippet, in the order they will be offered — by name, so the list reads the same twice. */
 export function useQuerySnippets(): QuerySnippet[] {
-  useEffect(() => {
-    ensureLoaded().catch(() => {});
-  }, []);
-  return useSyncExternalStore(subscribe, () => snapshot);
+  return useStore(store);
 }
 
 /** Saves under `name`, replacing whatever was there. Unlike the history, a failed write here is
@@ -78,16 +33,13 @@ export async function saveSnippet(snippet: QuerySnippet): Promise<void> {
   const name = snippet.name.trim();
   if (name === "") return;
   const key = name.toLowerCase();
-  const list = [...snapshot.filter((s) => s.name.toLowerCase() !== key), { ...snippet, name }].sort(
+  const list = [...store.get().filter((s) => s.name.toLowerCase() !== key), { ...snippet, name }].sort(
     (a, b) => a.name.localeCompare(b.name)
   );
-  publish(list);
-  await persist(list);
+  await store.save(list);
 }
 
 export async function removeSnippet(name: string): Promise<void> {
   const key = name.toLowerCase();
-  const list = snapshot.filter((s) => s.name.toLowerCase() !== key);
-  publish(list);
-  await persist(list);
+  await store.save(store.get().filter((s) => s.name.toLowerCase() !== key));
 }

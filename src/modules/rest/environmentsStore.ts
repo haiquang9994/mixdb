@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { createStore, useStore } from "../../core/jsonStore";
 import { Store } from "@tauri-apps/plugin-store";
 import { envSecretsDelete, envSecretsLoad, envSecretsSave } from "./api";
 import {
@@ -50,11 +50,7 @@ function getStore(): Promise<Store> {
   return storePromise;
 }
 
-let snapshot: Environment[] = [];
-let loaded = false;
-let inFlight: Promise<void> | null = null;
 let timer: number | null = null;
-const listeners = new Set<() => void>();
 
 /** What was last written to the credential store for each environment. An environment whose
  *  secrets have not moved is not written again, so renaming one, or typing in an ordinary value,
@@ -63,19 +59,6 @@ const written = new Map<string, string>();
 
 function stamp(secrets: Record<string, string>): string {
   return JSON.stringify(Object.entries(secrets).sort(([a], [b]) => a.localeCompare(b)));
-}
-
-function publish(list: Environment[]) {
-  snapshot = list;
-  loaded = true;
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
 }
 
 /** The file, with the credential store's half put back into each environment. */
@@ -98,20 +81,13 @@ async function load(): Promise<Environment[]> {
   );
 }
 
-function ensureLoaded(): Promise<void> {
-  if (loaded) return Promise.resolve();
-  if (!inFlight) {
-    inFlight = load()
-      .then(publish)
-      .finally(() => {
-        inFlight = null;
-      });
-  }
-  return inFlight;
-}
+/* No `persist` on the store: writing here is debounced *and* half of it goes to the OS credential
+   store, so `schedule` below owns it. The mechanics — read once, replace wholesale — are
+   `core/jsonStore.ts`. */
+const shared = createStore<Environment[]>({ defaults: [], load });
 
 async function persist(): Promise<void> {
-  const list = snapshot;
+  const list = shared.get();
   const store = await getStore();
   await store.set(KEY, list.map(withoutSecrets));
   await store.save();
@@ -134,7 +110,7 @@ function schedule(): void {
 
 /** In memory now, on disk shortly. */
 function commit(list: Environment[]): void {
-  publish(list);
+  shared.publish(list);
   schedule();
 }
 
@@ -148,27 +124,24 @@ export function flushEnvironments(): Promise<void> {
 }
 
 export function useEnvironments(): Environment[] {
-  useEffect(() => {
-    ensureLoaded().catch(() => {});
-  }, []);
-  return useSyncExternalStore(subscribe, () => snapshot);
+  return useStore(shared);
 }
 
 /** A new environment at the end of the list, returned so the dialog can select it. */
 export function createEnvironment(name: string): Environment {
   const env = newEnvironment(crypto.randomUUID(), name);
-  commit(addEnvironment(snapshot, env));
+  commit(addEnvironment(shared.get(), env));
   return env;
 }
 
 /** An edit to an environment. This is the whole of saving one: there is no Save button here
  *  either, for the same reason there is none for a request. */
 export function saveEnvironment(env: Environment): void {
-  commit(updateEnvironment(snapshot, env));
+  commit(updateEnvironment(shared.get(), env));
 }
 
 export function deleteEnvironment(id: string): void {
-  commit(removeEnvironment(snapshot, id));
+  commit(removeEnvironment(shared.get(), id));
   // The secrets go with the environment they belonged to; leaving them behind would mean an entry
   // in the OS store that nothing will ever name again.
   written.delete(id);
@@ -177,7 +150,7 @@ export function deleteEnvironment(id: string): void {
 
 /** The names a blocked send asked for, added to an environment as empty rows. */
 export function addVariables(id: string, names: string[]): void {
-  const env = findEnvironment(snapshot, id);
+  const env = findEnvironment(shared.get(), id);
   if (env === null) return;
-  commit(updateEnvironment(snapshot, withVariables(env, names)));
+  commit(updateEnvironment(shared.get(), withVariables(env, names)));
 }
