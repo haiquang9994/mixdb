@@ -3,7 +3,7 @@ import GlassFilter from "./components/GlassFilter";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
 import ContextMenu from "../components/ContextMenu";
-import { moveTab, Tab, TabAction, TabStrip, TabTitle, useTabReorder } from "../components/TabStrip";
+import { moveTab, Tab, TabAction, tabKeyDown, TabStrip, TabTitle, useTabReorder } from "../components/TabStrip";
 import { PlusIcon, SettingsIcon } from "../icons";
 import { isBlockedReload } from "../core/reload";
 import { useScrollAcceleration } from "../core/scroll";
@@ -143,7 +143,11 @@ function App() {
           outlive any one of them. Left out entirely while the setting is off, so a look nobody
           asked for costs nothing to have shipped. */}
       {glass && <GlassFilter />}
-      <TabStrip {...reorder.strip}>
+      {/* The one strip in the app that was reachable by mouse only. Every other one — the REST
+          requests, the tabs inside the response pane — already says what it is and takes Enter and
+          Space; this one is the app's own tab bar, so being the exception was the wrong way round.
+          `Ctrl+Tab` moved between tabs all along, but only once one was already open and focused. */}
+      <TabStrip role="tablist" aria-label={t("app.tabs")} {...reorder.strip}>
         {/* The app's name is also its settings button, which nothing about a bare word at 70%
             opacity said — so it wears a surface, a border and a gear, and reads as something to
             press before it is hovered.
@@ -167,10 +171,14 @@ function App() {
             <Tab
               key={tab.id}
               active={tab.id === activeId}
+              role="tab"
+              aria-selected={tab.id === activeId}
+              tabIndex={0}
               className={tab.badges.map((b) => b.tabClassName).filter(Boolean).join(" ")}
               onClose={() => closeTab(tab.id)}
               closeLabel={t("app.closeTab")}
               onClick={() => setActiveId(tab.id)}
+              onKeyDown={tabKeyDown(() => setActiveId(tab.id))}
               {...reorder.tab(tab.id)}
             >
               {/* A tab with nothing of its own to say still says which module it is, and most of

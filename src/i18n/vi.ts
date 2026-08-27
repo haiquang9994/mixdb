@@ -22,6 +22,7 @@ const vi: SharedDict = {
   },
   app: {
     settings: "Cài đặt",
+    tabs: "Các tab đang mở",
     closeTab: "Đóng tab",
     newConnectionTab: "Tab kết nối mới",
     newConnectionTitle: "Kết nối mới",

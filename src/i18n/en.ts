@@ -24,6 +24,8 @@ const en = {
   },
   app: {
     settings: "Settings",
+    /** The name of the app's own tab bar, for anyone reading the screen rather than looking at it. */
+    tabs: "Open tabs",
     closeTab: "Close tab",
     newConnectionTab: "New connection tab",
     newConnectionTitle: "New Connection",

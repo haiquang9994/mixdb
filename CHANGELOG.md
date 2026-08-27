@@ -43,6 +43,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- The app's own tab bar can now be reached and used from the keyboard, like every other strip.
 - One unreadable saved terminal target no longer empties the whole saved list for the session.
 - Switching database no longer leaves the previous one's tables, collections or error on screen.
 - Loading more keys in Redis after switching database no longer appends the old database's keys.
