@@ -1,3 +1,4 @@
+import Button from "../../../../components/Button";
 import { useTranslation } from "../../../../i18n";
 import type { TransferProgress } from "../../transfer";
 import styles from "./TransferOverlay.module.css";
@@ -8,6 +9,9 @@ interface Props {
   /** How far it has got, for those that can say. Dropping a database and downloading the tools
    *  pass nothing and show the spinner alone. */
   progress?: TransferProgress | null;
+  /** Stops the tool. Absent for the waits that have nothing to stop — dropping a database is one
+   *  statement, and cancelling a tool download is the download panel's own business. */
+  onCancel?: () => void;
 }
 
 /**
@@ -22,7 +26,7 @@ interface Props {
  * It covers its nearest positioned ancestor, which is the workspace: the tab bar and the other
  * connections stay live, so a long dump in one tab never holds up work in another.
  */
-function TransferOverlay({ label, progress }: Props) {
+function TransferOverlay({ label, progress, onCancel }: Props) {
   const { t } = useTranslation();
   // A percentage the Rust side would not commit to. The bar still moves — a dump of a database
   // whose tables it could not measure is going somewhere, it just cannot say how far.
@@ -68,6 +72,14 @@ function TransferOverlay({ label, progress }: Props) {
         )}
 
         <p className={styles.hint}>{t("dump.transferHint")}</p>
+
+        {onCancel && (
+          /* Under the hint, not beside the label: stopping is the rarer answer, and a button level
+             with "Dumping shop..." would read as the thing to press. */
+          <Button className={styles.cancel} onClick={onCancel}>
+            {t("dump.cancelTransfer")}
+          </Button>
+        )}
       </div>
     </div>
   );

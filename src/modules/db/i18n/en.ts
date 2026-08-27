@@ -819,6 +819,7 @@ const dbEn = {
     dropping: "Dropping {{database}}...",
     installing: "Downloading the tools...",
     transferHint: "A large database can take several minutes. Leave MixDB open until it finishes.",
+    cancelTransfer: "Stop",
     progressTables: "Table {{at}} of {{total}}",
     installTitle: "Download the tools?",
     installMysql:
@@ -925,6 +926,7 @@ const dbEn = {
     cannotRunTool: "Cannot run {{tool}}: {{message}}",
     toolWaitFailed: "{{tool}} could not be waited for: {{message}}",
     toolFailed: "{{tool}} failed:\n{{message}}",
+    transferCancelled: "{{tool}} was stopped before it finished.",
     // The downloaded tools
     unknownTool: "Unknown tool {{tool}}.",
     unknownToolSuite: "Unknown tool suite {{suite}}.",

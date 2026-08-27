@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { onTransferProgress, type TransferProgress } from "../transfer";
+import { cancelTransfer, onTransferProgress, type TransferProgress } from "../transfer";
 import {
   mongoCreateCollection,
   mongoDropCollection,
@@ -610,7 +610,11 @@ function MongoWorkspace({
       </div>
 
       {transferStatus !== "" && (
-        <TransferOverlay label={transferStatus} progress={transferProgress} />
+        <TransferOverlay
+          label={transferStatus}
+          progress={transferProgress}
+          onCancel={() => void cancelTransfer(connectionId)}
+        />
       )}
 
       {creatingDatabase && (

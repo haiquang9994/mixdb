@@ -1,6 +1,8 @@
 //! Every MySQL and MariaDB command. Which of the two answered is a property of the
 //! connection, read once when it was opened - see `drivers::mysql::detect_mariadb`.
 
+use super::Transfer;
+use std::sync::atomic::Ordering;
 use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::error::AppError;
 use tauri::{AppHandle, State};
@@ -198,6 +200,10 @@ pub async fn mysql_dump(
         .unwrap_or_default();
     let endpoint = sql_endpoint(&state, &id, DbKind::Mysql).await?;
     let report = reporter(&app, &id);
+    /* Registered for the length of the run and taken out however it ends, so the tab closing or
+       the Cancel button has something to reach. */
+    let transfer = Transfer::start(&state, &id);
+    let cancelled = transfer.flag();
     in_background(move || {
         dump::mysql_dump(
             &tool,
@@ -211,7 +217,10 @@ pub async fn mysql_dump(
             column_statistics,
             &path,
             &tables,
-            &dump::Watch { report: &report },
+            &dump::Watch {
+                report: &report,
+                cancel: &|| cancelled.load(Ordering::Relaxed),
+            },
         )
     })
     .await
@@ -232,6 +241,10 @@ pub async fn mysql_restore(
     let tool = tools::require(tools::Tool::MysqlClient, &tools_dir(&app)?)?;
     let endpoint = sql_endpoint(&state, &id, DbKind::Mysql).await?;
     let report = reporter(&app, &id);
+    /* Registered for the length of the run and taken out however it ends, so the tab closing or
+       the Cancel button has something to reach. */
+    let transfer = Transfer::start(&state, &id);
+    let cancelled = transfer.flag();
     in_background(move || {
         dump::mysql_restore(
             &tool,
@@ -241,7 +254,10 @@ pub async fn mysql_restore(
             &endpoint.password,
             &database,
             &path,
-            &dump::Watch { report: &report },
+            &dump::Watch {
+                report: &report,
+                cancel: &|| cancelled.load(Ordering::Relaxed),
+            },
         )
     })
     .await

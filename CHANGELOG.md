@@ -41,9 +41,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- A dump or restore can be stopped while it runs.
+
 ### Fixed
 
 - Enter no longer confirms a dialog that deletes something; it now cancels, like Escape.
+- Closing a database tab during a dump or restore now stops the tool, instead of leaving it running to the end.
 - In the dark theme, the red on delete buttons, invalid cells and failure notices is now the readable one the rest of the app already used.
 - Tab now stays inside an open dialog, and focus returns where it was when the dialog closes.
 - A right-click menu can now be walked with the arrow keys.

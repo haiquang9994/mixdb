@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 /**
@@ -32,4 +33,18 @@ export function onTransferProgress(
   return listen<TransferProgress>("transfer://progress", ({ payload }) => {
     if (payload.id === id) onProgress(payload);
   });
+}
+
+/**
+ * Stops the tool a connection is running, if it is running one.
+ *
+ * The tool is killed rather than asked to stop: `mysqldump` and the rest have no protocol for
+ * finishing early. So a cancelled dump leaves a partial file behind — the command reports being
+ * stopped rather than reporting success, which is what says the file is not a dump.
+ *
+ * Never rejects for a connection that is transferring nothing, which is what lets a tab closing
+ * call it without first working out whether it needs to.
+ */
+export function cancelTransfer(id: string): Promise<void> {
+  return invoke("cancel_db_transfer", { id });
 }

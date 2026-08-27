@@ -167,3 +167,10 @@
     animation-duration: 2.4s;
   }
 }
+
+/* Set apart from the hint above it, and no wider than its own text: this is the way out of a wait
+   the user asked for, not the thing the card is offering. */
+.cancel {
+  align-self: center;
+  margin-top: 0.35rem;
+}

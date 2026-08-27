@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useSqlApi, useSqlDialect } from "./context";
-import { onTransferProgress, type TransferProgress } from "../transfer";
+import { cancelTransfer, onTransferProgress, type TransferProgress } from "../transfer";
 import { filterRowFor } from "../filters";
 import type { FilterOperator } from "./filters";
 import { invalidateSchemaOutline } from "./schemaCache";
@@ -753,7 +753,11 @@ function SqlWorkspace({
       </div>
 
       {transferStatus !== "" && (
-        <TransferOverlay label={transferStatus} progress={transferProgress} />
+        <TransferOverlay
+          label={transferStatus}
+          progress={transferProgress}
+          onCancel={() => void cancelTransfer(connectionId)}
+        />
       )}
 
       {creatingDatabase && (

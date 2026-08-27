@@ -10,6 +10,7 @@ use crate::platform::{app_data_dir, in_background};
 use crate::error::AppError;
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
@@ -18,7 +19,7 @@ use uuid::Uuid;
 
 use crate::modules::db::drivers;
 use crate::modules::db::models::{ConnectionConfig, DbKind};
-use crate::modules::db::state::{ActiveConnection, DbHandle, DbState};
+use crate::modules::db::state::{ActiveConnection, Cancel, DbHandle, DbState};
 use crate::ssh::{self, SshConfig};
 
 /// Chạy lại một lệnh **đọc** đúng một lần, nếu lần đầu chết cùng kết nối.
@@ -273,6 +274,10 @@ pub async fn connect_db(
 /// — rồi mới buông, và `Drop` của `Tunnel` hạ cổng forward.
 #[tauri::command]
 pub async fn disconnect_db(state: State<'_, DbState>, id: String) -> Result<(), AppError> {
+    /* First, and whether or not the connection is still in the map: a transfer runs an external
+       tool that outlives everything here, so a tab closed mid-dump used to leave `mysqldump`
+       writing a file nobody was waiting for. */
+    cancel_transfer_in(&state, &id);
     let gone = state.connections.lock().await.remove(&id);
     let Some(connection) = gone else {
         return Ok(());
@@ -455,10 +460,110 @@ fn tools_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     app_data_dir(app).map(|dir| dir.join("tools"))
 }
 
+/// Tells whatever transfer this connection is running to stop. Silent when it is running none,
+/// which is every call but the few that matter.
+fn cancel_transfer_in(state: &DbState, id: &str) {
+    if let Some(cancel) = state.transfers.lock().unwrap().get(id) {
+        cancel.store(true, Ordering::Relaxed);
+    }
+}
+
+/// The Cancel button on the transfer overlay.
+#[tauri::command]
+pub fn cancel_db_transfer(state: State<'_, DbState>, id: String) {
+    cancel_transfer_in(&state, &id);
+}
+
+/// Registers a transfer for the length of its run, and takes it out again however it ends.
+///
+/// A guard rather than a pair of calls because the middle of it is a `?` away from returning: a
+/// dump that fails on its first line must not leave a flag behind for the *next* dump on that
+/// connection to find already set.
+struct Transfer<'a> {
+    state: &'a DbState,
+    id: String,
+    cancel: Cancel,
+}
+
+impl<'a> Transfer<'a> {
+    fn start(state: &'a DbState, id: &str) -> Self {
+        let cancel: Cancel = Arc::new(AtomicBool::new(false));
+        state
+            .transfers
+            .lock()
+            .unwrap()
+            .insert(id.to_string(), Arc::clone(&cancel));
+        Transfer { state, id: id.to_string(), cancel }
+    }
+
+    /// What `Watch` polls. Owns a handle of its own, so the closure can outlive this guard's
+    /// borrow of the state and go to the blocking thread.
+    fn flag(&self) -> Cancel {
+        Arc::clone(&self.cancel)
+    }
+}
+
+impl Drop for Transfer<'_> {
+    fn drop(&mut self) {
+        self.state.transfers.lock().unwrap().remove(&self.id);
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::{cancel_transfer_in, Transfer};
     use crate::error::AppError;
+    use crate::modules::db::state::DbState;
     use std::cell::Cell;
+    use std::sync::atomic::Ordering;
+
+    /* What the tab closing has to be able to do, without a database in the room: reach a running
+       transfer and set the flag its tool is polling. */
+
+    #[test]
+    fn a_running_transfer_can_be_reached_by_its_connection_id() {
+        let state = DbState::default();
+        let transfer = Transfer::start(&state, "conn-1");
+        let flag = transfer.flag();
+        assert!(!flag.load(Ordering::Relaxed));
+
+        cancel_transfer_in(&state, "conn-1");
+        assert!(flag.load(Ordering::Relaxed), "the tool's own poll would still say keep going");
+    }
+
+    #[test]
+    fn cancelling_a_connection_that_is_transferring_nothing_does_nothing() {
+        // `disconnect_db` calls this on every close, and most closes are not mid-dump.
+        let state = DbState::default();
+        cancel_transfer_in(&state, "conn-1");
+        assert!(state.transfers.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_finished_transfer_leaves_no_flag_for_the_next_one_to_find() {
+        // The failure this rules out: a dump that fails on its first line returns early, and the
+        // next dump on that connection starts on a flag that is already set.
+        let state = DbState::default();
+        {
+            let transfer = Transfer::start(&state, "conn-1");
+            cancel_transfer_in(&state, "conn-1");
+            assert!(transfer.flag().load(Ordering::Relaxed));
+        }
+        assert!(state.transfers.lock().unwrap().is_empty());
+
+        let next = Transfer::start(&state, "conn-1");
+        assert!(!next.flag().load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn two_connections_transfer_without_stopping_each_other() {
+        let state = DbState::default();
+        let one = Transfer::start(&state, "conn-1");
+        let two = Transfer::start(&state, "conn-2");
+        cancel_transfer_in(&state, "conn-1");
+        assert!(one.flag().load(Ordering::Relaxed));
+        assert!(!two.flag().load(Ordering::Relaxed));
+    }
 
     /// Đúng một lần chạy lại, và chỉ khi lần đầu chết cùng kết nối. Bộ đếm là thứ nói lên điều đó:
     /// một lệnh ghi lọt vào đây sẽ chạy hai lần, nên "chạy đúng mấy lần" là điều phải khoá lại.

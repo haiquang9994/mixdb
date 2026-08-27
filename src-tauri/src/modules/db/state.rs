@@ -1,6 +1,7 @@
 use crate::modules::db::models::ConnectionConfig;
 use crate::ssh::Tunnel;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -43,6 +44,12 @@ pub struct ActiveConnection {
     pub tunnel: Option<Tunnel>,
 }
 
+/// A transfer that can be called off: a flag the tool's own loop reads four times a second.
+///
+/// An `AtomicBool` rather than a channel because the thing being stopped is a blocking loop around
+/// a child process — see `drivers::dump::run`, which polls it and kills the child.
+pub type Cancel = Arc<AtomicBool>;
+
 #[derive(Default)]
 pub struct DbState {
     /// Every open connection, by the id handed to the frontend.
@@ -59,4 +66,14 @@ pub struct DbState {
     /// A blocking lock rather than an async one: nothing is awaited while it is held, and it has
     /// to be usable from the plain closure `mysql_script::run` announces the id through.
     pub running_queries: std::sync::Mutex<HashMap<String, u64>>,
+    /// The transfer each connection is running, while it runs one.
+    ///
+    /// A dump or a restore is an external tool that can run for minutes, and nothing in the app
+    /// used to be able to stop one: closing the tab left `mysqldump` writing a file nobody was
+    /// waiting for, and its progress arriving on `transfer://progress` for a connection that no
+    /// longer existed. This is what `disconnect_db` and the Cancel button reach through.
+    ///
+    /// One per connection: the workspace is covered while a transfer runs, so there is never a
+    /// second to keep track of.
+    pub transfers: std::sync::Mutex<HashMap<String, Cancel>>,
 }

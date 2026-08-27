@@ -806,6 +806,7 @@ const dbVi: DbDict = {
     dropping: "Đang xóa {{database}}...",
     installing: "Đang tải công cụ...",
     transferHint: "Cơ sở dữ liệu lớn có thể mất vài phút. Hãy để MixDB mở cho tới khi xong.",
+    cancelTransfer: "Dừng",
     progressTables: "Bảng {{at}}/{{total}}",
     installTitle: "Tải công cụ về?",
     installMysql:
@@ -912,6 +913,7 @@ const dbVi: DbDict = {
     cannotRunTool: "Không chạy được {{tool}}: {{message}}",
     toolWaitFailed: "Không chờ được {{tool}} chạy xong: {{message}}",
     toolFailed: "{{tool}} thất bại:\n{{message}}",
+    transferCancelled: "{{tool}} đã bị dừng trước khi chạy xong.",
     // Bộ công cụ tải về
     unknownTool: "Công cụ {{tool}} không hợp lệ.",
     unknownToolSuite: "Bộ công cụ {{suite}} không hợp lệ.",

@@ -96,9 +96,10 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
 
-      # The four ignored tests stay ignored. Three download from a vendor and belong to
+      # The five ignored tests stay ignored. Three download from a vendor and belong to
       # tool-downloads.yml; the fourth wants a real OS credential store, which a headless runner
-      # has no Secret Service for.
+      # has no Secret Service for; the fifth is not a test at all but the minute-long child process
+      # `dump::tests` spawns to kill — see `sleeper`.
       - name: Test
         working-directory: src-tauri
         run: cargo test --locked

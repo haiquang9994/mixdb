@@ -270,13 +270,23 @@ fn next_line(source: &mut impl BufRead, buffer: &mut Vec<u8>) -> Option<String> 
 ///
 /// Blocking on purpose — every caller is a `spawn_blocking`, because a dump takes as long as it
 /// takes and has no business holding an async worker (or the connection lock) while it does.
-fn run(
-    tool: &Path,
-    args: &[String],
-    env: &[(&str, String)],
+struct Invocation<'a> {
+    tool: &'a Path,
+    args: &'a [String],
+    env: &'a [(&'a str, String)],
+    /// The file to pour into the tool's standard input, for a restore. `None` for a dump, which
+    /// writes rather than reads.
     stdin: Option<Fed>,
+    /// Where the tool's standard output goes, for a dump. `None` for the tools that write the file
+    /// themselves.
     stdout: Option<File>,
-    what: &str,
+    /// What the tool is called in an error the user reads — `mysqldump`, `psql`.
+    name: &'a str,
+}
+
+fn run(
+    Invocation { tool, args, env, stdin, stdout, name }: Invocation<'_>,
+    watch: &Watch<'_>,
     mut tick: impl FnMut(Tick),
 ) -> Result<(), AppError> {
     let mut command = Command::new(tool);
@@ -316,6 +326,7 @@ fn run(
     });
 
     let mut tail = Tail::default();
+    let mut cancelled = false;
     loop {
         match lines.recv_timeout(Duration::from_millis(250)) {
             Ok(line) => {
@@ -326,6 +337,15 @@ fn run(
             // Standard error is closed, which the tool does by exiting.
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
+        if (watch.cancel)() {
+            /* Killed rather than asked. These tools have no protocol for stopping politely, and a
+               dump left running writes a file nobody is waiting for while its progress is reported
+               against a connection that has gone. Killing also closes the stdin pipe, which is
+               what stops the feeder thread below — it gets a broken pipe on its next write. */
+            let _ = child.kill();
+            cancelled = true;
+            break;
+        }
     }
     if let Some(reader) = reader {
         let _ = reader.join();
@@ -333,11 +353,16 @@ fn run(
 
     let status = child
         .wait()
-        .map_err(|e| err!("error.toolWaitFailed", tool = what, message = e))?;
+        .map_err(|e| err!("error.toolWaitFailed", tool = name, message = e))?;
+    /* Before the status is read for meaning: a killed tool exits without success, and reporting
+       that as "mysqldump failed" would blame the tool for being stopped. */
+    if cancelled {
+        return Err(err!("error.transferCancelled", tool = name));
+    }
     if !status.success() {
         // These tools report the real cause on stderr and only a number through the exit status, so
         // the message is what matters; the last lines of it are the ones that say why.
-        return Err(err!("error.toolFailed", tool = what, status = status, message = tail.message()));
+        return Err(err!("error.toolFailed", tool = name, status = status, message = tail.message()));
     }
     // Asked after the status and not before, because a tool that failed says why and a broken pipe
     // only says that it did. But a file that could not be read through is not allowed to pass as a
@@ -381,6 +406,13 @@ pub struct Progress {
 /// Where a transfer says how far it has got, four times a second.
 pub struct Watch<'a> {
     pub report: &'a dyn Fn(Progress),
+    /// Asked four times a second, and again after every line the tool writes: has the transfer
+    /// been called off?
+    ///
+    /// A poll rather than a signal because the work is a blocking loop around a child process,
+    /// and the only thing that reliably stops one of those is killing it. What sets it is the tab
+    /// closing, `disconnect_db`, or the Cancel button — see `DbState::transfers`.
+    pub cancel: &'a dyn Fn() -> bool,
 }
 
 /// The line `mysqldump --verbose` writes as it reaches each table, and the whole of the signal the
@@ -667,7 +699,10 @@ pub fn mysql_dump(
 
     let out = create_file(path)?;
     let mut tracker = Tracker::new(tables, path, mode != DumpMode::Structure);
-    run(tool, &args, &[], None, Some(out), "mysqldump", |tick| {
+    run(
+        Invocation { tool, args: &args, env: &[], stdin: None, stdout: Some(out), name: "mysqldump" },
+        watch,
+        |tick| {
         if let Tick::Line(line) = tick {
             // Everything else it says — connecting, savepoints, the rows of a table already
             // counted — leaves the reckoning where it was, and is not worth a reading of its own.
@@ -718,7 +753,10 @@ pub fn mysql_restore(
     let counted = Arc::clone(&sent);
     let fed = Fed { file, path: path.to_string(), sent, lead: None };
 
-    run(tool, &args, &[], Some(fed), None, "mysql", |_| {
+    run(
+        Invocation { tool, args: &args, env: &[], stdin: Some(fed), stdout: None, name: "mysql" },
+        watch,
+        |_| {
         (watch.report)(Progress {
             percent: share(counted.load(Ordering::Relaxed), total),
             ..Progress::default()
@@ -817,7 +855,10 @@ pub fn postgres_dump(
 
     let out = create_file(path)?;
     let mut tracker = Tracker::new(tables, path, mode != DumpMode::Structure);
-    run(tool, &args, &pgpass.env(), None, Some(out), "pg_dump", |tick| {
+    run(
+        Invocation { tool, args: &args, env: &pgpass.env(), stdin: None, stdout: Some(out), name: "pg_dump" },
+        watch,
+        |tick| {
         if let Tick::Line(line) = tick {
             // Everything else it says — connecting, reading the schema, saving the search path —
             // leaves the reckoning where it was.
@@ -967,7 +1008,10 @@ pub fn postgres_restore(
     let counted = Arc::clone(&sent);
     let fed = Fed { file, path: path.to_string(), sent, lead };
 
-    run(tool, &args, &pgpass.env(), Some(fed), None, "psql", |_| {
+    run(
+        Invocation { tool, args: &args, env: &pgpass.env(), stdin: Some(fed), stdout: None, name: "psql" },
+        watch,
+        |_| {
         (watch.report)(Progress {
             percent: share(counted.load(Ordering::Relaxed), total),
             ..Progress::default()
@@ -1055,7 +1099,10 @@ pub fn mongo_dump(
         format!("--archive={path}"),
     ];
     let archive = PathBuf::from(path);
-    run(tool, &args, &[], None, None, "mongodump", |_| {
+    run(
+        Invocation { tool, args: &args, env: &[], stdin: None, stdout: None, name: "mongodump" },
+        watch,
+        |_| {
         let written = std::fs::metadata(&archive).map(|meta| meta.len()).unwrap_or(0);
         (watch.report)(Progress {
             percent: archive_share(written, documents),
@@ -1162,7 +1209,10 @@ pub fn mongo_restore(
     let counted = Arc::clone(&sent);
     let fed = Fed { file, path: path.to_string(), sent, lead: None };
 
-    run(tool, &args, &[], Some(fed), None, "mongorestore", |_| {
+    run(
+        Invocation { tool, args: &args, env: &[], stdin: Some(fed), stdout: None, name: "mongorestore" },
+        watch,
+        |_| {
         (watch.report)(Progress {
             percent: share(counted.load(Ordering::Relaxed), total),
             ..Progress::default()
@@ -1172,7 +1222,71 @@ pub fn mongo_restore(
 
 #[cfg(test)]
 mod tests {
-    use super::{pg_reached_table, pg_rewrite_preamble, tool_uri};
+    use super::{pg_reached_table, pg_rewrite_preamble, run, tool_uri, Invocation, Watch};
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    /// Not a test: the child the two tests below need. Ignored so it never runs on its own, and
+    /// spawned by name from `current_exe` so those tests depend on no program the machine might
+    /// not have — `sleep` is not on Windows, and `ping` is not guaranteed in a container.
+    #[test]
+    #[ignore]
+    fn sleeper() {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+
+    /// That child, as a tool `run` can be pointed at. It outlives any wait a test is willing to
+    /// make, so the only way it finishes is by being killed.
+    fn slow_tool() -> (PathBuf, Vec<String>) {
+        let args = ["--exact", "modules::db::drivers::dump::tests::sleeper", "--ignored"];
+        (
+            std::env::current_exe().expect("the test binary knows where it is"),
+            args.iter().map(|a| a.to_string()).collect(),
+        )
+    }
+
+    /// The whole of what R29 was about: a transfer that is called off stops the tool, rather than
+    /// leaving it to run to completion for a connection that has gone.
+    #[test]
+    fn a_cancelled_run_kills_the_tool_instead_of_waiting_for_it() {
+        let (tool, args) = slow_tool();
+        // Set before the run starts, so the first poll — a quarter of a second in — sees it.
+        let cancel: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
+        let flag = Arc::clone(&cancel);
+        let watch = Watch { report: &|_| {}, cancel: &|| flag.load(Ordering::Relaxed) };
+
+        let started = Instant::now();
+        let result = run(
+            Invocation { tool: &tool, args: &args, env: &[], stdin: None, stdout: None, name: "sleeper" },
+            &watch,
+            |_| {},
+        );
+
+        assert!(result.is_err(), "a killed tool is not a transfer that worked");
+        assert!(
+            started.elapsed().as_secs() < 10,
+            "it waited the full minute out instead of killing the tool: {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// And the other half: a run nobody stops is not cut short by the polling, and the tool's own
+    /// success is still what the answer is read from.
+    #[test]
+    fn a_run_nobody_stops_is_left_alone() {
+        // `--list` exits at once and exits cleanly, which is all this needs of it.
+        let tool = std::env::current_exe().expect("the test binary knows where it is");
+        let watch = Watch { report: &|_| {}, cancel: &|| false };
+        let args = vec!["--list".to_string()];
+        assert!(run(
+            Invocation { tool: &tool, args: &args, env: &[], stdin: None, stdout: None, name: "list" },
+            &watch,
+            |_| {},
+        ).is_ok());
+    }
+
 
     /// The preamble pg_dump 17 and later writes, whatever the version of the server it read.
     const PREAMBLE: &str = "--\n-- PostgreSQL database dump\n--\n\n\\restrict S0j3INb3aLmWPSh\n\n\

@@ -4,6 +4,8 @@
 //! something different: there it names a database to reach into from the one connection, here it
 //! picks which pool the command runs on. See `postgres_pool`.
 
+use super::Transfer;
+use std::sync::atomic::Ordering;
 use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::error::AppError;
 use tauri::{AppHandle, State};
@@ -374,6 +376,10 @@ pub async fn postgres_dump(
         .unwrap_or_default();
     let endpoint = sql_endpoint(&state, &id, DbKind::Postgres).await?;
     let report = reporter(&app, &id);
+    /* Registered for the length of the run and taken out however it ends, so the tab closing or
+       the Cancel button has something to reach. */
+    let transfer = Transfer::start(&state, &id);
+    let cancelled = transfer.flag();
     in_background(move || {
         dump::postgres_dump(
             &tool,
@@ -385,7 +391,10 @@ pub async fn postgres_dump(
             mode,
             &path,
             &tables,
-            &dump::Watch { report: &report },
+            &dump::Watch {
+                report: &report,
+                cancel: &|| cancelled.load(Ordering::Relaxed),
+            },
         )
     })
     .await
@@ -403,6 +412,10 @@ pub async fn postgres_restore(
     let tool = tools::require(tools::Tool::PsqlClient, &tools_dir(&app)?)?;
     let endpoint = sql_endpoint(&state, &id, DbKind::Postgres).await?;
     let report = reporter(&app, &id);
+    /* Registered for the length of the run and taken out however it ends, so the tab closing or
+       the Cancel button has something to reach. */
+    let transfer = Transfer::start(&state, &id);
+    let cancelled = transfer.flag();
     in_background(move || {
         dump::postgres_restore(
             &tool,
@@ -412,7 +425,10 @@ pub async fn postgres_restore(
             &endpoint.password,
             &database,
             &path,
-            &dump::Watch { report: &report },
+            &dump::Watch {
+                report: &report,
+                cancel: &|| cancelled.load(Ordering::Relaxed),
+            },
         )
     })
     .await

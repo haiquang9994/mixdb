@@ -22,6 +22,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // ── db ──
         db::commands::connect_db,
         db::commands::disconnect_db,
+        db::commands::cancel_db_transfer,
         db::commands::test_ssh_tunnel,
         db::commands::tunnel_reconnect,
         db::commands::mysql::mysql_query,

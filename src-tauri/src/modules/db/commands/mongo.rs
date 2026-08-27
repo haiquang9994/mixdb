@@ -1,5 +1,7 @@
 //! Every MongoDB command.
 
+use super::Transfer;
+use std::sync::atomic::Ordering;
 use crate::modules::db::models::{ServerInfo};
 use crate::error::AppError;
 use tauri::{AppHandle, State};
@@ -30,6 +32,10 @@ pub async fn mongo_dump(
         .unwrap_or(0);
     let (uri, endpoint) = mongo_endpoint(&state, &id).await?;
     let report = reporter(&app, &id);
+    /* Registered for the length of the run and taken out however it ends, so the tab closing or
+       the Cancel button has something to reach. */
+    let transfer = Transfer::start(&state, &id);
+    let cancelled = transfer.flag();
     in_background(move || {
         let endpoint = endpoint.as_ref().map(|(host, port)| (host.as_str(), *port));
         dump::mongo_dump(
@@ -39,7 +45,10 @@ pub async fn mongo_dump(
             &db,
             &path,
             documents,
-            &dump::Watch { report: &report },
+            &dump::Watch {
+                report: &report,
+                cancel: &|| cancelled.load(Ordering::Relaxed),
+            },
         )
     })
     .await
@@ -60,6 +69,10 @@ pub async fn mongo_restore(
     let tool = tools::require(tools::Tool::MongoRestore, &tools_dir(&app)?)?;
     let (uri, endpoint) = mongo_endpoint(&state, &id).await?;
     let report = reporter(&app, &id);
+    /* Registered for the length of the run and taken out however it ends, so the tab closing or
+       the Cancel button has something to reach. */
+    let transfer = Transfer::start(&state, &id);
+    let cancelled = transfer.flag();
     in_background(move || {
         let endpoint = endpoint.as_ref().map(|(host, port)| (host.as_str(), *port));
         dump::mongo_restore(
@@ -68,7 +81,10 @@ pub async fn mongo_restore(
             endpoint,
             &db,
             &path,
-            &dump::Watch { report: &report },
+            &dump::Watch {
+                report: &report,
+                cancel: &|| cancelled.load(Ordering::Relaxed),
+            },
         )
     })
     .await
