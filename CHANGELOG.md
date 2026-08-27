@@ -43,6 +43,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- An SSH tab whose shell has exited now closes the connection to the server instead of holding it open until MixDB quits.
 - A script that leaves a transaction open no longer breaks the tables list and the table data beside it.
 - A read-only connection now refuses `EXPLAIN ANALYZE`, which runs the statement it explains rather than only planning it.
 - The response Preview's *Run scripts* and *Load external resources* switches now work in the

@@ -30,3 +30,15 @@ impl Drop for Session {
 pub struct TerminalState {
     pub sessions: Mutex<HashMap<String, Session>>,
 }
+
+impl TerminalState {
+    /// Bỏ một phiên khỏi map, nếu nó còn ở đó.
+    ///
+    /// Buông nó *ngoài* phạm vi khoá: `Drop` của `Session` huỷ token và buông hai đầu gửi, và đó
+    /// là thứ đánh thức các thread và task còn đang chờ trên chúng — không có gì trong đó cần
+    /// khoá, và không có gì trong đó nên chạy khi đang giữ khoá.
+    pub fn forget(&self, id: &str) {
+        let gone = self.sessions.lock().unwrap().remove(id);
+        drop(gone);
+    }
+}
