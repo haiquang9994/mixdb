@@ -41,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.18] - 2026-08-27
+
 ### Added
 
 - Anything a terminal tab opens can be saved now — a shell on this machine as well as an SSH server — in one list.
