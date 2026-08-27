@@ -32,6 +32,15 @@ export interface SavedHost {
   id: string;
   name: string;
   config: SshConfig;
+  /**
+   * Lệnh gõ hộ ngay khi shell bên kia sẵn sàng — `cd ~/project-a/frontend`, `nvm use`, mấy dòng
+   * đầu tiên vẫn phải gõ lại mỗi lần vào máy ấy. Mỗi dòng là một lệnh.
+   *
+   * Ngoài `config` chứ không nằm trong: `SshConfig` là gương của kiểu bên Rust, còn cái này Rust
+   * không bao giờ thấy — nó đi xuống pty như phím người dùng bấm. Và nó nằm nguyên văn trong
+   * `terminal-hosts.json`, nên nó không phải chỗ để mật khẩu; xem đầu `savedHosts.ts`.
+   */
+  runOnConnect?: string;
 }
 
 /** Đích của một phiên, đúng hình dạng `TerminalTarget` bên Rust. Nhánh `ssh` trải phẳng bốn trường
@@ -46,4 +55,4 @@ export type TerminalTarget =
  */
 export type TerminalChoice =
   | { kind: "local"; shell: LocalShell; cwd: string | null }
-  | { kind: "ssh"; config: SshConfig; hostId: string | null };
+  | { kind: "ssh"; config: SshConfig; hostId: string | null; runOnConnect: string | null };

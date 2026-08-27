@@ -78,6 +78,12 @@ const terminalVi = {
     menuPaste: "Dán",
     menuClear: "Xoá màn hình",
     menuSelectAll: "Chọn tất cả",
+    followLink: "{{modifier}} + bấm để mở liên kết này",
+    linkBlocked: "Chỉ liên kết http và https mới mở được từ đây.",
+    runOnConnect: "Chạy khi kết nối",
+    runOnConnectPlaceholder: "cd ~/project-a/frontend",
+    runOnConnectHint:
+      "Gõ hộ ngay khi shell lên tiếng, mỗi dòng một lệnh. Nó nằm nguyên văn cạnh host — không phải chỗ để mật khẩu.",
   },
   error: {
     terminalSpawnFailed: "Không khởi động được shell: {{message}}",

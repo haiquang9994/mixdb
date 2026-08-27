@@ -116,7 +116,14 @@ function TerminalTab({ active, onTitleChange, onBadgesChange, restored, onStateC
       restoreTried.current = true;
       const host = savedHosts.find((h) => h.id === restoredState.hostId);
       // `config` ở đây đã đầy đủ — `savedHosts.ts` ghép bí mật từ keyring vào trước khi trao ra.
-      if (host !== undefined) start({ kind: "ssh", config: host.config, hostId: host.id });
+      if (host !== undefined) {
+        start({
+          kind: "ssh",
+          config: host.config,
+          hostId: host.id,
+          runOnConnect: host.runOnConnect ?? null,
+        });
+      }
       return;
     }
 
@@ -153,6 +160,7 @@ function TerminalTab({ active, onTitleChange, onBadgesChange, restored, onStateC
           <TerminalView
             key={generation}
             target={target}
+            runOnConnect={choice?.kind === "ssh" ? choice.runOnConnect : null}
             active={active}
             onOpened={opened}
             onExit={setExit}

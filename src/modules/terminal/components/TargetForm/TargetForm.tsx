@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import Button from "../../../../components/Button";
-import Input from "../../../../components/Input";
+import Input, { Textarea } from "../../../../components/Input";
 import Select from "../../../../components/Select";
 import { errorMessage } from "../../../../core/errors";
 import { useTranslation } from "../../../../i18n";
@@ -70,6 +70,9 @@ function TargetForm({ onOpen, onError, initial }: Props) {
       ? (initial.config.auth.passphrase ?? "")
       : "",
   );
+  const [runOnConnect, setRunOnConnect] = useState(
+    initial?.kind === "ssh" ? (initial.runOnConnect ?? "") : "",
+  );
 
   useEffect(() => {
     /* Hai lượt đọc song song chứ không nối tiếp, và `loadTerminalSettings` chứ không
@@ -135,13 +138,19 @@ function TargetForm({ onOpen, onError, initial }: Props) {
     setPassphrase(
       entry.config.auth.type === "privatekey" ? (entry.config.auth.passphrase ?? "") : "",
     );
+    setRunOnConnect(entry.runOnConnect ?? "");
   }
 
   /** Nháy đúp một host: nạp nó vào form rồi mở luôn. Cấu hình lấy thẳng từ mục được bấm chứ không
    *  từ state — `applyHost` vừa gọi `setState`, mà state thì phải sang lần render sau mới đổi. */
   function openHost(entry: SavedHost) {
     applyHost(entry);
-    onOpen({ kind: "ssh", config: entry.config, hostId: entry.id });
+    onOpen({
+      kind: "ssh",
+      config: entry.config,
+      hostId: entry.id,
+      runOnConnect: entry.runOnConnect ?? null,
+    });
   }
 
   function clearHostForm() {
@@ -154,16 +163,25 @@ function TargetForm({ onOpen, onError, initial }: Props) {
     setPassword("");
     setKeyPath("");
     setPassphrase("");
+    setRunOnConnect("");
   }
 
   async function saveHost() {
     const trimmed = name.trim();
     if (!trimmed) return;
     try {
+      // Ô trống ghi ra `undefined` chứ không phải `""`: vắng mặt là mặc định, đúng như `pinned`
+      // bên module db, nên một host chưa từng dùng tới ô này không mang theo một dòng chết.
+      const opening = runOnConnect.trim() || undefined;
       if (hostId) {
-        await updateHost({ id: hostId, name: trimmed, config: buildConfig() });
+        await updateHost({ id: hostId, name: trimmed, config: buildConfig(), runOnConnect: opening });
       } else {
-        const entry: SavedHost = { id: crypto.randomUUID(), name: trimmed, config: buildConfig() };
+        const entry: SavedHost = {
+          id: crypto.randomUUID(),
+          name: trimmed,
+          config: buildConfig(),
+          runOnConnect: opening,
+        };
         await addHost(entry);
         setHostId(entry.id);
       }
@@ -356,6 +374,17 @@ function TargetForm({ onOpen, onError, initial }: Props) {
               </>
             )}
 
+            <div className={styles.row}>
+              <label htmlFor="terminal-run-on-connect">{t("terminal.runOnConnect")}</label>
+              <Textarea
+                id="terminal-run-on-connect"
+                value={runOnConnect}
+                placeholder={t("terminal.runOnConnectPlaceholder")}
+                onChange={(e) => setRunOnConnect(e.target.value)}
+              />
+              <p className={styles.hint}>{t("terminal.runOnConnectHint")}</p>
+            </div>
+
             <div className={styles.actions}>
               <Button disabled={!name.trim()} onClick={() => void saveHost()}>
                 {hostId ? t("terminal.updateHost") : t("terminal.saveHost")}
@@ -363,7 +392,14 @@ function TargetForm({ onOpen, onError, initial }: Props) {
               <Button
                 variant="primary"
                 disabled={!sshReady}
-                onClick={() => onOpen({ kind: "ssh", config: buildConfig(), hostId })}
+                onClick={() =>
+                  onOpen({
+                    kind: "ssh",
+                    config: buildConfig(),
+                    hostId,
+                    runOnConnect: runOnConnect.trim() || null,
+                  })
+                }
               >
                 {t("terminal.connect")}
               </Button>

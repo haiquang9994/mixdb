@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { terminalBadgeMarks, terminalTarget, terminalTitle } from "./session";
+import {
+  openingKeystrokes,
+  terminalBadgeMarks,
+  terminalTarget,
+  terminalTitle,
+} from "./session";
 import type { SshConfig, TerminalChoice } from "./types";
 
 const bash: TerminalChoice = {
@@ -21,7 +26,7 @@ const config: SshConfig = {
   auth: { type: "password", password: "hunter2" },
 };
 
-const remote: TerminalChoice = { kind: "ssh", config, hostId: null };
+const remote: TerminalChoice = { kind: "ssh", config, hostId: null, runOnConnect: null };
 
 describe("terminalTarget", () => {
   it("sends the path and the args, not the display name", () => {
@@ -85,5 +90,30 @@ describe("terminalBadgeMarks", () => {
 
   it("puts the ended mark after the kind, never before it", () => {
     expect(terminalBadgeMarks(remote, true)).toEqual([{ type: "ssh" }, { type: "ended" }]);
+  });
+});
+
+describe("openingKeystrokes", () => {
+  it("ends the line, because a command nobody pressed Enter on never runs", () => {
+    expect(openingKeystrokes("cd ~/project-a/frontend")).toBe("cd ~/project-a/frontend\r");
+  });
+
+  /* Mấy dòng là mấy lệnh, và người dùng gõ chúng vào một ô nhiều dòng vì họ muốn từng dòng chạy —
+     `\r` chứ không phải `\n`: pty đọc phím Enter, không đọc ký tự xuống dòng. */
+  it("runs every line, however the box wrote its newlines", () => {
+    expect(openingKeystrokes("cd ~/a\nnvm use\r\nnpm run dev")).toBe(
+      "cd ~/a\rnvm use\rnpm run dev\r",
+    );
+  });
+
+  it("drops blank lines and the spaces around each one", () => {
+    expect(openingKeystrokes("  cd ~/a  \n\n\n  ls  \n")).toBe("cd ~/a\rls\r");
+  });
+
+  /* Ô trống là chuyện thường tình, không phải một lệnh rỗng để gửi xuống. */
+  it("has nothing to send for an empty box", () => {
+    expect(openingKeystrokes(null)).toBeNull();
+    expect(openingKeystrokes("")).toBeNull();
+    expect(openingKeystrokes("   \n\n  ")).toBeNull();
   });
 });

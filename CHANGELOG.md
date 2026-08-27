@@ -43,6 +43,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
+- A saved SSH host can carry the commands to run the moment you land — `cd ~/project-a/frontend`, `nvm use` — typed for you once the shell answers.
+- Ctrl/Cmd+click a link in the terminal to open it in your browser. http and https only.
 - The REST response Preview can run the page's own scripts — a switch beside it, off every time the pane is drawn.
 
 ### Fixed

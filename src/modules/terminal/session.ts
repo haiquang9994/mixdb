@@ -35,3 +35,21 @@ export function terminalBadgeMarks(
   if (ended) marks.push({ type: "ended" });
   return marks;
 }
+
+/**
+ * Ô *Chạy khi kết nối* biến thành đúng những phím sẽ được gõ hộ, hoặc `null` khi không có gì.
+ *
+ * `\r` chứ không phải `\n`, và một cái ở cuối dòng cuối: pty nhận phím Enter, và một lệnh không ai
+ * bấm Enter thì nằm đó chờ chứ không chạy. Dòng trống bị bỏ — trong ô nó là khoảng thở, xuống tới
+ * shell nó là một lần Enter thừa in thêm một dấu nhắc.
+ *
+ * Ở đây chứ không ở `TerminalView` vì nó thuần: cùng lý do `terminalTarget` ở đây.
+ */
+export function openingKeystrokes(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  return lines.length === 0 ? null : lines.map((line) => `${line}\r`).join("");
+}

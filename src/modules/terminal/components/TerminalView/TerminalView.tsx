@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import ContextMenu from "../../../../components/ContextMenu";
 import { copyText } from "../../../../core/clipboard";
 import { errorMessage } from "../../../../core/errors";
+import { MODIFIER_LABEL, hasPrimaryModifier } from "../../../../core/platform";
 import { isClaimed, pressOf, useShortcut } from "../../../../core/shortcuts";
 import { useTranslation } from "../../../../i18n";
 import {
@@ -17,6 +20,8 @@ import {
 import { readText } from "../../clipboard";
 import { useTerminalSettings, zoomTerminal } from "../../settingsStore";
 import { shellKeeps } from "../../keys";
+import { openableUrl } from "../../links";
+import { openingKeystrokes } from "../../session";
 import type { TerminalTarget } from "../../types";
 import SearchBar from "../SearchBar";
 import styles from "./TerminalView.module.css";
@@ -26,6 +31,9 @@ const RESIZE_DEBOUNCE = 100;
 
 interface Props {
   target: TerminalTarget;
+  /** Cái ô *Chạy khi kết nối* của host đã lưu đang giữ, hoặc `null`. Gõ hộ đúng một lần cho mỗi
+   *  phiên — kể cả phiên sinh ra từ nút Kết nối lại, vì đó cũng là một lần vào máy ấy. */
+  runOnConnect: string | null;
   /** Tab nằm sau vẫn mounted và vẫn nhận byte — cái này chỉ quyết định focus và lúc nào đo lại. */
   active: boolean;
   /** Phiên đã mở xong. Với SSH thì đây là lúc kết nối, xác thực và xin pty đều đã qua — vài giây
@@ -41,7 +49,16 @@ interface Props {
   onError: (message: string) => void;
 }
 
-function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, onError }: Props) {
+function TerminalView({
+  target,
+  runOnConnect,
+  active,
+  onOpened,
+  onExit,
+  onFailed,
+  onDismiss,
+  onError,
+}: Props) {
   const { t } = useTranslation();
   const settings = useTerminalSettings();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -81,6 +98,8 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
   onErrorRef.current = onError;
   const tRef = useRef(t);
   tRef.current = t;
+  const runOnConnectRef = useRef(runOnConnect);
+  runOnConnectRef.current = runOnConnect;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -102,6 +121,33 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
     term.loadAddon(fit);
     const search = new SearchAddon();
     term.loadAddon(search);
+    /* Địa chỉ trong màn hình mở bằng `Ctrl/Cmd+Click`, không phải bằng một cú bấm trơn: bấm trơn
+       trong terminal là đặt con trỏ và bắt đầu bôi đen, và một dòng log dài đầy đường dẫn sẽ trở
+       thành bãi mìn nếu mỗi cú chạm lại bật trình duyệt lên. `hasPrimaryModifier` chứ không phải
+       `ctrlKey || metaKey` — trên máy Mac thì `Ctrl+Click` là cú mở menu ngữ cảnh, và nó phải giữ
+       nguyên nghĩa ấy. Cái gì được mở thì `links.ts` trả lời. */
+    const links = new WebLinksAddon(
+      (event, uri) => {
+        if (!hasPrimaryModifier(event)) return;
+        const url = openableUrl(uri);
+        if (url === null) return;
+        void openUrl(url).catch((e) => onErrorRef.current(errorMessage(tRef.current, e)));
+      },
+      {
+        /* xterm gạch chân mọi thứ regex của nó nhặt được, kể cả cái sẽ không mở. Chú thích này là
+           chỗ duy nhất nói ra hai điều đó: phải giữ phím nào, và cái dưới con trỏ có mở được không. */
+        hover: (_event, text) => {
+          host.title =
+            openableUrl(text) === null
+              ? tRef.current("terminal.linkBlocked")
+              : tRef.current("terminal.followLink", { modifier: MODIFIER_LABEL });
+        },
+        leave: () => {
+          host.title = "";
+        },
+      },
+    );
+    term.loadAddon(links);
     /* Cửa duy nhất để lấy được một phím ra khỏi xterm. Nó đọc `keydown` trên textarea ẩn của chính
        nó và `stopPropagation` mọi `Ctrl`+chữ cái, nên listener của app ở `window` không bao giờ
        nghe thấy `Ctrl+W`. Trả `false` là xterm thoát ra *trước* khi `preventDefault`, và sự kiện
@@ -121,6 +167,11 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
     const id = crypto.randomUUID();
     sessionRef.current = id;
     let ended = false;
+    /* Lệnh mở màn đã gõ hộ chưa. Đợi byte đầu tiên chứ không gửi ngay lúc `openSession` trả về:
+       với SSH thì lúc ấy pty vừa được cấp và shell bên kia còn chưa in dấu nhắc, mà một dòng gõ
+       vào trước khi shell đọc stdin là một dòng có thể rơi mất — hoặc tệ hơn, rơi vào giữa banner
+       đăng nhập. Byte đầu tiên là lời nói đầu tiên của shell, và sau nó thì nó đang nghe. */
+    let greeted = false;
 
     const typed = term.onData((data) => {
       void writeSession(id, data).catch(() => {});
@@ -130,6 +181,12 @@ function TerminalView({ target, active, onOpened, onExit, onFailed, onDismiss, o
     void openSession(id, target, { cols: term.cols, rows: term.rows }, (message) => {
       if (message instanceof ArrayBuffer) {
         term.write(new Uint8Array(message));
+        if (!greeted) {
+          greeted = true;
+          const keys = openingKeystrokes(runOnConnectRef.current);
+          // Hỏng thì im lặng, đúng như mọi lần gõ khác: phiên vẫn mở, và người dùng gõ tiếp được.
+          if (keys) void writeSession(id, keys).catch(() => {});
+        }
         return;
       }
       ended = true;

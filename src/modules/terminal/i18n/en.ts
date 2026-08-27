@@ -83,6 +83,12 @@ const terminalEn = {
     menuPaste: "Paste",
     menuClear: "Clear the screen",
     menuSelectAll: "Select all",
+    followLink: "{{modifier}} + click to open this link",
+    linkBlocked: "Only http and https links open from here.",
+    runOnConnect: "Run on connect",
+    runOnConnectPlaceholder: "cd ~/project-a/frontend",
+    runOnConnectHint:
+      "Typed for you once the shell answers, one command per line. It is kept in plain text beside the host — not the place for a password.",
   },
   error: {
     terminalSpawnFailed: "Could not start the shell: {{message}}",

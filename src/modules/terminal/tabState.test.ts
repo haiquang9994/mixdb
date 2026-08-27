@@ -64,7 +64,20 @@ describe("tabStateFor", () => {
   });
 
   it("giữ id của host đã lưu, không giữ gì trong config", () => {
-    expect(tabStateFor({ kind: "ssh", config: CONFIG, hostId: "h-1" })).toEqual({
+    expect(
+      tabStateFor({ kind: "ssh", config: CONFIG, hostId: "h-1", runOnConnect: null }),
+    ).toEqual({
+      kind: "ssh",
+      hostId: "h-1",
+    });
+  });
+
+  /* Kể cả lệnh mở màn: nó thuộc về host trong `terminal-hosts.json`, và tab chỉ trỏ tới host. Chép
+     ra đây là để hai bản của cùng một thứ trôi khỏi nhau — sửa lệnh xong, tab cũ vẫn chạy lệnh cũ. */
+  it("không chép lệnh mở màn ra khỏi host", () => {
+    expect(
+      tabStateFor({ kind: "ssh", config: CONFIG, hostId: "h-1", runOnConnect: "cd ~/a" }),
+    ).toEqual({
       kind: "ssh",
       hostId: "h-1",
     });
@@ -72,6 +85,8 @@ describe("tabStateFor", () => {
 
   it("không nhớ gì về một phiên SSH gõ tay", () => {
     // Không có id để trỏ tới, và mật khẩu thì không được ghi ra — nên không ghi gì cả.
-    expect(tabStateFor({ kind: "ssh", config: CONFIG, hostId: null })).toBeUndefined();
+    expect(
+      tabStateFor({ kind: "ssh", config: CONFIG, hostId: null, runOnConnect: null }),
+    ).toBeUndefined();
   });
 });

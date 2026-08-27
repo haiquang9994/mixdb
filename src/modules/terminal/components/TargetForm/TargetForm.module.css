@@ -79,3 +79,12 @@
   align-items: center;
   gap: 8px;
 }
+
+/* Dòng chú thích dưới ô *Chạy khi kết nối*. Nhỏ và mờ: nó là điều đáng biết trước khi gõ vào ô,
+   không phải một phần của nhãn. */
+.hint {
+  margin: 0;
+  font-size: 0.85em;
+  line-height: 1.45;
+  opacity: 0.65;
+}
