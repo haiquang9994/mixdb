@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import Button from "../../../../components/Button";
 import Document from "../Document";
-import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import { PlusIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import { errorMessage } from "../../../../core/errors";
 import type { TypedDocument, TypedValue } from "../../mongo/bsonTypes";
 import styles from "./InsertDocumentsDialog.module.css";
+import Modal from "../../../../components/Modal";
 
 /** One document being composed. The data itself lives in the card — `seed` is only what the
  * card was mounted with, kept as the fallback for a draft that has yet to report anything. */
@@ -71,7 +70,6 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
   const [addingDraft, setAddingDraft] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  const { close, cls } = useDialogExit();
 
   /** Each card's working copy, as last reported. Held in a ref rather than in state: it changes
    * on every commit inside a card, and nothing in this dialog renders from it — only the submit
@@ -121,24 +119,6 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
     };
   }, []);
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      // `isUnhandledEscape` is where the first half of this used to be written out by hand: a
-      // value editor inside a card takes Escape and marks it handled, and the form is not what
-      // that press was aimed at.
-      if (!isUnhandledEscape(e)) return;
-      // Not while the insert is in flight: it would leave the user with no way to see how it went.
-      if (saving) return;
-      // A rename input takes Escape from its own field without marking it, so that one is still
-      // read off the target.
-      const target = e.target as HTMLElement | null;
-      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
-      close(onCancel);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close, onCancel, saving]);
-
   async function addDraft() {
     setAddingDraft(true);
     try {
@@ -181,59 +161,65 @@ function InsertDocumentsDialog({ collection, seedDocs, nextIds, onCancel, onSubm
 
   const busy = saving || preparing;
 
-  return createPortal(
-    <>
-      <div className={cls(styles.overlay)} onClick={saving ? undefined : () => close(onCancel)} />
-      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={collection}>
-        <div className={styles.header}>
-          <h3 className={styles.title}>
-            {t(cloning ? "insertDocuments.cloneTitle" : "insertDocuments.title", { collection })}
-          </h3>
-          <p className={styles.note}>{t("insertDocuments.idNote")}</p>
-          <p className={styles.note}>{t("insertDocuments.orderedNote")}</p>
-        </div>
+  return (
+    <Modal
+      label={collection}
+      onClose={onCancel}
+      locked={saving}
+      overlayClassName={styles.overlay}
+      className={styles.dialog}
+    >
+      {(close) => (
+        <>
+          <div className={styles.header}>
+            <h3 className={styles.title}>
+              {t(cloning ? "insertDocuments.cloneTitle" : "insertDocuments.title", { collection })}
+            </h3>
+            <p className={styles.note}>{t("insertDocuments.idNote")}</p>
+            <p className={styles.note}>{t("insertDocuments.orderedNote")}</p>
+          </div>
 
-        <div className={styles.list}>
-          {preparing && <p className="muted">{t("insertDocuments.preparing")}</p>}
-          {drafts.map((d, i) => (
-            <Document
-              key={d.key}
-              draft
-              doc={d.seed}
-              displayNumber={i + 1}
-              onChange={(doc) => docsRef.current.set(d.key, doc)}
-              // The last draft standing keeps no remove button: a form with nothing in it has
-              // nothing to insert, and Cancel is what closes it.
-              onRemove={drafts.length > 1 && !saving ? () => removeDraft(d.key) : undefined}
-            />
-          ))}
-        </div>
-
-        <div className={styles.toolbar}>
-          <Button size="small" onClick={() => void addDraft()} disabled={busy || addingDraft}>
-            <PlusIcon size={12} /> {t("insertDocuments.addDocument")}
-          </Button>
-        </div>
-
-        {errors.length > 0 && (
-          <div className={styles.errors} role="alert">
-            {errors.map((message, i) => (
-              <p key={i}>{message}</p>
+          <div className={styles.list}>
+            {preparing && <p className="muted">{t("insertDocuments.preparing")}</p>}
+            {drafts.map((d, i) => (
+              <Document
+                key={d.key}
+                draft
+                doc={d.seed}
+                displayNumber={i + 1}
+                onChange={(doc) => docsRef.current.set(d.key, doc)}
+                // The last draft standing keeps no remove button: a form with nothing in it has
+                // nothing to insert, and Cancel is what closes it.
+                onRemove={drafts.length > 1 && !saving ? () => removeDraft(d.key) : undefined}
+              />
             ))}
           </div>
-        )}
 
-        <div className={styles.actions}>
-          <Button size="large" onClick={() => close(onCancel)} disabled={saving}>
-            {t("common.cancel")}
-          </Button>
-          <Button size="large" variant="primary" onClick={() => void submit()} disabled={busy || drafts.length === 0}>
-            {saving ? t("insertDocuments.inserting") : t("insertDocuments.insert", { n: drafts.length })}
-          </Button>
-        </div>
-      </div>
-    </>,
-    document.body,
+          <div className={styles.toolbar}>
+            <Button size="small" onClick={() => void addDraft()} disabled={busy || addingDraft}>
+              <PlusIcon size={12} /> {t("insertDocuments.addDocument")}
+            </Button>
+          </div>
+
+          {errors.length > 0 && (
+            <div className={styles.errors} role="alert">
+              {errors.map((message, i) => (
+                <p key={i}>{message}</p>
+              ))}
+            </div>
+          )}
+
+          <div className={styles.actions}>
+            <Button size="large" onClick={() => close(onCancel)} disabled={saving}>
+              {t("common.cancel")}
+            </Button>
+            <Button size="large" variant="primary" onClick={() => void submit()} disabled={busy || drafts.length === 0}>
+              {saving ? t("insertDocuments.inserting") : t("insertDocuments.insert", { n: drafts.length })}
+            </Button>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }
 

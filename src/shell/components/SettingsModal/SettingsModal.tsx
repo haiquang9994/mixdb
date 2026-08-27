@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ComponentType } from "react";
 import type { AccentColor, ThemeMode } from "../../theme";
 import type { TranslationKey } from "../../../i18n";
@@ -7,11 +7,11 @@ import { CloseIcon, DownloadIcon, KeyboardIcon, PaletteIcon } from "../../../ico
 import { useTranslation } from "../../../i18n";
 import type { UpdateCheck } from "../../update";
 import { MODULES } from "../../registry";
-import { isUnhandledEscape, useDialogExit } from "../../../components/dialogMotion";
 import AppearanceSection from "./AppearanceSection";
 import ShortcutsSection from "./ShortcutsSection";
 import UpdateSection from "./UpdateSection";
 import styles from "./SettingsModal.module.css";
+import Modal from "../../../components/Modal";
 
 interface SettingsModalProps {
   theme: ThemeMode;
@@ -62,111 +62,108 @@ function SettingsModal({
   onClose,
 }: SettingsModalProps) {
   const { t } = useTranslation();
-  const { close, cls } = useDialogExit();
   /* Opened while an update is waiting, this dialog is almost always being opened *for* the update —
      the brand button's dot is what the user just clicked. */
   const [section, setSection] = useState<SectionId>(update.pending ? "update" : "appearance");
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (isUnhandledEscape(e)) close(onClose);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close, onClose]);
-
   return (
-    <>
-      <div className={cls(styles.overlay)} onClick={() => close(onClose)} />
-      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={t("settings.title")}>
-        <div className={styles.header}>
-          <h3 className={styles.title}>{t("settings.title")}</h3>
-          <button type="button" className={styles.close} onClick={() => close(onClose)} title={t("settings.close")}>
-            <CloseIcon />
-          </button>
-        </div>
-
-        <div className={styles.body}>
-          <div className={styles.nav} role="tablist" aria-orientation="vertical">
-            {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                id={`settings-tab-${id}`}
-                aria-selected={id === section}
-                aria-controls={`settings-panel-${id}`}
-                className={id === section ? `${styles.navItem} ${styles.navItemActive}` : styles.navItem}
-                onClick={() => setSection(id)}
-              >
-                <Icon size={15} />
-                <span className={styles.navLabel}>{t(labelKey)}</span>
-                {/* The same dot the brand button carries, so whichever of the two brought the user
-                    here, the thing waiting for them is marked the same way. */}
-                {id === "update" && update.pending && (
-                  <span
-                    className={styles.navDot}
-                    title={update.release ? t("update.available", { version: update.release.version }) : undefined}
-                  />
-                )}
-              </button>
-            ))}
+    <Modal
+      label={t("settings.title")}
+      onClose={onClose}
+      overlayClassName={styles.overlay}
+      className={styles.dialog}
+    >
+      {(close) => (
+        <>
+          <div className={styles.header}>
+            <h3 className={styles.title}>{t("settings.title")}</h3>
+            <button type="button" className={styles.close} onClick={() => close(onClose)} title={t("settings.close")}>
+              <CloseIcon />
+            </button>
           </div>
 
-          {/* Hidden rather than unmounted: a dump tool downloading under Database carries on when the user
-              goes to look at something else, and it has to still be there — with its bar where it
-              left it — when they come back. */}
-          <div
-            className={styles.panel}
-            role="tabpanel"
-            id="settings-panel-appearance"
-            aria-labelledby="settings-tab-appearance"
-            hidden={section !== "appearance"}
-          >
-            <AppearanceSection
-              theme={theme}
-              onThemeChange={onThemeChange}
-              accent={accent}
-              onAccentChange={onAccentChange}
-              glass={glass}
-              onGlassChange={onGlassChange}
-            />
+          <div className={styles.body}>
+            <div className={styles.nav} role="tablist" aria-orientation="vertical">
+              {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  id={`settings-tab-${id}`}
+                  aria-selected={id === section}
+                  aria-controls={`settings-panel-${id}`}
+                  className={id === section ? `${styles.navItem} ${styles.navItemActive}` : styles.navItem}
+                  onClick={() => setSection(id)}
+                >
+                  <Icon size={15} />
+                  <span className={styles.navLabel}>{t(labelKey)}</span>
+                  {/* The same dot the brand button carries, so whichever of the two brought the user
+                      here, the thing waiting for them is marked the same way. */}
+                  {id === "update" && update.pending && (
+                    <span
+                      className={styles.navDot}
+                      title={update.release ? t("update.available", { version: update.release.version }) : undefined}
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Hidden rather than unmounted: a dump tool downloading under Database carries on when the user
+                goes to look at something else, and it has to still be there — with its bar where it
+                left it — when they come back. */}
+            <div
+              className={styles.panel}
+              role="tabpanel"
+              id="settings-panel-appearance"
+              aria-labelledby="settings-tab-appearance"
+              hidden={section !== "appearance"}
+            >
+              <AppearanceSection
+                theme={theme}
+                onThemeChange={onThemeChange}
+                accent={accent}
+                onAccentChange={onAccentChange}
+                glass={glass}
+                onGlassChange={onGlassChange}
+              />
+            </div>
+            <div
+              className={styles.panel}
+              role="tabpanel"
+              id="settings-panel-shortcuts"
+              aria-labelledby="settings-tab-shortcuts"
+              hidden={section !== "shortcuts"}
+            >
+              <ShortcutsSection />
+            </div>
+            {MODULES.map((m) =>
+              m.settings ? (
+                <div
+                  key={m.id}
+                  className={styles.panel}
+                  role="tabpanel"
+                  id={`settings-panel-${m.id}`}
+                  aria-labelledby={`settings-tab-${m.id}`}
+                  hidden={section !== m.id}
+                >
+                  <m.settings.Section />
+                </div>
+              ) : null,
+            )}
+            <div
+              className={styles.panel}
+              role="tabpanel"
+              id="settings-panel-update"
+              aria-labelledby="settings-tab-update"
+              hidden={section !== "update"}
+            >
+              <UpdateSection update={update} />
+            </div>
           </div>
-          <div
-            className={styles.panel}
-            role="tabpanel"
-            id="settings-panel-shortcuts"
-            aria-labelledby="settings-tab-shortcuts"
-            hidden={section !== "shortcuts"}
-          >
-            <ShortcutsSection />
-          </div>
-          {MODULES.map((m) =>
-            m.settings ? (
-              <div
-                key={m.id}
-                className={styles.panel}
-                role="tabpanel"
-                id={`settings-panel-${m.id}`}
-                aria-labelledby={`settings-tab-${m.id}`}
-                hidden={section !== m.id}
-              >
-                <m.settings.Section />
-              </div>
-            ) : null,
-          )}
-          <div
-            className={styles.panel}
-            role="tabpanel"
-            id="settings-panel-update"
-            aria-labelledby="settings-tab-update"
-            hidden={section !== "update"}
-          >
-            <UpdateSection update={update} />
-          </div>
-        </div>
-      </div>
-    </>
+        </>
+      )}
+    </Modal>
   );
 }
 

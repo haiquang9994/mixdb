@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import Button from "../../../../components/Button";
 import CollationSelect from "../CollationSelect";
 import Input from "../../../../components/Input";
 import Select from "../../../../components/Select";
 import type { SelectOption } from "../../../../components/Select";
-import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import { useTranslation } from "../../../../i18n";
 import { errorMessage } from "../../../../core/errors";
 import type { SqlCollation, SqlColumnSpec, SqlStructureColumn } from "../../types";
 import type { SqlTypeSpec } from "../../sql/dialect";
 import { useSqlDialect } from "../../sql/context";
 import styles from "./ColumnDialog.module.css";
+import Modal from "../../../../components/Modal";
 
 /** What is known about a type name, or undefined for one the engine's list doesn't carry — a column
  * declared as something older, newer or more exotic than the app knows still has to be editable. */
@@ -198,22 +197,11 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
-  const { close, cls } = useDialogExit();
 
   useEffect(() => {
     nameRef.current?.focus();
     nameRef.current?.select();
   }, []);
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      // Not while the ALTER is in flight: closing then would leave the user with no way to see
-      // how it went.
-      if (isUnhandledEscape(e) && !saving) close(onCancel);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close, onCancel, saving]);
 
   function patch(changes: Partial<Draft>) {
     setDraft((prev) => ({ ...prev, ...changes }));
@@ -304,176 +292,182 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
     }
   }
 
-  return createPortal(
-    <>
-      <div className={cls(styles.overlay)} onClick={saving ? undefined : () => close(onCancel)} />
-      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={table}>
-        <h3 className={styles.title}>
-          {editing
-            ? t("columnDialog.editTitle", { column: column.name })
-            : t("columnDialog.addTitle", { table })}
-        </h3>
+  return (
+    <Modal
+      label={table}
+      onClose={onCancel}
+      locked={saving}
+      overlayClassName={styles.overlay}
+      className={styles.dialog}
+    >
+      {(close) => (
+        <>
+          <h3 className={styles.title}>
+            {editing
+              ? t("columnDialog.editTitle", { column: column.name })
+              : t("columnDialog.addTitle", { table })}
+          </h3>
 
-        <div className={styles.form}>
-          <label className={styles.field}>
-            {t("columnDialog.name")}
-            <Input
-              ref={nameRef}
-              size="normal"
-              value={draft.name}
-              disabled={saving}
-              onChange={(e) => patch({ name: e.target.value })}
-            />
-          </label>
-
-          <label className={styles.field}>
-            {t("columnDialog.type")}
-            <div className={styles.typeRow}>
-              <Select
-                value={draft.typeName}
-                size="normal"
-                className={styles.typeSelect}
-                placeholder={t("columnDialog.typePlaceholder")}
-                ariaLabel={t("columnDialog.type")}
-                disabled={saving}
-                searchable
-                options={typeOptions}
-                onChange={chooseType}
-              />
-              {/* What goes in the type's parentheses, kept beside it rather than typed into the
-                  name — the two are edited together, but only one of them is a choice. */}
-              <Input
-                size="normal"
-                className={styles.typeArg}
-                value={draft.typeArg}
-                placeholder={selectedType?.arg ?? ""}
-                aria-label={t("columnDialog.typeArg")}
-                // Closed for a type with no parentheses to put anything in, rather than hidden:
-                // the row keeps its shape as the type changes.
-                disabled={saving || selectedType?.arg === null}
-                onChange={(e) => patch({ typeArg: e.target.value })}
-              />
-            </div>
-          </label>
-
-          {/* PostgreSQL appends a column and has no statement that moves one, so there is nothing
-              to choose there. */}
-          {offers.columnPosition && (
+          <div className={styles.form}>
             <label className={styles.field}>
-              {t("columnDialog.position")}
-              <Select
-                value={draft.position}
+              {t("columnDialog.name")}
+              <Input
+                ref={nameRef}
                 size="normal"
-                options={positionOptions}
-                ariaLabel={t("columnDialog.position")}
+                value={draft.name}
                 disabled={saving}
-                searchable
-                onChange={(position) => patch({ position })}
+                onChange={(e) => patch({ name: e.target.value })}
               />
             </label>
-          )}
 
-          <label className={styles.field}>
-            {t("columnDialog.collation")}
-            <CollationSelect
-              value={draft.collation}
-              collations={collations}
-              placeholder={t("columnDialog.collationPlaceholder")}
-              ariaLabel={t("columnDialog.collation")}
-              disabled={saving}
-              onChange={(collation) => patch({ collation })}
-            />
-          </label>
-
-          <label className={`${styles.field} ${styles.fieldWide}`}>
-            {t("columnDialog.comment")}
-            <Input
-              size="normal"
-              value={draft.comment}
-              disabled={saving}
-              onChange={(e) => patch({ comment: e.target.value })}
-            />
-          </label>
-        </div>
-
-        <div className={styles.toggles}>
-          <label className={styles.toggle}>
-            <input
-              type="checkbox"
-              checked={draft.nullable}
-              disabled={saving}
-              onChange={(e) => patch({ nullable: e.target.checked })}
-            />
-            {t("columnDialog.nullable")}
-          </label>
-          {/* Shown for the types it means something to, and for a type the list doesn't carry that
-              already says it — dropping it there would change the column behind the user's back. */}
-          {offers.unsigned && (selectedType?.numeric || draft.unsigned) && (
-            <label className={styles.toggle}>
-              <input
-                type="checkbox"
-                checked={draft.unsigned}
-                disabled={saving}
-                onChange={(e) => patch({ unsigned: e.target.checked })}
-              />
-              {t("columnDialog.unsigned")}
+            <label className={styles.field}>
+              {t("columnDialog.type")}
+              <div className={styles.typeRow}>
+                <Select
+                  value={draft.typeName}
+                  size="normal"
+                  className={styles.typeSelect}
+                  placeholder={t("columnDialog.typePlaceholder")}
+                  ariaLabel={t("columnDialog.type")}
+                  disabled={saving}
+                  searchable
+                  options={typeOptions}
+                  onChange={chooseType}
+                />
+                {/* What goes in the type's parentheses, kept beside it rather than typed into the
+                    name — the two are edited together, but only one of them is a choice. */}
+                <Input
+                  size="normal"
+                  className={styles.typeArg}
+                  value={draft.typeArg}
+                  placeholder={selectedType?.arg ?? ""}
+                  aria-label={t("columnDialog.typeArg")}
+                  // Closed for a type with no parentheses to put anything in, rather than hidden:
+                  // the row keeps its shape as the type changes.
+                  disabled={saving || selectedType?.arg === null}
+                  onChange={(e) => patch({ typeArg: e.target.value })}
+                />
+              </div>
             </label>
-          )}
-          <label className={styles.toggle}>
-            <input
-              type="checkbox"
-              checked={draft.autoIncrement}
-              disabled={saving}
-              onChange={(e) => patch({ autoIncrement: e.target.checked })}
-            />
-            {t("columnDialog.autoIncrement")}
-          </label>
-          {/* A MySQL clause. The same effect on PostgreSQL is a trigger, which is not a property of
-              the column and so not this dialog's to offer. */}
-          {offers.onUpdateCurrentTimestamp && (
-            <label className={styles.toggle}>
-              <input
-                type="checkbox"
-                checked={draft.onUpdateCurrentTimestamp}
-                disabled={saving}
-                onChange={(e) => patch({ onUpdateCurrentTimestamp: e.target.checked })}
-              />
-              {t("columnDialog.onUpdate")}
-            </label>
-          )}
-        </div>
 
-        <div className={styles.defaultBlock}>
-          <label className={styles.toggle}>
-            <input
-              type="checkbox"
-              checked={draft.hasDefault}
-              disabled={saving}
-              onChange={(e) => patch({ hasDefault: e.target.checked })}
-            />
-            {t("columnDialog.hasDefault")}
-          </label>
-          {draft.hasDefault && (
-            <>
+            {/* PostgreSQL appends a column and has no statement that moves one, so there is nothing
+                to choose there. */}
+            {offers.columnPosition && (
+              <label className={styles.field}>
+                {t("columnDialog.position")}
+                <Select
+                  value={draft.position}
+                  size="normal"
+                  options={positionOptions}
+                  ariaLabel={t("columnDialog.position")}
+                  disabled={saving}
+                  searchable
+                  onChange={(position) => patch({ position })}
+                />
+              </label>
+            )}
+
+            <label className={styles.field}>
+              {t("columnDialog.collation")}
+              <CollationSelect
+                value={draft.collation}
+                collations={collations}
+                placeholder={t("columnDialog.collationPlaceholder")}
+                ariaLabel={t("columnDialog.collation")}
+                disabled={saving}
+                onChange={(collation) => patch({ collation })}
+              />
+            </label>
+
+            <label className={`${styles.field} ${styles.fieldWide}`}>
+              {t("columnDialog.comment")}
               <Input
                 size="normal"
-                className={styles.defaultInput}
-                value={draft.defaultValue}
-                aria-label={t("columnDialog.defaultValue")}
+                value={draft.comment}
                 disabled={saving}
-                onChange={(e) => patch({ defaultValue: e.target.value })}
+                onChange={(e) => patch({ comment: e.target.value })}
               />
+            </label>
+          </div>
+
+          <div className={styles.toggles}>
+            <label className={styles.toggle}>
+              <input
+                type="checkbox"
+                checked={draft.nullable}
+                disabled={saving}
+                onChange={(e) => patch({ nullable: e.target.checked })}
+              />
+              {t("columnDialog.nullable")}
+            </label>
+            {/* Shown for the types it means something to, and for a type the list doesn't carry that
+                already says it — dropping it there would change the column behind the user's back. */}
+            {offers.unsigned && (selectedType?.numeric || draft.unsigned) && (
               <label className={styles.toggle}>
                 <input
                   type="checkbox"
-                  checked={draft.defaultIsExpression}
+                  checked={draft.unsigned}
                   disabled={saving}
-                  onChange={(e) => patch({ defaultIsExpression: e.target.checked })}
+                  onChange={(e) => patch({ unsigned: e.target.checked })}
                 />
-                {t("columnDialog.defaultIsExpression")}
+                {t("columnDialog.unsigned")}
               </label>
-              <p className={styles.hint}>{t("columnDialog.defaultExpressionHint")}</p>
-            </>
+            )}
+            <label className={styles.toggle}>
+              <input
+                type="checkbox"
+                checked={draft.autoIncrement}
+                disabled={saving}
+                onChange={(e) => patch({ autoIncrement: e.target.checked })}
+              />
+              {t("columnDialog.autoIncrement")}
+            </label>
+            {/* A MySQL clause. The same effect on PostgreSQL is a trigger, which is not a property of
+                the column and so not this dialog's to offer. */}
+            {offers.onUpdateCurrentTimestamp && (
+              <label className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  checked={draft.onUpdateCurrentTimestamp}
+                  disabled={saving}
+                  onChange={(e) => patch({ onUpdateCurrentTimestamp: e.target.checked })}
+                />
+                {t("columnDialog.onUpdate")}
+              </label>
+            )}
+          </div>
+
+          <div className={styles.defaultBlock}>
+            <label className={styles.toggle}>
+              <input
+                type="checkbox"
+                checked={draft.hasDefault}
+                disabled={saving}
+                onChange={(e) => patch({ hasDefault: e.target.checked })}
+              />
+              {t("columnDialog.hasDefault")}
+            </label>
+            {draft.hasDefault && (
+              <>
+                <Input
+                  size="normal"
+                  className={styles.defaultInput}
+                  value={draft.defaultValue}
+                  aria-label={t("columnDialog.defaultValue")}
+                  disabled={saving}
+                  onChange={(e) => patch({ defaultValue: e.target.value })}
+                />
+                <label className={styles.toggle}>
+                  <input
+                    type="checkbox"
+                    checked={draft.defaultIsExpression}
+                    disabled={saving}
+                    onChange={(e) => patch({ defaultIsExpression: e.target.checked })}
+                  />
+                  {t("columnDialog.defaultIsExpression")}
+                </label>
+                <p className={styles.hint}>{t("columnDialog.defaultExpressionHint")}</p>
+        </>
           )}
         </div>
 
@@ -495,9 +489,9 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
               : t(editing ? "columnDialog.submitEdit" : "columnDialog.submitAdd")}
           </Button>
         </div>
-      </div>
-    </>,
-    document.body,
+        </>
+      )}
+    </Modal>
   );
 }
 

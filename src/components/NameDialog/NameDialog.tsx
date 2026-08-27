@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import Button from "../Button";
 import Input from "../Input";
-import { isUnhandledEscape, useDialogExit } from "../dialogMotion";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../core/errors";
 import styles from "./NameDialog.module.css";
+import Modal from "../Modal";
 
 interface Props {
   title: string;
@@ -55,22 +54,11 @@ function NameDialog({
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
-  const { close, cls } = useDialogExit();
 
   useEffect(() => {
     nameRef.current?.focus();
     nameRef.current?.select();
   }, []);
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      // Not while the request is in flight: closing then would leave the user with no way to see
-      // how it went.
-      if (isUnhandledEscape(e) && !saving) close(onCancel);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close, onCancel, saving]);
 
   async function submit() {
     const trimmed = name.trim();
@@ -89,50 +77,56 @@ function NameDialog({
     }
   }
 
-  return createPortal(
-    <>
-      <div className={cls(styles.overlay)} onClick={saving ? undefined : () => close(onCancel)} />
-      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={ariaLabel}>
-        <h3 className={styles.title}>{title}</h3>
+  return (
+    <Modal
+      label={ariaLabel}
+      onClose={onCancel}
+      locked={saving}
+      overlayClassName={styles.overlay}
+      className={styles.dialog}
+    >
+      {(close) => (
+        <>
+          <h3 className={styles.title}>{title}</h3>
 
-        <div className={styles.form}>
-          <label className={styles.field}>
-            {label}
-            <Input
-              ref={nameRef}
-              size="normal"
-              value={name}
-              disabled={saving}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !saving) void submit();
-              }}
-            />
-          </label>
-          {extraFields?.(saving)}
-        </div>
-
-        {hint !== undefined && <p className={styles.hint}>{hint}</p>}
-
-        {errors.length > 0 && (
-          <div className={styles.errors} role="alert">
-            {errors.map((message, i) => (
-              <p key={i}>{message}</p>
-            ))}
+          <div className={styles.form}>
+            <label className={styles.field}>
+              {label}
+              <Input
+                ref={nameRef}
+                size="normal"
+                value={name}
+                disabled={saving}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !saving) void submit();
+                }}
+              />
+            </label>
+            {extraFields?.(saving)}
           </div>
-        )}
 
-        <div className={styles.actions}>
-          <Button size="large" onClick={() => close(onCancel)} disabled={saving}>
-            {t("common.cancel")}
-          </Button>
-          <Button size="large" variant="primary" onClick={() => void submit()} disabled={saving}>
-            {saving ? savingLabel : submitLabel}
-          </Button>
-        </div>
-      </div>
-    </>,
-    document.body,
+          {hint !== undefined && <p className={styles.hint}>{hint}</p>}
+
+          {errors.length > 0 && (
+            <div className={styles.errors} role="alert">
+              {errors.map((message, i) => (
+                <p key={i}>{message}</p>
+              ))}
+            </div>
+          )}
+
+          <div className={styles.actions}>
+            <Button size="large" onClick={() => close(onCancel)} disabled={saving}>
+              {t("common.cancel")}
+            </Button>
+            <Button size="large" variant="primary" onClick={() => void submit()} disabled={saving}>
+              {saving ? savingLabel : submitLabel}
+            </Button>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }
 

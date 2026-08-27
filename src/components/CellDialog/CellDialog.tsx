@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { useMemo, useState } from "react";
 import { CloseIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
 import Button from "../Button";
 import JsonView from "../JsonView";
-import { isUnhandledEscape, useDialogExit } from "../dialogMotion";
 import { copyText } from "../../core/clipboard";
 import { displayValue } from "../../core/virtualRows";
 import { errorMessage } from "../../core/errors";
 import styles from "./CellDialog.module.css";
+import Modal from "../Modal";
 
 interface Props {
   /** The column the cell is in, for the heading. */
@@ -57,7 +56,6 @@ function asJson(value: unknown): unknown | null {
  */
 function CellDialog({ column, rowNumber, value, onClose }: Props) {
   const { t } = useTranslation();
-  const { close, cls } = useDialogExit();
   const [failed, setFailed] = useState("");
   const json = useMemo(() => asJson(value), [value]);
   /** What the copy button puts on the clipboard: the text on screen, whichever of the two it is. */
@@ -66,58 +64,55 @@ function CellDialog({ column, rowNumber, value, onClose }: Props) {
     [json, value]
   );
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (isUnhandledEscape(e)) close(onClose);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close, onClose]);
-
   const title = rowNumber === null ? column : t("cellDialog.title", { column, n: rowNumber });
 
-  return createPortal(
-    <>
-      <div className={cls(styles.overlay)} onClick={() => close(onClose)} />
-      <div className={cls(styles.dialog)} role="dialog" aria-modal="true" aria-label={title}>
-        <div className={styles.header}>
-          <h3 className={styles.title}>{title}</h3>
-          <button
-            type="button"
-            className={styles.close}
-            onClick={() => close(onClose)}
-            title={t("common.close")}
-            aria-label={t("common.close")}
-          >
-            <CloseIcon />
-          </button>
-        </div>
+  return (
+    <Modal
+      label={title}
+      onClose={onClose}
+      overlayClassName={styles.overlay}
+      className={styles.dialog}
+    >
+      {(close) => (
+        <>
+          <div className={styles.header}>
+            <h3 className={styles.title}>{title}</h3>
+            <button
+              type="button"
+              className={styles.close}
+              onClick={() => close(onClose)}
+              title={t("common.close")}
+              aria-label={t("common.close")}
+            >
+              <CloseIcon />
+            </button>
+          </div>
 
-        <div className={styles.body}>
-          {json === null ? <pre className={styles.text}>{text}</pre> : <JsonView value={json} />}
-        </div>
+          <div className={styles.body}>
+            {json === null ? <pre className={styles.text}>{text}</pre> : <JsonView value={json} />}
+          </div>
 
-        {failed !== "" && (
-          <p className={styles.failed} role="alert">
-            {failed}
-          </p>
-        )}
+          {failed !== "" && (
+            <p className={styles.failed} role="alert">
+              {failed}
+            </p>
+          )}
 
-        <div className={styles.actions}>
-          <Button
-            size="large"
-            onClick={() => {
-              void copyText(text)
-                .then(() => setFailed(""))
-                .catch((e) => setFailed(errorMessage(t, e)));
-            }}
-          >
-            {t("cellDialog.copy")}
-          </Button>
-        </div>
-      </div>
-    </>,
-    document.body
+          <div className={styles.actions}>
+            <Button
+              size="large"
+              onClick={() => {
+                void copyText(text)
+                  .then(() => setFailed(""))
+                  .catch((e) => setFailed(errorMessage(t, e)));
+              }}
+            >
+              {t("cellDialog.copy")}
+            </Button>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }
 

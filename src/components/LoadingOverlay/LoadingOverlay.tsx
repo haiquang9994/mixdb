@@ -17,7 +17,9 @@ function LoadingOverlay({ label }: Props) {
   const { t } = useTranslation();
 
   return (
-    <div className={styles.overlay}>
+    /* `status` and not `alert`: work being done is worth saying, but not worth cutting into
+       whatever is being read at the time. */
+    <div className={styles.overlay} role="status">
       <span className={`${styles.label} glass-pill`}>
         {/* Decoration on a line that already says what is happening, so it is hidden rather than
             described a second time. */}

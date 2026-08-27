@@ -24,7 +24,11 @@ function ErrorBanner({ message, onDismiss }: Props) {
   }, [message]);
 
   return (
-    <p className={styles.banner}>
+    /* `alert` and not `status`: an error is interrupting work that was expected to succeed, so a
+       screen reader should say so at once rather than waiting for a pause. The banner appears in
+       response to something the user did and is dismissible, which is what keeps that from being
+       rude. */
+    <p className={styles.banner} role="alert">
       {message}
       <button type="button" className={styles.dismiss} aria-label={t("errorBanner.dismiss")} onClick={onDismiss}>
         <CloseIcon />

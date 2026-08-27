@@ -1,9 +1,7 @@
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
 import Button from "../../../../components/Button";
 import ConfirmDialog from "../../../../components/ConfirmDialog";
 import Input from "../../../../components/Input";
-import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import { CloseIcon, EyeIcon, EyeOffIcon, PlusIcon, TrashIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import { useDraftFocus } from "../../draftFocus";
@@ -16,6 +14,7 @@ import {
   useEnvironments,
 } from "../../environmentsStore";
 import styles from "./EnvironmentDialog.module.css";
+import Modal from "../../../../components/Modal";
 
 interface Props {
   /** Which environment to open on — the one the tab strip was showing. */
@@ -44,7 +43,6 @@ function EnvironmentDialog({ initialId, onClose }: Props) {
   /** Which value boxes have been asked to show themselves, by row. Held by position: a variable
    *  has no id of its own, and rows are only ever added at the foot or taken out. */
   const [revealed, setRevealed] = useState<number[]>([]);
-  const { close, cls } = useDialogExit();
   const { bind, owe } = useDraftFocus();
 
   /* The first environment when nothing is chosen, so the right-hand side is never empty while
@@ -56,15 +54,6 @@ function EnvironmentDialog({ initialId, onClose }: Props) {
     void flushEnvironments();
     onClose();
   }
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      // Not while the confirm is up: that dialog owns Escape, and it answers it itself.
-      if (isUnhandledEscape(e) && !confirmDelete) close(done);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close, confirmDelete, onClose]);
 
   function pick(id: string | null) {
     setChosenId(id);
@@ -88,169 +77,173 @@ function EnvironmentDialog({ initialId, onClose }: Props) {
     edit({ vars: [...chosen.vars, { ...newVar(), [column]: text }] });
   }
 
-  return createPortal(
+  return (
     <>
-      <div className={cls(styles.overlay)} onClick={() => close(done)} />
-      <div
-        className={cls(styles.dialog)}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("rest.envDialogTitle")}
+      <Modal
+        label={t("rest.envDialogTitle")}
+        onClose={done}
+        overlayClassName={styles.overlay}
+        className={styles.dialog}
       >
-        <div className={styles.header}>
-          <h3 className={styles.title}>{t("rest.envDialogTitle")}</h3>
-          <button
-            type="button"
-            className={styles.headerClose}
-            onClick={() => close(done)}
-            title={t("common.close")}
-            aria-label={t("common.close")}
-          >
-            <CloseIcon />
-          </button>
-        </div>
-
-        <div className={styles.body}>
-          <div className={styles.list}>
-            {environments.map((env) => (
-              <button
-                key={env.id}
-                type="button"
-                className={`${styles.item}${env.id === chosen?.id ? ` ${styles.itemActive}` : ""}`}
-                onClick={() => pick(env.id)}
-              >
-                {env.name}
-              </button>
-            ))}
-            {environments.length === 0 && (
-              <p className={`${styles.empty} muted`}>{t("rest.envEmpty")}</p>
-            )}
-            <Button
-              size="small"
-              className={styles.add}
-              onClick={() => pick(createEnvironment(t("rest.envDefaultName")).id)}
+        {(close) => (
+          <>
+          <div className={styles.header}>
+            <h3 className={styles.title}>{t("rest.envDialogTitle")}</h3>
+            <button
+              type="button"
+              className={styles.headerClose}
+              onClick={() => close(done)}
+              title={t("common.close")}
+              aria-label={t("common.close")}
             >
-              <PlusIcon size="1em" />
-              {t("rest.envNew")}
-            </Button>
+              <CloseIcon />
+            </button>
           </div>
 
-          <div className={styles.detail}>
-            {chosen === null ? (
-              <p className={`${styles.empty} muted`}>{t("rest.envNonePicked")}</p>
-            ) : (
-              <>
-                <div className={styles.nameRow}>
-                  <span className={styles.label}>{t("rest.envNameLabel")}</span>
-                  <Input
-                    className={styles.name}
-                    size="small"
-                    value={chosen.name}
-                    aria-label={t("rest.envNameLabel")}
-                    onChange={(e) => edit({ name: e.target.value })}
-                  />
-                  <button
-                    type="button"
-                    className={styles.delete}
-                    onClick={() => setConfirmDelete(true)}
-                    aria-label={t("rest.envDelete")}
-                    title={t("rest.envDelete")}
-                  >
-                    <TrashIcon size="0.9em" />
-                  </button>
-                </div>
+          <div className={styles.body}>
+            <div className={styles.list}>
+              {environments.map((env) => (
+                <button
+                  key={env.id}
+                  type="button"
+                  className={`${styles.item}${env.id === chosen?.id ? ` ${styles.itemActive}` : ""}`}
+                  onClick={() => pick(env.id)}
+                >
+                  {env.name}
+                </button>
+              ))}
+              {environments.length === 0 && (
+                <p className={`${styles.empty} muted`}>{t("rest.envEmpty")}</p>
+              )}
+              <Button
+                size="small"
+                className={styles.add}
+                onClick={() => pick(createEnvironment(t("rest.envDefaultName")).id)}
+              >
+                <PlusIcon size="1em" />
+                {t("rest.envNew")}
+              </Button>
+            </div>
 
-                <div className={styles.table}>
-                  <div className={`${styles.row} ${styles.head}`}>
-                    <span>{t("rest.envVarName")}</span>
-                    <span>{t("rest.envVarValue")}</span>
-                    <span title={t("rest.envVarSecretHint")}>{t("rest.envVarSecret")}</span>
-                    <span />
+            <div className={styles.detail}>
+              {chosen === null ? (
+                <p className={`${styles.empty} muted`}>{t("rest.envNonePicked")}</p>
+              ) : (
+                <>
+                  <div className={styles.nameRow}>
+                    <span className={styles.label}>{t("rest.envNameLabel")}</span>
+                    <Input
+                      className={styles.name}
+                      size="small"
+                      value={chosen.name}
+                      aria-label={t("rest.envNameLabel")}
+                      onChange={(e) => edit({ name: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className={styles.delete}
+                      onClick={() => setConfirmDelete(true)}
+                      aria-label={t("rest.envDelete")}
+                      title={t("rest.envDelete")}
+                    >
+                      <TrashIcon size="0.9em" />
+                    </button>
                   </div>
-                  {chosen.vars.map((variable, index) => {
-                    const shown = !variable.secret || revealed.includes(index);
-                    return (
-                      <div key={index} className={styles.row}>
-                        <Input
-                          ref={bind(`${index}:name`)}
-                          size="small"
-                          value={variable.name}
-                          aria-label={t("rest.envVarName")}
-                          onChange={(e) => updateVar(index, { name: e.target.value })}
-                        />
-                        <div className={styles.value}>
+
+                  <div className={styles.table}>
+                    <div className={`${styles.row} ${styles.head}`}>
+                      <span>{t("rest.envVarName")}</span>
+                      <span>{t("rest.envVarValue")}</span>
+                      <span title={t("rest.envVarSecretHint")}>{t("rest.envVarSecret")}</span>
+                      <span />
+                    </div>
+                    {chosen.vars.map((variable, index) => {
+                      const shown = !variable.secret || revealed.includes(index);
+                      return (
+                        <div key={index} className={styles.row}>
                           <Input
-                            ref={bind(`${index}:value`)}
+                            ref={bind(`${index}:name`)}
                             size="small"
-                            type={shown ? "text" : "password"}
-                            value={variable.value}
-                            aria-label={t("rest.envVarValue")}
-                            onChange={(e) => updateVar(index, { value: e.target.value })}
+                            value={variable.name}
+                            aria-label={t("rest.envVarName")}
+                            onChange={(e) => updateVar(index, { name: e.target.value })}
                           />
-                          {variable.secret && (
-                            <button
-                              type="button"
-                              className={styles.reveal}
-                              aria-label={shown ? t("rest.hideValue") : t("rest.showValue")}
-                              title={shown ? t("rest.hideValue") : t("rest.showValue")}
-                              onClick={() =>
-                                setRevealed((prev) =>
-                                  shown ? prev.filter((i) => i !== index) : [...prev, index],
-                                )
-                              }
-                            >
-                              {shown ? <EyeOffIcon size="0.9em" /> : <EyeIcon size="0.9em" />}
-                            </button>
-                          )}
+                          <div className={styles.value}>
+                            <Input
+                              ref={bind(`${index}:value`)}
+                              size="small"
+                              type={shown ? "text" : "password"}
+                              value={variable.value}
+                              aria-label={t("rest.envVarValue")}
+                              onChange={(e) => updateVar(index, { value: e.target.value })}
+                            />
+                            {variable.secret && (
+                              <button
+                                type="button"
+                                className={styles.reveal}
+                                aria-label={shown ? t("rest.hideValue") : t("rest.showValue")}
+                                title={shown ? t("rest.hideValue") : t("rest.showValue")}
+                                onClick={() =>
+                                  setRevealed((prev) =>
+                                    shown ? prev.filter((i) => i !== index) : [...prev, index],
+                                  )
+                                }
+                              >
+                                {shown ? <EyeOffIcon size="0.9em" /> : <EyeIcon size="0.9em" />}
+                              </button>
+                            )}
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={variable.secret}
+                            aria-label={t("rest.envVarSecret")}
+                            title={t("rest.envVarSecretHint")}
+                            onChange={(e) => updateVar(index, { secret: e.target.checked })}
+                          />
+                          <button
+                            type="button"
+                            className={styles.remove}
+                            aria-label={t("rest.envRemoveVar")}
+                            title={t("rest.envRemoveVar")}
+                            onClick={() => {
+                              setRevealed([]);
+                              edit({ vars: chosen.vars.filter((_, i) => i !== index) });
+                            }}
+                          >
+                            <CloseIcon size="0.9em" />
+                          </button>
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={variable.secret}
-                          aria-label={t("rest.envVarSecret")}
-                          title={t("rest.envVarSecretHint")}
-                          onChange={(e) => updateVar(index, { secret: e.target.checked })}
-                        />
-                        <button
-                          type="button"
-                          className={styles.remove}
-                          aria-label={t("rest.envRemoveVar")}
-                          title={t("rest.envRemoveVar")}
-                          onClick={() => {
-                            setRevealed([]);
-                            edit({ vars: chosen.vars.filter((_, i) => i !== index) });
-                          }}
-                        >
-                          <CloseIcon size="0.9em" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {/* The empty row at the foot is not in the data: typing into it is what adds one,
-                      exactly as in the request tables. */}
-                  <div className={`${styles.row} ${styles.draft}`}>
-                    <Input
-                      size="small"
-                      value=""
-                      placeholder={t("rest.envAddVar")}
-                      aria-label={t("rest.envAddVar")}
-                      onChange={(e) => appendVar("name", e.target.value)}
-                    />
-                    <Input
-                      size="small"
-                      value=""
-                      aria-label={t("rest.envVarValue")}
-                      onChange={(e) => appendVar("value", e.target.value)}
-                    />
-                    <span />
-                    <span />
+                      );
+                    })}
+                    {/* The empty row at the foot is not in the data: typing into it is what adds one,
+                        exactly as in the request tables. */}
+                    <div className={`${styles.row} ${styles.draft}`}>
+                      <Input
+                        size="small"
+                        value=""
+                        placeholder={t("rest.envAddVar")}
+                        aria-label={t("rest.envAddVar")}
+                        onChange={(e) => appendVar("name", e.target.value)}
+                      />
+                      <Input
+                        size="small"
+                        value=""
+                        aria-label={t("rest.envVarValue")}
+                        onChange={(e) => appendVar("value", e.target.value)}
+                      />
+                      <span />
+                      <span />
+                    </div>
                   </div>
-                </div>
-              </>
+          </>
             )}
           </div>
         </div>
-      </div>
-
+          </>
+        )}
+      </Modal>
+      {/* Its own portal, and outside the dialog on purpose: a confirm over a dialog is a
+          second modal, not part of the first one's contents. */}
       {confirmDelete && chosen !== null && (
         <ConfirmDialog
           title={t("rest.envDeleteTitle")}
@@ -265,8 +258,7 @@ function EnvironmentDialog({ initialId, onClose }: Props) {
           onCancel={() => setConfirmDelete(false)}
         />
       )}
-    </>,
-    document.body,
+    </>
   );
 }
 

@@ -43,6 +43,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- Enter no longer confirms a dialog that deletes something; it now cancels, like Escape.
+- Tab now stays inside an open dialog, and focus returns where it was when the dialog closes.
+- A right-click menu can now be walked with the arrow keys.
+- Errors and loading notices are now announced by screen readers.
 - An error raised after you switch language now appears in the language you switched to.
 - Loading a Mongo or Redis connection and then switching the form to MySQL no longer ticks TLS by itself.
 - A request timeout of 0 now means no limit, instead of failing the request instantly.

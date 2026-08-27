@@ -1,7 +1,8 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { enterModal } from "../core/shortcuts";
 import { useContextMenuPosition } from "./contextMenuPosition";
+import { nextFocusIndex } from "./Modal";
 
 interface Props {
   /** Where the pointer was when the menu was asked for, in client coordinates. */
@@ -32,6 +33,55 @@ function ContextMenu({ x, y, onClose, children }: Props) {
   /* An open menu is about to act on a selection, so it holds the keyboard the same way a dialog
      does — which is what lets the grid stop keeping its own `menu !== null` guard for `Ctrl+A`. */
   useEffect(() => enterModal(), []);
+
+  /**
+   * The entries say what they are, and the menu can be walked with the arrow keys.
+   *
+   * The roles are set on the elements rather than passed down as props because the entries are the
+   * caller's own JSX — plain `<button>`s, arriving through maps, fragments and conditionals — and
+   * there is no prop this component could add to all of them. A layout effect rather than a
+   * passive one, so nothing is ever painted without them.
+   */
+  useLayoutEffect(() => {
+    for (const item of entries()) item.setAttribute("role", "menuitem");
+  });
+
+  /** The entries, in the order they are drawn. Disabled ones are skipped: an entry that cannot be
+   *  chosen is not somewhere to stop on the way to one that can. */
+  function entries(): HTMLButtonElement[] {
+    return [...(ref.current?.querySelectorAll<HTMLButtonElement>("button:not([disabled])") ?? [])];
+  }
+
+  /* Focus goes on the menu itself, not on its first entry: the menu is usually opened by pointer,
+     and pre-selecting an entry in a menu full of destructive ones invites an Enter that was meant
+     for something else. An arrow key is what steps in — the same key that would in any menu. */
+  useEffect(() => {
+    const returnTo = document.activeElement as HTMLElement | null;
+    const menu = ref.current;
+    menu?.focus();
+    return () => {
+      /* Only when nothing else has taken the keyboard. A menu dismissed by a press somewhere else
+         has already handed focus to whatever was pressed, and taking it back would undo that;
+         asking whether the menu still holds it does not work, because by the time this runs the
+         menu is off the document and `activeElement` has fallen back to `<body>` either way. */
+      const now = document.activeElement;
+      if ((now === null || now === document.body) && returnTo?.isConnected) returnTo.focus();
+    };
+  }, [ref]);
+
+  function onMenuKeyDown(e: React.KeyboardEvent) {
+    const items = entries();
+    if (items.length === 0) return;
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number | null = null;
+    if (e.key === "ArrowDown") next = nextFocusIndex(items.length, current, false);
+    else if (e.key === "ArrowUp") next = nextFocusIndex(items.length, current, true);
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = items.length - 1;
+    if (next === null) return;
+    e.preventDefault();
+    items[next].focus();
+  }
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -70,7 +120,15 @@ function ContextMenu({ x, y, onClose, children }: Props) {
   }, [onClose, ref]);
 
   return createPortal(
-    <div className="context-menu glass" ref={ref} style={style}>
+    <div
+      className="context-menu glass"
+      ref={ref}
+      style={style}
+      role="menu"
+      /* Somewhere for focus to land without becoming a Tab stop of its own. */
+      tabIndex={-1}
+      onKeyDown={onMenuKeyDown}
+    >
       {children}
     </div>,
     document.body,

@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { useMemo, useState } from "react";
 import Button from "../../../../components/Button";
 import Input from "../../../../components/Input";
-import { isUnhandledEscape, useDialogExit } from "../../../../components/dialogMotion";
 import { CloseIcon, TrashIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import { decodeBase64 } from "../../api";
@@ -13,6 +11,7 @@ import { clearHistory, forgetEntry, useHistory } from "../../historyStore";
 import { findRequest } from "../../requests";
 import { useRequestLists } from "../../requestsStore";
 import styles from "./HistoryDialog.module.css";
+import Modal from "../../../../components/Modal";
 
 interface Props {
   /** Opens the request an entry was sent from. The dialog sees itself out on the way. */
@@ -49,15 +48,6 @@ function HistoryDialog({ onOpenRequest, onClose }: Props) {
   /** The entry whose delete button has been pressed once. Only ever one at a time, so the armed
    *  button is unmistakable. */
   const [confirmDrop, setConfirmDrop] = useState<string | null>(null);
-  const { close, cls } = useDialogExit();
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (isUnhandledEscape(e)) close(onClose);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close, onClose]);
 
   const shown = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -99,104 +89,104 @@ function HistoryDialog({ onOpenRequest, onClose }: Props) {
     );
   }
 
-  return createPortal(
-    <>
-      <div className={cls(styles.overlay)} onClick={() => close(onClose)} />
-      <div
-        className={cls(styles.dialog)}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("rest.historyTitle")}
-      >
-        <div className={styles.header}>
-          <h3 className={styles.title}>{t("rest.historyTitle")}</h3>
-          <button
-            type="button"
-            className={styles.headerClose}
-            onClick={() => close(onClose)}
-            title={t("common.close")}
-            aria-label={t("common.close")}
-          >
-            <CloseIcon />
-          </button>
-        </div>
+  return (
+    <Modal
+      label={t("rest.historyTitle")}
+      onClose={onClose}
+      overlayClassName={styles.overlay}
+      className={styles.dialog}
+    >
+      {(close) => (
+        <>
+          <div className={styles.header}>
+            <h3 className={styles.title}>{t("rest.historyTitle")}</h3>
+            <button
+              type="button"
+              className={styles.headerClose}
+              onClick={() => close(onClose)}
+              title={t("common.close")}
+              aria-label={t("common.close")}
+            >
+              <CloseIcon />
+            </button>
+          </div>
 
-        <div className={styles.tools}>
-          <Input
-            size="small"
-            value={filter}
-            placeholder={t("rest.historyFilter")}
-            aria-label={t("rest.historyFilter")}
-            onChange={(e) => setFilter(e.target.value)}
-            autoFocus
-          />
-          <Button
-            size="small"
-            disabled={history.length === 0}
-            onClick={() => {
-              setConfirmDrop(null);
-              if (confirmClear) {
-                clearHistory();
+          <div className={styles.tools}>
+            <Input
+              size="small"
+              value={filter}
+              placeholder={t("rest.historyFilter")}
+              aria-label={t("rest.historyFilter")}
+              onChange={(e) => setFilter(e.target.value)}
+              autoFocus
+            />
+            <Button
+              size="small"
+              disabled={history.length === 0}
+              onClick={() => {
+                setConfirmDrop(null);
+                if (confirmClear) {
+                  clearHistory();
+                  setConfirmClear(false);
+                  return;
+                }
+                setConfirmClear(true);
+              }}
+            >
+              <TrashIcon size="0.9em" />
+              {/* Two presses rather than a dialog on top of a dialog: the button says what it is
+                  about to do, and a click anywhere else takes the offer back. */}
+              {confirmClear ? t("rest.historyClearConfirm") : t("rest.historyClear")}
+            </Button>
+          </div>
+
+          {shown.length === 0 ? (
+            <p className={`${styles.note} muted`}>
+              {history.length === 0 ? t("rest.historyEmpty") : t("rest.historyNoMatch")}
+            </p>
+          ) : (
+            <ul
+              className={styles.list}
+              onMouseDown={() => {
                 setConfirmClear(false);
-                return;
-              }
-              setConfirmClear(true);
-            }}
-          >
-            <TrashIcon size="0.9em" />
-            {/* Two presses rather than a dialog on top of a dialog: the button says what it is
-                about to do, and a click anywhere else takes the offer back. */}
-            {confirmClear ? t("rest.historyClearConfirm") : t("rest.historyClear")}
-          </Button>
-        </div>
-
-        {shown.length === 0 ? (
-          <p className={`${styles.note} muted`}>
-            {history.length === 0 ? t("rest.historyEmpty") : t("rest.historyNoMatch")}
-          </p>
-        ) : (
-          <ul
-            className={styles.list}
-            onMouseDown={() => {
-              setConfirmClear(false);
-              setConfirmDrop(null);
-            }}
-          >
-            {shown.map((entry) => {
-              const open = entry.id === openId;
-              /* Looked up rather than remembered: nothing goes back through the file when a
-                 request is deleted, so this is where an entry finds out it has been orphaned. */
-              const source =
-                entry.requestId === null ? undefined : findRequest(lists, entry.requestId);
-              return (
-                <li key={entry.id} className={styles.item}>
-                  <div className={styles.row}>
-                    <button
-                      type="button"
-                      className={styles.entry}
-                      aria-expanded={open}
-                      title={entry.url}
-                      onClick={() => setOpenId(open ? null : entry.id)}
-                    >
-                      <span className={styles.line}>
-                        <span className={`${styles.method} rest-method rest-method-${entry.method}`}>
-                          {entry.method}
+                setConfirmDrop(null);
+              }}
+            >
+              {shown.map((entry) => {
+                const open = entry.id === openId;
+                /* Looked up rather than remembered: nothing goes back through the file when a
+                   request is deleted, so this is where an entry finds out it has been orphaned. */
+                const source =
+                  entry.requestId === null ? undefined : findRequest(lists, entry.requestId);
+                return (
+                  <li key={entry.id} className={styles.item}>
+                    <div className={styles.row}>
+                      <button
+                        type="button"
+                        className={styles.entry}
+                        aria-expanded={open}
+                        title={entry.url}
+                        onClick={() => setOpenId(open ? null : entry.id)}
+                      >
+                        <span className={styles.line}>
+                          <span className={`${styles.method} rest-method rest-method-${entry.method}`}>
+                            {entry.method}
+                          </span>
+                          <span className={styles.url}>{entry.url}</span>
                         </span>
-                        <span className={styles.url}>{entry.url}</span>
-                      </span>
-                      <span className={styles.meta}>
-                        <span>{when.format(entry.startedAt)}</span>
-                        {entry.envName !== "" && <span>{entry.envName}</span>}
-                        <span>{t("rest.duration", { ms: entry.durationMs })}</span>
-                        {entry.status === null ? (
-                          <span className={styles.failed}>{t("rest.historyFailed")}</span>
-                        ) : (
-                          <>
-                            <span className={statusClass(entry.status)}>
-                              {entry.status} {entry.statusText}
-                            </span>
-                            <span>{formatBytes(entry.size)}</span>
-                          </>
+                        <span className={styles.meta}>
+                          <span>{when.format(entry.startedAt)}</span>
+                          {entry.envName !== "" && <span>{entry.envName}</span>}
+                          <span>{t("rest.duration", { ms: entry.durationMs })}</span>
+                          {entry.status === null ? (
+                            <span className={styles.failed}>{t("rest.historyFailed")}</span>
+                          ) : (
+                            <>
+                              <span className={statusClass(entry.status)}>
+                                {entry.status} {entry.statusText}
+                              </span>
+                              <span>{formatBytes(entry.size)}</span>
+        </>
                         )}
                       </span>
                     </button>
@@ -254,9 +244,9 @@ function HistoryDialog({ onOpenRequest, onClose }: Props) {
             })}
           </ul>
         )}
-      </div>
-    </>,
-    document.body,
+        </>
+      )}
+    </Modal>
   );
 }
 
