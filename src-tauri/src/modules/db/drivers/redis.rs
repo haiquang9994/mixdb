@@ -1,3 +1,4 @@
+use crate::modules::db::models::{ServerInfo};
 use crate::error::AppError;
 use redis::aio::ConnectionManager;
 use redis::Value as RedisValue;
@@ -123,13 +124,6 @@ fn redis_value_to_json(value: RedisValue) -> Value {
 /// arrives as replacement characters rather than failing the whole read.
 fn to_text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).to_string()
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ServerInfo {
-    pub version: String,
-    pub os: String,
 }
 
 /// Reads what the header shows about the server, off `INFO server` — a section every Redis

@@ -1,5 +1,6 @@
 //! Every Redis command.
 
+use crate::modules::db::models::ServerInfo;
 use crate::error::AppError;
 use tauri::State;
 use serde_json::Value;
@@ -22,7 +23,7 @@ pub async fn redis_command(
 pub async fn redis_server_info(
     state: State<'_, DbState>,
     id: String,
-) -> Result<redis_db::ServerInfo, AppError> {
+) -> Result<ServerInfo, AppError> {
     let conn = redis_connection(&state, &id).await?;
     let mut conn = conn.lock().await;
     redis_db::server_info(conn.commands()).await

@@ -8,7 +8,8 @@
 //! * A table is named by [`qualify`]/[`resolve`] rather than by a bare name, because PostgreSQL
 //!   puts schemas between the database and its tables and two schemas may hold the same name.
 
-use super::filters::split_list;
+use crate::modules::db::models::{ServerInfo};
+use super::filters::{escape_like, split_list};
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -273,13 +274,6 @@ pub async fn query(
     Ok(rows.iter().map(row_to_json).collect())
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ServerInfo {
-    pub version: String,
-    pub os: String,
-}
-
 /// What the header shows about the server. `version()` is one sentence carrying both halves —
 /// "PostgreSQL 16.2 on x86_64-pc-linux-gnu, compiled by gcc..." — so the number comes from
 /// `server_version`, which is only the number, and the machine is cut out of the sentence.
@@ -428,15 +422,6 @@ pub struct Filter {
     pub operator: String,
     #[serde(default)]
     pub value: Option<String>,
-}
-
-/// Escapes the wildcards out of text about to be pasted into a LIKE pattern, so a value with a `%`
-/// or `_` in it is matched as itself.
-fn escape_like(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
 }
 
 /// Turns the filter rows into a WHERE clause and the values to bind into it, in order.

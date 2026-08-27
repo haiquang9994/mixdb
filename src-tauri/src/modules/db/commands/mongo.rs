@@ -1,5 +1,6 @@
 //! Every MongoDB command.
 
+use crate::modules::db::models::{ServerInfo};
 use crate::error::AppError;
 use tauri::{AppHandle, State};
 use serde_json::Value;
@@ -91,7 +92,7 @@ pub async fn mongo_list_databases(state: State<'_, DbState>, id: String) -> Resu
 }
 
 #[tauri::command]
-pub async fn mongo_server_info(state: State<'_, DbState>, id: String) -> Result<mongo::ServerInfo, AppError> {
+pub async fn mongo_server_info(state: State<'_, DbState>, id: String) -> Result<ServerInfo, AppError> {
     let client = mongo_client(&state, &id).await?;
     mongo::server_info(&client).await
 }

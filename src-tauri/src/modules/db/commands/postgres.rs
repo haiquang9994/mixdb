@@ -4,6 +4,7 @@
 //! something different: there it names a database to reach into from the one connection, here it
 //! picks which pool the command runs on. See `postgres_pool`.
 
+use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::error::AppError;
 use tauri::{AppHandle, State};
 use serde_json::{Map, Value};
@@ -27,7 +28,7 @@ pub async fn postgres_list_databases(
 pub async fn postgres_server_info(
     state: State<'_, DbState>,
     id: String,
-) -> Result<postgres::ServerInfo, AppError> {
+) -> Result<ServerInfo, AppError> {
     retry_read!({
         let pool = postgres_pool(&state, &id, "").await?;
         postgres::server_info(&pool).await
@@ -166,7 +167,7 @@ pub async fn postgres_run_script(
     id: String,
     sql: String,
     database: Option<String>,
-) -> Result<Vec<postgres_script::StatementResult>, AppError> {
+) -> Result<Vec<StatementResult>, AppError> {
     let pool = postgres_pool(&state, &id, database.as_deref().unwrap_or("")).await?;
     let result = postgres_script::run(&pool, &sql, |pid| {
         state.running_queries.lock().unwrap().insert(id.clone(), pid);
@@ -185,7 +186,7 @@ pub async fn postgres_validate_sql(
     id: String,
     sql: String,
     database: Option<String>,
-) -> Result<Option<postgres_script::SqlProblem>, AppError> {
+) -> Result<Option<SqlProblem>, AppError> {
     let pool = postgres_pool(&state, &id, database.as_deref().unwrap_or("")).await?;
     postgres_script::validate(&pool, &sql).await
 }

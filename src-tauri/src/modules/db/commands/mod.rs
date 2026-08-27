@@ -6,12 +6,13 @@
 //! The drivers are reached through `drivers::` here rather than imported by name, because
 //! `pub mod mysql;` below and a `use ...drivers::mysql;` would be the same name in this one module.
 
+use crate::platform::{app_data_dir, in_background};
 use crate::error::AppError;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -447,25 +448,7 @@ async fn mongo_endpoint(
     Ok((uri, connection.endpoint.clone()))
 }
 
-/// Runs one of the command-line tools off the async runtime: they block for as long as the dump
-/// takes, which is not something an async worker should be spending itself on.
-async fn in_background<T, F>(work: F) -> Result<T, AppError>
-where
-    F: FnOnce() -> Result<T, AppError> + Send + 'static,
-    T: Send + 'static,
-{
-    tokio::task::spawn_blocking(work)
-        .await
-        .map_err(|e| err!("error.backgroundTaskFailed", message = e))?
-}
 
-/// Where MixDB keeps what it remembers between runs: the tools it downloaded, and the SSH host
-/// keys it has seen.
-fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
-    app.path()
-        .app_data_dir()
-        .map_err(|e| err!("error.noAppDataDir", message = e))
-}
 
 /// Where MixDB keeps the tools it downloaded for itself.
 fn tools_dir(app: &AppHandle) -> Result<PathBuf, AppError> {

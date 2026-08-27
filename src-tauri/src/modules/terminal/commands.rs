@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use crate::platform::app_data_dir;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -141,13 +141,6 @@ pub async fn terminal_close(id: String, state: State<'_, TerminalState>) -> Resu
     Ok(())
 }
 
-/// Nơi MixDB nhớ những gì nó thấy giữa các lần chạy. Ở đây chỉ cần một thứ trong đó:
-/// `known_hosts.json`, tức vân tay của mọi máy chủ SSH đã kết nối.
-fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
-    app.path()
-        .app_data_dir()
-        .map_err(|e| err!("error.noAppDataDir", message = e))
-}
 
 
 #[cfg(test)]

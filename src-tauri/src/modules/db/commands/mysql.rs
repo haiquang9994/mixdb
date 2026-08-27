@@ -1,6 +1,7 @@
 //! Every MySQL and MariaDB command. Which of the two answered is a property of the
 //! connection, read once when it was opened - see `drivers::mysql::detect_mariadb`.
 
+use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::error::AppError;
 use tauri::{AppHandle, State};
 use serde_json::{Map, Value};
@@ -29,7 +30,7 @@ pub async fn mysql_list_databases(state: State<'_, DbState>, id: String) -> Resu
 }
 
 #[tauri::command]
-pub async fn mysql_server_info(state: State<'_, DbState>, id: String) -> Result<mysql::ServerInfo, AppError> {
+pub async fn mysql_server_info(state: State<'_, DbState>, id: String) -> Result<ServerInfo, AppError> {
     retry_read!({
         let pool = mysql_pool(&state, &id).await?;
         mysql::server_info(&pool).await
@@ -390,7 +391,7 @@ pub async fn mysql_run_script(
     id: String,
     sql: String,
     database: Option<String>,
-) -> Result<Vec<mysql_script::StatementResult>, AppError> {
+) -> Result<Vec<StatementResult>, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     let result = mysql_script::run(&pool, &sql, database.as_deref(), |thread| {
         state
@@ -419,7 +420,7 @@ pub async fn mysql_validate_sql(
     id: String,
     sql: String,
     database: Option<String>,
-) -> Result<Option<mysql_script::SqlProblem>, AppError> {
+) -> Result<Option<SqlProblem>, AppError> {
     let pool = mysql_pool(&state, &id).await?;
     mysql_script::validate(&pool, &sql, database.as_deref()).await
 }

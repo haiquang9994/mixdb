@@ -1,5 +1,6 @@
+use crate::modules::db::models::{ServerInfo};
 use crate::error::AppError;
-use super::filters::split_list;
+use super::filters::{escape_like, split_list};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlRow, MySqlSslMode};
@@ -141,13 +142,6 @@ fn error_number(error: &sqlx::Error) -> u16 {
         .as_database_error()
         .and_then(|db| db.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>())
         .map_or(0, |e| e.number())
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ServerInfo {
-    pub version: String,
-    pub os: String,
 }
 
 /// Reads what the header shows about the server. The compile variables are the only place a
@@ -309,16 +303,6 @@ pub struct Filter {
     pub operator: String,
     #[serde(default)]
     pub value: Option<String>,
-}
-
-/// Escapes the wildcards out of text that is about to be pasted into a LIKE pattern, so a value
-/// with a `%` or `_` in it is matched as itself. Only for the operators that build the pattern
-/// (contains/starts with/ends with) — `like` hands the user's own pattern through untouched.
-fn escape_like(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
 }
 
 /// Turns the filter rows into a WHERE clause (leading space included, empty when nothing filters)

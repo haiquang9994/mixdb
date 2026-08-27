@@ -3,10 +3,10 @@
 //! comes back is one result per statement — a result set, a count of rows changed, or plain
 //! confirmation that the statement ran.
 
+use crate::modules::db::models::{SqlProblem, StatementResult};
 use crate::error::AppError;
 use super::mysql::{column_value, map_error, quote_ident};
 use futures_util::StreamExt;
-use serde::Serialize;
 use serde_json::Value;
 use sqlx::{Column, Either, MySqlPool, Row};
 use std::time::Instant;
@@ -26,33 +26,6 @@ struct Statement {
     /// The keyword it opens with, upper-cased. Empty for a run of nothing but comments, which is
     /// how such a run is recognised as not being a statement at all.
     verb: String,
-}
-
-/// What one statement produced.
-///
-/// Rows arrive as arrays rather than as objects keyed by column name: an arbitrary `SELECT` may
-/// well name the same column twice (`SELECT a.id, b.id ...`), and only a positional row can keep
-/// the two apart.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StatementResult {
-    /// The statement this came from, as the user wrote it.
-    pub statement: String,
-    pub verb: String,
-    /// How the result is to be read: `rows` for a result set, `affected` for a write that changed
-    /// rows, `ok` for a statement whose only outcome is that it succeeded.
-    pub kind: String,
-    pub columns: Vec<String>,
-    pub rows: Vec<Vec<Value>>,
-    /// Set when the result set was longer than {@link MAX_ROWS} and the rest was left unread.
-    pub truncated: bool,
-    pub rows_affected: u64,
-    /// The AUTO_INCREMENT value the statement generated, when it generated one.
-    pub last_insert_id: Option<u64>,
-    pub duration_ms: u64,
-    /// Why the statement failed. A failure stops the script, so at most the last result carries
-    /// one and there is nothing after it.
-    pub error: Option<String>,
 }
 
 /// Splits a script into the statements that are to be sent one at a time.
@@ -182,25 +155,6 @@ fn split_statements(sql: &str) -> Vec<Statement> {
 
     push(&mut statements, &mut current, &mut verb, &mut verb_done);
     statements
-}
-
-/// What the server made of a statement it was asked to parse but not to run.
-///
-/// Only ever produced by {@link validate}, which is why there is no "it was fine" variant: a
-/// statement the server accepted comes back as `None`.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SqlProblem {
-    /// The server's own words, untranslated — it is MySQL talking, and rewording it would only
-    /// make it harder to search for.
-    pub message: String,
-    /// MySQL's error number, e.g. 1064 for a syntax error. Zero when the failure carried none.
-    pub number: u16,
-    /// The 1-based line *within the statement* the server pointed at, when it pointed at one.
-    pub line: Option<u32>,
-    /// `error` for text the server cannot parse at all; `warning` for everything else, which is
-    /// anything that might only be wrong from where the check is standing — see {@link validate}.
-    pub severity: String,
 }
 
 /// The statement text could not be parsed. The one thing a checker can be sure is wrong.

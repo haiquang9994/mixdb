@@ -1,3 +1,4 @@
+use crate::modules::db::models::{ServerInfo};
 use crate::error::AppError;
 use super::filters::{split_list_parts, unquote, ListItem};
 use base64::Engine;
@@ -46,13 +47,6 @@ pub async fn connect(uri: &str, endpoint: Option<(String, u16)>) -> Result<Clien
         .await
         .map_err(|e| err!("error.mongo", message = e))?;
     Ok(client)
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ServerInfo {
-    pub version: String,
-    pub os: String,
 }
 
 /// Reads what the header shows about the server. `hostInfo` describes the machine the

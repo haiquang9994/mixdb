@@ -18,6 +18,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+
+use crate::platform::hide_console;
 use std::time::Duration;
 
 /// One program this module knows how to find.
@@ -535,12 +537,7 @@ impl Progress {
 fn helper(program: &str) -> Command {
     let mut command = Command::new(program);
     command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    hide_console(&mut command);
     command
 }
 

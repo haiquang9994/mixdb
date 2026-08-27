@@ -1,6 +1,7 @@
 //! The part of the grid's filter bar that reads the same whichever database is underneath: how
 //! the one text box a row gives an `IN`/`BETWEEN` operator is split into its items. Turning those
 //! items into a query is per-database — `build_where` in `mysql.rs`, `build_filter` in `mongo.rs`.
+//! What both SQL servers spell the same way is here too.
 
 /// One item of a split value, and whether it arrived in quotes. The quotes are what a caller that
 /// infers types from the text goes by: `123` is a number, `'123'` is that number spelled out.
@@ -89,9 +90,25 @@ pub fn unquote(raw: &str) -> Option<&str> {
     Some(&raw[first.len_utf8()..raw.len() - last.len_utf8()])
 }
 
+/// The wildcards out of a value going into a `LIKE`.
+///
+/// MySQL and PostgreSQL both take `\` as the escape character in a `LIKE` pattern unless told
+/// otherwise, so this is one function rather than two — the backslash first, or it would escape
+/// the escapes added after it.
+///
+/// A `contains` filter for `50%` must match the text `50%`, not "starts with 50". The user is
+/// filtering a column, not writing a pattern; the bar has no syntax for one and this is what keeps
+/// it that way.
+pub fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{split_list_parts, unquote};
+    use super::{escape_like, split_list_parts, unquote};
 
     fn texts(raw: &str) -> Vec<String> {
         split_list_parts(raw)
@@ -144,5 +161,25 @@ mod tests {
         assert_eq!(unquote("'x\""), None);
         assert_eq!(unquote("x"), None);
         assert_eq!(unquote("'"), None);
+    }
+
+    #[test]
+    fn like_wildcards_are_escaped_so_a_filter_is_not_a_pattern() {
+        // A `contains` filter for `50%` means the text `50%`, not "starts with 50".
+        assert_eq!(escape_like("50%"), r"50\%");
+        assert_eq!(escape_like("a_b"), r"a\_b");
+    }
+
+    #[test]
+    fn the_escape_character_is_escaped_first() {
+        // Backslash last would escape the escapes already added, and `\%` would come out as a
+        // literal backslash followed by a live wildcard.
+        assert_eq!(escape_like(r"a\b"), r"a\\b");
+        assert_eq!(escape_like(r"\%"), r"\\\%");
+    }
+
+    #[test]
+    fn text_with_no_wildcards_in_it_is_left_alone() {
+        assert_eq!(escape_like("plain text"), "plain text");
     }
 }

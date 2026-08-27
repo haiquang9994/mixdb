@@ -3,6 +3,7 @@
 mod error;
 
 mod modules;
+mod platform;
 mod secrets;
 mod ssh;
 

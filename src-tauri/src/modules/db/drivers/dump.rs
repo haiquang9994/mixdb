@@ -19,6 +19,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+use crate::platform::hide_console;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
@@ -287,12 +289,7 @@ fn run(
         .stdout(stdout.map_or_else(Stdio::null, Stdio::from))
         .stderr(Stdio::piped());
     // Without this a console window flashes up over the app for every tool run.
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    hide_console(&mut command);
 
     let mut child = command
         .spawn()
@@ -573,12 +570,7 @@ impl Tracker {
 fn is_mariadb_tool(tool: &Path) -> bool {
     let mut command = Command::new(tool);
     command.arg("--version").stdin(Stdio::null()).stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    hide_console(&mut command);
     command.output().is_ok_and(|out| {
         String::from_utf8_lossy(&out.stdout)
             .to_ascii_lowercase()

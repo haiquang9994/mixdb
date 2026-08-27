@@ -9,6 +9,7 @@
 //! One entry per connection rather than one per field: a connection's secrets are written and
 //! forgotten together, and a single JSON object is one prompt on the platforms that ask.
 
+use crate::platform::in_background;
 use crate::error::AppError;
 use keyring::Entry;
 use std::collections::HashMap;
@@ -56,20 +57,6 @@ pub fn delete(id: &str) -> Result<(), AppError> {
     }
 }
 
-/// Runs one credential-store call off the async runtime.
-///
-/// Its own rather than borrowed from a module's command file: every function above blocks, and on
-/// macOS opening the store may put a prompt on screen — which is not something to hold a runtime
-/// worker for. Nothing here may depend on a module, so the helper lives with what needs it.
-async fn in_background<T, F>(work: F) -> Result<T, AppError>
-where
-    F: FnOnce() -> Result<T, AppError> + Send + 'static,
-    T: Send + 'static,
-{
-    tokio::task::spawn_blocking(work)
-        .await
-        .map_err(|e| err!("error.backgroundTaskFailed", message = e))?
-}
 
 /// Writes a saved connection's secrets to the OS credential store, replacing what was there.
 #[tauri::command]

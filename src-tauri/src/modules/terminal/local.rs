@@ -1,3 +1,4 @@
+use crate::platform::hide_console;
 use std::path::PathBuf;
 
 use super::models::LocalShell;
@@ -109,18 +110,11 @@ fn detect_windows(found: &mut Vec<LocalShell>) {
 /// không phải lỗi để báo cho ai.
 #[cfg(windows)]
 fn wsl_distros() -> Vec<String> {
-    use std::os::windows::process::CommandExt;
-
-    /* Bản release không có console — `windows_subsystem = "windows"` — nên Windows cấp cho mọi
-       tiến trình con thuộc console subsystem một console mới, tức một cửa sổ đen thật. `wsl.exe`
-       chạy xong trong vài chục ms, và cái người dùng thấy khi mở tab terminal là một cửa sổ lạ
-       loé lên rồi tắt: trông y hệt một script đang chạy lén. */
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-    let output = match std::process::Command::new("wsl.exe")
-        .args(["-l", "-q"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
+    /* Không có cửa sổ console loé lên — `crate::platform::hide_console` giải thích tại sao, và là
+       nơi duy nhất cả app đặt cờ đó. */
+    let mut command = std::process::Command::new("wsl.exe");
+    command.args(["-l", "-q"]);
+    let output = match hide_console(&mut command).output()
     {
         Ok(output) if output.status.success() => output,
         _ => return Vec::new(),

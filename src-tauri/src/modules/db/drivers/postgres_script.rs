@@ -12,10 +12,10 @@
 //! * **Parse rather than PREPARE.** Checking a statement without running it is a protocol message
 //!   here, not a SQL statement, so the user's text is never interpolated into SQL to check it.
 
+use crate::modules::db::models::{SqlProblem, StatementResult};
 use super::postgres::{column_value, map_error};
 use crate::error::AppError;
 use futures_util::StreamExt;
-use serde::Serialize;
 use serde_json::Value;
 use sqlx::{Column, Either, Executor, PgPool, Row};
 use std::time::Instant;
@@ -28,26 +28,6 @@ struct Statement {
     text: String,
     /// The keyword it opens with, upper-cased. Empty for a run of nothing but comments.
     verb: String,
-}
-
-/// What one statement produced. The shape `mysql_script::StatementResult` has, since one results
-/// grid draws either.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StatementResult {
-    pub statement: String,
-    pub verb: String,
-    pub kind: String,
-    pub columns: Vec<String>,
-    pub rows: Vec<Vec<Value>>,
-    pub truncated: bool,
-    pub rows_affected: u64,
-    /// Always `None`. PostgreSQL has no per-statement generated key to report: a sequence is
-    /// asked for `currval()` by name, and an `INSERT` that wants its new row back says
-    /// `RETURNING`.
-    pub last_insert_id: Option<u64>,
-    pub duration_ms: u64,
-    pub error: Option<String>,
 }
 
 /// What may sit inside a PostgreSQL identifier after its first character — `$` included.
@@ -244,22 +224,6 @@ fn split_statements(sql: &str) -> Vec<Statement> {
 
     push(&mut statements, &mut current, &mut verb);
     statements
-}
-
-/// What the server made of a statement it was asked to parse but not to run.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SqlProblem {
-    /// The server's own words, untranslated.
-    pub message: String,
-    /// Always 0. PostgreSQL identifies an error by a five-character SQLSTATE rather than by a
-    /// number, and the frontend only ever shows this field for MySQL's benefit.
-    pub number: u16,
-    /// The 1-based line *within the statement* the server pointed at. PostgreSQL gives a character
-    /// offset instead of a line, so it is counted back into one here — the editor anchors its
-    /// squiggle by line, whichever server it is talking to.
-    pub line: Option<u32>,
-    pub severity: String,
 }
 
 /// The text could not be parsed. The one thing a checker can be sure is wrong.
