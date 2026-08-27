@@ -5,7 +5,7 @@ of the design is not what they catch — it is what they deliberately let past.
 
 ## The two
 
-**Instant, on the client.** [`src/mysql/lint.ts`](../../src/mysql/lint.ts) tokenises every statement
+**Instant, on the client.** [`src/modules/db/sql/lint.ts`](../../src/modules/db/sql/lint.ts) tokenises every statement
 on every pause in the typing and compares the names in it against the schema outline completion is
 already working from. It costs nothing and covers the whole script.
 

@@ -21,8 +21,8 @@ So the outline is affordable even on a large 5.7 schema, and splitting only star
 scripts of half a megabyte. The same read on MySQL 8.4.8 (port 3308) returns the same shape — only
 the type spellings differ (`int unsigned` against 5.7's `int(10) unsigned`).
 
-Today's editor is [QueryEditor.tsx](../../src/modules/db/components/QueryEditor/QueryEditor.tsx): a plain
-textarea with two behaviours — `Tab` inserts two spaces, `Ctrl+Enter` runs. No highlighting, no
+The editor as this was written was [QueryEditor.tsx](../../src/modules/db/components/QueryEditor/QueryEditor.tsx):
+a plain textarea with two behaviours — `Tab` inserts two spaces, `Ctrl+Enter` runs. No highlighting, no
 completion, no error checking. The backend side is already the strong half: `mysql_script::run`
 splits a script, runs it statement by statement on one connection, and `mysql_cancel_query` kills a
 statement in flight. Almost everything below is frontend work plus three new read-only commands.
@@ -76,7 +76,7 @@ names, data types, nullability, key flags, and the foreign keys pointing out of 
 [adding-a-command](../conventions/adding-a-command.md); it is read-only and cheap enough to fetch
 on first use of the tab.
 
-Frontend cache in `src/mysql/schemaCache.ts`, keyed by `connectionId + database`, shaped like
+Frontend cache in `src/modules/db/sql/schemaCache.ts`, keyed by `connectionId + database`, shaped like
 [savedConnectionsStore.ts](../../src/modules/db/savedConnectionsStore.ts) (external store + `useSyncExternalStore`)
 so several tabs share one copy. Invalidate when the workspace runs DDL or the user hits refresh.
 
@@ -84,7 +84,7 @@ so several tabs share one copy. Invalidate when the workspace runs DDL or the us
 
 Running the statement under the caret, and highlighting it, needs the same split the backend does.
 Port `split_statements` from
-[mysql_script.rs](../../src-tauri/src/modules/db/drivers/mysql_script.rs) to `src/mysql/statements.ts`, returning
+[mysql_script.rs](../../src-tauri/src/modules/db/drivers/mysql_script.rs) to `src/modules/db/sql/statements.ts`, returning
 `{ text, verb, from, to }` ranges rather than just text.
 
 > The two splitters must stay in sync. If the Rust one learns something (a `DELIMITER` directive,
@@ -134,7 +134,7 @@ and then it catches nothing at all.
 a statement can be a function without brackets, a unit in an `INTERVAL`, an alias written without
 `AS` — none of which `lint.ts` models. A qualified `alias.column` is checked unconditionally,
 because what the alias stands for is known exactly. See the reasoning in the header of
-[lint.ts](../../src/mysql/lint.ts).
+[lint.ts](../../src/modules/db/sql/lint.ts).
 
 *`TRUNCATE` was added to the unguarded-write confirmation.* It is the same danger as a `DELETE` with
 no `WHERE`, and saying which rows is not something it can do.
@@ -208,16 +208,17 @@ that from mattering.
   table would be a cost paid on every database opened, for a sentence in a dialog. `DROP` and a
   dropping `ALTER` were added to the same gate afterwards: it would be a strange dialog that stopped
   `DELETE FROM users` and waved `DROP TABLE users` through.
-- **Auto-LIMIT** (setting, default on): a bare `SELECT` with no `LIMIT` is run with `LIMIT 500`
-  appended, and the result says the limit was added. Backend already truncates at 1000 rows; this
-  saves the server the work rather than the client the memory.
+- **Auto-LIMIT** (setting, default on): a bare `SELECT` with no `LIMIT` is run with a `LIMIT`
+  appended, and the result says the limit was added. It saves the server the work rather than the
+  client the memory. *Shipped at 500 and since raised* — `AUTO_LIMIT` in `guard.ts` is `10_000`,
+  which is above what any grid shows and below what a browser tab minds holding.
 - **Read-only connections**: a flag on the saved connection that refuses any statement whose verb
   writes, before it is sent. **It governs the whole workspace, not the Query tab** — the sidebar's
   create/rename/drop, the database tools, row editing in the Data tab and every `ALTER` in the
   Structure tab are all closed by it. A flag that guarded one of the five would read as a promise
   about the connection and keep none of it.
 
-  All three of these read the statement's *tokens* ([guard.ts](../../src/mysql/guard.ts)), never a
+  All three of these read the statement's *tokens* ([guard.ts](../../src/modules/db/sql/guard.ts)), never a
   regular expression over its text — a `WHERE` inside a string or a comment is not a `WHERE`, and
   that is precisely the case a pattern would wave through. Two things learned by testing it: a
   statement opening with `WITH` has to be judged by what it leads into, since MySQL 8 lets a common
@@ -275,7 +276,7 @@ that from mattering.
   names against fifty is the trade the current list makes.
 - ~~**Ctrl+Click a table name**~~ **Shipped 2026-08-11**, into the Data tab: someone following a
   name out of a script wants rows, not column definitions. `onOpenTable` runs from
-  [MysqlWorkspace.tsx](../../src/mysql/MysqlWorkspace.tsx) down into `QueryEditor`, and only a
+  [SqlWorkspace.tsx](../../src/modules/db/sql/SqlWorkspace.tsx) down into `QueryEditor`, and only a
   *table* is ever a target — a column's own table is one hover away, and opening a tab for it would
   surprise whoever aimed at the column. Holding the modifier underlines what it would follow, which
   is what makes the feature findable at all; the underline needs the pointer to be over the word

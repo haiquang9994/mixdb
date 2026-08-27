@@ -60,7 +60,8 @@ src/                 React frontend
   modules/db/        The database module
     DbTab.tsx        Connection form -> connects -> renders one workspace
     sql/             The workspace every SQL engine shares, and the SqlApi/SqlDialect behind it
-    <db>/            Per-database code: Workspace.tsx, api.ts, filters.ts
+    mysql/ postgres/ What each SQL engine says for itself: api.ts, dialect.ts, columns.ts
+    mongo/ redis/    The two with a workspace of their own: <Kind>Workspace.tsx, api.ts
     components/      This module's own components
     i18n/            This module's own strings
     db.css  types.ts Its global styles; the types mirroring the Rust models

@@ -14,10 +14,12 @@ version being cut.
 npm run notes                        # the commits since the last tag, as a draft to edit down
 #    -> edit them into ## [Unreleased] in CHANGELOG.md
 
-# 2. The check. There is no test suite; this is it.
+# 2. The checks. `ci.yml` runs these on every push; this is the same set by hand.
+npm test                             # vitest
 npm run build                        # tsc + vite build
+(cd src-tauri && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked)
 
-# 3. The bump. Six files, and it refuses if ## [Unreleased] is empty.
+# 3. The bump. Seven files, and it refuses if ## [Unreleased] is empty.
 npm run set-version 0.0.4
 
 # 4. The push, then the tag. The tag is what starts the build.
@@ -65,7 +67,7 @@ git tag v0.0.4 && git push origin v0.0.4
 
 `set-version` also cuts `## [Unreleased]` into `## [0.0.4] - <today>` and opens a fresh empty one
 above it. It **refuses to bump** when `## [Unreleased]` is empty, before it has touched any of the
-other five files — a release whose notes nobody wrote is the thing this is all for. A version that
+other six files — a release whose notes nobody wrote is the thing this is all for. A version that
 genuinely has nothing to tell users passes `--no-notes`.
 
 The tag starts [`.github/workflows/release.yml`](../.github/workflows/release.yml), which builds on
@@ -170,7 +172,7 @@ nothing in the app has to change.
 
 ## How updating works
 
-Implemented in [`src/update.ts`](../src/update.ts), on top of Tauri's updater plugin. It:
+Implemented in [`src/shell/update.ts`](../src/shell/update.ts), on top of Tauri's updater plugin. It:
 
 - waits 6 seconds after launch so it does not land on top of the connection form;
 - GETs `https://github.com/haiquang9994/mixdb/releases/latest/download/latest.json` and compares

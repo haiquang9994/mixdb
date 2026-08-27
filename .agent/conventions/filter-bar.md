@@ -1,8 +1,9 @@
 # Filter bar
 
 The condition bar above a table (MySQL) or document list (Mongo) is split in two: the
-database-agnostic mechanics in `src/modules/db/filters.ts`, and one operator list per database in
-`src/<db>/filters.ts`.
+database-agnostic mechanics in `src/modules/db/filters.ts`, and one operator list per *kind* in
+`src/modules/db/sql/filters.ts` (MySQL and PostgreSQL share it, the way they share the workspace)
+and `src/modules/db/mongo/filters.ts`.
 
 ## The shared half — `src/modules/db/filters.ts`
 
@@ -21,11 +22,12 @@ database-agnostic mechanics in `src/modules/db/filters.ts`, and one operator lis
 dropdown offers them (comparisons, text matches, set/range, value-less last). Each `id` does triple
 duty, and adding an operator means touching all three:
 
-1. The frontend id in `src/<db>/filters.ts`.
+1. The frontend id in `sql/filters.ts` or `mongo/filters.ts`.
 2. Its label in **both** `en.ts` and `vi.ts` — under `sqlTable.op.*` for MySQL, `noSqlTable.op.*`
    for Mongo.
-3. The matching arm in the backend's WHERE builder — `build_where` in
-   `src-tauri/src/modules/db/drivers/mysql.rs`, with value splitting from `src-tauri/src/modules/db/drivers/filters.rs`.
+3. The matching arm in the backend's WHERE builder — `build_where`, which each SQL driver has its
+   own of (`drivers/mysql.rs` and `drivers/postgres.rs`, since the placeholders differ), with value
+   splitting shared from `src-tauri/src/modules/db/drivers/filters.rs`.
 
 An id present in the frontend list but missing from the backend match silently drops the condition;
 missing from the dictionaries it shows as the raw id.

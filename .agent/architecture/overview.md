@@ -71,11 +71,11 @@ it in `DbState.connections`.
 
 1. `connect_db(config)` — if `config.ssh` is set, `ssh::open_tunnel` first opens a local
    listener that forwards to the real host, and the driver is pointed at `127.0.0.1:<local_port>`
-   instead. All three kinds are wrapped in a 10s timeout.
-2. The resulting handle (`MySqlPool`, `mongodb::Client` or a `redis::Connection`) is stored in
-   `DbState.connections` under a new UUID, together with the `Tunnel`.
-3. Every later command takes that `id` and calls one of `commands::{mysql_pool, mongo_client,
-   redis_connection}` in `modules/db/commands/mod.rs`, which lock the map, **clone the handle out, and release the lock** before
+   instead. Every kind is wrapped in a 10s timeout.
+2. The resulting handle (`MySqlPool`, `PgPool`, `mongodb::Client` or a `redis::Connection`) is
+   stored in `DbState.connections` under a new UUID, together with the `Tunnel`.
+3. Every later command takes that `id` and calls one of `commands::{mysql_pool, postgres_pool,
+   mongo_client, redis_connection}` in `modules/db/commands/mod.rs`, which lock the map, **clone the handle out, and release the lock** before
    anything is run on it, erroring with `"Connection is not a … connection"` on a kind mismatch.
    Never hold `connections` across an `await` on a query: the map is one lock for the whole app,
    and a query awaited under it stops every other tab.
