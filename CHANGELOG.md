@@ -43,6 +43,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- One unreadable saved terminal target no longer empties the whole saved list for the session.
 - Switching database no longer leaves the previous one's tables, collections or error on screen.
 - Loading more keys in Redis after switching database no longer appends the old database's keys.
 - An error from a table you have already moved away from is no longer shown against the table now open.

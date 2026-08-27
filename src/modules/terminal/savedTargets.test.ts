@@ -133,6 +133,48 @@ describe("parseSavedTarget", () => {
     expect(parseSavedTarget({ id: "t-1", name: "a", kind: "local" })).toBeNull();
     // Một loại phiên bản sau này thêm vào: bản này không vẽ nổi nó.
     expect(parseSavedTarget({ id: "t-1", name: "a", kind: "serial" })).toBeNull();
+    // Không có địa chỉ thì không có dòng nào để vẽ, dù mọi thứ khác đều ở đó.
+    expect(
+      parseSavedTarget({ id: "t-1", name: "a", config: { port: 22, username: "u", auth: withPassword.auth } }),
+    ).toBeNull();
+  });
+
+  /* Chỗ này từng là một `as SshConfig`, tức là không kiểm gì cả. Một entry sửa tay thiếu `auth`
+     đi lọt, rồi `mergeSecrets` đọc `config.auth.type` và ném ra giữa `Promise.all` của
+     `loadSavedTargets` — cả danh sách rỗng suốt phiên làm việc vì một dòng. */
+  it("reads a hand-edited server without dropping the list it is in", () => {
+    const entry = parseSavedTarget({ id: "t-1", name: "prod", config: { host: "example.com" } });
+    expect(entry).toEqual({
+      id: "t-1",
+      name: "prod",
+      kind: "ssh",
+      config: { host: "example.com", port: 22, username: "", auth: { type: "password", password: "" } },
+      runOnConnect: undefined,
+    });
+    // Và cái vừa đọc ra đi qua được `mergeSecrets`, thứ đã ném ra trước đây.
+    expect(() => mergeSecrets((entry as { config: SshConfig }).config, {})).not.toThrow();
+  });
+
+  it("falls back to the ssh port on one it cannot believe", () => {
+    const port = (value: unknown) =>
+      (parseSavedTarget({ id: "t-1", name: "a", config: { ...withPassword, port: value } }) as {
+        config: SshConfig;
+      }).config.port;
+    expect(port(2222)).toBe(2222);
+    expect(port("2222")).toBe(22);
+    expect(port(0)).toBe(22);
+    expect(port(70000)).toBe(22);
+    expect(port(22.5)).toBe(22);
+  });
+
+  /** Một khoá riêng đọc thành khoá riêng, kể cả khi đường dẫn đã bị xoá khỏi file. */
+  it("keeps a key entry a key entry", () => {
+    const entry = parseSavedTarget({
+      id: "t-1",
+      name: "a",
+      config: { host: "h", port: 22, username: "u", auth: { type: "privatekey" } },
+    }) as { config: SshConfig };
+    expect(entry.config.auth).toEqual({ type: "privatekey", key_path: "", passphrase: undefined });
   });
 });
 

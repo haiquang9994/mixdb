@@ -65,9 +65,51 @@ export function parseSavedTarget(value: unknown): SavedTarget | null {
 
   // `undefined` cũng vào đây: xem chú thích trên hàm.
   if (entry.kind !== undefined && entry.kind !== "ssh") return null;
-  const config = entry.config;
-  if (typeof config !== "object" || config === null) return null;
-  return { id: entry.id, name: entry.name, kind: "ssh", config: config as SshConfig, runOnConnect };
+  const config = parseSshConfig(entry.config);
+  if (config === null) return null;
+  return { id: entry.id, name: entry.name, kind: "ssh", config, runOnConnect };
+}
+
+/**
+ * Phần `config` của một entry ssh, đọc từng trường một, hoặc `null` khi không còn gì để vẽ.
+ *
+ * Trước đây chỗ này là một `as SshConfig` — một lời hứa với trình biên dịch, không phải một phép
+ * kiểm. Một entry sửa tay thiếu `auth` đi lọt qua, rồi `mergeSecrets` đọc `config.auth.type` và
+ * ném ra giữa `Promise.all` của `loadSavedTargets`: **cả danh sách** biến mất trong suốt phiên
+ * làm việc, đúng ngược với điều `loadStored` hứa ngay bên trên nó.
+ *
+ * Chỉ `host` là không đoán được — không có nó thì không có dòng nào để vẽ. Còn lại đều có mặc
+ * định đúng, theo đúng lẽ mà file này đã chọn ở chỗ khác: một máy chủ mà kho bí mật không còn gì
+ * cho nó vẫn hiện ra với ô mật khẩu trống. Một `auth` thiếu hoặc lạ đọc thành mật khẩu rỗng vì
+ * cùng lẽ ấy — dòng ấy sửa lại được trong form, còn vứt đi thì mất luôn cả tên và địa chỉ.
+ */
+function parseSshConfig(value: unknown): SshConfig | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const config = value as Record<string, unknown>;
+  if (typeof config.host !== "string" || config.host === "") return null;
+
+  const port = config.port;
+  const auth = typeof config.auth === "object" && config.auth !== null ? (config.auth as Record<string, unknown>) : {};
+
+  return {
+    host: config.host,
+    // Cổng ssh mặc định. Một entry không nói cổng vẫn mở được; nói sai thì không.
+    port: typeof port === "number" && Number.isInteger(port) && port > 0 && port <= 65535 ? port : 22,
+    username: typeof config.username === "string" ? config.username : "",
+    auth:
+      auth.type === "privatekey"
+        ? {
+            type: "privatekey",
+            key_path: typeof auth.key_path === "string" ? auth.key_path : "",
+            passphrase: typeof auth.passphrase === "string" ? auth.passphrase : undefined,
+          }
+        : {
+            type: "password",
+            // Rỗng là chuyện thường chứ không phải chuyện hỏng: `splitSecrets` ghi ra đúng thế,
+            // và mật khẩu thật nằm trong kho của hệ điều hành.
+            password: typeof auth.password === "string" ? auth.password : "",
+          },
+  };
 }
 
 /** Cấu hình chẻ làm đôi: phần ghi được xuống file, và phần đi vào kho thông tin đăng nhập. */
