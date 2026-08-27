@@ -4,6 +4,7 @@ import Button from "../../../../components/Button";
 import Input, { Textarea } from "../../../../components/Input";
 import Select from "../../../../components/Select";
 import { errorMessage } from "../../../../core/errors";
+import { DEFAULT_SSH_PORT, PRIVATE_KEY_PLACEHOLDER } from "../../../../core/ssh";
 import { stableStringify } from "../../../../core/stableStringify";
 import { useTranslation } from "../../../../i18n";
 import { localShells } from "../../api";
@@ -15,26 +16,12 @@ import {
   useSavedTargets,
   useSavedTargetsLoaded,
 } from "../../savedTargetsStore";
-import { IS_MAC, IS_WINDOWS } from "../../../../core/platform";
 import { loadTerminalSettings } from "../../settingsStore";
 import { shellLabel } from "../../shells";
 import type { LocalShell, SavedTarget, SshAuth, SshConfig, TerminalChoice } from "../../types";
 import SavedTargetList from "./SavedTargetList";
 import styles from "./TargetForm.module.css";
 
-/** Đường dẫn khoá riêng trông như thế nào trên máy đang chạy — một gợi ý, không phải một chuỗi
- *  dịch được: một đường dẫn không có bản tiếng Việt.
- *
- *  Hỏi `core/platform` chứ không đọc thẳng `navigator`: đó là nơi duy nhất trả lời "máy nào",
- *  và đọc thẳng ở đây vừa là bản sao thứ hai của cùng một phép thử, vừa ném lỗi lúc nạp module
- *  ở nơi không có `navigator` — tức là bộ test. */
-const PRIVATE_KEY_PLACEHOLDER = IS_WINDOWS
-  ? "C:\\Users\\you\\.ssh\\id_ed25519"
-  : IS_MAC
-    ? "/Users/you/.ssh/id_ed25519"
-    : "/home/you/.ssh/id_ed25519";
-
-const DEFAULT_SSH_PORT = 22;
 
 /**
  * Một đích đã lưu rút xuống đúng phần "nó là cái gì" — không có `id`.

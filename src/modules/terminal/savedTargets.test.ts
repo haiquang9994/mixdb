@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mergeSecrets, parseSavedTarget, splitSecrets, withoutSecrets } from "./savedTargets";
+/* The split and the merge moved to `core/ssh.ts` — the db module tunnels through the same
+   servers and was doing the same thing. These tests came with them unchanged, which is what
+   says the move changed no behaviour. */
+import { mergeSshSecrets as mergeSecrets, splitSshSecrets as splitSecrets } from "../../core/ssh";
+import { parseSavedTarget, withoutSecrets } from "./savedTargets";
 import type { SavedTarget, SshConfig } from "./types";
 
 const withPassword: SshConfig = {

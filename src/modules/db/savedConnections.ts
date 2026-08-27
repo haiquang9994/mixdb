@@ -1,5 +1,6 @@
 import { Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
+import { mergeSshSecrets, splitSshSecrets, type SshSecrets } from "../../core/ssh";
 import type { ConnectionConfig, SavedConnection } from "./types";
 
 /**
@@ -23,9 +24,12 @@ function getStore(): Promise<Store> {
   return storePromise;
 }
 
-/** The fields that must never sit in `connections.json`. */
-type SecretField = "password" | "uri" | "sshPassword" | "sshPassphrase";
-type Secrets = Partial<Record<SecretField, string>>;
+/** The fields that must never sit in `connections.json`: this module's two, and the SSH pair that
+ *  every module tunnelling through a server has. */
+interface Secrets extends SshSecrets {
+  password?: string;
+  uri?: string;
+}
 
 /**
  * Everything about `config` that is a credential.
@@ -35,30 +39,16 @@ type Secrets = Partial<Record<SecretField, string>>;
  * app deliberately doesn't parse for anything but cosmetics.
  */
 function readSecrets(config: ConnectionConfig): Secrets {
-  const secrets: Secrets = {};
+  const secrets: Secrets = { ...(config.ssh ? splitSshSecrets(config.ssh).secrets : {}) };
   if (config.password) secrets.password = config.password;
   if (config.uri) secrets.uri = config.uri;
-  if (config.ssh?.auth.type === "password" && config.ssh.auth.password) {
-    secrets.sshPassword = config.ssh.auth.password;
-  }
-  if (config.ssh?.auth.type === "privatekey" && config.ssh.auth.passphrase) {
-    secrets.sshPassphrase = config.ssh.auth.passphrase;
-  }
   return secrets;
 }
 
 /** The same config with every credential taken out — what is written to disk. */
 function withoutSecrets(config: ConnectionConfig): ConnectionConfig {
   const stripped: ConnectionConfig = { ...config, password: undefined, uri: undefined };
-  if (config.ssh) {
-    stripped.ssh = {
-      ...config.ssh,
-      auth:
-        config.ssh.auth.type === "password"
-          ? { type: "password", password: "" }
-          : { type: "privatekey", key_path: config.ssh.auth.key_path, passphrase: undefined },
-    };
-  }
+  if (config.ssh) stripped.ssh = splitSshSecrets(config.ssh).config;
   return stripped;
 }
 
@@ -69,19 +59,7 @@ function withSecrets(config: ConnectionConfig, secrets: Secrets): ConnectionConf
     password: secrets.password ?? config.password,
     uri: secrets.uri ?? config.uri,
   };
-  if (config.ssh) {
-    filled.ssh = {
-      ...config.ssh,
-      auth:
-        config.ssh.auth.type === "password"
-          ? { type: "password", password: secrets.sshPassword ?? config.ssh.auth.password }
-          : {
-              type: "privatekey",
-              key_path: config.ssh.auth.key_path,
-              passphrase: secrets.sshPassphrase ?? config.ssh.auth.passphrase,
-            },
-    };
-  }
+  if (config.ssh) filled.ssh = mergeSshSecrets(config.ssh, secrets);
   return filled;
 }
 

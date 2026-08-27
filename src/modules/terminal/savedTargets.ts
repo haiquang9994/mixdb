@@ -1,6 +1,7 @@
 import { Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
 import type { SavedTarget, SshConfig } from "./types";
+import { mergeSshSecrets, splitSshSecrets, type SshSecrets } from "../../core/ssh";
 
 /**
  * Danh sách đích đã lưu, chia làm hai chỗ.
@@ -35,11 +36,9 @@ function getStore(): Promise<Store> {
   return storePromise;
 }
 
-/** Những gì không được nằm trong `terminal-hosts.json`. Tên khoá đi vào keyring cùng id của đích. */
-export interface HostSecrets {
-  sshPassword?: string;
-  sshPassphrase?: string;
-}
+/* Những gì không được nằm trong `terminal-hosts.json`, và cách chẻ ra rồi ghép lại: `core/ssh.ts`,
+   vì module db chẻ đúng cùng một thứ cho tunnel của nó. Tên cũ giữ lại cho những chỗ đã import. */
+export type HostSecrets = SshSecrets;
 
 /**
  * Một entry trên đĩa, đọc phòng thủ, hoặc `null` khi nó không phải một cái nào cả.
@@ -112,46 +111,9 @@ function parseSshConfig(value: unknown): SshConfig | null {
   };
 }
 
-/** Cấu hình chẻ làm đôi: phần ghi được xuống file, và phần đi vào kho thông tin đăng nhập. */
-export function splitSecrets(config: SshConfig): { config: SshConfig; secrets: HostSecrets } {
-  if (config.auth.type === "password") {
-    const password = config.auth.password;
-    return {
-      config: { ...config, auth: { type: "password", password: "" } },
-      // Một tập rỗng làm `secrets_save` xoá hẳn entry, nên một đích không có gì để giấu cũng
-      // không để lại gì.
-      secrets: password ? { sshPassword: password } : {},
-    };
-  }
-  const { key_path, passphrase } = config.auth;
-  return {
-    // Đường dẫn khoá ở lại trong file: nó là chỗ để tìm khoá, không phải chính khoá.
-    config: { ...config, auth: { type: "privatekey", key_path, passphrase: undefined } },
-    secrets: passphrase ? { sshPassphrase: passphrase } : {},
-  };
-}
-
-/** Cấu hình như form cần: cái đã ở trên đĩa, với phần bí mật đặt lại vào. */
-export function mergeSecrets(config: SshConfig, secrets: HostSecrets): SshConfig {
-  if (config.auth.type === "password") {
-    return {
-      ...config,
-      auth: { type: "password", password: secrets.sshPassword ?? config.auth.password },
-    };
-  }
-  return {
-    ...config,
-    auth: {
-      type: "privatekey",
-      key_path: config.auth.key_path,
-      passphrase: secrets.sshPassphrase ?? config.auth.passphrase,
-    },
-  };
-}
-
 /** Cái ghi xuống file: một đích với phần bí mật đã lấy ra. Nhánh `local` đi qua nguyên vẹn. */
 export function withoutSecrets(target: SavedTarget): SavedTarget {
-  return target.kind === "ssh" ? { ...target, config: splitSecrets(target.config).config } : target;
+  return target.kind === "ssh" ? { ...target, config: splitSshSecrets(target.config).config } : target;
 }
 
 function saveSecrets(id: string, secrets: HostSecrets): Promise<void> {
@@ -189,7 +151,7 @@ export async function loadSavedTargets(): Promise<SavedTarget[]> {
   return Promise.all(
     stored.map(async (target) =>
       target.kind === "ssh"
-        ? { ...target, config: mergeSecrets(target.config, await loadSecrets(target.id)) }
+        ? { ...target, config: mergeSshSecrets(target.config, await loadSecrets(target.id)) }
         : target,
     ),
   );
@@ -205,7 +167,7 @@ export async function loadSavedTargets(): Promise<SavedTarget[]> {
  * do gì để xoá. Tập rỗng là lệnh xoá, xem `secrets.rs`.
  */
 async function persistTarget(list: SavedTarget[], target: SavedTarget): Promise<void> {
-  await saveSecrets(target.id, target.kind === "ssh" ? splitSecrets(target.config).secrets : {});
+  await saveSecrets(target.id, target.kind === "ssh" ? splitSshSecrets(target.config).secrets : {});
   await persist(list);
 }
 

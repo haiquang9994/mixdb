@@ -5,7 +5,7 @@ import Button from "../../../../components/Button";
 import Input from "../../../../components/Input";
 import { EyeIcon, EyeOffIcon } from "../../../../icons";
 import { DatabaseIcon } from "../../icons";
-import { IS_MAC, IS_WINDOWS } from "../../../../core/platform";
+import { PRIVATE_KEY_PLACEHOLDER } from "../../../../core/ssh";
 import { useTranslation } from "../../../../i18n";
 import { KIND_LABEL, type ConnectionForm as FormState } from "../../connectionForm";
 import { isSqlKind } from "../../engines";
@@ -59,20 +59,6 @@ function maskMongoUri(uri: string): string {
   return `${scheme}${masked}@${uri.slice(full.length)}`;
 }
 
-/**
- * An example key path written the way the host OS writes one — a Windows path is no help to
- * someone looking for `~/.ssh` on a Mac. It stays out of the dictionaries because a path is not
- * language: it follows the machine the app runs on, not the language it was asked to speak.
- *
- * Which machine this is comes from {@link ../../platform}. Linux is the fallback rather than a third
- * test: WebKitGTK spells its system several ways (`X11`, `Wayland`, `Linux`), and every remaining
- * desktop puts home directories under `/home`.
- */
-const PRIVATE_KEY_PLACEHOLDER = IS_WINDOWS
-  ? "C:\\Users\\you\\.ssh\\id_rsa"
-  : IS_MAC
-    ? "/Users/you/.ssh/id_rsa"
-    : "/home/you/.ssh/id_rsa";
 
 interface Props {
   form: FormState;

@@ -1,15 +1,10 @@
 export type DbKind = "mysql" | "postgres" | "mongo" | "redis";
 
-export type SshAuth =
-  | { type: "password"; password: string }
-  | { type: "privatekey"; key_path: string; passphrase?: string };
-
-export interface SshConfig {
-  host: string;
-  port: number;
-  username: string;
-  auth: SshAuth;
-}
+/* The SSH server is `core/ssh.ts`'s, not this module's: the backend has one `SshConfig` for both
+   a tunnelled connection and a terminal session, and this was one of two mirrors of it. Re-exported
+   rather than imported everywhere, so nothing that already says `from "./types"` has to change. */
+import type { SshConfig } from "../../core/ssh";
+export type { SshAuth, SshConfig } from "../../core/ssh";
 
 export interface ConnectionConfig {
   kind: DbKind;

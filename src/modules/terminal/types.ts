@@ -12,19 +12,11 @@ export interface TerminalSize {
   rows: number;
 }
 
-/** Cách chứng minh mình là ai với máy chủ SSH. Gương của `SshAuth` bên Rust. */
-export type SshAuth =
-  | { type: "password"; password: string }
-  | { type: "privatekey"; key_path: string; passphrase?: string };
-
-/** Máy chủ SSH mở phiên. Cùng bốn trường mà module db dùng cho tunnel của nó, và cố ý là một kiểu
- *  khác: hai module không dùng chung host, nên chúng không dùng chung kiểu. */
-export interface SshConfig {
-  host: string;
-  port: number;
-  username: string;
-  auth: SshAuth;
-}
+/* Máy chủ SSH là của `core/ssh.ts`, không phải của module này: bên Rust chỉ có một `SshConfig`
+   dùng chung cho tunnel của db và cho phiên terminal, và đây từng là một trong hai bản sao của nó.
+   Xuất lại chứ không bắt mọi chỗ đổi import. */
+import type { SshConfig } from "../../core/ssh";
+export type { SshAuth, SshConfig } from "../../core/ssh";
 
 /**
  * Một đích người dùng đã lưu lại: một shell trên máy này, hoặc một máy chủ SSH.
