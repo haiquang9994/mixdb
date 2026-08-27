@@ -76,9 +76,14 @@ jobs:
             build-essential \
             curl wget file
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      # The version comes from src-tauri/rust-toolchain.toml rather than from here, so CI and a
+      # developer's machine run the same clippy and a lint that fires in one fires in the other.
+      # rustup installs it on the first cargo command in that folder anyway; asking for it here
+      # keeps the download out of the middle of the Clippy step and settles the toolchain before
+      # rust-cache computes its key from it.
+      - name: Install the pinned Rust toolchain
+        working-directory: src-tauri
+        run: rustup show
 
       - uses: Swatinem/rust-cache@v2
         with:

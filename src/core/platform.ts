@@ -20,11 +20,22 @@
  * instead of the window; a shortcut that forgets it gets the menu's meaning instead of its own.
  */
 
+/**
+ * The user agent, or nothing at all where there is no `navigator` to ask.
+ *
+ * In the app there always is one — this file only has a platform to name because Tauri renders in
+ * the host's webview. The empty case is the test runner: `navigator` became a Node global in 21,
+ * so reading it bare threw on the Node 20 CI runs on while passing on a newer Node locally. The
+ * flags below are false either way, since `Node.js/24` matches neither name, so nothing about how
+ * the tests read changes — they just stop depending on which Node ran them.
+ */
+const USER_AGENT = globalThis.navigator?.userAgent ?? "";
+
 /** A Mac, where the shortcut modifier is `Cmd` and `Ctrl` belongs to the context menu. */
-export const IS_MAC = navigator.userAgent.includes("Mac OS X");
+export const IS_MAC = USER_AGENT.includes("Mac OS X");
 
 /** Windows, asked only about the things that differ from a Unix path or spelling. */
-export const IS_WINDOWS = navigator.userAgent.includes("Windows");
+export const IS_WINDOWS = USER_AGENT.includes("Windows");
 
 /**
  * Whether this event is holding the modifier this platform puts its shortcuts under — `Cmd` on a

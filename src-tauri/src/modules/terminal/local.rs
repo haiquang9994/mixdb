@@ -135,9 +135,14 @@ fn wsl_distros() -> Vec<String> {
 /// phải là hệ điều hành.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn parse_wsl_list(bytes: &[u8]) -> Vec<String> {
+    // `as_chunks` thay cho `chunks_exact(2)`: cùng một việc, cùng một phần dư bị bỏ, nhưng kích
+    // thước nằm trong kiểu nên mỗi phần tử đã là `[u8; 2]` — không phải cắt lát rồi đánh chỉ số
+    // lại. clippy 1.98 yêu cầu dạng này (`chunks_exact_to_as_chunks`).
     let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
         .collect();
     String::from_utf16_lossy(&units)
         .lines()
