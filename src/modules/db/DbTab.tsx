@@ -217,16 +217,20 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
    *  the pool and the tunnel behind it stay in `DbState` until the app quits. `connect` reads this
    *  when its await comes back and hangs up on itself. */
   const closedRef = useRef(false);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    /* Lowered on the way *in*, not only raised on the way out. A ref outlives the effect, and in
+       StrictMode the first mount is thrown away — setup, cleanup, setup again — so a flag only
+       ever raised would be left raised on a tab that is very much alive, and every connection it
+       opened would be hung up on the moment it arrived. */
+    closedRef.current = false;
+    return () => {
       closedRef.current = true;
       const id = connectionIdRef.current;
       // Nothing is left to show an error to, and a connection the backend has already forgotten is
       // not a failure worth reporting anywhere.
       if (id) invoke("disconnect_db", { id }).catch(() => {});
-    },
-    [],
-  );
+    };
+  }, []);
 
   /* One dial at a time. The state disables the button; the ref is what a second call reads, because
      the two ways in do not both go through a click — `openAndConnect` runs from an effect and from
@@ -572,11 +576,13 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
    */
   async function connect(overrideConfig?: ConnectionConfig, title?: string, savedId?: string) {
     if (connectingRef.current) return;
+    // Read the form before the flag goes up: anything that threw between the two would leave the
+    // flag raised with no `finally` to lower it, and the tab stuck on "Connecting…" for good.
+    const config = overrideConfig ?? buildConnectionConfig();
     connectingRef.current = true;
     setConnecting(true);
     setError("");
     setStatus(t("connection.connecting"));
-    const config = overrideConfig ?? buildConnectionConfig();
     try {
       const id = await invoke<string>("connect_db", { config });
       /* The tab was closed while this was dialling — over an SSH tunnel to a server that is slow to
