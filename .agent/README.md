@@ -14,6 +14,8 @@ entry point; everything detailed lives here.
   library choice, a data-structure change). Named `YYYY-MM-DD-slug.md`.
 - `notes/` — short-lived context: work in progress, things to follow up. Not a home for lasting
   conventions.
+- `reviews/` — one file per full technical review of the repository, dated. Findings with a
+  stable id and a status; the folder's own README says how they are written.
 
 ## Adding a file
 
