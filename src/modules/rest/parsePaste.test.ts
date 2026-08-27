@@ -161,6 +161,106 @@ describe("parseCurl", () => {
   });
 });
 
+/**
+ * The flags that carry a value, and what happens to a value the walk does not know is one.
+ *
+ * Every expectation here was measured against curl 8.21 through a local echo server rather than
+ * read off the manual — the encoding in particular is not what a JavaScript reflex would produce.
+ */
+describe("parseCurl value-taking flags", () => {
+  /* The one from the review. `cookies.txt` satisfies `looksLikeUrl` — dot, word characters, end —
+     so with `-c` missing from the skip list it became the address and the real one was ignored. */
+  it("does not read the value of a flag it ignores as the address", () => {
+    expect(parseCurl("curl -c cookies.txt localhost:3000/login", ids())?.url).toBe(
+      "localhost:3000/login"
+    );
+    expect(parseCurl("curl -D headers.txt -w out.json https://x/y", ids())?.url).toBe("https://x/y");
+    expect(parseCurl("curl --cacert ca.pem --key k.pem --cert c.pem https://x/y", ids())?.url).toBe(
+      "https://x/y"
+    );
+    expect(parseCurl("curl -m 5 --resolve x:443:1.2.3.4 https://x/y", ids())?.url).toBe("https://x/y");
+  });
+
+  /* curl's `--json` is `--data-binary` plus two headers, and it sends both — so a command that
+     pasted in as a bodyless GET is a POST with a JSON body and the headers written out. */
+  it("reads --json as a JSON body with the two headers curl sends for it", () => {
+    const parsed = parseCurl(`curl --json '{"a":1}' https://x`, ids());
+    expect(parsed?.method).toBe("POST");
+    expect(parsed?.body).toEqual({ kind: "raw", language: "json", text: '{"a":1}' });
+    expect(parsed?.headers.map((h) => [h.key, h.value])).toEqual([
+      ["Content-Type", "application/json"],
+      ["Accept", "application/json"],
+    ]);
+  });
+
+  /* Measured: `--json '{"a":1}' -H 'Content-Type: text/plain'` goes out as `text/plain`, with
+     `Accept: application/json` still added beside it. */
+  it("leaves a content type the command gave itself alone", () => {
+    const parsed = parseCurl(`curl --json '{"a":1}' -H 'Content-Type: text/plain' https://x`, ids());
+    expect(parsed?.headers.map((h) => [h.key, h.value])).toEqual([
+      ["Content-Type", "text/plain"],
+      ["Accept", "application/json"],
+    ]);
+  });
+
+  /* The encoding is curl's, not `encodeURIComponent`'s: a space is `+`, and `!'()*` are escaped.
+     Measured — `--data-urlencode "q=a b&c"` puts `q=a+b%26c` on the wire. */
+  it("url-encodes --data-urlencode the way curl does", () => {
+    expect(parseCurl(`curl --data-urlencode 'q=a b&c' https://x`, ids())?.body).toEqual({
+      kind: "form",
+      fields: [{ id: "id-1", enabled: true, key: "q", value: "a b&c" }],
+    });
+    // Straight at the joined text, since the form table decodes it back on the way in.
+    const raw = (sql: string) => parseCurl(sql, ids());
+    expect(raw(`curl --data-urlencode "k=a!b'c(d)e*f~g-h_i.j+k" https://x`)?.body).toEqual({
+      kind: "form",
+      fields: [{ id: "id-1", enabled: true, key: "k", value: "a!b'c(d)e*f~g-h_i.j+k" }],
+    });
+  });
+
+  /* curl looks for `=` before it looks for `@`, so this is a name and a value and not a filename —
+     measured, it answers `x=y%40z`. */
+  it("takes an at sign after an equals as part of the value", () => {
+    expect(parseCurl(`curl --data-urlencode 'x=y@z' https://x`, ids())?.body).toEqual({
+      kind: "form",
+      fields: [{ id: "id-1", enabled: true, key: "x", value: "y@z" }],
+    });
+  });
+
+  /** `content` with no marker at all is all content and no name. */
+  it("encodes a bare --data-urlencode value whole", () => {
+    expect(parseCurl(`curl --data-urlencode 'plain val' https://x`, ids())?.body).toEqual({
+      kind: "raw",
+      language: "text",
+      text: "plain+val",
+    });
+  });
+
+  /* `@file` and `name@file` are files this app cannot read. Nothing to show for them — but the
+     argument is still eaten, or it would go on to be read as the address. */
+  it("eats a --data-urlencode that names a file without reading it as the address", () => {
+    const parsed = parseCurl("curl --data-urlencode note@notes.txt https://x/y", ids());
+    expect(parsed?.url).toBe("https://x/y");
+    expect(parsed?.body).toEqual({ kind: "none" });
+  });
+
+  /* `-T` is a PUT of a file. The file cannot be read from here; the verb can still be right, and
+     the path must not end up as the address. */
+  it("keeps the verb of an upload and does not mistake the file for the address", () => {
+    const parsed = parseCurl("curl -T report.csv https://x/y", ids());
+    expect(parsed?.method).toBe("PUT");
+    expect(parsed?.url).toBe("https://x/y");
+  });
+
+  /** `--form-string` is `-F` with the value taken exactly as written — no `@path`. */
+  it("takes a --form-string value literally", () => {
+    expect(parseCurl("curl --form-string 'note=@notafile' https://x", ids())?.body).toEqual({
+      kind: "multipart",
+      fields: [{ id: "id-1", enabled: true, key: "note", value: "@notafile" }],
+    });
+  });
+});
+
 describe("parseCurl bodies", () => {
   // curl's own rule is that `-d` means form-urlencoded. Nobody pasting a JSON object means that,
   // so a value that parses as JSON is read as JSON.

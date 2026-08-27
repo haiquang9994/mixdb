@@ -148,22 +148,89 @@ export interface ParsedRequest {
 /** Short flags that take a value, which is written either after a space or glued straight on. */
 const SHORT_WITH_VALUE = ["-X", "-H", "-d", "-F", "-u"];
 
-/** Flags whose value this client has no use for, named only so the value is not mistaken for the
- *  URL: `curl -o out.json https://…` has two arguments that look like addresses and one that is. */
+/**
+ * Flags whose value this client has no use for, named only so the value is not mistaken for the
+ * URL: `curl -o out.json https://…` has two arguments that look like addresses and one that is.
+ *
+ * Dull on purpose, and long on purpose. A value-taking flag left out of here does not fail loudly:
+ * its value falls through to `bare`, where `looksLikeUrl` is perfectly happy to read `cookies.txt`
+ * as a host — so `curl -c cookies.txt localhost:3000/login` used to paste in as a request to
+ * `cookies.txt`. Everything curl might sensibly be seen carrying in a copied command belongs here,
+ * whether or not this app could do anything with it.
+ */
 const SKIPPED_WITH_VALUE = new Set([
+  // Where the answer goes
   "-o",
   "--output",
+  "--output-dir",
+  "-w",
+  "--write-out",
+  "-D",
+  "--dump-header",
+  "--trace",
+  "--trace-ascii",
+  "--stderr",
+  // Who the client says it is
   "-A",
   "--user-agent",
   "-e",
   "--referer",
   "-b",
   "--cookie",
+  "-c",
+  "--cookie-jar",
+  "--oauth2-bearer",
+  // Through what
   "-x",
   "--proxy",
+  "-U",
+  "--proxy-user",
+  "--noproxy",
+  "--proxy-header",
+  "--interface",
+  "--unix-socket",
+  "--dns-servers",
+  "--local-port",
+  "--resolve",
+  "--connect-to",
+  // Certificates and ciphers
+  "-E",
+  "--cert",
+  "--cert-type",
+  "--key",
+  "--key-type",
+  "--pass",
+  "--cacert",
+  "--capath",
+  "--crlfile",
+  "--pinnedpubkey",
+  "--ciphers",
+  "--tls-max",
+  // How long, how fast, how much
+  "-m",
   "--max-time",
   "--connect-timeout",
   "--retry",
+  "--retry-delay",
+  "--retry-max-time",
+  "--limit-rate",
+  "--max-filesize",
+  "--max-redirs",
+  "-y",
+  "--speed-time",
+  "-Y",
+  "--speed-limit",
+  // Which part of it, and from where
+  "-C",
+  "--continue-at",
+  "-r",
+  "--range",
+  "-K",
+  "--config",
+  "--alt-svc",
+  "--hsts",
+  "--proto",
+  "--proto-redir",
 ]);
 
 const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
@@ -236,6 +303,34 @@ function formFields(text: string, nextId: () => string): KeyValue[] {
     });
 }
 
+/**
+ * One piece of `--data-urlencode`, encoded the way curl encodes it.
+ *
+ * Which is *not* `encodeURIComponent`: measured against curl 8.21, a space comes out as `+` and
+ * `!`, `'`, `(`, `)` and `*` come out escaped, leaving only the RFC 3986 unreserved set — so
+ * `q=a b&c` becomes `q=a+b%26c`.
+ */
+function formEscape(text: string): string {
+  return encodeURIComponent(text)
+    .replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/%20/g, "+");
+}
+
+/**
+ * `--data-urlencode`'s five spellings as the piece of body each stands for, or null for the two
+ * that name a file this app cannot read.
+ *
+ * curl looks for `=` first and only then for `@`, so `x=y@z` is a name and a value rather than a
+ * name and a filename — checked against curl, which answers `x=y%40z`. `content` on its own is all
+ * content and no name; `=content` is the same with the marker written out.
+ */
+function urlEncoded(raw: string): string | null {
+  const eq = raw.indexOf("=");
+  if (eq !== -1) return `${raw.slice(0, eq)}${eq === 0 ? "" : "="}${formEscape(raw.slice(eq + 1))}`;
+  if (raw.includes("@")) return null;
+  return formEscape(raw);
+}
+
 /** One `-F` part. `name=@path` sends a file; the `;type=…` curl allows after the path is it telling
  *  the server what the file is, which the parts table has nowhere to put. */
 function formField(raw: string, nextId: () => string): MultipartField {
@@ -305,6 +400,12 @@ export function parseCurl(text: string, nextId: () => string): ParsedRequest | n
   const form: MultipartField[] = [];
   let user: string | null = null;
   let asQuery = false;
+  /* `--json` is curl's shorthand for `--data-binary` plus a Content-Type and an Accept. Remembered
+     rather than acted on where it is read, because a `-H` written after it still wins and the
+     headers can only be compared once the whole command has been walked. */
+  let jsonShortcut = false;
+  /* `-T` is a PUT of a file this app has no way to read. The verb is the half that survives. */
+  let upload = false;
 
   for (let i = 1; i < args.length; i++) {
     const arg = args[i];
@@ -338,10 +439,38 @@ export function parseCurl(text: string, nextId: () => string): ParsedRequest | n
       case "--data-ascii":
         data.push(args[++i] ?? "");
         break;
+      case "--data-urlencode": {
+        const piece = urlEncoded(args[++i] ?? "");
+        // The `@filename` spellings. Nothing to read and nothing to show, but the argument is
+        // still eaten so it cannot go on to be read as the address.
+        if (piece !== null) data.push(piece);
+        break;
+      }
+      case "--json":
+        jsonShortcut = true;
+        data.push(args[++i] ?? "");
+        break;
+      case "-T":
+      case "--upload-file":
+        upload = true;
+        i++;
+        break;
       case "-F":
       case "--form":
         form.push(formField(args[++i] ?? "", nextId));
         break;
+      // Like `-F`, except the value is taken exactly as written — no `@path`, no `<path`.
+      case "--form-string": {
+        const raw = args[++i] ?? "";
+        const eq = raw.indexOf("=");
+        form.push({
+          id: nextId(),
+          enabled: true,
+          key: eq === -1 ? raw : raw.slice(0, eq),
+          value: eq === -1 ? "" : raw.slice(eq + 1),
+        });
+        break;
+      }
       case "-u":
       case "--user":
         user = args[++i] ?? "";
@@ -360,6 +489,17 @@ export function parseCurl(text: string, nextId: () => string): ParsedRequest | n
     }
   }
 
+  /* Added here and not where `--json` was read, so a header the command gives itself keeps the
+     field. That is curl's own answer: `--json '{}' -H 'Content-Type: text/plain'` goes out as
+     `text/plain` with `Accept: application/json` still added beside it. */
+  if (jsonShortcut) {
+    for (const name of ["Content-Type", "Accept"]) {
+      if (headerValue(headers, name.toLowerCase()) === null) {
+        headers.push({ id: nextId(), enabled: true, key: name, value: "application/json" });
+      }
+    }
+  }
+
   const bareUrl = bare.find((arg) => SCHEME.test(arg)) ?? bare.find(looksLikeUrl) ?? "";
   const address = flagUrl !== "" ? flagUrl : bareUrl;
   // -G: the data is the query, not the body.
@@ -367,7 +507,13 @@ export function parseCurl(text: string, nextId: () => string): ParsedRequest | n
 
   /* A body already there says POST; -G says the opposite. An explicit -X beats both — curl honours
      it, and so does anyone reading the command. */
-  const implied: Method = asQuery ? "GET" : data.length > 0 || form.length > 0 ? "POST" : "GET";
+  const implied: Method = asQuery
+    ? "GET"
+    : data.length > 0 || form.length > 0
+      ? "POST"
+      : upload
+        ? "PUT"
+        : "GET";
 
   const body: Body =
     form.length > 0
