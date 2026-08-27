@@ -43,6 +43,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- A read-only connection now refuses `EXPLAIN ANALYZE`, which runs the statement it explains rather than only planning it.
 - The response Preview's *Run scripts* and *Load external resources* switches now work in the
   installed app, not only in a development build.
 - An image response shows again in the Preview tab.

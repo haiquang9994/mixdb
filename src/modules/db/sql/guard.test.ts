@@ -20,6 +20,7 @@ const guarded = (sql: string) => unguardedWrites(splitStatements(sql, MYSQL_SYNT
 const blocked = (sql: string) => writingStatements(splitStatements(sql, MYSQL_SYNTAX), mysqlDialect).map((b) => b.verb);
 const blockedPg = (sql: string) =>
   writingStatements(splitStatements(sql, POSTGRES_SYNTAX), postgresDialect).map((b) => b.verb);
+const guardedPg = (sql: string) => unguardedWrites(splitStatements(sql, POSTGRES_SYNTAX), postgresDialect);
 
 describe("unguardedWrites", () => {
   it("stops a write that names no rows, and names the table it would take", () => {
@@ -123,6 +124,27 @@ describe("unguardedWrites", () => {
     ]);
   });
 
+  /** `EXPLAIN ANALYZE` runs what it is given: the plan comes back with the rows already gone. */
+  it("judges an EXPLAIN ANALYZE by the statement it runs", () => {
+    expect(guarded("EXPLAIN ANALYZE DELETE FROM users")).toEqual([
+      { kind: "rows", verb: "DELETE", table: "users" },
+    ]);
+    expect(guardedPg("EXPLAIN ANALYZE VERBOSE UPDATE users SET active = false")).toEqual([
+      { kind: "rows", verb: "UPDATE", table: "users" },
+    ]);
+    // PostgreSQL's bracketed spelling of the same option, which the top-level reader drops.
+    expect(guardedPg("EXPLAIN (ANALYZE, VERBOSE) DELETE FROM users")).toEqual([
+      { kind: "rows", verb: "DELETE", table: "users" },
+    ]);
+    // The CTE behind it is still read for what it leads into.
+    expect(guarded("EXPLAIN ANALYZE WITH ids AS (SELECT id FROM banned) DELETE FROM users")).toEqual([
+      { kind: "rows", verb: "DELETE", table: "users" },
+    ]);
+    // A bounded one is bounded however it is wrapped, and a plan on its own runs nothing.
+    expect(guarded("EXPLAIN ANALYZE DELETE FROM users WHERE id = 1")).toEqual([]);
+    expect(guarded("EXPLAIN DELETE FROM users")).toEqual([]);
+  });
+
   it("still stops a statement whose shape defeated the reader, only less precisely", () => {
     expect(guarded("DELETE FROM")).toEqual([{ kind: "rows", verb: "DELETE", table: "" }]);
     expect(guarded("DROP")).toEqual([{ kind: "drop", verb: "DROP", table: "" }]);
@@ -167,6 +189,24 @@ describe("writingStatements", () => {
     ]);
     // An INTO inside a subquery is not the statement's own.
     expect(blockedPg("SELECT * FROM (SELECT 1) t")).toEqual([]);
+  });
+
+  it("refuses an EXPLAIN ANALYZE by the statement it runs, and passes a plain EXPLAIN", () => {
+    expect(blocked("EXPLAIN ANALYZE DELETE FROM users")).toEqual(["DELETE"]);
+    expect(blocked("EXPLAIN ANALYZE FORMAT=TREE INSERT INTO users (id) VALUES (1)")).toEqual([
+      "INSERT",
+    ]);
+    expect(blockedPg("EXPLAIN ANALYZE DELETE FROM users")).toEqual(["DELETE"]);
+    expect(blockedPg("EXPLAIN (ANALYZE) UPDATE users SET active = false")).toEqual(["UPDATE"]);
+    expect(blockedPg("EXPLAIN (ANALYSE, BUFFERS) TRUNCATE sessions")).toEqual(["TRUNCATE"]);
+    // A CTE leading into a write, one wrapper further out.
+    expect(blocked("EXPLAIN ANALYZE WITH ids AS (SELECT id FROM banned) DELETE FROM users")).toEqual(
+      ["DELETE"]
+    );
+    // Planning is not running: `EXPLAIN` on its own reads nothing but the plan.
+    expect(blocked("EXPLAIN DELETE FROM users")).toEqual([]);
+    expect(blocked("EXPLAIN ANALYZE SELECT * FROM users")).toEqual([]);
+    expect(blockedPg("EXPLAIN (ANALYZE) SELECT * FROM users")).toEqual([]);
   });
 
   it("names every refused statement, not only the first", () => {

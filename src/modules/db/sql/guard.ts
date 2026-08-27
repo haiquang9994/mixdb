@@ -109,10 +109,66 @@ const GUARDED = new Set(["UPDATE", "DELETE", "TRUNCATE", "DROP", "ALTER"]);
  *
  * `verb` is the empty string for a statement none of the checks care about.
  */
-function actualVerb(statement: SqlStatement, words: readonly TopWord[]): { verb: string; at: number } {
-  if (statement.verb !== "WITH") return { verb: statement.verb, at: 0 };
+function actualVerb(opening: string, words: readonly TopWord[]): { verb: string; at: number } {
+  if (opening !== "WITH") return { verb: opening, at: 0 };
   const at = words.findIndex(({ word }) => GUARDED.has(word));
   return at < 0 ? { verb: "", at: 0 } : { verb: words[at].word, at };
+}
+
+/**
+ * The words `EXPLAIN` puts between itself and the statement it is given.
+ *
+ * Both dialects allow the bare list (`EXPLAIN ANALYZE VERBOSE ...`, `EXPLAIN ANALYZE FORMAT=TREE
+ * ...`); PostgreSQL also spells it in brackets, which {@link topLevelWords} drops along with every
+ * other bracketed group, so a word missing from here can only cost a bracket-less `EXPLAIN
+ * ANALYZE` a refusal it did not need — never a write let through.
+ */
+const EXPLAIN_OPTIONS = new Set([
+  "ANALYZE", "ANALYSE", "VERBOSE", "COSTS", "SETTINGS", "GENERIC_PLAN", "BUFFERS", "SERIALIZE",
+  "WAL", "TIMING", "SUMMARY", "MEMORY", "FORMAT", "TEXT", "XML", "JSON", "YAML", "TREE",
+  "TRADITIONAL", "EXTENDED", "PARTITIONS", "ON", "OFF", "TRUE", "FALSE",
+]);
+
+/** `EXPLAIN`'s one option that turns a plan into a run. PostgreSQL takes both spellings. */
+const EXPLAIN_ANALYZE = new Set(["ANALYZE", "ANALYSE"]);
+
+/**
+ * Whether an `EXPLAIN` runs the statement it is given rather than only planning it.
+ *
+ * `EXPLAIN ANALYZE <stmt>` executes `<stmt>` — always on PostgreSQL, and on MySQL since 8.0.18 —
+ * so `EXPLAIN ANALYZE DELETE FROM users` empties the table for real. The whole statement's tokens
+ * are read rather than only the top-level ones, because PostgreSQL's bracketed spelling
+ * (`EXPLAIN (ANALYZE, VERBOSE) ...`) hides the word one level down.
+ *
+ * `ANALYZE` is reserved in both dialects, so an unquoted one anywhere in an `EXPLAIN` is the
+ * option and never a column someone named.
+ */
+function explainRuns(statement: SqlStatement, dialect: SqlDialect): boolean {
+  return tokenize(statement.text, dialect.syntax, statement.from).some(
+    (token) => token.kind === "word" && EXPLAIN_ANALYZE.has(token.value.toUpperCase())
+  );
+}
+
+/**
+ * The statement the gates below have to judge, which is not always the one that was written.
+ *
+ * `EXPLAIN ANALYZE DELETE FROM users` is a `DELETE` wearing a reading word in front of it, so the
+ * `EXPLAIN` and its options are read past and what follows them is handed on in their place. Every
+ * other statement is itself, and the words are the ones {@link topLevelWords} found.
+ *
+ * `verb` is empty when nothing follows the options, which no gate treats as a read.
+ */
+function judged(
+  statement: SqlStatement,
+  dialect: SqlDialect
+): { verb: string; words: TopWord[] } {
+  const words = topLevelWords(statement, dialect);
+  if (statement.verb !== "EXPLAIN" || !explainRuns(statement, dialect)) {
+    return { verb: statement.verb, words };
+  }
+  let at = 1;
+  while (at < words.length && EXPLAIN_OPTIONS.has(words[at].word)) at += 1;
+  return { verb: words[at]?.word ?? "", words: words.slice(at) };
 }
 
 /**
@@ -142,12 +198,14 @@ export function unguardedWrites(
 ): UnguardedWrite[] {
   const found: UnguardedWrite[] = [];
   for (const statement of statements) {
-    // The cheap test first: the opening word settles it for everything but a `WITH`, and only that
-    // one is worth tokenising a statement to look inside. A script is mostly `SELECT`s, and this
-    // runs over the whole of it every time Run All is pressed.
-    if (!GUARDED.has(statement.verb) && statement.verb !== "WITH") continue;
-    const words = topLevelWords(statement, dialect);
-    const { verb, at } = actualVerb(statement, words);
+    // The cheap test first: the opening word settles it for everything but a `WITH` and an
+    // `EXPLAIN`, and only those are worth tokenising a statement to look inside. A script is mostly
+    // `SELECT`s, and this runs over the whole of it every time Run All is pressed.
+    if (!GUARDED.has(statement.verb) && statement.verb !== "WITH" && statement.verb !== "EXPLAIN") {
+      continue;
+    }
+    const { verb: opening, words } = judged(statement, dialect);
+    const { verb, at } = actualVerb(opening, words);
     if (!GUARDED.has(verb)) continue;
     // The statement proper: what the verb governs, and nothing in front of it.
     const clauses = words.slice(at + 1);
@@ -258,7 +316,9 @@ export function withAutoLimits(
  *
  * Written as a list of what is allowed rather than of what is forbidden: MySQL grows statements
  * faster than this list would be updated, and the failure of an allow-list is a read refused,
- * while the failure of a deny-list is a write let through.
+ * while the failure of a deny-list is a write let through. *
+ * `EXPLAIN` is here for the plan it prints, not for the statement it is given: `EXPLAIN ANALYZE`
+ * runs that statement, so it is the inner verb that is looked up here — see {@link judged}.
  */
 const READ_VERBS = new Set([
   "SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "USE", "HELP", "CHECKSUM", "WITH",
@@ -276,11 +336,12 @@ export interface BlockedWrite {
 /**
  * The statements in the script that a read-only connection must not send.
  *
- * Everything is judged by its opening word, which is what the splitter already has — with two
- * exceptions, both of them statements that open with a reading word and go on to write anyway. A
+ * Everything is judged by its opening word, which is what the splitter already has — with three
+ * exceptions, all of them statements that open with a reading word and go on to write anyway. A
  * `WITH` may lead into an `UPDATE` or a `DELETE`, and is refused if any writing word appears in it
  * at all; that is stricter than it needs to be, and being too strict here costs a query the user
- * can run by turning the flag off. A `SELECT ... INTO OUTFILE` — or a `WITH` that leads
+ * can run by turning the flag off. An `EXPLAIN ANALYZE` runs the statement it is given, so it is
+ * refused for whatever that statement is. A `SELECT ... INTO OUTFILE` — or a `WITH` that leads
  * into one — reads no more than any other `SELECT` but leaves a file on the server's disk, which is
  * exactly the kind of mark on a machine this flag is set to prevent.
  */
@@ -294,9 +355,15 @@ export function writingStatements(
       blocked.push({ statement, verb: statement.verb });
       continue;
     }
-    const words = topLevelWords(statement, dialect);
+    // What an `EXPLAIN ANALYZE` is given, for everything else the statement itself — see
+    // {@link judged}. The refusal names the inner verb, which is the word that does the damage.
+    const { verb, words } = judged(statement, dialect);
+    if (!READ_VERBS.has(verb)) {
+      blocked.push({ statement, verb: verb === "" ? statement.verb : verb });
+      continue;
+    }
 
-    if (statement.verb === "WITH") {
+    if (verb === "WITH") {
       const writing = words.find(({ word }) => WRITING_WORDS.has(word));
       if (writing) {
         blocked.push({ statement, verb: writing.word });
