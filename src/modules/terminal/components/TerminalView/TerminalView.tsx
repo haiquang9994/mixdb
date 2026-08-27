@@ -172,6 +172,11 @@ function TerminalView({
        vào trước khi shell đọc stdin là một dòng có thể rơi mất — hoặc tệ hơn, rơi vào giữa banner
        đăng nhập. Byte đầu tiên là lời nói đầu tiên của shell, và sau nó thì nó đang nghe. */
     let greeted = false;
+    /* Effect này đã bị dọn chưa — tab đóng, hoặc `target` đổi và vòng sau đã bắt đầu. Mọi thứ
+       quay lại từ `openSession` sau lúc ấy nói về một phiên không còn ai xem: ghi vào một `Terminal`
+       đã `dispose` là một lỗi ném ra, và gọi `onExit`/`onFailed` lúc này là nói về vòng cũ trên
+       cái tab vòng mới vừa dựng. */
+    let disposed = false;
 
     const typed = term.onData((data) => {
       void writeSession(id, data).catch(() => {});
@@ -179,6 +184,7 @@ function TerminalView({
     const selected = term.onSelectionChange(() => setHasSelection(term.hasSelection()));
 
     void openSession(id, target, { cols: term.cols, rows: term.rows }, (message) => {
+      if (disposed) return;
       if (message instanceof ArrayBuffer) {
         term.write(new Uint8Array(message));
         if (!greeted) {
@@ -193,16 +199,27 @@ function TerminalView({
       setEnded(true);
       onExitRef.current(message);
     })
-      .then(() => onOpenedRef.current())
+      .then(() => {
+        /* Tab đóng giữa lúc bắt tay. `terminal_open` chỉ đưa phiên vào map *sau khi* mở xong, nên
+           `closeSession` của cleanup chạy lúc map còn trống và không đóng được gì; phiên vào map
+           ngay sau đó và từ đấy không ai còn biết nó tồn tại. Đóng ở đây là chỗ duy nhất còn kịp. */
+        if (disposed) {
+          void closeSession(id).catch(() => {});
+          return;
+        }
+        onOpenedRef.current();
+      })
       .catch((e) => {
         /* Không có phiên nào để đóng: `terminal_open` hỏng trước khi đưa được gì vào map, nên
            cleanup bên dưới không được gọi `terminal_close` cho một id chưa từng tồn tại. */
         ended = true;
+        if (disposed) return;
         onErrorRef.current(errorMessage(tRef.current, e));
         onFailedRef.current();
       });
 
     return () => {
+      disposed = true;
       typed.dispose();
       selected.dispose();
       // Chỉ khi unmount, không phải khi mất `active`: tab nằm sau vẫn phải cuộn tiếp.

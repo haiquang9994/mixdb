@@ -43,6 +43,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- Closing a terminal tab while it is still connecting now closes the session it was opening, instead of leaving it running.
 - An SSH tab whose shell has exited now closes the connection to the server instead of holding it open until MixDB quits.
 - A script that leaves a transaction open no longer breaks the tables list and the table data beside it.
 - A read-only connection now refuses `EXPLAIN ANALYZE`, which runs the statement it explains rather than only planning it.
