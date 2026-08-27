@@ -343,7 +343,12 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     setUri(c.uri ?? "");
     setUriRevealed(!c.uri);
     setConfirmingReveal(false);
-    setUseSsl(c.use_ssl ?? true);
+    /* Absent means "prefer TLS" to the backend (`use_ssl == Some(false)` is the only thing that
+       turns it off), which is why an entry from before this box existed reads as on. But only
+       for a kind that has the box at all: `buildConnectionConfig` writes `undefined` for Mongo
+       and Redis, so loading one of those and then switching the form to MySQL used to arrive
+       with TLS silently ticked — a form the user never set that way. */
+    setUseSsl(isSqlKind(c.kind) ? c.use_ssl ?? true : false);
     setTunnelType(c.ssh ? "ssh" : "direct");
     setSshHost("");
     setSshPort(22);
@@ -487,7 +492,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     if (!source) return;
     const entry: SavedConnection = {
       id: crypto.randomUUID(),
-      name: `${source.name} (copy)`,
+      name: t("connection.copySuffix", { name: source.name }),
       config: source.config,
       // Carried over, unlike `pinned`: a copy of a production connection points at the same
       // server, so the mark that says not to write to it has to come along. Losing it would
@@ -607,7 +612,12 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
       setStatus(t("connection.connectedStatus", { id: id.slice(0, 8) }));
       const titleHost = config.kind === "mongo" ? mongoUriHost(config.uri ?? "") : config.host;
       onTitleChange(
-        title ?? (saveAsName.trim() || t("connection.fallbackTitle", { kind: config.kind, host: titleHost })),
+        title ??
+          (saveAsName.trim() ||
+            // The engine as it is named everywhere else in the app, not the wire value: a tab
+            // called "postgres · db" beside a sidebar row marked PostgreSQL is the app
+            // disagreeing with itself.
+            t("connection.fallbackTitle", { kind: t(KIND_LABEL[config.kind]), host: titleHost })),
       );
     } catch (e) {
       /* The state is left alone. A server that is off, or a VPN that is not up, is not the user

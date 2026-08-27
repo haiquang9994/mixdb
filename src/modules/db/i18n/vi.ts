@@ -10,6 +10,7 @@ const dbVi: DbDict = {
     disconnectHint: "Đóng kết nối này và quay lại màn hình kết nối",
     connectedStatus: "Đã kết nối ({{id}})",
     fallbackTitle: "{{kind}} \u00b7 {{host}}",
+    copySuffix: "{{name}} (bản sao)",
     nameLabel: "Tên",
     saveAsLabel: "Lưu thành",
     connectionNamePlaceholder: "Tên kết nối",

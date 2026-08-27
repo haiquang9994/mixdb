@@ -298,7 +298,9 @@ function QueryEditor({
             message: problem.message,
             // Named, so it reads as the server's opinion rather than as MixDB's — which matters
             // most for the warnings, where the server may simply be looking somewhere else.
-            source: "MySQL",
+            // The engine that actually answered: this pane opens on either, and PostgreSQL's
+            // complaint attributed to MySQL is a worse label than none.
+            source: dialect.kind === "postgres" ? "PostgreSQL" : "MySQL",
           },
         ];
       },
@@ -465,16 +467,22 @@ function QueryEditor({
     const startedAt = Date.now();
     // Remembered as the user wrote it, not as it was sent: a `LIMIT` MixDB added is not part of
     // the query they would want back.
+    /* Nothing is remembered for a connection nobody saved. History is filed under the saved
+       connection's id, so an unsaved one wrote every run under `""`: a row the dialog never
+       shows, that Clear history cannot reach, and that still takes one of the 300 places from
+       the runs someone can actually see. */
     const remember = (rowCount: number | null, failure: string | null) =>
-      recordQuery({
-        sql: text,
-        profileId,
-        database,
-        startedAt,
-        durationMs: Date.now() - startedAt,
-        rowCount,
-        error: failure,
-      });
+      profileId === ""
+        ? undefined
+        : recordQuery({
+            sql: text,
+            profileId,
+            database,
+            startedAt,
+            durationMs: Date.now() - startedAt,
+            rowCount,
+            error: failure,
+          });
 
     try {
       const produced = await api.runScript(connectionId, sent, database || undefined);

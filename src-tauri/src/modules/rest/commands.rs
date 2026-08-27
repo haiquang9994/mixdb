@@ -69,11 +69,18 @@ async fn collect(builder: reqwest::RequestBuilder, started: Instant) -> Result<R
     let status = res.status();
     let http_version = format!("{:?}", res.version());
     let final_url = res.url().to_string();
+    /* `from_utf8_lossy` and not `to_str`: a header value is bytes, and `to_str` refuses anything
+       outside ASCII. A `Content-Disposition` carrying an accented filename — the commonest one by
+       far — came back as an empty string, which reads as a header the server did not send rather
+       than one this client could not spell. Lossy keeps everything it can and marks the rest. */
     let headers = res
         .headers()
         .iter()
         .map(|(name, value)| {
-            (name.as_str().to_string(), value.to_str().unwrap_or_default().to_string())
+            (
+                name.as_str().to_string(),
+                String::from_utf8_lossy(value.as_bytes()).into_owned(),
+            )
         })
         .collect::<Vec<_>>();
 
@@ -128,10 +135,12 @@ pub async fn rest_send(
         headers.append(name, value);
     }
 
-    let mut builder = client
-        .request(method, url)
-        .headers(headers)
-        .timeout(Duration::from_millis(req.timeout_ms));
+    let mut builder = client.request(method, url).headers(headers);
+    // Zero means no limit, the way it does everywhere a timeout is written down. Passed through it
+    // would be a deadline of nothing at all, and every request would fail before it was sent.
+    if req.timeout_ms > 0 {
+        builder = builder.timeout(Duration::from_millis(req.timeout_ms));
+    }
 
     builder = match req.body {
         WireBody::None => builder,

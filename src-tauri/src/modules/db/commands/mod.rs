@@ -262,9 +262,27 @@ pub async fn connect_db(
     Ok(id)
 }
 
+/// Đóng một connection, và nói lời chia tay trước khi đóng cửa.
+///
+/// Buông pool đi thì socket cũng mất, nhưng phía máy chủ đó là một kết nối biến mất giữa chừng và
+/// nó ghi một dòng log cho mỗi cái. `close()` gửi lời chào tạm biệt rồi mới chờ.
+///
+/// Thứ tự có chủ ý: lấy khỏi bản đồ trước (khoá không giữ qua `await` nào), đóng pool khi tunnel
+/// **vẫn còn sống** trong cái vừa lấy ra — đường về máy chủ phải còn thì lời tạm biệt mới tới nơi
+/// — rồi mới buông, và `Drop` của `Tunnel` hạ cổng forward.
 #[tauri::command]
 pub async fn disconnect_db(state: State<'_, DbState>, id: String) -> Result<(), AppError> {
-    state.connections.lock().await.remove(&id);
+    let gone = state.connections.lock().await.remove(&id);
+    let Some(connection) = gone else {
+        return Ok(());
+    };
+    match &connection.handle {
+        DbHandle::Mysql { pool, .. } => pool.close().await,
+        DbHandle::Postgres(pools) => pools.close_all().await,
+        // Mongo tự gom lại khi tay cầm cuối cùng đi, và Redis là một kết nối chứ không phải pool.
+        DbHandle::Mongo(_) | DbHandle::Redis(_) => {}
+    }
+    drop(connection);
     Ok(())
 }
 

@@ -17,6 +17,8 @@ const dbEn = {
     disconnectHint: "Close this connection and go back to the connection form",
     connectedStatus: "Connected ({{id}})",
     fallbackTitle: "{{kind}} \u00b7 {{host}}",
+    /** What Duplicate calls the copy it makes. */
+    copySuffix: "{{name}} (copy)",
     nameLabel: "Name",
     saveAsLabel: "Save as",
     connectionNamePlaceholder: "Connection name",

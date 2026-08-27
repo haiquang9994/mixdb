@@ -117,6 +117,19 @@ impl Pools {
             pool.close().await;
         }
     }
+
+    /// Every pool this connection opened, said goodbye to properly.
+    ///
+    /// Dropping them would work in the sense that the sockets go, but the server's view of it is a
+    /// connection that vanished mid-conversation, and it writes a line about each one. Closing
+    /// sends the terminate message first. Taken out of the map before the wait, so nothing new can
+    /// be handed one of these on the way out.
+    pub async fn close_all(&self) {
+        let pools: Vec<PgPool> = self.pools.lock().await.drain().map(|(_, pool)| pool).collect();
+        for pool in pools {
+            pool.close().await;
+        }
+    }
 }
 
 /// Opens a connection, and proves it: the database it names is dialed here rather than at the

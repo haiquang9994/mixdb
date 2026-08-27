@@ -114,17 +114,33 @@ pub async fn thread_id(conn: &mut sqlx::MySqlConnection) -> Result<u64, AppError
 /// a dropped connection reported as "connection lost" against the whole run.
 ///
 /// Runs on a connection of its own out of the same pool, since the one being killed is busy. A
-/// server that no longer has that session (the query finished first) reports "Unknown thread id",
-/// which is not a failure worth showing: the user asked for it to stop, and it has.
+/// server that no longer has that session (the query finished first) answers `1094`, which is not
+/// a failure worth showing: the user asked for it to stop, and it has.
+///
+/// By number and not by the message. `"Unknown thread id"` is the English text of one server
+/// build: a server running under another `lc_messages`, or a MariaDB wording it differently, says
+/// the same thing in words this would not recognise — and the user would be shown an error for a
+/// query that had already finished. `mysql_script::problem` reads numbers for the same reason.
 pub async fn kill_query(pool: &MySqlPool, thread_id: u64) -> Result<(), AppError> {
     match sqlx::query(sqlx::AssertSqlSafe(format!("KILL QUERY {thread_id}")))
         .execute(pool)
         .await
     {
         Ok(_) => Ok(()),
-        Err(e) if e.to_string().contains("Unknown thread id") => Ok(()),
+        Err(e) if error_number(&e) == ER_NO_SUCH_THREAD => Ok(()),
         Err(e) => Err(map_error(e)),
     }
+}
+
+/// "Unknown thread id" — the session named is not on the server any more.
+const ER_NO_SUCH_THREAD: u16 = 1094;
+
+/// The server's own number for an error, or 0 when it did not come from the server.
+fn error_number(error: &sqlx::Error) -> u16 {
+    error
+        .as_database_error()
+        .and_then(|db| db.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>())
+        .map_or(0, |e| e.number())
 }
 
 #[derive(Debug, Serialize)]

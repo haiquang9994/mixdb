@@ -43,6 +43,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- Loading a Mongo or Redis connection and then switching the form to MySQL no longer ticks TLS by itself.
+- A request timeout of 0 now means no limit, instead of failing the request instantly.
+- A response header whose value is not plain ASCII is no longer shown as empty.
+- Query checks on PostgreSQL are no longer labelled as coming from MySQL.
+- Cancelling a query that had already finished no longer reports an error on a server that answers in another language.
+- A tab named after its connection now says PostgreSQL rather than `postgres`.
+- Duplicating a connection now names the copy in your own language.
+- Query history on an unsaved connection no longer fills up with runs nothing can show or clear.
+- Disconnecting now closes the connection properly rather than leaving the server to notice it vanished.
 - The app's own tab bar can now be reached and used from the keyboard, like every other strip.
 - One unreadable saved terminal target no longer empties the whole saved list for the session.
 - Switching database no longer leaves the previous one's tables, collections or error on screen.
