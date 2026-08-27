@@ -111,7 +111,13 @@ export function useTabReorder(
     if (held.current !== null && held.current.dragging) draw(held.current);
   });
 
-  useEffect(() => () => held.current?.stop.abort(), []);
+  /* Unmounting in the middle of a drag — Ctrl+W on the tab being carried — is a release with
+     nobody left to hand the tab back to. Aborting the listeners is not enough on its own: `tick`
+     asks `held.current` whether to keep going, not the listeners, so it went on booking a frame
+     for ever against a strip no longer in the document. There `getBoundingClientRect()` is all
+     zeros, `near` is 0 and `over` is `Infinity`; the loop ran a frame at a time for the life of
+     the app and held the detached strip in memory with it. */
+  useEffect(() => () => void letGo(), []);
 
   function boxes(strip: HTMLElement): TabBox[] {
     return [...strip.querySelectorAll<HTMLElement>("[data-tab-id]")].map((el) => ({
@@ -157,13 +163,20 @@ export function useTabReorder(
     if (h.strip.scrollLeft !== was) follow(h);
   }
 
-  function release() {
+  /** Everything a hold owns, let go of: the window listeners, the frame `tick` has booked, and the
+   *  ref that keeps both alive. Hands back what was being held, or null when nothing was. */
+  function letGo(): Held | null {
     const h = held.current;
     held.current = null;
-    if (h === null) return;
+    if (h === null) return null;
     h.stop.abort();
     cancelAnimationFrame(h.frame);
-    if (!h.dragging) return;
+    return h;
+  }
+
+  function release() {
+    const h = letGo();
+    if (h === null || !h.dragging) return;
     dragged.current = true;
     h.el.removeAttribute("data-dragging");
     /* Let go a few pixels off its gap, because the pointer was never exactly on one. It falls the
