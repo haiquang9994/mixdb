@@ -2,6 +2,7 @@ use crate::error::AppError;
 use russh::client::{self};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -56,6 +57,33 @@ const WATCH_MIN: Duration = Duration::from_secs(5);
 
 /// Trần của backoff: máy chủ SSH thật sự không tới được thì thử một phút một lần, không hơn.
 const WATCH_MAX: Duration = Duration::from_secs(60);
+
+/// Vòng accept chờ chừng này sau một lỗi không thuộc về riêng một kết nối — hết file descriptor,
+/// hết bộ nhớ tạm. Đủ dài để một lỗi lặp lại không đốt hết một lõi, đủ ngắn để truy vấn tiếp theo
+/// qua tunnel không kịp nhận ra.
+const ACCEPT_RETRY: Duration = Duration::from_millis(100);
+
+/// Bấy nhiêu lần hỏng liên tiếp thì mới phiền tới người dùng — khoảng hai giây cổng không nhận
+/// được gì. Ngắn hơn thì một cơn hết file descriptor thoáng qua cũng nháy banner.
+const ACCEPT_ALARM: u32 = 20;
+
+/// Lỗi `accept` thuộc về đúng một kết nối vừa hỏng, không phải về cái cổng đang nghe.
+///
+/// Kết nối bị huỷ giữa lúc bắt tay là chuyện thường của một pool: Windows trả `WSAECONNRESET` hoặc
+/// `WSAECONNABORTED`, Unix trả `ECONNABORTED`, và `EINTR` là một signal cắt ngang lời gọi. Lần
+/// `accept` sau vẫn nhận được như không có gì.
+///
+/// Xếp nhầm không tốn gì ngoài một nhịp `ACCEPT_RETRY`: từ đây trở đi cả hai nhánh đều thử lại, và
+/// cái danh sách này chỉ quyết định có chờ và có đếm về phía banner hay không.
+fn is_transient_accept(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        ErrorKind::ConnectionAborted
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionRefused
+            | ErrorKind::Interrupted
+    )
+}
 
 /// Nhịp chờ kế tiếp của watcher.
 ///
@@ -446,10 +474,41 @@ pub async fn open_tunnel(
     let accept: JoinHandle<()> = tokio::spawn({
         let inner = Arc::clone(&inner);
         async move {
+            /* Bao nhiêu lỗi `accept` liên tiếp không thuộc về một kết nối lẻ. Đếm để biết lúc nào
+               nên nói, và để biết lúc nào nói lại rằng đã ổn. */
+            let mut failures: u32 = 0;
             loop {
                 let (local_stream, _) = match listener.accept().await {
-                    Ok(pair) => pair,
-                    Err(_) => break,
+                    Ok(pair) => {
+                        // Nhận lại được sau khi đã kêu thì phải rút lời: banner đang nói tunnel
+                        // hỏng, mà nó vừa nhận một kết nối.
+                        if failures >= ACCEPT_ALARM {
+                            (inner.notify)(TunnelEvent::Reconnected);
+                        }
+                        failures = 0;
+                        pair
+                    }
+                    // Một kết nối lẻ chết giữa lúc bắt tay. Cái tiếp theo vẫn tới, nên không chờ
+                    // và không đếm.
+                    Err(e) if is_transient_accept(&e) => continue,
+                    Err(e) => {
+                        failures += 1;
+                        /* Trước đây chỗ này `break` ngay lần đầu, và tunnel chết trong im lặng:
+                           watcher chỉ nhìn phiên SSH, thấy phiên còn sống nên không banner nào
+                           hiện, và mọi truy vấn sau đó chỉ trả về `connectionLost`. Nói đúng một
+                           lần, ở đúng lần thứ `ACCEPT_ALARM`. */
+                        if failures == ACCEPT_ALARM {
+                            (inner.notify)(TunnelEvent::Failed(
+                                err!("error.tunnelAcceptFailed", message = e),
+                            ));
+                        }
+                        /* Và vẫn thử tiếp, như watcher vẫn thử tiếp: hết file descriptor là
+                           chuyện qua đi, còn bỏ vòng lặp ở đây thì không còn gì mở lại được cổng
+                           — nó chỉ được bind một lần, trong `open_tunnel`. Vòng lặp sống đúng
+                           bằng đời của `Tunnel`, mà `Drop` của nó abort task này. */
+                        tokio::time::sleep(ACCEPT_RETRY).await;
+                        continue;
+                    }
                 };
                 // A DB connection pool (or multiple in-flight queries) can hold several physical
                 // connections open at once, so each accepted local connection gets its own
@@ -664,8 +723,9 @@ pub async fn open_shell(
 
 #[cfg(test)]
 mod tests {
-    use super::{known_hosts_file, load_known_hosts, next_backoff, remember_host};
-    use super::{WATCH_IDLE, WATCH_MAX, WATCH_MIN};
+    use super::{is_transient_accept, known_hosts_file, load_known_hosts, next_backoff, remember_host};
+    use super::{ACCEPT_ALARM, ACCEPT_RETRY, WATCH_IDLE, WATCH_MAX, WATCH_MIN};
+    use std::io::{Error, ErrorKind};
     use std::time::Duration;
 
     /// What the handler reads and writes between connections. The handshake around it needs a real
@@ -726,5 +786,36 @@ mod tests {
         // Chạm trần thì dừng ở trần, không vượt và không quay về WATCH_MIN.
         assert_eq!(next_backoff(Duration::from_secs(40), false), WATCH_MAX);
         assert_eq!(next_backoff(WATCH_MAX, false), WATCH_MAX);
+    }
+
+    /// Cái vòng accept quyết định trên: lỗi nào là của một kết nối lẻ, lỗi nào là của cổng.
+    ///
+    /// Kiểm bằng chính mã lỗi của hệ điều hành chứ không bằng `ErrorKind` viết tay, vì điều đang
+    /// được khẳng định là *mã của Windows và của Unix rơi vào đúng những `ErrorKind` mà vòng lặp
+    /// bắt* — phần dễ sai nhất và phần không đọc ra được từ code.
+    #[test]
+    fn an_aborted_connection_is_not_a_broken_listener() {
+        // Mã thô được hệ điều hành *đang chạy* dịch, nên mỗi nửa chỉ chạy ở nhà nó — CI chạy cả
+        // hai. Một pool buông socket nửa mở sinh ra đúng những mã này.
+        #[cfg(windows)]
+        {
+            assert!(is_transient_accept(&Error::from_raw_os_error(10054))); // WSAECONNRESET
+            assert!(is_transient_accept(&Error::from_raw_os_error(10053))); // WSAECONNABORTED
+            // Hết handle không phải chuyện của một kết nối: chờ rồi thử lại.
+            assert!(!is_transient_accept(&Error::from_raw_os_error(10024))); // WSAEMFILE
+        }
+        #[cfg(unix)]
+        {
+            assert!(is_transient_accept(&Error::from_raw_os_error(104))); // ECONNRESET
+            assert!(is_transient_accept(&Error::from_raw_os_error(103))); // ECONNABORTED
+            assert!(!is_transient_accept(&Error::from_raw_os_error(24))); // EMFILE
+        }
+
+        // Và một signal cắt ngang lời gọi, ở mọi nhà.
+        assert!(is_transient_accept(&Error::from(ErrorKind::Interrupted)));
+
+        // Hai giây cổng câm là ngưỡng phiền tới người dùng: đủ lâu để một cơn thoáng qua tự khỏi
+        // trong im lặng.
+        assert_eq!(ACCEPT_RETRY * ACCEPT_ALARM, Duration::from_secs(2));
     }
 }

@@ -141,6 +141,8 @@ const en = {
     cannotReadPrivateKey: "Cannot read the private key file: {{message}}",
     invalidPrivateKey: "That is not a private key MixDB can read: {{message}}",
     cannotBindTunnelPort: "Cannot open a local port for the tunnel: {{message}}",
+    tunnelAcceptFailed:
+      "The tunnel's local port has stopped taking connections: {{message}}. MixDB keeps trying — if it does not come back, close the tab and connect again.",
     cannotSaveKnownHost: "Cannot remember the server's key: {{message}}",
     sshUnavailable:
       "The SSH tunnel is not open at the moment \u2014 MixDB is trying to open it again.",
