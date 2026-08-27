@@ -92,14 +92,14 @@
    the button the screen is asking for. */
 .delete {
   flex: 0 0 auto;
-  border-color: #c0392b;
-  color: #c0392b;
+  border-color: var(--danger-text);
+  color: var(--danger-text);
 }
 
 /* Button's own `:hover` is more specific than this class, so without restating it the destructive
    button would drop to a plain grey edge exactly when the pointer is on it. */
 .delete:hover:not(:disabled) {
-  border-color: #c0392b;
+  border-color: var(--danger-text);
   background: rgb(192 57 43 / 0.1);
 }
 

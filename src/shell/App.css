@@ -89,6 +89,20 @@
   --accent-text: var(--c-blue-text);
   --accent-rgb: var(--c-blue-rgb);
 
+  /* Destructive, in the same three forms the accent has: solid for a border, an icon or a filled
+     bar; a darker cast for text that has to stay readable against the page; and bare channels so
+     a rule can mix its own wash with `rgb(var(--danger-rgb) / a)`.
+
+     Not one of the ten accent palettes and never chosen by the user: red is what *delete* means
+     here, and an accent that could also be red would leave a Delete button reading as the
+     recommended one. Which is why the accents are picked to stay distinct from it — see above.
+
+     Before these existed the same red was written out by hand in sixty-odd places, in two casts
+     that had drifted a little (`#d32f2f` against `#c0392b`) and two more for dark. */
+  --danger: #d32f2f;
+  --danger-text: #c0392b;
+  --danger-rgb: 211 47 47;
+
   /* All ten palettes stay defined whichever one is in force, rather than only the chosen one, so
      the swatches in Settings can each paint themselves from their own `--c-<name>` and show the
      whole set at once. Their dark casts sit with the rest of the dark theme at the foot of the
@@ -520,7 +534,7 @@ body {
 }
 
 .context-menu-delete {
-  color: #d32f2f;
+  color: var(--danger);
 }
 
 .muted {
@@ -639,6 +653,13 @@ textarea:focus {
   --accent-solid: var(--accent);
   --accent-on-solid: #16181c;
 
+  /* Lighter, so it reads against a dark page — the light casts are close enough to the
+     background here to be hard work. `--danger-text` is the softer of the two, matching the
+     roles they have in the light theme. */
+  --danger: #ff6b6b;
+  --danger-text: #ff8a80;
+  --danger-rgb: 255 99 99;
+
   /* The dark cast of all ten. Only the palettes are restated — which one `--accent` points at was
      settled by `[data-accent]` above and holds through the theme, so a swatch and the accent both
      follow the theme without a second selector per colour. */
@@ -700,6 +721,10 @@ textarea:focus {
 
     --accent-solid: var(--accent);
     --accent-on-solid: #16181c;
+
+    --danger: #ff6b6b;
+    --danger-text: #ff8a80;
+    --danger-rgb: 255 99 99;
 
     --c-blue: #6f9bf0;
     --c-blue-text: #8fb4f5;

@@ -31,8 +31,8 @@
 /* Only on hover: at rest a destructive action sits in the bar as quietly as the others, and
    turns red once the pointer is on it — where the click would actually land. */
 .danger:hover:not(:disabled) {
-  background: rgba(211, 47, 47, 0.15);
-  color: #d32f2f;
+  background: rgb(var(--danger-rgb) / 0.15);
+  color: var(--danger);
 }
 
 .spinning {

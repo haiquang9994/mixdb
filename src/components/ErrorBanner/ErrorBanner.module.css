@@ -4,7 +4,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  color: #d32f2f;
+  color: var(--danger);
   margin: 0;
   padding-bottom: 3px;
   overflow: hidden;
@@ -16,13 +16,13 @@
   right: 0;
   bottom: 0;
   height: 2px;
-  background-color: rgba(211, 47, 47, 0.15);
+  background-color: rgb(var(--danger-rgb) / 0.15);
 }
 
 .countdownBar {
   display: block;
   height: 100%;
-  background-color: #d32f2f;
+  background-color: var(--danger);
   animation-name: countdown-shrink;
   animation-timing-function: linear;
   animation-fill-mode: forwards;
@@ -47,64 +47,54 @@
   border: none;
   border-radius: 50%;
   padding: 0;
-  background-color: rgba(211, 47, 47, 0.15);
+  background-color: rgb(var(--danger-rgb) / 0.15);
   box-shadow: none;
-  color: #d32f2f;
+  color: var(--danger);
   font-size: 0.95em;
   line-height: 1;
   cursor: pointer;
 }
 
 .dismiss:hover {
-  background-color: rgba(211, 47, 47, 0.3);
+  background-color: rgb(var(--danger-rgb) / 0.3);
   border-color: transparent;
 }
 
 .dismiss:active {
-  background-color: rgba(211, 47, 47, 0.4);
+  background-color: rgb(var(--danger-rgb) / 0.4);
   border-color: transparent;
 }
 
 :root[data-theme="dark"] .countdown {
-  background-color: rgba(255, 99, 99, 0.2);
-}
-
-:root[data-theme="dark"] .countdownBar {
-  background-color: #ff6b6b;
+  background-color: rgb(var(--danger-rgb) / 0.2);
 }
 
 :root[data-theme="dark"] .dismiss {
-  background-color: rgba(255, 99, 99, 0.2);
-  color: #ff6b6b;
+  background-color: rgb(var(--danger-rgb) / 0.2);
 }
 
 :root[data-theme="dark"] .dismiss:hover {
-  background-color: rgba(255, 99, 99, 0.35);
+  background-color: rgb(var(--danger-rgb) / 0.35);
 }
 
 :root[data-theme="dark"] .dismiss:active {
-  background-color: rgba(255, 99, 99, 0.45);
+  background-color: rgb(var(--danger-rgb) / 0.45);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .countdown {
-    background-color: rgba(255, 99, 99, 0.2);
-  }
-
-  :root:not([data-theme]) .countdownBar {
-    background-color: #ff6b6b;
+    background-color: rgb(var(--danger-rgb) / 0.2);
   }
 
   :root:not([data-theme]) .dismiss {
-    background-color: rgba(255, 99, 99, 0.2);
-    color: #ff6b6b;
+    background-color: rgb(var(--danger-rgb) / 0.2);
   }
 
   :root:not([data-theme]) .dismiss:hover {
-    background-color: rgba(255, 99, 99, 0.35);
+    background-color: rgb(var(--danger-rgb) / 0.35);
   }
 
   :root:not([data-theme]) .dismiss:active {
-    background-color: rgba(255, 99, 99, 0.45);
+    background-color: rgb(var(--danger-rgb) / 0.45);
   }
 }

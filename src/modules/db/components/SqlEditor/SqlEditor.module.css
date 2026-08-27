@@ -38,7 +38,7 @@
      statement in, so a squiggle and the message it turns into are the same red. The amber is
      visibly not that red: almost everything the checker says is a warning, and a warning that
      looks like an error would have the whole editor reading as broken. */
-  --sql-error: #c0392b;
+  --sql-error: var(--danger-text);
   --sql-warning: #9c7000;
 
   min-height: 0;
@@ -122,7 +122,7 @@
 }
 
 :root[data-theme="dark"] .editor {
-  --sql-error: #ff8a80;
+  --sql-error: var(--danger-text);
   --sql-warning: #e2b93d;
   --sql-keyword: #c586c0;
   --sql-type: #4ec9b0;
@@ -137,7 +137,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .editor {
-    --sql-error: #ff8a80;
+    --sql-error: var(--danger-text);
     --sql-warning: #e2b93d;
     --sql-keyword: #c586c0;
     --sql-type: #4ec9b0;

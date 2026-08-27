@@ -313,17 +313,6 @@
 }
 
 .updateStatusError {
-  color: #c0392b;
+  color: var(--danger-text);
   opacity: 1;
 }
-
-:root[data-theme="dark"] .updateStatusError {
-  color: #ff8a80;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .updateStatusError {
-    color: #ff8a80;
-  }
-}
-

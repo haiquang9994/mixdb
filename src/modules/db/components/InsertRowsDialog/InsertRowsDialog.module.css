@@ -104,7 +104,7 @@
 
 .requiredMark {
   margin-left: 0.2em;
-  color: #c0392b;
+  color: var(--danger-text);
 }
 
 .rowNumber {
@@ -141,7 +141,7 @@
 }
 
 .cellInvalid {
-  box-shadow: inset 0 0 0 1px #c0392b;
+  box-shadow: inset 0 0 0 1px var(--danger-text);
 }
 
 .nullToggle {
@@ -201,8 +201,8 @@
 
 .removeRow:hover:not(:disabled) {
   opacity: 1;
-  background: rgba(211, 47, 47, 0.15);
-  color: #d32f2f;
+  background: rgb(var(--danger-rgb) / 0.15);
+  color: var(--danger);
 }
 
 .removeRow:disabled {
@@ -230,9 +230,9 @@
   overflow-y: auto;
   padding: 0.5rem 0.6rem;
   border-radius: var(--radius-sm);
-  background: rgba(211, 47, 47, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(211, 47, 47, 0.35);
-  color: #c0392b;
+  background: rgb(var(--danger-rgb) / 0.12);
+  box-shadow: inset 0 0 0 1px rgb(var(--danger-rgb) / 0.35);
+  color: var(--danger-text);
   font-size: 0.9em;
   line-height: 1.4;
 }
@@ -247,14 +247,4 @@
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
-}
-
-:root[data-theme="dark"] .errors {
-  color: #ff8a80;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .errors {
-    color: #ff8a80;
-  }
 }

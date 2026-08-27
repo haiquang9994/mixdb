@@ -64,8 +64,8 @@
 }
 
 .toolButtonDanger:hover:not(:disabled) {
-  border-color: #d32f2f;
-  color: #d32f2f;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* What a running install shows: the stage in words, the megabytes so far, and a bar. All three,
@@ -175,8 +175,8 @@
 }
 
 .toolBadgeMissing {
-  background: rgba(211, 47, 47, 0.15);
-  color: #d32f2f;
+  background: rgb(var(--danger-rgb) / 0.15);
+  color: var(--danger);
   opacity: 1;
 }
 
@@ -195,20 +195,10 @@
   margin: 0;
   padding: 0.5rem 0.6rem;
   border-radius: var(--radius-sm);
-  background: rgba(211, 47, 47, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(211, 47, 47, 0.35);
-  color: #c0392b;
+  background: rgb(var(--danger-rgb) / 0.12);
+  box-shadow: inset 0 0 0 1px rgb(var(--danger-rgb) / 0.35);
+  color: var(--danger-text);
   font-size: 0.85em;
   line-height: 1.4;
   overflow-wrap: anywhere;
-}
-
-:root[data-theme="dark"] .toolError {
-  color: #ff8a80;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .toolError {
-    color: #ff8a80;
-  }
 }

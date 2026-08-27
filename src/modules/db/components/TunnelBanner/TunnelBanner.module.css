@@ -49,7 +49,7 @@
 }
 
 .failed {
-  border-left: 3px solid #d32f2f;
+  border-left: 3px solid var(--danger);
 }
 
 /* Quay đều trong lúc chờ: trạng thái này có thể ở lại tới một phút, nên phải thấy được là nó vẫn đang
@@ -92,10 +92,6 @@
   border-left-color: #66bb6a;
 }
 
-:root[data-theme="dark"] .failed {
-  border-left-color: #ff6b6b;
-}
-
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .reconnecting {
     border-left-color: #ffc107;
@@ -105,7 +101,4 @@
     border-left-color: #66bb6a;
   }
 
-  :root:not([data-theme]) .failed {
-    border-left-color: #ff6b6b;
-  }
 }

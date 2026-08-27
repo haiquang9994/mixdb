@@ -427,7 +427,7 @@ fieldset .row input {
    learnt it here. Not red at rest: leaving a connection loses nothing, and a row of tabs with a
    red one on the end would read as a warning about the tabs. */
 .method-tab-disconnect:hover {
-  color: #d32f2f;
+  color: var(--danger);
   background: rgb(211 47 47 / 0.15);
 }
 
@@ -514,17 +514,7 @@ fieldset .row label.field-connection-string {
 /* The same red every other failure in the app is written in — see ErrorBanner, which pairs these
    two values. */
 .tunnel-status-error {
-  color: #d32f2f;
-}
-
-:root[data-theme="dark"] .tunnel-status-error {
-  color: #ff6b6b;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .tunnel-status-error {
-    color: #ff6b6b;
-  }
+  color: var(--danger);
 }
 
 .sql-workspace {

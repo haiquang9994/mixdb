@@ -211,7 +211,7 @@
 }
 
 .historyFailed {
-  color: #c0392b;
+  color: var(--danger-text);
   opacity: 1;
 }
 
@@ -272,8 +272,8 @@
 /* Armed by the first press. Red and named, so the second press is never a surprise. */
 .entryDeleteArmed,
 .entryRow:hover .entryDeleteArmed {
-  background: rgba(211, 47, 47, 0.12);
-  color: #c0392b;
+  background: rgb(var(--danger-rgb) / 0.12);
+  color: var(--danger-text);
   opacity: 1;
 }
 
@@ -636,9 +636,9 @@
   gap: 0.2rem;
   padding: 0.5rem 0.6rem;
   border-radius: var(--radius-sm);
-  background: rgba(211, 47, 47, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(211, 47, 47, 0.35);
-  color: #c0392b;
+  background: rgb(var(--danger-rgb) / 0.12);
+  box-shadow: inset 0 0 0 1px rgb(var(--danger-rgb) / 0.35);
+  color: var(--danger-text);
   font-size: 0.9em;
   line-height: 1.4;
 }
@@ -659,9 +659,9 @@
   margin: 0;
   padding: 0.5rem 0.6rem;
   border-radius: var(--radius-md);
-  background: rgba(211, 47, 47, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(211, 47, 47, 0.35);
-  color: #c0392b;
+  background: rgb(var(--danger-rgb) / 0.12);
+  box-shadow: inset 0 0 0 1px rgb(var(--danger-rgb) / 0.35);
+  color: var(--danger-text);
   font-size: 0.9em;
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -1025,24 +1025,9 @@
   --qe-card-bg: rgb(255 255 255 / 0.05);
 }
 
-:root[data-theme="dark"] .error,
-:root[data-theme="dark"] .resultError,
-:root[data-theme="dark"] .historyFailed,
-:root[data-theme="dark"] .entryDeleteArmed,
-:root[data-theme="dark"] .entryRow:hover .entryDeleteArmed {
-  color: #ff8a80;
-}
-
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .queryEditor {
     --qe-card-bg: rgb(255 255 255 / 0.05);
   }
 
-  :root:not([data-theme]) .error,
-  :root:not([data-theme]) .resultError,
-  :root:not([data-theme]) .historyFailed,
-  :root:not([data-theme]) .entryDeleteArmed,
-  :root:not([data-theme]) .entryRow:hover .entryDeleteArmed {
-    color: #ff8a80;
-  }
 }
