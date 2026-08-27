@@ -365,6 +365,11 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
     clearFeedback();
     onTitleChange(entry.name);
+    /* Beside the title, and for the same reason: from here on the tab is named after this
+       connection, so next launch has to know which one that was. `connect` overwrites it a tick
+       later when this is on the way in through `openAndConnect` — until then, and for a form the
+       user is only looking at, the flag is honest about there being no connection open. */
+    onStateChange({ savedId: entry.id, connected: false });
   }
 
   function newConnectionForm() {
@@ -391,6 +396,8 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     setSshPassphrase("");
     clearFeedback();
     onTitleChange(t("app.newConnectionTitle"));
+    // Nothing to point at any more, and the title says so too.
+    onStateChange(undefined);
   }
 
   const isMongo = kind === "mongo";
@@ -570,8 +577,8 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
       setConnectionId(id);
       /* Written on both branches, so where this tab points does not depend on `disconnect` having
          run first: connecting to something else replaces it, and connecting to a config nobody
-         saved clears it. An id and nothing else — see `tabState.ts`. */
-      onStateChange(savedId === undefined ? undefined : { savedId });
+         saved clears it. An id and a flag — see `tabState.ts`. */
+      onStateChange(savedId === undefined ? undefined : { savedId, connected: true });
       setStatus(t("connection.connectedStatus", { id: id.slice(0, 8) }));
       const titleHost = config.kind === "mongo" ? mongoUriHost(config.uri ?? "") : config.host;
       onTitleChange(
@@ -596,12 +603,21 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
      `savedConnectionsLoaded` is the whole reason this waits: the list is empty until the file has
      been read, and acting on it before then would read "the connection was deleted" every launch.
      A connection that really has gone leaves the form as it opens, with no banner — nothing failed.
-     `openAndConnect` is deliberately not a dependency; it is rebuilt every render. */
+
+     A tab that was in its workspace dials again; one the user had disconnected only loads the
+     connection into the form and marks it in the sidebar. Both come back looking like what was
+     left behind, which is the whole of the promise — the second half of it used to be missing, and
+     that tab opened blank under a title naming a connection it no longer pointed at.
+
+     `openAndConnect` and `applySavedConnection` are deliberately not dependencies; they are rebuilt
+     every render. */
   useEffect(() => {
     if (restoreTried.current || restoredState === null || !savedConnectionsLoaded) return;
     restoreTried.current = true;
     const entry = savedConnections.find((c) => c.id === restoredState.savedId);
-    if (entry !== undefined) openAndConnect(entry);
+    if (entry === undefined) return;
+    if (restoredState.connected) openAndConnect(entry);
+    else applySavedConnection(entry);
   }, [restoredState, savedConnectionsLoaded, savedConnections]);
 
   async function updateSidebarWidth(width: number) {
@@ -633,8 +649,6 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     if (!connectionId) return;
     await invoke("disconnect_db", { id: connectionId }).catch(() => {});
     setConnectionId(null);
-    // Leaving a connection is the one thing that means "do not come back here".
-    onStateChange(undefined);
     setStatus("");
     /* Named after what the form is holding, which is what every other tab in the app is named
        after and what disconnecting has not changed: the saved connection is still loaded, still
@@ -647,6 +661,12 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
        is a new one and says so. */
     const entry = savedConnections.find((c) => c.id === editingId);
     onTitleChange(entry?.name ?? t("app.newConnectionTitle"));
+    /* And the tab keeps pointing at it, with the flag turned down. Forgetting it here is what used
+       to make a restarted app disagree with itself: the tab came back still named after the
+       connection — because that name is in the session — but holding an empty form, because
+       nothing said which connection the name belonged to. Next launch it comes back the way it
+       looks now, at the form with the connection loaded, and Connect is still all it takes. */
+    onStateChange(entry === undefined ? undefined : { savedId: entry.id, connected: false });
   }
 
   const connectionForm = (

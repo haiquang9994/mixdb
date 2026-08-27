@@ -45,6 +45,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 - The REST response Preview can run the page's own scripts — a switch beside it, off every time the pane is drawn.
 
+### Fixed
+
+- A database tab that was left at the connection form comes back to that same connection, loaded and marked in the list, instead of reopening blank under the name of it.
+
 ## [0.0.17] - 2026-08-27
 
 ### Added
