@@ -297,12 +297,22 @@ function RedisWorkspace({
   // whole set: reading it a page at a time meant every press dropped keys into groups the user
   // had already scrolled past. Rounds are published as they land, so a long sweep fills the list
   // in rather than staring at a spinner; `loadedCount` in the footer says it is still going.
+  /* Which sweep the sidebar is showing. `loadMoreKeys` below asks for one more page of *that*
+     sweep, and its answer can land after the database, the pattern or the ceiling has changed —
+     a page of db 0 appended to db 1's list, carrying db 0's cursor and its `done` with it. A
+     number rather than the `cancelled` flag this effect used, because the thing that has to be
+     invalidated lives outside the effect. */
+  const scanRun = useRef(0);
+
   useEffect(() => {
-    let cancelled = false;
+    const mine = ++scanRun.current;
+    const live = () => scanRun.current === mine;
     setKeys([]);
     setCursor(REDIS_FIRST_CURSOR);
     setScanDone(false);
     setKeysLoading(true);
+    // A page still out belongs to the sweep just abandoned; nothing will clear this for it.
+    setLoadingMore(false);
 
     void (async () => {
       const collected: RedisKeyInfo[] = [];
@@ -314,7 +324,7 @@ function RedisWorkspace({
       try {
         for (;;) {
           const page = await redisScanKeys(connectionId, appliedPattern, next, KEY_PAGE_SIZE);
-          if (cancelled) return;
+          if (!live()) return;
           for (const key of page.keys) {
             if (seen.has(key.name)) continue;
             seen.add(key.name);
@@ -332,14 +342,14 @@ function RedisWorkspace({
           if (finished) break;
         }
       } catch (e) {
-        if (!cancelled) setLocalError(errorMessage(t, e));
+        if (live()) setLocalError(errorMessage(t, e));
       } finally {
-        if (!cancelled) setKeysLoading(false);
+        if (live()) setKeysLoading(false);
       }
     })();
 
     return () => {
-      cancelled = true;
+      scanRun.current += 1;
     };
   }, [connectionId, appliedPattern, selectedDb, scanId, keyLimit]);
 
@@ -348,9 +358,14 @@ function RedisWorkspace({
    * still land above what is on screen — which is why the list says so while it applies. */
   function loadMoreKeys() {
     if (scanDone || loadingMore || keysLoading) return;
+    const mine = scanRun.current;
     setLoadingMore(true);
     redisScanKeys(connectionId, appliedPattern, cursor, KEY_PAGE_SIZE)
       .then((page) => {
+        /* The sweep this page was asked for is not the one on screen any more. Its keys would be
+           appended to another database's list, and — worse, because it outlives the names — its
+           cursor and its `done` would be believed about that list. */
+        if (scanRun.current !== mine) return;
         setKeys((prev) => {
           const seen = new Set(prev.map((k) => k.name));
           return [...prev, ...page.keys.filter((k) => !seen.has(k.name))];
@@ -358,8 +373,12 @@ function RedisWorkspace({
         setCursor(page.cursor);
         setScanDone(page.done);
       })
-      .catch((e) => setLocalError(errorMessage(t, e)))
-      .finally(() => setLoadingMore(false));
+      .catch((e) => {
+        if (scanRun.current === mine) setLocalError(errorMessage(t, e));
+      })
+      .finally(() => {
+        if (scanRun.current === mine) setLoadingMore(false);
+      });
   }
 
   /** Rescans from the top on whatever the pattern box currently holds. */

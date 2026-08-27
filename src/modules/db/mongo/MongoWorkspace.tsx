@@ -369,22 +369,31 @@ function MongoWorkspace({
     };
   }, [connectionId]);
 
+  /* Which read of the collection list is the current one — see `tablesRun` in `SqlWorkspace`, the
+     same race and the same answer. Both this effect and `listCollections` below start one, and
+     either answer can land after the database has been changed underneath it. */
+  const collectionsRun = useRef(0);
+
   useEffect(() => {
     setCollectionFilter("");
+    const mine = ++collectionsRun.current;
+    // Whatever the sidebar was reading is over, and its `finally` is no longer the current run's.
+    setCollectionsLoading(false);
     if (!selectedDb) {
       setCollections([]);
       setSelectedCollection(null);
       return;
     }
-    let cancelled = false;
     setSelectedCollection(null);
     mongoListCollections(connectionId, selectedDb)
-      .then((c) => {
-        if (!cancelled) setCollections(c);
+      .then((list) => {
+        if (collectionsRun.current === mine) setCollections(list);
       })
-      .catch((e) => setLocalError(errorMessage(t, e)));
+      .catch((e) => {
+        if (collectionsRun.current === mine) setLocalError(errorMessage(t, e));
+      });
     return () => {
-      cancelled = true;
+      collectionsRun.current += 1;
     };
   }, [connectionId, selectedDb]);
 
@@ -394,11 +403,19 @@ function MongoWorkspace({
    * let go of by name. */
   const listCollections = useCallback(() => {
     if (!selectedDb) return;
+    const mine = ++collectionsRun.current;
     setCollectionsLoading(true);
     mongoListCollections(connectionId, selectedDb)
-      .then((c) => setCollections(c))
-      .catch((e) => setLocalError(errorMessage(t, e)))
-      .finally(() => setCollectionsLoading(false));
+      .then((list) => {
+        // The database changed while this was out: the list belongs to the one the user left.
+        if (collectionsRun.current === mine) setCollections(list);
+      })
+      .catch((e) => {
+        if (collectionsRun.current === mine) setLocalError(errorMessage(t, e));
+      })
+      .finally(() => {
+        if (collectionsRun.current === mine) setCollectionsLoading(false);
+      });
   }, [connectionId, selectedDb]);
 
   /** The sidebar's reload button, and what a restore leaves behind: the list read again, and

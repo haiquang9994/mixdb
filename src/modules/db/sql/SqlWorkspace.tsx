@@ -413,24 +413,37 @@ function SqlWorkspace({
     };
   }, [api, connectionId]);
 
+  /* Which read of the table list is the current one.
+     Three things start one — this effect on a database change, the reload button, and every change
+     that lands on the list — and any of their answers can come back after the database has been
+     changed underneath it. A number and not a flag apiece, because they have to invalidate each
+     other and not only themselves: a `listTables` still out when the database changes is answering
+     about the database the user has just left. */
+  const tablesRun = useRef(0);
+
   useEffect(() => {
     setTableFilter("");
+    const mine = ++tablesRun.current;
+    // Whatever the sidebar was reading is over, and its `finally` will no longer be the current
+    // run's — so the spinner is put out here rather than left on for good.
+    setTablesLoading(false);
     if (!selectedDb) {
       setTables([]);
       setSelectedTable(null);
       setPinnedTable(null);
       return;
     }
-    let cancelled = false;
     setSelectedTable(null);
     setPinnedTable(null);
     api.listTables(connectionId, selectedDb)
-      .then((t) => {
-        if (!cancelled) setTables(t);
+      .then((list) => {
+        if (tablesRun.current === mine) setTables(list);
       })
-      .catch((e) => setLocalError(errorMessage(t, e)));
+      .catch((e) => {
+        if (tablesRun.current === mine) setLocalError(errorMessage(t, e));
+      });
     return () => {
-      cancelled = true;
+      tablesRun.current += 1;
     };
   }, [api, connectionId, selectedDb]);
 
@@ -499,11 +512,19 @@ function SqlWorkspace({
    * just as truthfully a moment ago, and the one that changed has already been let go of by name. */
   const listTables = useCallback(() => {
     if (!selectedDb) return;
+    const mine = ++tablesRun.current;
     setTablesLoading(true);
     api.listTables(connectionId, selectedDb)
-      .then((t) => setTables(t))
-      .catch((e) => setLocalError(errorMessage(t, e)))
-      .finally(() => setTablesLoading(false));
+      .then((list) => {
+        // The database changed while this was out: the list belongs to the one the user left.
+        if (tablesRun.current === mine) setTables(list);
+      })
+      .catch((e) => {
+        if (tablesRun.current === mine) setLocalError(errorMessage(t, e));
+      })
+      .finally(() => {
+        if (tablesRun.current === mine) setTablesLoading(false);
+      });
   }, [api, connectionId, selectedDb]);
 
   /** The sidebar's reload button, and what a restore leaves behind: the list read again, and

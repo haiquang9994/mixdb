@@ -767,7 +767,12 @@ function SqlTable({
         // back to the tab tries again rather than settling on an empty grid.
         requestRef.current = request;
       })
-      .catch((e) => onError(errorMessage(t, e)))
+      .catch((e) => {
+        // The table on screen is not the one this read was for. Its failure belongs to a table the
+        // user has already left, and reported here it reads as this one's.
+        if (cancelled) return;
+        onError(errorMessage(t, e));
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });

@@ -43,6 +43,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- Switching database no longer leaves the previous one's tables, collections or error on screen.
+- Loading more keys in Redis after switching database no longer appends the old database's keys.
+- An error from a table you have already moved away from is no longer shown against the table now open.
 - Pasting a cURL command no longer reads a filename such as `cookies.txt` as the address.
 - Pasted `--json` and `--data-urlencode` commands now bring their body across instead of arriving empty.
 - Closing a tab while it is being dragged no longer leaves MixDB working on every frame for the rest of the session.
