@@ -41,6 +41,7 @@ import {
 } from "./request";
 import { csvText, insertStatements, jsonText, spreadsheetText } from "./rowText";
 import type { SqlColumnMeta } from "../../types";
+import { cacheKey as tableCacheKey } from "../../schemaTokens";
 import styles from "./SqlTable.module.css";
 
 /** Where handing the browser the whole page stops being the cheap thing to do. Below this the rows
@@ -121,10 +122,6 @@ function isMultilineType(type: string | undefined): boolean {
   if (!type) return false;
   const t = type.toLowerCase();
   return t.includes("text") || t.includes("json") || t.includes("blob");
-}
-
-function tableCacheKey(db: string, table: string): string {
-  return `${db} :: ${table}`;
 }
 
 /** One table's filter bar as it was left behind: the rows still being edited, and the conditions

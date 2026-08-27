@@ -590,30 +590,6 @@ fieldset .row label.field-connection-string {
   padding-right: 0.15rem;
 }
 
-.sql-sidebar-resizer {
-  flex: 0 0 5px;
-  align-self: stretch;
-  cursor: col-resize;
-  position: relative;
-}
-
-.sql-sidebar-resizer::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 2px;
-  width: 1px;
-  background: var(--border);
-}
-
-.sql-sidebar-resizer:hover::after,
-.sql-sidebar-resizer:active::after {
-  left: 1px;
-  width: 3px;
-  background: var(--accent);
-}
-
 .sql-sidebar-search {
   flex: 0 0 auto;
   width: 100%;
@@ -727,30 +703,6 @@ fieldset .row label.field-connection-string {
   padding-right: 0.15rem;
 }
 
-.mongo-sidebar-resizer {
-  flex: 0 0 5px;
-  align-self: stretch;
-  cursor: col-resize;
-  position: relative;
-}
-
-.mongo-sidebar-resizer::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 2px;
-  width: 1px;
-  background: var(--border);
-}
-
-.mongo-sidebar-resizer:hover::after,
-.mongo-sidebar-resizer:active::after {
-  left: 1px;
-  width: 3px;
-  background: var(--accent);
-}
-
 .mongo-sidebar-search {
   flex: 0 0 auto;
   width: 100%;
@@ -856,30 +808,6 @@ fieldset .row label.field-connection-string {
   min-width: 0;
   min-height: 0;
   padding-right: 0.15rem;
-}
-
-.redis-sidebar-resizer {
-  flex: 0 0 5px;
-  align-self: stretch;
-  cursor: col-resize;
-  position: relative;
-}
-
-.redis-sidebar-resizer::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 2px;
-  width: 1px;
-  background: var(--border);
-}
-
-.redis-sidebar-resizer:hover::after,
-.redis-sidebar-resizer:active::after {
-  left: 1px;
-  width: 3px;
-  background: var(--accent);
 }
 
 .redis-sidebar-search {

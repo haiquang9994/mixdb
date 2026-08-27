@@ -19,6 +19,8 @@ import RedisGroupKeys from "../components/RedisGroupKeys";
 import RedisKeyList from "../components/RedisKeyList";
 import RedisValue from "../components/RedisValue";
 import keyListStyles from "../components/RedisKeyList/RedisKeyList.module.css";
+import Splitter from "../../../components/Splitter";
+import { useSidebarWidth } from "../sidebarWidth";
 import { ReloadIcon } from "../../../icons";
 import { useTranslation } from "../../../i18n";
 import { errorMessage } from "../../../core/errors";
@@ -170,13 +172,6 @@ function RedisWorkspace({
   // {@link reloadTarget}, which is where the rule itself is written down and tested.
   const [reloadFocus, setReloadFocus] = useState<ReloadPane | null>(null);
 
-  const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
-  const resizing = useRef(false);
-
-  useEffect(() => {
-    setWidth(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
-  }, [sidebarWidth]);
-
   useEffect(() => {
     setKeyLimit(scanLimit ?? DEFAULT_SCAN_LIMIT);
   }, [scanLimit]);
@@ -197,73 +192,21 @@ function RedisWorkspace({
     onScanLimitChange?.(limit);
   }
 
-  const handleResizeStart = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      resizing.current = true;
-      const startX = e.clientX;
-      const startWidth = width;
+  /* The names alone, memoised so the fit below is not a fresh callback on every render. */
+  const keyNames = useMemo(() => keys.map((key) => key.name), [keys]);
 
-      function onMouseMove(ev: MouseEvent) {
-        const next = Math.min(
-          MAX_SIDEBAR_WIDTH,
-          Math.max(MIN_SIDEBAR_WIDTH, startWidth + (ev.clientX - startX)),
-        );
-        setWidth(next);
-      }
-
-      function onMouseUp(ev: MouseEvent) {
-        resizing.current = false;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        const finalWidth = Math.min(
-          MAX_SIDEBAR_WIDTH,
-          Math.max(MIN_SIDEBAR_WIDTH, startWidth + (ev.clientX - startX)),
-        );
-        onSidebarWidthChange?.(finalWidth);
-      }
-
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-    },
-    [width, onSidebarWidthChange],
-  );
-
-  const handleResizeDoubleClick = useCallback(() => {
-    if (keys.length === 0) {
-      setWidth(DEFAULT_SIDEBAR_WIDTH);
-      onSidebarWidthChange?.(DEFAULT_SIDEBAR_WIDTH);
-      return;
-    }
-    const longest = keys.reduce((a, b) => (b.name.length > a.length ? b.name : a), "");
-    const probe = document.createElement("button");
-    probe.className = keyListStyles.item;
-    probe.style.position = "fixed";
-    probe.style.top = "-9999px";
-    probe.style.left = "-9999px";
-    probe.style.width = "auto";
-    probe.style.whiteSpace = "nowrap";
-    probe.textContent = longest;
-    document.body.appendChild(probe);
-    const style = getComputedStyle(probe);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    let textWidth = probe.scrollWidth;
-    if (ctx) {
-      ctx.font = style.font;
-      textWidth = ctx.measureText(longest).width;
-    }
-    const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-    document.body.removeChild(probe);
+  const { width, splitter } = useSidebarWidth({
+    saved: sidebarWidth,
+    onChange: onSidebarWidthChange,
+    defaultWidth: DEFAULT_SIDEBAR_WIDTH,
+    minWidth: MIN_SIDEBAR_WIDTH,
+    maxWidth: MAX_SIDEBAR_WIDTH,
+    names: keyNames,
+    itemClassName: keyListStyles.item,
     // Every row carries a chevron slot and a badge slot left of its name, both fixed widths and
-    // neither part of the text just measured — so the sidebar has to fit them on top of it.
-    const fixedColumns = 66;
-    const sidebarPadding = 4;
-    const target = Math.ceil(textWidth + horizontalPadding + fixedColumns + sidebarPadding);
-    const next = Math.min(MAX_SIDEBAR_WIDTH, Math.max(DEFAULT_SIDEBAR_WIDTH, target));
-    setWidth(next);
-    onSidebarWidthChange?.(next);
-  }, [keys, onSidebarWidthChange]);
+    // neither part of the name the fit is measured from.
+    extraColumns: 66,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -654,14 +597,11 @@ function RedisWorkspace({
           />
         </aside>
 
-        <div
-          className="redis-sidebar-resizer"
-          onMouseDown={handleResizeStart}
-          onDoubleClick={handleResizeDoubleClick}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={t("redis.resizeSidebar")}
+        <Splitter
+          orientation="vertical"
+          ariaLabel={t("redis.resizeSidebar")}
           title={t("redis.resizeSidebarTooltip")}
+          {...splitter}
         />
 
         <section

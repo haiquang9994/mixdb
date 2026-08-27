@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import styles from "./Splitter.module.css";
 
 interface SplitterProps {
@@ -32,6 +32,16 @@ function Splitter({
   onDragEnd,
   onDoubleClick,
 }: SplitterProps) {
+  /**
+   * How to take the current drag's listeners off the document, or null when no drag is running.
+   *
+   * Held in a ref because the unmount below has to reach it: the listeners are on the document, not
+   * on this element, so React takes nothing off on the way out. A pane closed mid-drag — a tab
+   * closed, a connection dropped — would otherwise leave a `mousemove` handler calling back into a
+   * component that is gone, for as long as the button stays down.
+   */
+  const stop = useRef<(() => void) | null>(null);
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       // Otherwise the webview starts a text selection and the panes flicker blue under the drag.
@@ -46,15 +56,23 @@ function Splitter({
         onDrag(distance(ev));
       }
       function onMouseUp(ev: MouseEvent) {
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
+        stop.current?.();
         onDragEnd?.(distance(ev));
       }
+      stop.current = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        stop.current = null;
+      };
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", onMouseUp);
     },
     [orientation, onDrag, onDragEnd, onDragStart],
   );
+
+  /* Only the listeners come off. `onDragEnd` is where a caller writes the new size down, and a
+     drag interrupted by the pane disappearing is not a size anybody chose. */
+  useEffect(() => () => stop.current?.(), []);
 
   return (
     <div

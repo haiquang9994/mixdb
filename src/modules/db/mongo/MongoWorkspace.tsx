@@ -30,6 +30,9 @@ import ItemList from "../../../components/ItemList";
 import type { ItemAction } from "../../../components/ItemList";
 import itemListStyles from "../../../components/ItemList/ItemList.module.css";
 import { PlusIcon, ReloadIcon } from "../../../icons";
+import Splitter from "../../../components/Splitter";
+import { useSidebarWidth } from "../sidebarWidth";
+import { useSchemaTokens } from "../schemaTokens";
 import { useSidebarKeyboard } from "../../../core/sidebarKeyboard";
 import { useTranslation } from "../../../i18n";
 import { errorMessage } from "../../../core/errors";
@@ -148,170 +151,32 @@ function MongoWorkspace({
   const documentCache = useRef<DocumentCache>(new Map()).current;
   const statsCache = useRef<StatsCache>(new Map()).current;
 
-  /**
-   * How many times this app has changed the shape of something in this connection, counted per
-   * thing changed: a single collection under `db :: collection`, a whole database under its own
-   * name.
-   *
-   * Two counts rather than one so that dropping one collection does not cost every other collection
-   * in the database the page of documents already read for it. Nothing that happens to one can
-   * change what was read for the one beside it; what a restore or a drop does, on the other hand,
-   * reaches all of them at once.
-   */
-  const [schemaTokens, setSchemaTokens] = useState<Record<string, number>>({});
+  /* The counts, the caches they guard and everything that empties them — see `schemaTokens.ts`,
+     where the same machinery serves the SQL workspace. Mongo keeps no shape for a completion list
+     and no structure pane, so there is nothing here beyond the two caches. */
+  const {
+    schemaToken,
+    statsToken,
+    forget: forgetCollection,
+    forgetDatabase,
+    contentsChanged: documentsChanged,
+  } = useSchemaTokens({
+    database: selectedDb,
+    selected: selectedCollection,
+    /* The filter bar goes with the documents: its conditions name fields, and the documents under
+       a name that has changed hands need carry no field by that name at all. */
+    caches: [documentCache, filterCache],
+  });
 
-  /** What the Data pane watches, for the collection it is showing: the two counts added, so that
-   * either one moving is a change it has to notice. Both only ever go up, so their sum does too. */
-  const schemaToken =
-    (schemaTokens[selectedDb] ?? 0) +
-    (selectedCollection === null
-      ? 0
-      : (schemaTokens[`${selectedDb} :: ${selectedCollection}`] ?? 0));
-
-  /** What the Statistics pane watches. Counted apart from the above, because the figures are about
-   * the database as a whole: one collection dropped moves them just as a restore does — and because
-   * a database with a collection actually named `stats` must not collide with them. */
-  const [statsTokens, setStatsTokens] = useState<Record<string, number>>({});
-  const statsToken = statsTokens[selectedDb] ?? 0;
-
-  /** Moves the count against each of `keys`, and the one the figures are read under. Every path
-   * below ends here: whatever changed, the database now holds something else. */
-  const bumpTokens = useCallback((database: string, keys: string[]) => {
-    setSchemaTokens((tokens) => {
-      const next = { ...tokens };
-      for (const key of keys) next[key] = (next[key] ?? 0) + 1;
-      return next;
-    });
-    setStatsTokens((tokens) => ({ ...tokens, [database]: (tokens[database] ?? 0) + 1 }));
-  }, []);
-
-  /**
-   * Everything remembered about one collection, let go, because this app has just changed it —
-   * created, renamed or dropped. Both names are given for a rename, since the collection has left
-   * one and arrived at the other.
-   *
-   * Waiting for the user to press reload is right for a change somebody else made on the server; it
-   * is wrong for one made from in here, where what is on screen is knowably about a collection that
-   * no longer exists in that form. A name is the sharp end of it: a collection dropped and made
-   * again under the same name is a different collection, and the entry filed under that name would
-   * otherwise be handed to it.
-   *
-   * The counts are bumped as well as the entries dropped, and it has to be both. Dropping alone
-   * does not reach the panes — a Map is the same object before and after, so nothing re-renders off
-   * it, and the list on screen is holding its own copy of the documents in state and would file
-   * them straight back on the way out.
-   */
-  const forgetCollection = useCallback(
-    (...collections: string[]) => {
-      if (!selectedDb) return;
-      const keys = collections.map((collection) => `${selectedDb} :: ${collection}`);
-      for (const key of keys) {
-        documentCache.delete(key);
-        // The filter bar goes with them: its conditions name fields, and the documents under a
-        // name that has changed hands need carry no field by that name at all.
-        filterCache.delete(key);
-      }
-      bumpTokens(selectedDb, keys);
-    },
-    [selectedDb, bumpTokens],
-  );
-
-  /** The same, for a change no single collection can be named for — a dump restored over the
-   * database, or the database itself dropped — and for the sidebar's reload, which is the plainest
-   * way for the user to say "forget what you were told about this database". */
-  const forgetDatabase = useCallback(() => {
-    if (!selectedDb) return;
-    const prefix = `${selectedDb} :: `;
-    for (const key of documentCache.keys()) if (key.startsWith(prefix)) documentCache.delete(key);
-    for (const key of filterCache.keys()) if (key.startsWith(prefix)) filterCache.delete(key);
-    bumpTokens(selectedDb, [selectedDb]);
-  }, [selectedDb, bumpTokens]);
-
-  /**
-   * Documents inserted or deleted, rather than a collection created, renamed or dropped.
-   *
-   * Nothing about the shape of the database has moved, so nothing remembered about a collection is
-   * wrong — the list that did the writing has refetched its own page already. What has moved is what
-   * the database holds, which is the one thing the figures on the Stats tab are: they are counted per
-   * collection, so a document either way makes them out of date. Only their count is bumped, so a
-   * long session of edits never costs a re-read of anything else.
-   */
-  const documentsChanged = useCallback(() => {
-    if (!selectedDb) return;
-    setStatsTokens((tokens) => ({ ...tokens, [selectedDb]: (tokens[selectedDb] ?? 0) + 1 }));
-  }, [selectedDb]);
-
-  const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
-  const resizing = useRef(false);
-
-  useEffect(() => {
-    setWidth(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
-  }, [sidebarWidth]);
-
-  const handleResizeStart = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      resizing.current = true;
-      const startX = e.clientX;
-      const startWidth = width;
-
-      function onMouseMove(ev: MouseEvent) {
-        const next = Math.min(
-          MAX_SIDEBAR_WIDTH,
-          Math.max(MIN_SIDEBAR_WIDTH, startWidth + (ev.clientX - startX)),
-        );
-        setWidth(next);
-      }
-
-      function onMouseUp(ev: MouseEvent) {
-        resizing.current = false;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        const finalWidth = Math.min(
-          MAX_SIDEBAR_WIDTH,
-          Math.max(MIN_SIDEBAR_WIDTH, startWidth + (ev.clientX - startX)),
-        );
-        onSidebarWidthChange?.(finalWidth);
-      }
-
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-    },
-    [width, onSidebarWidthChange],
-  );
-
-  const handleResizeDoubleClick = useCallback(() => {
-    if (collections.length === 0) {
-      setWidth(DEFAULT_SIDEBAR_WIDTH);
-      onSidebarWidthChange?.(DEFAULT_SIDEBAR_WIDTH);
-      return;
-    }
-    const longest = collections.reduce((a, b) => (b.length > a.length ? b : a), "");
-    const probe = document.createElement("button");
-    probe.className = itemListStyles.item;
-    probe.style.position = "fixed";
-    probe.style.top = "-9999px";
-    probe.style.left = "-9999px";
-    probe.style.width = "auto";
-    probe.style.whiteSpace = "nowrap";
-    probe.textContent = longest;
-    document.body.appendChild(probe);
-    const style = getComputedStyle(probe);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    let textWidth = probe.scrollWidth;
-    if (ctx) {
-      ctx.font = style.font;
-      textWidth = ctx.measureText(longest).width;
-    }
-    const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-    document.body.removeChild(probe);
-    const sidebarPadding = 4;
-    const target = Math.ceil(textWidth + horizontalPadding + sidebarPadding);
-    const next = Math.min(MAX_SIDEBAR_WIDTH, Math.max(DEFAULT_SIDEBAR_WIDTH, target));
-    setWidth(next);
-    onSidebarWidthChange?.(next);
-  }, [collections, onSidebarWidthChange]);
+  const { width, splitter } = useSidebarWidth({
+    saved: sidebarWidth,
+    onChange: onSidebarWidthChange,
+    defaultWidth: DEFAULT_SIDEBAR_WIDTH,
+    minWidth: MIN_SIDEBAR_WIDTH,
+    maxWidth: MAX_SIDEBAR_WIDTH,
+    names: collections,
+    itemClassName: itemListStyles.item,
+  });
 
   /** Reads the database list. The selected database is kept in it even when the server doesn't
    * list it: MongoDB stores no empty database, so one created in the picker exists here alone
@@ -690,14 +555,11 @@ function MongoWorkspace({
           </div>
         </aside>
 
-        <div
-          className="mongo-sidebar-resizer"
-          onMouseDown={handleResizeStart}
-          onDoubleClick={handleResizeDoubleClick}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={t("mongo.resizeSidebar")}
+        <Splitter
+          orientation="vertical"
+          ariaLabel={t("mongo.resizeSidebar")}
           title={t("mongo.resizeSidebarTooltip")}
+          {...splitter}
         />
 
         <section className="mongo-content">

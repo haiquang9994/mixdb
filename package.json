@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
-    "lint": "eslint . --max-warnings 52",
+    "lint": "eslint . --max-warnings 48",
     "preview": "vite preview",
     "tauri": "tauri",
     "dev:app": "tauri dev",

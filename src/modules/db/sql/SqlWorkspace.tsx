@@ -5,6 +5,7 @@ import { onTransferProgress, type TransferProgress } from "../transfer";
 import { filterRowFor } from "../filters";
 import type { FilterOperator } from "./filters";
 import { invalidateSchemaOutline } from "./schemaCache";
+import { cacheKey, useSchemaTokens } from "../schemaTokens";
 import Select from "../../../components/Select";
 import ConfirmDialog from "../../../components/ConfirmDialog";
 import DatabaseActions from "../components/DatabaseActions";
@@ -30,6 +31,8 @@ import ItemList from "../../../components/ItemList";
 import type { ItemAction } from "../../../components/ItemList";
 import itemListStyles from "../../../components/ItemList/ItemList.module.css";
 import { PlusIcon, ReloadIcon } from "../../../icons";
+import Splitter from "../../../components/Splitter";
+import { useSidebarWidth } from "../sidebarWidth";
 import { useSidebarKeyboard } from "../../../core/sidebarKeyboard";
 import { useTranslation } from "../../../i18n";
 import { errorMessage } from "../../../core/errors";
@@ -166,180 +169,42 @@ function SqlWorkspace({
   const structureCache = useRef<StructureCache>(new Map()).current;
   const statsCache = useRef<StatsCache>(new Map()).current;
 
-  /**
-   * How many times this app has changed the shape of something in this connection, counted per
-   * thing changed: a single table under `db :: table`, a whole database under its own name.
-   *
-   * Two counts rather than one so that altering a table does not cost every other table in the
-   * database the page of rows already read for it. Nothing that happens to one table can change
-   * what was read for the one beside it; what a restore or a drop does, on the other hand, reaches
-   * all of them at once, and that is what the database's own count is for.
-   */
-  const [schemaTokens, setSchemaTokens] = useState<Record<string, number>>({});
-
-  /** What the Data and Structure panes watch, for the table they are showing: the two counts added,
-   * so that either one moving is a change they have to notice. Both only ever go up, so their sum
-   * does too — which is all the panes ask of it, since they only compare it against the one their
-   * own entry was filed under. */
-  const schemaToken =
-    (schemaTokens[selectedDb] ?? 0) +
-    (selectedTable === null ? 0 : (schemaTokens[`${selectedDb} :: ${selectedTable}`] ?? 0));
-
-  /** What the Statistics pane watches. Counted apart from the above, and not merely under another
-   * key in it, because the figures answer to something different: they are about the database as a
-   * whole, so a single table altered moves them just as a restore does — and because a database
-   * with a table actually named `stats` must not be able to collide with them. */
-  const [statsTokens, setStatsTokens] = useState<Record<string, number>>({});
-  const statsToken = statsTokens[selectedDb] ?? 0;
-
-  /** Moves the count against each of `keys`, and the one the figures are read under. Every path
-   * below ends here: whatever changed, the database now weighs something else. */
-  const bumpTokens = useCallback((database: string, keys: string[]) => {
-    setSchemaTokens((tokens) => {
-      const next = { ...tokens };
-      for (const key of keys) next[key] = (next[key] ?? 0) + 1;
-      return next;
-    });
-    setStatsTokens((tokens) => ({ ...tokens, [database]: (tokens[database] ?? 0) + 1 }));
-  }, []);
-
-  /**
-   * Everything remembered about one table, let go, because this app has just changed it — created,
-   * renamed, dropped, or a column altered. Both names are given for a rename, since the table has
-   * left one and arrived at the other.
-   *
-   * Waiting for the user to press reload is right for a change somebody else made on the server;
-   * it is wrong for one made from in here, where what is on screen is knowably about a table that
-   * no longer exists in that form. A name is the sharp end of it: a table dropped and made again
-   * under the same name is a different table, and the entry filed under that name would otherwise
-   * be handed to it.
-   *
-   * The counts are bumped as well as the entries dropped, and it has to be both. Dropping alone
-   * does not reach the panes — a Map is the same object before and after, so nothing re-renders off
-   * it, and the grid on screen is holding its own copy of the rows in state and would file them
-   * straight back on the way out. The counts are what the panes actually watch; the entries are
-   * dropped so that a table nobody returns to is not left holding a page of rows for the rest of
-   * the session.
-   */
-  const forgetTable = useCallback(
-    (...tables: string[]) => {
-      if (!selectedDb) return;
-      // The Query tab completes from its own copy of the shape, kept per connection and database.
-      invalidateSchemaOutline(connectionId, selectedDb);
-      const keys = tables.map((table) => `${selectedDb} :: ${table}`);
-      for (const key of keys) {
-        tableCache.delete(key);
-        structureCache.delete(key);
-        // The filter bar goes with them: its conditions name columns, and a column renamed or
-        // dropped turns the next read into `Unknown column` rather than into rows. Conditions the
-        // user typed are their own work, which is why only the table actually changed loses them.
-        filterCache.delete(key);
-      }
-      bumpTokens(selectedDb, keys);
-    },
-    [connectionId, selectedDb, bumpTokens],
+  /* The counts, the caches they guard and everything that empties them — see `schemaTokens.ts`,
+     where the same machinery serves the Mongo workspace. What is left here is only what is
+     particular to SQL: the caches this workspace keeps, and the shape the Query tab completes
+     from, which is not a cache here but has to go the moment a table changes under it. */
+  /* The Query tab completes from its own copy of the shape, kept per connection and database
+     rather than in a cache here — so it is let go of by hand alongside them. */
+  const forgetSchemaOutline = useCallback(
+    (database: string) => invalidateSchemaOutline(connectionId, database),
+    [connectionId],
   );
 
-  /**
-   * The same, for a change no single table can be named for — a dump restored over the database, or
-   * the database itself dropped — and for the sidebar's reload, which is the plainest way for the
-   * user to say "forget what you were told about this database".
-   */
-  const forgetDatabase = useCallback(() => {
-    if (!selectedDb) return;
-    invalidateSchemaOutline(connectionId, selectedDb);
-    const prefix = `${selectedDb} :: `;
-    for (const key of tableCache.keys()) if (key.startsWith(prefix)) tableCache.delete(key);
-    for (const key of structureCache.keys()) if (key.startsWith(prefix)) structureCache.delete(key);
-    for (const key of filterCache.keys()) if (key.startsWith(prefix)) filterCache.delete(key);
-    bumpTokens(selectedDb, [selectedDb]);
-  }, [connectionId, selectedDb, bumpTokens]);
+  const {
+    schemaToken,
+    tokenFor,
+    statsToken,
+    forget: forgetTable,
+    forgetDatabase,
+    contentsChanged: rowsChanged,
+  } = useSchemaTokens({
+    database: selectedDb,
+    selected: selectedTable,
+    /* The filter bar goes with the rest: its conditions name columns, and a column renamed or
+       dropped turns the next read into `Unknown column` rather than into rows. */
+    caches: [tableCache, structureCache, filterCache],
+    onForget: forgetSchemaOutline,
+  });
 
-  /**
-   * Rows written rather than the shape of something changed — an insert, a delete, an `UPDATE` from
-   * the Query tab.
-   *
-   * Nothing remembered about a table is wrong for this: the columns are where they were, and the pane
-   * that did the writing has read its own page again already. What has moved is what the database
-   * holds, and that is the one thing the figures on the Statistics tab are — so only their count is
-   * bumped, and a session spent editing rows never costs a re-read of anything else.
-   */
-  const rowsChanged = useCallback(() => {
-    if (!selectedDb) return;
-    setStatsTokens((tokens) => ({ ...tokens, [selectedDb]: (tokens[selectedDb] ?? 0) + 1 }));
-  }, [selectedDb]);
-
-  const [width, setWidth] = useState(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
-  const resizing = useRef(false);
-
-  useEffect(() => {
-    setWidth(sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
-  }, [sidebarWidth]);
-
-  const handleResizeStart = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      resizing.current = true;
-      const startX = e.clientX;
-      const startWidth = width;
-
-      function onMouseMove(ev: MouseEvent) {
-        const next = Math.min(
-          MAX_SIDEBAR_WIDTH,
-          Math.max(MIN_SIDEBAR_WIDTH, startWidth + (ev.clientX - startX)),
-        );
-        setWidth(next);
-      }
-
-      function onMouseUp(ev: MouseEvent) {
-        resizing.current = false;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        const finalWidth = Math.min(
-          MAX_SIDEBAR_WIDTH,
-          Math.max(MIN_SIDEBAR_WIDTH, startWidth + (ev.clientX - startX)),
-        );
-        onSidebarWidthChange?.(finalWidth);
-      }
-
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-    },
-    [width, onSidebarWidthChange],
-  );
-
-  const handleResizeDoubleClick = useCallback(() => {
-    if (tables.length === 0) {
-      setWidth(DEFAULT_SIDEBAR_WIDTH);
-      onSidebarWidthChange?.(DEFAULT_SIDEBAR_WIDTH);
-      return;
-    }
-    const longest = tables.reduce((a, b) => (b.length > a.length ? b : a), "");
-    const probe = document.createElement("button");
-    probe.className = itemListStyles.item;
-    probe.style.position = "fixed";
-    probe.style.top = "-9999px";
-    probe.style.left = "-9999px";
-    probe.style.width = "auto";
-    probe.style.whiteSpace = "nowrap";
-    probe.textContent = longest;
-    document.body.appendChild(probe);
-    const style = getComputedStyle(probe);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    let textWidth = probe.scrollWidth;
-    if (ctx) {
-      ctx.font = style.font;
-      textWidth = ctx.measureText(longest).width;
-    }
-    const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-    document.body.removeChild(probe);
-    const sidebarPadding = 4; // .sql-sidebar's own right padding, plus a little breathing room
-    const target = Math.ceil(textWidth + horizontalPadding + sidebarPadding);
-    const next = Math.min(MAX_SIDEBAR_WIDTH, Math.max(DEFAULT_SIDEBAR_WIDTH, target));
-    setWidth(next);
-    onSidebarWidthChange?.(next);
-  }, [tables, onSidebarWidthChange]);
+  const { width, splitter } = useSidebarWidth({
+    saved: sidebarWidth,
+    onChange: onSidebarWidthChange,
+    defaultWidth: DEFAULT_SIDEBAR_WIDTH,
+    minWidth: MIN_SIDEBAR_WIDTH,
+    maxWidth: MAX_SIDEBAR_WIDTH,
+    names: tables,
+    itemClassName: itemListStyles.item,
+  });
 
   /** Reads the database list, keeping the selection when the server still lists it — a database
    * dropped from under us leaves nothing to stay on. Also what the picker's reload entry calls. */
@@ -493,18 +358,18 @@ function SqlWorkspace({
    */
   const openRelated = useCallback(
     (table: string, column: string, value: string) => {
-      const key = `${selectedDb} :: ${table}`;
+      const key = cacheKey(selectedDb, table);
       tableCache.delete(key);
       filterCache.set(key, {
         rows: [filterRowFor<FilterOperator>(column, "eq", value)],
         applied: [{ column, operator: "eq", value }],
-        schemaToken: (schemaTokens[selectedDb] ?? 0) + (schemaTokens[key] ?? 0),
+        schemaToken: tokenFor(table),
       });
       setPinnedTable(table);
       setSelectedTable(table);
       setContentMode("data");
     },
-    [selectedDb, schemaTokens],
+    [selectedDb, tokenFor],
   );
 
   /** Reads the sidebar's list of tables again, and nothing else. What follows a table created,
@@ -795,14 +660,11 @@ function SqlWorkspace({
           </div>
         </aside>
 
-        <div
-          className="sql-sidebar-resizer"
-          onMouseDown={handleResizeStart}
-          onDoubleClick={handleResizeDoubleClick}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={t("sql.resizeSidebar")}
+        <Splitter
+          orientation="vertical"
+          ariaLabel={t("sql.resizeSidebar")}
           title={t("sql.resizeSidebarTooltip")}
+          {...splitter}
         />
 
         <section className="sql-content">

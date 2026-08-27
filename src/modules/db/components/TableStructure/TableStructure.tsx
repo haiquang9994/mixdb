@@ -22,6 +22,7 @@ import type {
   SqlTableStructure,
 } from "../../types";
 import styles from "./TableStructure.module.css";
+import { cacheKey } from "../../schemaTokens";
 
 /** What the Kind column says an index is — the same reading of it the edit dialog opens on. */
 const INDEX_KIND_LABEL = {
@@ -187,7 +188,7 @@ function TableStructure({
   }, [api, connectionId]);
 
   /** The table the panel is showing, as one string: what the cache is keyed on. */
-  const tableKey = `${selectedDb} :: ${selectedTable}`;
+  const tableKey = cacheKey(selectedDb, selectedTable);
   /** What is filed for the table now selected. Read out of the cache by name, so another table's
    *  columns can never appear under this one's — and plainly rather than memoised: it is one map
    *  lookup, and a memo would only add a list of dependencies to get wrong. */

@@ -34,6 +34,7 @@ import {
   type DocumentRequest,
 } from "./request";
 import styles from "./NoSqlTable.module.css";
+import { cacheKey } from "../../schemaTokens";
 
 interface Props {
   /** Whether this is what the user is actually looking at — the Data tab, in the connection tab the
@@ -134,7 +135,7 @@ function NoSqlTable({
   readOnly = false,
 }: Props) {
   const { t } = useTranslation();
-  const collectionKey = `${selectedDb} :: ${selectedCollection}`;
+  const collectionKey = cacheKey(selectedDb, selectedCollection);
   // Everything below opens on what this collection was last left showing, when it has been here
   // before. A list mounted afresh — the connection reopened, another database picked and this one
   // come back to — is then the list that was left, rather than a first read of it all over again.
@@ -355,7 +356,7 @@ function NoSqlTable({
   // its documents included, so the trip costs nothing and shows what it showed; otherwise the
   // cards are cleared and the fetch below is owed a read.
   useEffect(() => {
-    const key = `${selectedDb} :: ${selectedCollection}`;
+    const key = cacheKey(selectedDb, selectedCollection);
     const cached = rememberedDocuments(documentCache, key, schemaToken);
     // Where the list goes back to once its cards are in the DOM — see the layout effect below. Set
     // here rather than left to the box itself, which is at the top whatever the last one did.
@@ -421,7 +422,7 @@ function NoSqlTable({
         // What was just read is what the next visit to this collection opens on. Filed here rather
         // than only on the way out: a read that landed is worth keeping even if the app is closed
         // on this very collection, and the way out has nothing to add beyond the scroll position.
-        fileDocuments(documentCache, `${db} :: ${collection}`, {
+        fileDocuments(documentCache, cacheKey(db, collection), {
           documents: result.documents,
           total: result.total,
           request,
@@ -523,7 +524,7 @@ function NoSqlTable({
     (fetched: TypedDocument, saved: TypedDocument) => {
       const at = documentsRef.current.indexOf(fetched);
       if (at < 0) {
-        if (target) documentCache.delete(`${target.database} :: ${target.collection}`);
+        if (target) documentCache.delete(cacheKey(target.database, target.collection));
         return;
       }
       setDocuments((prev) =>
