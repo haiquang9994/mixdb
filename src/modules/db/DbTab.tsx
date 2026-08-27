@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import {
   addConnection,
   removeConnection,
@@ -8,28 +7,26 @@ import {
   useSavedConnections,
   useSavedConnectionsLoaded,
 } from "./savedConnectionsStore";
-import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SavedConnection, type SshConfig } from "./types";
+import type { ConnectionConfig, DbKind, SavedConnection } from "./types";
 import { parseDbTabState } from "./tabState";
 import SqlWorkspace from "./sql/SqlWorkspace";
 import { SqlProvider } from "./sql/context";
-import type { SqlApi } from "./sql/api";
-import type { SqlDialect } from "./sql/dialect";
-import { mysqlApi } from "./mysql/api";
-import { mysqlDialect } from "./mysql/dialect";
-import { postgresApi } from "./postgres/api";
-import { postgresDialect } from "./postgres/dialect";
+import { SQL_ENGINES, isSqlKind } from "./engines";
+import ConnectionForm from "./components/ConnectionForm";
+import {
+  KIND_LABEL,
+  configFrom,
+  formFrom,
+  withKind,
+  type ConnectionForm as FormState,
+} from "./connectionForm";
 import MongoWorkspace from "./mongo/MongoWorkspace";
 import RedisWorkspace from "./redis/RedisWorkspace";
-import Select from "../../components/Select";
 import ErrorBanner from "../../components/ErrorBanner";
-import ConfirmDialog from "../../components/ConfirmDialog";
 import ContextMenu from "../../components/ContextMenu";
-import Button from "../../components/Button";
-import Input from "../../components/Input";
-import { EyeIcon, EyeOffIcon, LockIcon, PinIcon } from "../../icons";
+import { LockIcon, PinIcon } from "../../icons";
 import { DatabaseIcon } from "./icons";
-import { IS_MAC, IS_WINDOWS } from "../../core/platform";
-import { useTranslation, type TranslationKey } from "../../i18n";
+import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../core/errors";
 import { stableStringify } from "../../core/stableStringify";
 import type { ModuleTabProps, TabBadge } from "../../shell/module";
@@ -39,33 +36,7 @@ import { dbBadgeMarks } from "./badges";
 import "./db.css";
 
 
-/** What each kind is called on the tab that picks it, and — read aloud — beside its logo in the
- *  saved list, where the logo itself says nothing to a screen reader. */
-const KIND_LABEL: Record<DbKind, TranslationKey> = {
-  mysql: "connection.kindMysql",
-  postgres: "connection.kindPostgres",
-  mongo: "connection.kindMongo",
-  redis: "connection.kindRedis",
-};
 
-/**
- * The engines the shared SQL workspace can be opened on — the one place a kind is turned into the
- * pair of things everything below the workspace works through.
- *
- * A kind that is in here is a SQL kind — {@link isSqlKind} is read off this map — so adding an
- * engine is this entry and nothing else.
- */
-const SQL_ENGINES = {
-  mysql: { api: mysqlApi, dialect: mysqlDialect },
-  postgres: { api: postgresApi, dialect: postgresDialect },
-} as const satisfies Partial<Record<DbKind, { api: SqlApi; dialect: SqlDialect }>>;
-
-type SqlKind = keyof typeof SQL_ENGINES;
-
-/** Whether this kind opens the SQL workspace, and — to TypeScript — which of them it is. */
-function isSqlKind(kind: DbKind): kind is SqlKind {
-  return kind in SQL_ENGINES;
-}
 
 // The Mongo form is a single connection string, so the two things the rest of the app used to
 // read off separate fields — the host for a tab title, the database to open first — have to be
@@ -91,59 +62,8 @@ function mongoUriDatabase(uri: string): string {
   }
 }
 
-/**
- * Whether dialling `host` means talking to this machine — the one case a server refusing everything
- * but loopback is happy with. The whole `127.0.0.0/8` block counts, not just `127.0.0.1`, and IPv6
- * writes its loopback either bare or in the brackets a host field may still carry.
- */
-function isLoopback(host: string): boolean {
-  const name = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
-  return (
-    name === "localhost" ||
-    name === "::1" ||
-    /^127(?:\.\d{1,3}){3}$/.test(name)
-  );
-}
 
-/** Fixed width, not the value's own: the length of a password is itself worth not showing. */
-const MASK = "****";
 
-/** The `user:password@` prefix, i.e. everything the string reveals about credentials. */
-const MONGO_URI_CREDENTIALS_RE = /^(mongodb(?:\+srv)?:\/\/)([^@/?]+)@/i;
-
-/**
- * What the field shows while hidden. Only the credentials are covered, so the host and options
- * stay readable — those are what you check a connection against at a glance. A string with no
- * credentials in it isn't therefore safe to show: it may be one this app never parsed as Mongo at
- * all, so nothing in it is known to be harmless and the whole value is covered instead.
- */
-function maskMongoUri(uri: string): string {
-  if (!uri) return "";
-  const credentials = MONGO_URI_CREDENTIALS_RE.exec(uri);
-  if (!credentials) return MASK;
-  const [full, scheme, userinfo] = credentials;
-  // `user:password`, `user` alone, and the empty-password `user:` all mask one part per segment.
-  const masked = userinfo
-    .split(":")
-    .map(() => MASK)
-    .join(":");
-  return `${scheme}${masked}@${uri.slice(full.length)}`;
-}
-
-/**
- * An example key path written the way the host OS writes one — a Windows path is no help to
- * someone looking for `~/.ssh` on a Mac. It stays out of the dictionaries because a path is not
- * language: it follows the machine the app runs on, not the language it was asked to speak.
- *
- * Which machine this is comes from {@link ../../platform}. Linux is the fallback rather than a third
- * test: WebKitGTK spells its system several ways (`X11`, `Wayland`, `Linux`), and every remaining
- * desktop puts home directories under `/home`.
- */
-const PRIVATE_KEY_PLACEHOLDER = IS_WINDOWS
-  ? "C:\\Users\\you\\.ssh\\id_rsa"
-  : IS_MAC
-    ? "/Users/you/.ssh/id_rsa"
-    : "/home/you/.ssh/id_rsa";
 
 /**
  * What the tunnel test is currently saying. The tone travels beside the sentence rather than being
@@ -156,30 +76,19 @@ interface TunnelStatus {
 
 function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange }: ModuleTabProps) {
   const { t, lang } = useTranslation();
-  const [kind, setKind] = useState<DbKind>("mysql");
-  const [host, setHost] = useState("127.0.0.1");
-  const [port, setPort] = useState(DEFAULT_PORTS.mysql);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [database, setDatabase] = useState("");
-  const [uri, setUri] = useState("");
-  // A connection string is only editable once shown, and showing it puts a password on screen —
-  // so an empty one starts open (there is nothing to protect yet) and a saved one starts hidden.
-  const [uriRevealed, setUriRevealed] = useState(true);
-  const [confirmingReveal, setConfirmingReveal] = useState(false);
-  // Off to start with: a new connection is most often to a local or tunnelled server, where SSL
-  // buys nothing and an old server's TLS config is one more thing to fail on. A saved connection
-  // brings its own answer.
-  const [useSsl, setUseSsl] = useState(false);
+  /* The whole form as one value — see `connectionForm.ts`, where the two directions live. What
+     was seventeen `useState` calls, and two lists of seventeen setters that had to be kept in
+     step by hand. */
+  const [form, setForm] = useState(() => formFrom(null));
+  /* The tab reads three of the eighteen for itself: the kind and host name a connection in the
+     title, the database is what a workspace opens on, and the tunnel decides who reports a lost
+     connection. The rest of the eighteen belongs to the form and stays there. */
+  const { kind, uri, database, tunnelType } = form;
 
-  const [tunnelType, setTunnelType] = useState<"direct" | "ssh">("direct");
-  const [sshHost, setSshHost] = useState("");
-  const [sshPort, setSshPort] = useState(22);
-  const [sshUser, setSshUser] = useState("");
-  const [sshAuthType, setSshAuthType] = useState<"password" | "privatekey">("password");
-  const [sshPassword, setSshPassword] = useState("");
-  const [sshKeyPath, setSshKeyPath] = useState("");
-  const [sshPassphrase, setSshPassphrase] = useState("");
+  /** One field of the form, changed. What the form component reports back through. */
+  function set<K extends keyof FormState>(field: K, value: FormState[K]) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
 
   const savedConnections = useSavedConnections();
   const [saveAsName, setSaveAsName] = useState("");
@@ -289,37 +198,9 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
   }, [badges]);
 
   function changeKind(next: DbKind) {
-    setKind(next);
-    setPort(DEFAULT_PORTS[next]);
+    setForm((current) => withKind(current, next));
   }
 
-  async function browseForPrivateKey() {
-    const path = await open({
-      title: t("connection.selectPrivateKeyDialogTitle"),
-      multiple: false,
-      directory: false,
-    });
-    if (typeof path === "string") {
-      setSshKeyPath(path);
-    }
-  }
-
-  function buildSshConfig(): SshConfig | undefined {
-    if (tunnelType !== "ssh") return undefined;
-    return {
-      host: sshHost,
-      port: sshPort,
-      username: sshUser,
-      auth:
-        sshAuthType === "password"
-          ? { type: "password", password: sshPassword }
-          : {
-              type: "privatekey",
-              key_path: sshKeyPath,
-              passphrase: sshPassphrase || undefined,
-            },
-    };
-  }
 
   /**
    * Wipes everything the form is saying back to the user. Each message is about the connection that
@@ -333,42 +214,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
   }
 
   function applySavedConnection(entry: SavedConnection) {
-    const c = entry.config;
-    setKind(c.kind);
-    setHost(c.host);
-    setPort(c.port);
-    setUsername(c.username ?? "");
-    setPassword(c.password ?? "");
-    setDatabase(c.database ?? "");
-    setUri(c.uri ?? "");
-    setUriRevealed(!c.uri);
-    setConfirmingReveal(false);
-    /* Absent means "prefer TLS" to the backend (`use_ssl == Some(false)` is the only thing that
-       turns it off), which is why an entry from before this box existed reads as on. But only
-       for a kind that has the box at all: `buildConnectionConfig` writes `undefined` for Mongo
-       and Redis, so loading one of those and then switching the form to MySQL used to arrive
-       with TLS silently ticked — a form the user never set that way. */
-    setUseSsl(isSqlKind(c.kind) ? c.use_ssl ?? true : false);
-    setTunnelType(c.ssh ? "ssh" : "direct");
-    setSshHost("");
-    setSshPort(22);
-    setSshUser("");
-    setSshAuthType("password");
-    setSshPassword("");
-    setSshKeyPath("");
-    setSshPassphrase("");
-    if (c.ssh) {
-      setSshHost(c.ssh.host);
-      setSshPort(c.ssh.port);
-      setSshUser(c.ssh.username);
-      setSshAuthType(c.ssh.auth.type);
-      if (c.ssh.auth.type === "password") {
-        setSshPassword(c.ssh.auth.password);
-      } else {
-        setSshKeyPath(c.ssh.auth.key_path);
-        setSshPassphrase(c.ssh.auth.passphrase ?? "");
-      }
-    }
+    setForm(formFrom(entry.config));
     setEditingId(entry.id);
     setSaveAsName(entry.name);
     setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
@@ -385,58 +231,13 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     setEditingId(null);
     setSaveAsName("");
     setSavedSnapshot(null);
-    setKind("mysql");
-    setHost("127.0.0.1");
-    setPort(DEFAULT_PORTS.mysql);
-    setUsername("");
-    setPassword("");
-    setDatabase("");
-    setUri("");
-    setUriRevealed(true);
-    setConfirmingReveal(false);
-    setUseSsl(false);
-    setTunnelType("direct");
-    setSshHost("");
-    setSshPort(22);
-    setSshUser("");
-    setSshAuthType("password");
-    setSshPassword("");
-    setSshKeyPath("");
-    setSshPassphrase("");
+    setForm(formFrom(null));
     clearFeedback();
     onTitleChange(t("app.newConnectionTitle"));
     // Nothing to point at any more, and the title says so too.
     onStateChange(undefined);
   }
 
-  const isMongo = kind === "mongo";
-
-  /* A Redis server whose default user has no password runs in protected mode unless it was told
-     otherwise, and protected mode answers anything that isn't loopback with `-DENIED` and hangs
-     up. The client only finds out when its next write hits the closed socket, so the tab reports
-     a broken pipe and says nothing about why — hence the warning up here, where it can still be
-     acted on.
-     The tunnel doesn't come into it: this host is the address whoever dials Redis uses — this
-     machine directly, or the SSH server on its behalf — so a loopback address means Redis is on
-     the dialling machine either way, and anything else means it is not. */
-  const showRedisProtectedModeHint =
-    kind === "redis" && password === "" && !isLoopback(host);
-
-  function buildConnectionConfig(): ConnectionConfig {
-    return {
-      kind,
-      host,
-      port,
-      // Mongo takes its endpoint, credentials and default database from the connection string,
-      // so the per-field values are left out entirely rather than saved as dead weight.
-      username: isMongo ? undefined : username || undefined,
-      password: isMongo ? undefined : password || undefined,
-      database: isMongo ? undefined : database || undefined,
-      uri: isMongo ? uri.trim() || undefined : undefined,
-      ssh: buildSshConfig(),
-      use_ssl: isSqlKind(kind) ? useSsl : undefined,
-    };
-  }
 
   async function saveConnection() {
     const name = saveAsName.trim();
@@ -446,7 +247,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
       // width, Redis's scan limit — is kept: saving a connection edits its settings, it doesn't
       // reset the rest of what is remembered about it.
       const existing = savedConnections.find((c) => c.id === editingId);
-      const config = buildConnectionConfig();
+      const config = configFrom(form);
       const entry: SavedConnection = {
         ...existing,
         id: editingId,
@@ -459,7 +260,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
       const entry: SavedConnection = {
         id: crypto.randomUUID(),
         name,
-        config: buildConnectionConfig(),
+        config: configFrom(form),
       };
       await addConnection(entry);
       setEditingId(entry.id);
@@ -473,7 +274,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     const entry: SavedConnection = {
       id: crypto.randomUUID(),
       name,
-      config: buildConnectionConfig(),
+      config: configFrom(form),
     };
     await addConnection(entry);
     setEditingId(entry.id);
@@ -542,21 +343,10 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     setContextMenu(null);
   }
 
-  /**
-   * Whether the SSH fields hold enough for a test to mean anything. Everything the chosen auth
-   * method needs and nothing it doesn't: a passphrase belongs to a key that was encrypted, and an
-   * unencrypted one has none, so it is never required. A test without these would only come back
-   * with the server's own complaint about a missing host or user, one round trip later.
-   */
-  const sshInputsComplete =
-    sshHost.trim() !== "" &&
-    sshUser.trim() !== "" &&
-    sshPort > 0 &&
-    (sshAuthType === "password" ? sshPassword !== "" : sshKeyPath.trim() !== "");
 
   async function testTunnel() {
     setTunnelStatus({ tone: "pending", message: t("connection.testingTunnel") });
-    const ssh = buildSshConfig();
+    const ssh = configFrom(form).ssh;
     if (!ssh) {
       setTunnelStatus(null);
       return;
@@ -583,7 +373,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     if (connectingRef.current) return;
     // Read the form before the flag goes up: anything that threw between the two would leave the
     // flag raised with no `finally` to lower it, and the tab stuck on "Connecting…" for good.
-    const config = overrideConfig ?? buildConnectionConfig();
+    const config = overrideConfig ?? configFrom(form);
     connectingRef.current = true;
     setConnecting(true);
     setError("");
@@ -708,256 +498,6 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     onStateChange(entry === undefined ? undefined : { savedId: entry.id, connected: false });
   }
 
-  const connectionForm = (
-    <>
-      <div className="row row-name">
-        <label className="field-name">
-          {editingId ? t("connection.nameLabel") : t("connection.saveAsLabel")}{" "}
-          <Input
-            value={saveAsName}
-            onChange={(e) => setSaveAsName(e.target.value)}
-            placeholder={t("connection.connectionNamePlaceholder")}
-          />
-        </label>
-      </div>
-
-      <fieldset>
-        <legend>{t("connection.databaseLegend")}</legend>
-        <div className="method-tabs" role="tablist">
-          {(["mysql", "postgres", "mongo", "redis"] as DbKind[]).map((k) => (
-            <button
-              key={k}
-              type="button"
-              role="tab"
-              aria-selected={kind === k}
-              className={`method-tab kind-${k}${kind === k ? " method-tab-active" : ""}`}
-              onClick={() => changeKind(k)}
-            >
-              {/* Logo before the name, not instead of it: the tabs are the one place the kinds are
-                  read side by side, so the word stays and the mark only makes it quicker to find. */}
-              <DatabaseIcon kind={k} className="method-tab-icon" size="1.05em" />
-              {t(KIND_LABEL[k])}
-            </button>
-          ))}
-        </div>
-        {isMongo ? (
-          <div className="row">
-            <label className="field-connection-string">
-              {t("connection.connectionStringLabel")}{" "}
-              <Input
-                value={uriRevealed ? uri : maskMongoUri(uri)}
-                onChange={(e) => setUri(e.target.value)}
-                placeholder={t("connection.connectionStringPlaceholder")}
-                readOnly={!uriRevealed}
-              />
-              <Button
-                className="reveal-toggle"
-                aria-pressed={uriRevealed}
-                title={uriRevealed ? t("connection.hideConnectionString") : t("connection.revealConnectionString")}
-                onClick={() => (uriRevealed ? setUriRevealed(false) : setConfirmingReveal(true))}
-              >
-                {/* The struck-through eye marks the state the button moves *to*: shown now,
-                    click to hide. */}
-                {uriRevealed ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
-              </Button>
-            </label>
-          </div>
-        ) : (
-          /* One row for the whole endpoint: each field is held to half the width, so they pair
-             themselves off two to a line — host and port, then the credentials, then the
-             database on a line of its own. */
-          <div className="row">
-            <label>
-              {t("common.host")}{" "}
-              <Input value={host} onChange={(e) => setHost(e.target.value)} />
-            </label>
-            <label>
-              {t("common.port")}{" "}
-              <Input
-                type="number"
-                value={port}
-                onChange={(e) => setPort(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              {t("common.user")}{" "}
-              <Input value={username} onChange={(e) => setUsername(e.target.value)} />
-            </label>
-            <label>
-              {t("common.password")}{" "}
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
-              />
-            </label>
-            <label>
-              {kind === "redis" ? t("connection.dbIndexLabel") : t("common.database")}{" "}
-              <Input value={database} onChange={(e) => setDatabase(e.target.value)} />
-            </label>
-          </div>
-        )}
-
-        {showRedisProtectedModeHint && (
-          <p className="field-warning" role="status">
-            {t("connection.redisNoPasswordWarning")}
-          </p>
-        )}
-
-        {isSqlKind(kind) && (
-          <div className="row">
-            <label>
-              <input type="checkbox" checked={useSsl} onChange={(e) => setUseSsl(e.target.checked)} />{" "}
-              {t("connection.useSslLabel")}
-            </label>
-          </div>
-        )}
-      </fieldset>
-
-      <fieldset>
-        <legend>{t("connection.connectionMethodLegend")}</legend>
-        <div className="method-tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tunnelType === "direct"}
-            className={`method-tab${tunnelType === "direct" ? " method-tab-active" : ""}`}
-            onClick={() => setTunnelType("direct")}
-          >
-            {t("connection.methodTcpIp")}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tunnelType === "ssh"}
-            className={`method-tab${tunnelType === "ssh" ? " method-tab-active" : ""}`}
-            onClick={() => setTunnelType("ssh")}
-          >
-            {t("connection.methodSsh")}
-          </button>
-        </div>
-        {tunnelType === "ssh" && (
-          <>
-            <div className="row">
-              <label>
-                {t("connection.sshHost")}{" "}
-                <Input value={sshHost} onChange={(e) => setSshHost(e.target.value)} />
-              </label>
-              <label>
-                {t("connection.sshPort")}{" "}
-                <Input
-                  type="number"
-                  value={sshPort}
-                  onChange={(e) => setSshPort(Number(e.target.value))}
-                />
-              </label>
-              <label>
-                {t("connection.sshUser")}{" "}
-                <Input value={sshUser} onChange={(e) => setSshUser(e.target.value)} />
-              </label>
-              <label>
-                {t("connection.auth")}{" "}
-                <Select
-                  value={sshAuthType}
-                  onChange={(v) => setSshAuthType(v)}
-                  options={[
-                    { value: "password", label: t("connection.authPassword") },
-                    { value: "privatekey", label: t("connection.authPrivateKey") },
-                  ]}
-                />
-              </label>
-            </div>
-            {sshAuthType === "password" && (
-              <div className="row">
-                <label>
-                  {t("connection.sshPassword")}{" "}
-                  <Input
-                    type="password"
-                    value={sshPassword}
-                    onChange={(e) => setSshPassword(e.target.value)}
-                    autoComplete="new-password"
-                  />
-                </label>
-              </div>
-            )}
-            {sshAuthType === "privatekey" && (
-              <div className="row">
-                <label>
-                  {t("connection.privateKeyFile")}{" "}
-                  <Input
-                    value={sshKeyPath}
-                    onChange={(e) => setSshKeyPath(e.target.value)}
-                    placeholder={PRIVATE_KEY_PLACEHOLDER}
-                  />
-                </label>
-                <Button onClick={browseForPrivateKey}>
-                  {t("common.browse")}
-                </Button>
-                <label>
-                  {t("connection.keyPassphrase")}{" "}
-                  <Input
-                    type="password"
-                    value={sshPassphrase}
-                    onChange={(e) => setSshPassphrase(e.target.value)}
-                    placeholder={t("connection.passphrasePlaceholder")}
-                    autoComplete="new-password"
-                  />
-                </label>
-              </div>
-            )}
-            <div className="row">
-              <Button onClick={testTunnel} disabled={!sshInputsComplete}>
-                {t("connection.testTunnel")}
-              </Button>
-              {tunnelStatus && (
-                <span className={`tunnel-status tunnel-status-${tunnelStatus.tone}`}>{tunnelStatus.message}</span>
-              )}
-            </div>
-          </>
-        )}
-      </fieldset>
-
-      <div className="row row-actions">
-        <div className="row-actions-left">
-          <Button
-            onClick={saveConnection}
-            disabled={
-              !saveAsName.trim() ||
-              (editingId !== null &&
-                savedSnapshot === stableStringify({ name: saveAsName.trim(), config: buildConnectionConfig() }))
-            }
-          >
-            {editingId ? t("connection.updateConnection") : t("connection.saveConnection")}
-          </Button>
-          {editingId && (
-            <Button onClick={saveConnectionAsNew} disabled={!saveAsName.trim()}>
-              {t("connection.saveAsNew")}
-            </Button>
-          )}
-        </div>
-        <div className="row-actions-right">
-          <span>{status}</span>
-          <Button variant="primary" onClick={() => connect()} disabled={connecting}>
-            {t("common.connect")}
-          </Button>
-        </div>
-      </div>
-
-      {confirmingReveal && (
-        <ConfirmDialog
-          title={t("connection.revealConnectionStringTitle")}
-          message={t("connection.revealConnectionStringMessage")}
-          confirmLabel={t("connection.revealConnectionStringConfirm")}
-          onConfirm={() => {
-            setUriRevealed(true);
-            setConfirmingReveal(false);
-          }}
-          onCancel={() => setConfirmingReveal(false)}
-        />
-      )}
-    </>
-  );
 
   if (!connectionId) {
     return (
@@ -1024,7 +564,28 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
           </ul>
         </aside>
         <section className="login-form">
-          {connectionForm}
+          <ConnectionForm
+            form={form}
+            onChange={set}
+            onKindChange={changeKind}
+            editingId={editingId}
+            name={saveAsName}
+            onNameChange={setSaveAsName}
+            /* A name is needed, and an edit that changes nothing is not a save. Worked out here
+               rather than in the form, because it is a question about the saved list. */
+            saveDisabled={
+              !saveAsName.trim() ||
+              (editingId !== null &&
+                savedSnapshot === stableStringify({ name: saveAsName.trim(), config: configFrom(form) }))
+            }
+            status={status}
+            connecting={connecting}
+            tunnelStatus={tunnelStatus}
+            onSave={saveConnection}
+            onSaveAsNew={saveConnectionAsNew}
+            onConnect={() => connect()}
+            onTestTunnel={testTunnel}
+          />
           {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
         </section>
         {contextMenu && (
