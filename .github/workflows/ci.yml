@@ -38,11 +38,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # First, and ahead of `npm ci`: it installs nothing, takes milliseconds, and is the one check
-      # here that TypeScript cannot make — a shared primitive importing from `modules/db/` compiles
-      # perfectly happily.
-      - run: node scripts/check-module-boundary.mjs
-
       - uses: actions/setup-node@v4
         with:
           # 20, matching release.yml, so what passes here is what the released bundle is built on.
@@ -55,6 +50,11 @@ jobs:
       - run: npm run build
 
       - run: npm test
+
+      # What TypeScript cannot say: hook dependencies, and the module boundary — a shared primitive
+      # importing from `modules/db/` compiles perfectly happily. `--max-warnings` is pinned in
+      # package.json, so the backlog of dependency warnings can fall and never grow.
+      - run: npm run lint
 
   rust:
     runs-on: ubuntu-22.04

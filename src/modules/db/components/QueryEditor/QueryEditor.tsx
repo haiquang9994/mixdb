@@ -122,7 +122,7 @@ function QueryEditor({
   onOpenTable,
   onDatabaseChanged,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const api = useSqlApi();
   const dialect = useSqlDialect();
   const snippets = useQuerySnippets();
@@ -383,7 +383,9 @@ function QueryEditor({
         return { from: reference.from, to: reference.to, open: () => onOpenTable(name) };
       },
     };
-  }, [outline, onOpenTable, t]);
+  // `lang` beside `t`: `t` is one function for the life of the app now, so it is `lang` that says
+  // this holds words and has to be built again when they change. See `i18n/index.tsx`.
+  }, [outline, onOpenTable, t, lang]);
 
   /** Every keystroke lands here, and almost every one of them ends without a render: React drops a
    *  state write that changes nothing, and this one changes twice in a script's life.

@@ -43,6 +43,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- An error raised after you switch language now appears in the language you switched to.
 - Loading a Mongo or Redis connection and then switching the form to MySQL no longer ticks TLS by itself.
 - A request timeout of 0 now means no limit, instead of failing the request instantly.
 - A response header whose value is not plain ASCII is no longer shown as empty.

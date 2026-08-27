@@ -15,7 +15,7 @@ import "./terminal.css";
 
 /** Terminal: một tab, một phiên. Form đứng trước, phiên thay chỗ nó khi người dùng bấm Mở. */
 function TerminalTab({ active, onTitleChange, onBadgesChange, restored, onStateChange }: ModuleTabProps) {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const [choice, setChoice] = useState<TerminalChoice | null>(null);
   /* Cái tab vừa thử mở. Khác `choice` ở chỗ nó không bị xoá khi phiên hỏng — form cần nó để dựng
      lại đúng những gì người dùng đã gõ. */
@@ -40,7 +40,9 @@ function TerminalTab({ active, onTitleChange, onBadgesChange, restored, onStateC
 
   useEffect(() => {
     onTitleChange(choice ? terminalTitle(choice) : t("terminal.newTabTitle"));
-  }, [choice, onTitleChange, t]);
+  // `lang` beside `t`: `t` is one function for the life of the app now, so it is `lang` that says
+  // this holds words and has to be built again when they change. See `i18n/index.tsx`.
+  }, [choice, onTitleChange, t, lang]);
 
   /* `useMemo` chứ không dựng thẳng trong effect, và effect không lấy `onBadgesChange` làm phụ
      thuộc: shell so danh sách badge theo tham chiếu (xem `shell/tabs.ts`), nên một mảng mới là một

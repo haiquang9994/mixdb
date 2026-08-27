@@ -69,7 +69,7 @@ function RequestList({
   onPin,
   onDelete,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const [filter, setFilter] = useState("");
   const [openGroups, setOpenGroups] = useState({ saved: true, recent: true });
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -86,7 +86,9 @@ function RequestList({
     return (request: RestRequest) =>
       label(request).toLowerCase().includes(needle) || request.url.toLowerCase().includes(needle);
     // `label` is rebuilt each render and depends only on `t`, so the filter follows the language.
-  }, [filter, t]);
+  // `lang` beside `t`: `t` is one function for the life of the app now, so it is `lang` that says
+  // this holds words and has to be built again when they change. See `i18n/index.tsx`.
+  }, [filter, t, lang]);
 
   /** Deleting from Recent asks nothing: the group empties itself anyway, and the row came from a
    *  paste rather than from a decision. Saved is asked about, as before. */

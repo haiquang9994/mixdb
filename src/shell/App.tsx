@@ -65,6 +65,7 @@ function App() {
      constant, so the count and the order are fixed for the life of the app. Reading the list rather
      than naming the modules is what keeps this file from being the second place that knows them. */
   for (const { moduleId, def } of MODULE_TAB_SHORTCUTS) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- module-level constant, see above: same count, same order, every render, for the life of the app.
     useShortcut(def.id, () => openTab(moduleId), true);
   }
 

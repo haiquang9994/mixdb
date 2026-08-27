@@ -131,7 +131,7 @@ function RedisWorkspace({
   onScanLimitChange,
   readOnly = false,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const [databases, setDatabases] = useState<RedisDbInfo[]>([]);
   const [databasesLoading, setDatabasesLoading] = useState(false);
   const [selectedDb, setSelectedDb] = useState(() => {
@@ -472,7 +472,9 @@ function RedisWorkspace({
       optionLabel: t("redis.scanLimitOption", { n: limit.toLocaleString() }),
       searchText: String(limit),
     }));
-  }, [keyLimit, t]);
+  // `lang` beside `t`: `t` is one function for the life of the app now, so it is `lang` that says
+  // this holds words and has to be built again when they change. See `i18n/index.tsx`.
+  }, [keyLimit, t, lang]);
 
   return (
     <div className="redis-workspace">

@@ -34,7 +34,7 @@ interface Props {
  * it is read once per connection and handed down rather than fetched here.
  */
 function CollationSelect({ value, collations, placeholder, ariaLabel, disabled, onChange }: Props) {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const current = value.trim();
 
   /** The list as it is offered: the chosen collation's own character set first, then the ones most
@@ -80,7 +80,9 @@ function CollationSelect({ value, collations, placeholder, ariaLabel, disabled, 
       list.splice(1, 0, { value: current, label: current });
     }
     return list;
-  }, [collations, current, placeholder, t]);
+  // `lang` beside `t`: `t` is one function for the life of the app now, so it is `lang` that says
+  // this holds words and has to be built again when they change. See `i18n/index.tsx`.
+  }, [collations, current, placeholder, t, lang]);
 
   if (collations.length === 0) {
     return (
