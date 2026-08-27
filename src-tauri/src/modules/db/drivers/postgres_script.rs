@@ -313,9 +313,10 @@ pub async fn backend_pid(conn: &mut sqlx::PgConnection) -> Result<u64, AppError>
 /// Asks the server to stop whatever the session `pid` is running.
 ///
 /// `pg_cancel_backend` rather than `pg_terminate_backend`: it ends the statement and leaves the
-/// session open, so the transaction and the temporary tables a script has built up survive. A pid
-/// the server no longer has answers false, which is not a failure worth showing — the user asked
-/// for it to stop, and it has.
+/// session open, so what comes back is an error the script can report against the statement it
+/// stopped, rather than a dropped connection reported as "connection lost" against the whole run.
+/// A pid the server no longer has answers false, which is not a failure worth showing — the user
+/// asked for it to stop, and it has.
 pub async fn cancel(pool: &PgPool, pid: u64) -> Result<(), AppError> {
     sqlx::query_scalar::<_, bool>("SELECT pg_cancel_backend($1)")
         .bind(pid as i32)
@@ -329,7 +330,10 @@ pub async fn cancel(pool: &PgPool, pid: u64) -> Result<(), AppError> {
 ///
 /// Everything runs on one connection, so a `SET`, a temporary table or a transaction opened by one
 /// statement is still in force for the next. A statement that fails stops the script: its own
-/// result carries the error, and the results before it still come back.
+/// result carries the error, and the results before it still come back. That connection is the
+/// script's own and is closed when the script ends, so nothing it left behind — an aborted
+/// transaction most of all — is ever seen by the queries the rest of the app runs; the other side
+/// of that is that one Run press starts a session and the next one starts another.
 ///
 /// `announce` is handed the session's backend pid before the first statement runs — the only handle
 /// another connection has on it, and what {@link cancel} needs to stop a statement in flight.
@@ -350,6 +354,20 @@ pub async fn run(
         .acquire()
         .await
         .map_err(map_error)?;
+    // The script gets this connection to itself, and it is closed when the script is done rather
+    // than going back to the pool carrying whatever the script left on it. `BEGIN; SELECT 1/0;`
+    // leaves an aborted transaction, and every later statement on that connection comes back
+    // `25P02` until someone rolls it back — which means the next `list_tables` or `table_data` to
+    // borrow it fails for no reason the user can see. A temporary table, a `SET`, an advisory lock
+    // and a `LISTEN` all survive the ping sqlx gives a returned connection too.
+    //
+    // `DISCARD ALL` would clear all of that, but only from a connection that is not mid-transaction
+    // and still answering — which is exactly the case that has gone wrong. Closing needs neither.
+    //
+    // On drop rather than at the end: an error on the way in, or the whole run being dropped
+    // because the tab closed, has to close it too. The pool's permit is held until it does, so this
+    // never opens a sixth connection. The cost is one handshake per Run, which is a keypress.
+    conn.close_on_drop();
     announce(backend_pid(&mut conn).await?);
 
     let mut results: Vec<StatementResult> = Vec::new();
@@ -498,3 +516,4 @@ mod tests {
         assert_eq!(line_of("SELECT\nFROM\nWHERE", 999), 3);
     }
 }
+

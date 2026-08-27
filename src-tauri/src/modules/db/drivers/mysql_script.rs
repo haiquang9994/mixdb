@@ -254,6 +254,12 @@ fn problem(error: &sqlx::Error) -> Option<SqlProblem> {
 /// whole reason most of what comes back is a warning rather than an error. A temporary table, a
 /// `USE`, a `SET` from earlier in the script — none of it is visible from here, so "table doesn't
 /// exist" may well mean "not yet". Only the server refusing to parse the text at all is certain.
+///
+/// Unlike {@link run} this does keep the connection: it fires on a debounce while someone types,
+/// and a handshake per pause would cost more than it saves. What it leaves on the session is
+/// bounded and known — the `USE`, and `@mixdb_check` holding the last statement's text — and no
+/// query in the app reads either: everything else names its database in full or binds it as a
+/// parameter to `information_schema`.
 pub async fn validate(
     pool: &MySqlPool,
     sql: &str,
@@ -315,7 +321,9 @@ fn is_write_verb(verb: &str) -> bool {
 ///
 /// Everything runs on one connection, so a `USE`, a `SET`, a temporary table or a transaction
 /// opened by one statement is still in force for the next — a script reads the way it would in a
-/// command-line client.
+/// command-line client. That connection is the script's own and is closed when the script ends, so
+/// nothing it left behind is ever seen by the queries the rest of the app runs; the other side of
+/// that is that one Run press starts a session and the next one starts another.
 ///
 /// A statement that fails stops the script: its own result carries the error, and the results
 /// before it are still returned rather than being lost with it.
@@ -334,6 +342,18 @@ pub async fn run(
     }
 
     let mut conn = pool.acquire().await.map_err(map_error)?;
+    // The script gets this connection to itself, and it is closed when the script is done rather
+    // than going back to the pool carrying whatever the script left on it: an open `BEGIN`, a `USE`
+    // of another database, `SET autocommit = 0`, `LOCK TABLES`, a temporary table. sqlx only pings
+    // a returned connection and every one of those survives a ping — the next `list_tables` to
+    // borrow it would read the wrong database, and an uncommitted `UPDATE` would hold its row locks
+    // on an idle connection until some later `pool.begin()` implicitly committed it. MySQL has no
+    // statement that resets a session, so the only way to be sure is not to hand the session on.
+    //
+    // On drop rather than at the end: an error on the way in, or the whole run being dropped
+    // because the tab closed, has to close it too. The pool's permit is held until it does, so
+    // this never opens a sixth connection. The cost is one handshake per Run, which is a keypress.
+    conn.close_on_drop();
     announce(super::mysql::thread_id(&mut conn).await?);
     if let Some(db) = database.filter(|d| !d.is_empty()) {
         // Sent as text, not prepared: MySQL refuses `USE` in the prepared statement protocol
@@ -535,3 +555,4 @@ mod tests {
         assert_eq!(texts("SELECT 5--3; SELECT 2"), ["SELECT 5--3", "SELECT 2"]);
     }
 }
+

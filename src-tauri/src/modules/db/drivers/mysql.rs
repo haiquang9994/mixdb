@@ -110,8 +110,8 @@ pub async fn thread_id(conn: &mut sqlx::MySqlConnection) -> Result<u64, AppError
 /// Asks the server to stop whatever session `thread_id` is running.
 ///
 /// `KILL QUERY` rather than `KILL`: it ends the statement and leaves the session itself open, so
-/// the connection it was running on goes back to the pool usable — the temporary tables, session
-/// variables and open transaction a script may have built up are still there.
+/// what comes back is an error the script can report against the statement it stopped, rather than
+/// a dropped connection reported as "connection lost" against the whole run.
 ///
 /// Runs on a connection of its own out of the same pool, since the one being killed is busy. A
 /// server that no longer has that session (the query finished first) reports "Unknown thread id",
