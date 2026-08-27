@@ -40,6 +40,10 @@ export interface SqlSyntax {
    *  a backslash in an ordinary string is just a backslash. */
   backslashEscapes: boolean;
 
+  /** `E'...'` is a string in which a backslash *does* escape. PostgreSQL only, and the one thing
+   *  that makes `backslashEscapes` above a property of the literal rather than of the engine. */
+  escapeStringPrefix: boolean;
+
   /** `$tag$ ... $tag$` holds text that may contain anything, semicolons included — which is how a
    *  function body is written. PostgreSQL only. */
   dollarQuoting: boolean;
@@ -52,6 +56,7 @@ export const MYSQL_SYNTAX: SqlSyntax = {
   identifierQuote: "`",
   doubleQuoteIsIdentifier: false,
   backslashEscapes: true,
+  escapeStringPrefix: false,
   dollarQuoting: false,
 };
 
@@ -62,8 +67,28 @@ export const POSTGRES_SYNTAX: SqlSyntax = {
   identifierQuote: null,
   doubleQuoteIsIdentifier: true,
   backslashEscapes: false,
+  escapeStringPrefix: true,
   dollarQuoting: true,
 };
+
+/** What may sit inside a PostgreSQL identifier after its first character — `$` included. */
+const IDENT_CHAR = /[\p{L}\p{N}_$]/u;
+
+/**
+ * Whether the `'` at `i` opens an `E'...'` literal, the one PostgreSQL string a backslash escapes
+ * in.
+ *
+ * The prefix has to be touching: `E'it\'s; here'` is one string holding a semicolon,
+ * while `SELECT e 'x'` is a column aliased `e` beside a plain string, and a name merely *ending*
+ * in `e` — `type'x'` — is neither. Checked against the server: `SELECT E'it\'s; here'`
+ * returns `it's; here`, while `SELECT 'a\b'` returns `a\b` unchanged.
+ */
+export function opensEscapeString(sql: string, i: number): boolean {
+  const before = sql[i - 1];
+  if (before !== "E" && before !== "e") return false;
+  const twoBack = sql[i - 2];
+  return twoBack === undefined || !IDENT_CHAR.test(twoBack);
+}
 
 /**
  * The tag of a dollar quote opening at `i`, or null when one does not.
@@ -74,6 +99,12 @@ export const POSTGRES_SYNTAX: SqlSyntax = {
  */
 export function dollarTag(sql: string, i: number): string | null {
   if (sql[i] !== "$") return null;
+  /* Glued to the end of a name it belongs to that name. `$` is a legal character inside a
+     PostgreSQL identifier, and the server reads the longest name it can before it looks for a
+     quote: `SELECT 1 AS a$b$c` names the column `a$b$c`, and `SELECT$$hi$$` is a syntax error
+     naming the whole of `SELECT$$hi$$` — both checked against the server. Read as an opening quote
+     instead, `a$b$c` swallows everything up to the next `$b$`, or the rest of the script. */
+  if (i > 0 && IDENT_CHAR.test(sql[i - 1])) return null;
   let tag = "";
   for (let j = i + 1; j < sql.length; j += 1) {
     const c = sql[j];

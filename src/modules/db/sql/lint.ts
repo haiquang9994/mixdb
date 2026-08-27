@@ -18,7 +18,7 @@
 
 import type { SQLDialect } from "@codemirror/lang-sql";
 import type { SqlDialect } from "./dialect";
-import { dollarTag, type SqlSyntax } from "./syntax";
+import { dollarTag, opensEscapeString, type SqlSyntax } from "./syntax";
 import type { TranslationKey } from "../../../i18n";
 import type { SqlSchemaOutline } from "../types";
 import type { SqlStatement } from "../sql/statements";
@@ -158,12 +158,16 @@ export function tokenize(sql: string, syntax: SqlSyntax, offset = 0): Token[] {
       let closed = false;
       // Which of the two this run is, which decides both how it escapes and what it means.
       const isName = c === syntax.identifierQuote || (c === '"' && syntax.doubleQuoteIsIdentifier);
+      // And whether a backslash escapes inside it: always on MySQL, only in a PostgreSQL
+      // `E'...'` — see `opensEscapeString`. Never inside a quoted name.
+      const escapes =
+        !isName &&
+        (syntax.backslashEscapes ||
+          (syntax.escapeStringPrefix && c === "'" && opensEscapeString(sql, start)));
       while (i < sql.length) {
         const ch = sql[i];
         i += 1;
-        // A backslash escapes the next character inside a string literal, where the engine says so.
-        // Inside a quoted name it never does — there, doubling is the only escape.
-        if (ch === "\\" && syntax.backslashEscapes && !isName) {
+        if (ch === "\\" && escapes) {
           if (i < sql.length) {
             value += sql[i];
             i += 1;

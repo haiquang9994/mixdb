@@ -43,6 +43,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Fixed
 
+- A PostgreSQL script is no longer cut in half at an `E'...'` string, which sent broken halves to the server.
+- A PostgreSQL name holding a `$`, such as `a$b$c`, no longer swallows the rest of the script.
 - Closing a database tab while it is still connecting now closes the connection it was opening.
 - Pressing Connect twice no longer opens a second connection that stays open for the rest of the session.
 - Closing a terminal tab while it is still connecting now closes the session it was opening, instead of leaving it running.

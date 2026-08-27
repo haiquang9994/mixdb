@@ -50,6 +50,20 @@ pub struct StatementResult {
     pub error: Option<String>,
 }
 
+/// What may sit inside a PostgreSQL identifier after its first character — `$` included.
+fn is_ident_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_' || c == '$'
+}
+
+/// Whether the `'` at `chars[i]` opens an `E'...'` literal, the one PostgreSQL string a backslash
+/// escapes in. The prefix has to be touching, and cannot be the tail of a longer name.
+fn opens_escape_string(chars: &[char], i: usize) -> bool {
+    if i == 0 || !matches!(chars[i - 1], 'E' | 'e') {
+        return false;
+    }
+    i < 2 || !is_ident_char(chars[i - 2])
+}
+
 /// The tag of a dollar quote opening at `chars[i]`, when one does: `$$` gives `""`, `$body$` gives
 /// `"body"`, and anything else — `$1`, a lone `$` — gives `None`.
 ///
@@ -58,6 +72,13 @@ pub struct StatementResult {
 /// opening quote that never closes and swallow the rest of the script.
 fn dollar_tag(chars: &[char], i: usize) -> Option<String> {
     if chars.get(i) != Some(&'$') {
+        return None;
+    }
+    // Glued to the end of a name it belongs to that name: `$` is legal inside a PostgreSQL
+    // identifier and the server reads the longest one it can before looking for a quote, so
+    // `SELECT 1 AS a$b$c` names a column `a$b$c`. Read as an opening quote, `$b$` swallows
+    // everything up to the next one of itself, or the rest of the script.
+    if i > 0 && is_ident_char(chars[i - 1]) {
         return None;
     }
     let mut tag = String::new();
@@ -172,16 +193,25 @@ fn split_statements(sql: &str) -> Vec<Statement> {
         }
 
         if c == '\'' || c == '"' {
+            // A backslash escapes only inside an `E'...'`. Everywhere else in PostgreSQL — an
+            // ordinary string, a quoted name — it is just a backslash, unlike MySQL.
+            let escapes = c == '\'' && opens_escape_string(&chars, i);
             current.push(c);
             i += 1;
             while i < chars.len() {
                 let ch = chars[i];
                 current.push(ch);
                 i += 1;
+                if ch == '\\' && escapes {
+                    if let Some(&next) = chars.get(i) {
+                        current.push(next);
+                        i += 1;
+                    }
+                    continue;
+                }
                 if ch == c {
-                    // Two in a row are an escaped quote, not the end of the literal. This is the
-                    // only escape PostgreSQL has by default — a backslash inside an ordinary
-                    // string is just a backslash, unlike MySQL.
+                    // Two in a row are an escaped quote, the other way a literal holds its own
+                    // quote — and the only one an ordinary string has.
                     if chars.get(i) == Some(&c) {
                         current.push(c);
                         i += 1;
@@ -497,6 +527,30 @@ mod tests {
         assert_eq!(verbs("SELECT 'it''s; here'; SELECT 2"), ["SELECT", "SELECT"]);
     }
 
+    /// The exception to the rule above: an `E'...'` string does escape with backslashes, so the
+    /// quote after one is not the end of it. Checked against the server, which answers
+    /// `SELECT E'it\'s; here'` with `it's; here` — one statement holding a semicolon.
+    #[test]
+    fn an_e_string_escapes_with_backslashes() {
+        assert_eq!(verbs(r"SELECT E'it\'s; here'; SELECT 2"), ["SELECT", "SELECT"]);
+        assert_eq!(texts(r"SELECT E'it\'s; here'; SELECT 2")[0], r"SELECT E'it\'s; here'");
+        // Lowercase is the same prefix.
+        assert_eq!(verbs(r"SELECT e'it\'s; here'; SELECT 2"), ["SELECT", "SELECT"]);
+        // A name merely ending in `e` is not one, and neither is one held off by a space.
+        assert_eq!(verbs(r"SELECT type'a\'; SELECT 2"), ["SELECT", "SELECT"]);
+    }
+
+    /// `$` is legal inside a PostgreSQL identifier, so `a$b$c` is one column name and not a body
+    /// opening at `$b$` — the server names the column `a$b$c` and reads `x$$y$$` as a name too.
+    /// Read the wrong way round, either eats the rest of the script.
+    #[test]
+    fn a_dollar_inside_a_name_is_not_a_quote() {
+        assert_eq!(verbs("SELECT 1 AS a$b$c; SELECT 2"), ["SELECT", "SELECT"]);
+        assert_eq!(verbs("SELECT x$$y$$; SELECT 2"), ["SELECT", "SELECT"]);
+        // A real body is still one, wherever it opens.
+        assert_eq!(verbs("SELECT $tag$a; b$tag$; SELECT 2"), ["SELECT", "SELECT"]);
+    }
+
     /// PostgreSQL's block comments nest; stopping at the first `*/` would leave code behind.
     #[test]
     fn block_comments_nest() {
@@ -516,4 +570,5 @@ mod tests {
         assert_eq!(line_of("SELECT\nFROM\nWHERE", 999), 3);
     }
 }
+
 

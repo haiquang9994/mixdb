@@ -141,6 +141,30 @@ describe("splitStatements on PostgreSQL", () => {
     expect(pg("SELECT 'it''s; here'; SELECT 2")).toEqual(["SELECT", "SELECT"]);
   });
 
+  /** The exception to the rule above: an `E''` string does escape with backslashes, so the quote
+   *  after one is not the end of it. Confirmed on the server — `SELECT E'it\'s; here'` comes back
+   *  as `it's; here`, one statement holding a semicolon. */
+  it("reads an E-string as the escaping literal it is", () => {
+    expect(pg(String.raw`SELECT E'it\'s; here'; SELECT 2`)).toEqual(["SELECT", "SELECT"]);
+    expect(pgTexts(String.raw`SELECT E'it\'s; here'; SELECT 2`)[0]).toBe(
+      String.raw`SELECT E'it\'s; here'`
+    );
+    // Lowercase is the same prefix.
+    expect(pg(String.raw`SELECT e'it\'s; here'; SELECT 2`)).toEqual(["SELECT", "SELECT"]);
+    // A name that merely ends in `e` is not a prefix, and neither is one held off by a space.
+    expect(pg(String.raw`SELECT type'a\'; SELECT 2`)).toEqual(["SELECT", "SELECT"]);
+  });
+
+  /** `$` is legal inside a PostgreSQL identifier, so `a$b$c` is one column name and not a body
+   *  opening at `$b$` — the server names the column `a$b$c`. Read the wrong way it eats the rest
+   *  of the script. */
+  it("does not read a dollar inside a name as a quote", () => {
+    expect(pg("SELECT 1 AS a$b$c; SELECT 2")).toEqual(["SELECT", "SELECT"]);
+    expect(pg("SELECT x$$y$$; SELECT 2")).toEqual(["SELECT", "SELECT"]);
+    // A real body is still one, wherever it opens.
+    expect(pg("SELECT $tag$a; b$tag$; SELECT 2")).toEqual(["SELECT", "SELECT"]);
+  });
+
   it("nests block comments", () => {
     expect(pg("/* a /* b */ ; c */ SELECT 1")).toEqual(["SELECT"]);
   });

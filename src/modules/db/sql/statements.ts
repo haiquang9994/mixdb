@@ -14,7 +14,7 @@
  * in the text.
  */
 
-import { dollarTag, type SqlSyntax } from "./syntax";
+import { dollarTag, opensEscapeString, type SqlSyntax } from "./syntax";
 
 /** One statement, and the range of the script it came from. */
 export interface SqlStatement {
@@ -124,13 +124,18 @@ export function splitStatements(sql: string, syntax: SqlSyntax): SqlStatement[] 
     }
 
     if (c === "'" || c === '"' || c === syntax.identifierQuote) {
+      /* Whether a backslash escapes inside *this* literal. On MySQL it always does; on PostgreSQL
+         only in an `E'...'`, whose backslashes are the reason the split has to know. Inside a
+         quoted identifier it never does on either — there, doubling is the only escape. */
+      const escapes =
+        c !== syntax.identifierQuote &&
+        (syntax.backslashEscapes ||
+          (syntax.escapeStringPrefix && c === "'" && opensEscapeString(sql, i)));
       i += 1;
       while (i < sql.length) {
         const ch = sql[i];
         i += 1;
-        // A backslash escapes the next character inside a string literal, where the engine says so.
-        // Inside a quoted identifier it never does — there, doubling is the only escape.
-        if (ch === "\\" && syntax.backslashEscapes && c !== syntax.identifierQuote) {
+        if (ch === "\\" && escapes) {
           i += 1;
           continue;
         }
