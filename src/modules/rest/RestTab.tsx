@@ -99,6 +99,14 @@ function RestTab({ active, onTitleChange, restored, onStateChange }: ModuleTabPr
   const restoreApplied = useRef<string[] | null>(null);
   const [requestTabs, setRequestTabs] = useState<Record<string, RequestTabKey>>({});
   const [sends, setSends] = useState<Record<string, SendState>>({});
+  /**
+   * The sends that have gone out and not yet come back, where the unmount cleanup can reach them.
+   *
+   * A ref and not `sends`, because the cleanup that matters runs once, on the way out, and an
+   * effect cleanup closes over the render it was created in — `sends` there would be whatever was
+   * on screen when the tab was opened.
+   */
+  const inFlight = useRef(new Set<string>());
   const [preferredModes, setPreferredModes] = useState<Record<string, ViewMode>>({});
   const [headersOpen, setHeadersOpen] = useState<Record<string, boolean>>({});
 
@@ -112,6 +120,24 @@ function RestTab({ active, onTitleChange, restored, onStateChange }: ModuleTabPr
   /** A paste that the environment has names for, and the request it would become. Held rather
    *  than applied: the question is put to whoever pasted it, and both answers are cheap. */
   const [swap, setSwap] = useState<{ request: RestRequest; found: Substitution[] } | null>(null);
+
+  /**
+   * Closing the tab stops whatever it was waiting for.
+   *
+   * Without this the request runs to its timeout — up to ten minutes — on a connection nobody is
+   * watching, and then writes its answer into the history of a tab that is gone. Cancelling covers
+   * both: the send comes back as cancelled, and a cancelled send is deliberately not recorded.
+   *
+   * Nothing is awaited. There is no one left to tell if the cancel itself fails, and the tab is
+   * unmounting either way.
+   */
+  useEffect(
+    () => () => {
+      for (const id of inFlight.current) void restCancel(id);
+      inFlight.current.clear();
+    },
+    [],
+  );
 
   // The workspace file is read once, after the first render — so the furniture starts at its
   // defaults and moves to what was saved when it arrives.
@@ -382,6 +408,7 @@ function RestTab({ active, onTitleChange, restored, onStateChange }: ModuleTabPr
     // secret variable was used, would put a credential into `rest-requests.json`.
     saveRequest({ ...request, lastUsedAt: Date.now() });
 
+    inFlight.current.add(sendId);
     try {
       const response = await restSend(wire);
       const bytes = decodeBase64(response.body_base64);
@@ -441,6 +468,10 @@ function RestTab({ active, onTitleChange, restored, onStateChange }: ModuleTabPr
           responseBody: null,
         });
       }
+    } finally {
+      // However it ended, there is nothing left to cancel — and by the time the tab closes this id
+      // would name a send that finished long ago.
+      inFlight.current.delete(sendId);
     }
   }
 

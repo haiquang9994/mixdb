@@ -48,6 +48,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 ### Fixed
 
 - Enter no longer confirms a dialog that deletes something; it now cancels, like Escape.
+- Closing a REST tab while a request is in flight now cancels it, instead of leaving it running to its timeout.
 - A tool download interrupted by a crash no longer leaves hundreds of megabytes behind; MixDB now clears it on the next start.
 - A database whose name starts with `-`, or contains `=`, can now be dumped and restored; on PostgreSQL such a name could send the tool to another server entirely.
 - The SSH host keys MixDB has seen are no longer lost if it is interrupted while writing them down.
