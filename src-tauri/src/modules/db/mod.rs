@@ -16,3 +16,15 @@ pub mod state;
 pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.manage(state::DbState::default())
 }
+
+/// Deletes what a tool download that never finished left behind — see
+/// [`drivers::tools::sweep_staging`].
+///
+/// Takes the app handle rather than a path because where MixDB keeps its data is the app's to say.
+/// Silent throughout: a sweep that cannot read the directory changes nothing but how much disk is
+/// used, and there is nobody to tell at the moment it runs.
+pub fn sweep_downloads<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Ok(dir) = crate::platform::app_data_dir(app) {
+        drivers::tools::sweep_staging(&dir.join("tools"));
+    }
+}

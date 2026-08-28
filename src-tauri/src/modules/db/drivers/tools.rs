@@ -741,6 +741,75 @@ fn collect(dir: &Path, suite: Suite, target: &Path) -> Result<usize, AppError> {
     Ok(found)
 }
 
+/// What a staging directory is named, and what [`sweep_staging`] goes looking for.
+const STAGING_PREFIX: &str = "download-";
+
+/// How long a staging directory has to have been untouched before it counts as abandoned.
+///
+/// Nothing stops a second copy of MixDB being open, and a sweep at startup must not delete the
+/// download the other one is in the middle of. Six hours is far past any download that is still
+/// going and far short of leaving the disk full until the next install.
+const STALE_AFTER: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// The temporary directory one install unpacks into, removed however the install ends.
+struct Staging {
+    path: PathBuf,
+}
+
+impl Staging {
+    fn new(tools_dir: &Path) -> Result<Self, AppError> {
+        let path = tools_dir.join(format!("{STAGING_PREFIX}{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&path)
+            .map_err(|e| err!("error.cannotCreateDirectory", path = path.display(), message = e))?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for Staging {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+/// Deletes the staging directories left behind by installs that never finished.
+///
+/// [`Staging`] takes its own away on every path out of `install`, including a failed download —
+/// but not when the process never gets to run anything at all: a crash, a power cut, the app being
+/// killed mid-download. What is left is an unpacked server distribution, several hundred megabytes
+/// in MySQL's case, that nothing would otherwise ever come back for.
+pub fn sweep_staging(tools_dir: &Path) {
+    sweep_staging_older_than(tools_dir, STALE_AFTER);
+}
+
+fn sweep_staging_older_than(tools_dir: &Path, stale_after: Duration) {
+    let Ok(entries) = std::fs::read_dir(tools_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with(STAGING_PREFIX) {
+            continue;
+        }
+        if last_touched(&entry.path()).is_some_and(|idle| idle < stale_after) {
+            continue;
+        }
+        let _ = std::fs::remove_dir_all(entry.path());
+    }
+}
+
+/// How long ago anything in the staging directory was last written, as far as one level down.
+///
+/// One level is enough to tell a live download from an abandoned one: the archive is a single file
+/// written the whole way through, and the unpack that follows starts within seconds of it. Walking
+/// the whole tree would mean stat-ing thousands of files of an unpacked server to answer a
+/// question that has already been answered. `None` — nothing readable in there — counts as stale.
+fn last_touched(path: &Path) -> Option<Duration> {
+    let times = std::iter::once(path.to_path_buf())
+        .chain(std::fs::read_dir(path).ok()?.flatten().map(|entry| entry.path()))
+        .filter_map(|path| path.metadata().ok()?.modified().ok())
+        .filter_map(|time| time.elapsed().ok());
+    times.min()
+}
+
 /// Downloads the suite's own tools into `tools_dir`.
 ///
 /// `curl` and `tar` do the fetching and unpacking: both ship with Windows 10 and up and with every
@@ -764,16 +833,13 @@ pub fn install(suite: Suite, tools_dir: &Path, report: &dyn Fn(Progress)) -> Res
     let target = suite.dir(tools_dir);
     std::fs::create_dir_all(&target)
         .map_err(|e| err!("error.cannotCreateDirectory", path = target.display(), message = e))?;
-    let staging = tools_dir.join(format!("download-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&staging)
-        .map_err(|e| err!("error.cannotCreateDirectory", path = staging.display(), message = e))?;
-    // Whatever happens next, the staging directory goes: it holds a whole unpacked server.
-    let cleanup = || {
-        let _ = std::fs::remove_dir_all(&staging);
-    };
+    // Whatever happens next, the staging directory goes: it holds a whole unpacked server. A guard
+    // rather than a call at the end, so that a panic takes it away too.
+    let staging = Staging::new(tools_dir)?;
+    let staging = &staging.path;
 
     let archive = staging.join("tools-archive");
-    let result = (|| {
+    (|| {
         download(&url, &archive, suite, report)?;
         // Before anything is unpacked, let alone run.
         report(Progress::stage(suite, "verifying"));
@@ -806,18 +872,52 @@ pub fn install(suite: Suite, tools_dir: &Path, report: &dyn Fn(Progress)) -> Res
             }
         }
         Ok(())
-    })();
-
-    cleanup();
-    result
+    })()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        collect, downloadable, expand_dir, install, locate, verify_sha256, Source, Suite, Tool,
+        collect, downloadable, expand_dir, install, locate, sweep_staging_older_than,
+        verify_sha256, Source, Suite, Tool,
     };
+    use std::time::Duration;
     use std::path::{Path, PathBuf};
+
+    /// What the sweep takes and what it leaves.
+    ///
+    /// The age is a parameter here and a constant in the app, because the alternative is a test
+    /// that has to move a directory's modification time backwards — which is a different thing on
+    /// each platform, and would be testing the clock rather than the rule.
+    #[test]
+    fn the_sweep_takes_abandoned_downloads_and_leaves_everything_else() {
+        let root = std::env::temp_dir().join(format!("mixdb-test-{}", uuid::Uuid::new_v4()));
+        let live = root.join("download-live");
+        // An install that got as far as unpacking: what the sweep must be able to remove whole.
+        std::fs::create_dir_all(root.join("download-dead/unpacked/bin")).unwrap();
+        std::fs::write(root.join("download-dead/unpacked/bin/mysqldump"), b"x").unwrap();
+        std::fs::create_dir_all(&live).unwrap();
+        // The installed tools, which live in the same directory and must never be touched.
+        std::fs::create_dir_all(root.join("mysql/bin")).unwrap();
+        std::fs::write(root.join("mysql/bin/mysqldump"), b"x").unwrap();
+
+        // Nothing is old enough yet — which is the case of a second copy of MixDB downloading.
+        sweep_staging_older_than(&root, Duration::from_secs(6 * 60 * 60));
+        assert!(root.join("download-dead").is_dir());
+        assert!(live.is_dir());
+
+        // Everything is, now.
+        sweep_staging_older_than(&root, Duration::ZERO);
+        assert!(!root.join("download-dead").exists());
+        assert!(!live.exists());
+        assert!(root.join("mysql/bin/mysqldump").is_file(), "the installed tools were swept");
+
+        // A tools directory that does not exist is not a failure: it is what a machine that has
+        // never downloaded anything looks like.
+        sweep_staging_older_than(&root.join("nowhere"), Duration::ZERO);
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     /// Fetches a suite the way the app does and checks the result is usable: the pinned URL still
     /// serves a file, that file still hashes to what {@link archive_source} pins, the archive still

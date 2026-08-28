@@ -36,6 +36,16 @@ pub fn run() {
     let builder = modules::terminal::register(builder);
 
     builder
+        .setup(|app| {
+            /* Housekeeping rather than startup work. A tool download that the app never came back
+               from — a crash, a power cut, a force quit — leaves an unpacked server distribution
+               in the tools directory, and this is the only thing that ever collects it. On a
+               thread of its own and with its answer ignored: the window must not wait behind a
+               directory walk and a delete of several hundred megabytes. */
+            let handle = app.handle().clone();
+            std::thread::spawn(move || modules::db::sweep_downloads(&handle));
+            Ok(())
+        })
         .invoke_handler(modules::handler())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -28,7 +28,7 @@ where
 
 /// Where MixDB keeps what it remembers between runs: the tools it downloaded, and the SSH host
 /// keys it has seen.
-pub fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
+pub fn app_data_dir<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, AppError> {
     app.path()
         .app_data_dir()
         .map_err(|e| err!("error.noAppDataDir", message = e))
