@@ -66,6 +66,23 @@ const toolsVi = {
       md5Warning: "MD5 đã bị phá. Dùng để đối chiếu dữ liệu có sẵn, đừng dùng cho mật khẩu.",
       badInput: "Không đọc được đầu vào theo định dạng này.",
     },
+
+    jwt: {
+      label: "Đọc JWT",
+      token: "Token",
+      header: "Header",
+      payload: "Payload",
+      signature: "Chữ ký",
+      notVerified: "Chữ ký không được kiểm chứng. Đây chỉ là đọc token.",
+      valid: "Còn hạn",
+      expired: "Đã hết hạn",
+      expiresAt: "Hết hạn lúc",
+      issuedAt: "Cấp lúc",
+      notBefore: "Chưa dùng được trước",
+      badShape: "Token phải có đúng ba phần ngăn bằng dấu chấm.",
+      badBase64: "Đây không phải base64url.",
+      badJson: "Giải được base64 nhưng bên trong không phải JSON.",
+    },
   },
 };
 

@@ -66,6 +66,23 @@ const toolsEn = {
       md5Warning: "MD5 is broken. Use it to check existing data, never for passwords.",
       badInput: "That input could not be read in this format.",
     },
+
+    jwt: {
+      label: "JWT decoder",
+      token: "Token",
+      header: "Header",
+      payload: "Payload",
+      signature: "Signature",
+      notVerified: "The signature is not checked. This only reads the token.",
+      valid: "Still valid",
+      expired: "Expired",
+      expiresAt: "Expires at",
+      issuedAt: "Issued at",
+      notBefore: "Not before",
+      badShape: "A token needs exactly three parts separated by dots.",
+      badBase64: "That is not base64url.",
+      badJson: "The base64 decoded, but what came out is not JSON.",
+    },
   },
 };
 

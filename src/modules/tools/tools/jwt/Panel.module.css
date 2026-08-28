@@ -1,0 +1,61 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 46rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fieldLabel {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.heading {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.signature {
+  margin: 0;
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.bad,
+.notVerified {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.valid,
+.expired {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.valid {
+  color: var(--accent-text);
+}
+
+.expired {
+  color: var(--danger-text);
+}
