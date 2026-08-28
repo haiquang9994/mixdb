@@ -137,9 +137,13 @@
 
      A hue lands here only if it reads at 4.5:1 against this page in its `-text` cast and stays
      distinct from the red that means destructive, which is why there is no red among them. */
-  --c-blue: #396cd8;
-  --c-blue-text: #2f5cb8;
-  --c-blue-rgb: 57 108 216;
+  /* Xanh dương đậm, và là một lựa chọn. Giá trị cũ `#396cd8` là accent mặc định của template
+     `create-tauri-app` — nó chưa bao giờ được ai chọn, chỉ là thứ còn sót lại từ lúc dựng dự án,
+     và là dấu vết dễ nhận ra nhất ở một app chưa ai ngồi xuống nhìn. Tối hơn và bớt bão hoà hơn,
+     nên nó đọc ra "công cụ" chứ không phải "trang web". */
+  --c-blue: #23528c;
+  --c-blue-text: #1d4576;
+  --c-blue-rgb: 35 82 140;
 
   --c-indigo: #5457d6;
   --c-indigo-text: #4245b5;
@@ -690,9 +694,9 @@ textarea:focus {
   /* The dark cast of all ten. Only the palettes are restated — which one `--accent` points at was
      settled by `[data-accent]` above and holds through the theme, so a swatch and the accent both
      follow the theme without a second selector per colour. */
-  --c-blue: #6f9bf0;
-  --c-blue-text: #8fb4f5;
-  --c-blue-rgb: 111 155 240;
+  --c-blue: #6f9fd8;
+  --c-blue-text: #8fb6e4;
+  --c-blue-rgb: 111 159 216;
 
   --c-indigo: #8b8df0;
   --c-indigo-text: #a5a7f5;
@@ -753,9 +757,9 @@ textarea:focus {
     --danger-text: #ff8a80;
     --danger-rgb: 255 99 99;
 
-    --c-blue: #6f9bf0;
-    --c-blue-text: #8fb4f5;
-    --c-blue-rgb: 111 155 240;
+    --c-blue: #6f9fd8;
+    --c-blue-text: #8fb6e4;
+    --c-blue-rgb: 111 159 216;
 
     --c-indigo: #8b8df0;
     --c-indigo-text: #a5a7f5;
