@@ -163,6 +163,24 @@ const toolsVi = {
       note: "Ngoặc là việc của template. MixDB không tự bọc ngoặc quanh thứ bạn gõ.",
     },
 
+    connection: {
+      label: "Chuỗi kết nối",
+      paste: "Dán một chuỗi kết nối vào đây",
+      unreadable: "Đây không phải chuỗi kết nối MixDB đọc được.",
+      kind: "Loại DB",
+      host: "Host",
+      port: "Cổng",
+      user: "Người dùng",
+      password: "Mật khẩu",
+      database: "Database",
+      srvNote: "mongodb+srv lấy host và cổng từ DNS, nên không có cổng để đặt.",
+      uri: "URI",
+      jdbc: "JDBC",
+      jdbcNone: "MongoDB và Redis không có chuẩn JDBC.",
+      env: ".env",
+      docker: "docker -e",
+    },
+
     ids: {
       label: "Sinh ID",
       kind: "Kiểu",

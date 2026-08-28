@@ -3,6 +3,14 @@
 //! Không có `Command` nào trong file này, và đó là chủ ý: chạy lệnh phụ thuộc máy, phụ thuộc
 //! quyền, và không test được trong CI. Đọc output thì là hàm thuần — và nó là chỗ mọi lỗi sẽ nằm,
 //! vì ba nền tảng có ba định dạng, mỗi cái một kiểu dòng lạ. `commands.rs` giữ nửa kia.
+//!
+//! `allow(dead_code)` cho cả file, và nó là điều kiện để cách chia trên hoạt động: `collect()` ở
+//! `commands.rs` bị `cfg` theo nền tảng nên trên máy nào cũng chỉ gọi **một** trong ba bộ đọc, còn
+//! cả ba thì cố ý được biên dịch ở mọi nơi để **test của cả ba chạy ở mọi nơi**. Không có dòng
+//! này thì clippy báo hai bộ đọc kia là code chết trên Windows, và báo `parse_netstat` là code
+//! chết trên máy Linux của CI. Đóng khung ở đúng file này chấp nhận được vì trong đây không có gì
+//! ngoài ba bộ đọc và mấy hàm phụ của chúng.
+#![allow(dead_code)]
 
 use serde::Serialize;
 use std::collections::HashMap;

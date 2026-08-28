@@ -163,6 +163,24 @@ const toolsEn = {
       note: "Quoting is up to the template. MixDB does not add quotes around what you type.",
     },
 
+    connection: {
+      label: "Connection string",
+      paste: "Paste a connection string",
+      unreadable: "That is not a connection string MixDB knows.",
+      kind: "Database",
+      host: "Host",
+      port: "Port",
+      user: "User",
+      password: "Password",
+      database: "Database",
+      srvNote: "mongodb+srv takes its host and port from DNS, so there is no port to set.",
+      uri: "URI",
+      jdbc: "JDBC",
+      jdbcNone: "MongoDB and Redis have no JDBC standard.",
+      env: ".env",
+      docker: "docker -e",
+    },
+
     ids: {
       label: "Id generator",
       kind: "Kind",

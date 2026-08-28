@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "./tool";
 import CasePanel from "./tools/case/Panel";
 import CheatsheetPanel from "./tools/cheatsheet/Panel";
+import ConnectionPanel from "./tools/connection/Panel";
 import ConvertPanel from "./tools/convert/Panel";
 import DiffPanel from "./tools/diff/Panel";
 import EncodePanel from "./tools/encode/Panel";
@@ -40,5 +41,11 @@ export const TOOLS: ToolDefinition[] = [
     labelKey: "toolbox.cheatsheet.label",
     group: "infra",
     Panel: CheatsheetPanel,
+  },
+  {
+    id: "connection",
+    labelKey: "toolbox.connection.label",
+    group: "infra",
+    Panel: ConnectionPanel,
   },
 ];
