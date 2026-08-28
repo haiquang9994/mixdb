@@ -42,6 +42,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.21] - 2026-08-28
+
 ### Fixed
 
 - macOS asks for permission to read saved passwords once after an update, not once for every saved
@@ -454,7 +456,8 @@ installs it and restarts. Every update is checked against MixDB's signing key fi
      links rather than decoration. `set-version.mjs` adds a line here as it cuts a section,
      so this stays in step without anyone remembering it. -->
 
-[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.20...HEAD
+[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.21...HEAD
+[0.0.21]: https://github.com/haiquang9994/mixdb/compare/v0.0.20...v0.0.21
 [0.0.20]: https://github.com/haiquang9994/mixdb/compare/v0.0.19...v0.0.20
 [0.0.19]: https://github.com/haiquang9994/mixdb/compare/v0.0.18...v0.0.19
 [0.0.18]: https://github.com/haiquang9994/mixdb/compare/v0.0.17...v0.0.18
