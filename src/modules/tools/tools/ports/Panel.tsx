@@ -139,7 +139,7 @@ function PortsPanel() {
             onChange={(event) => setKillPort(event.target.value.replace(/[^\d]/g, ""))}
             placeholder={t("toolbox.ports.portInput")}
             aria-label={t("toolbox.ports.portInput")}
-            className={styles.filter}
+            className={styles.port}
             inputMode="numeric"
           />
         </div>
