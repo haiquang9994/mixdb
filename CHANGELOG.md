@@ -42,6 +42,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Fixed
+
+- macOS asks for permission to read saved passwords once after an update, not once for every saved
+  connection. Ten connections used to mean ten Keychain dialogs at once on opening the Database
+  tab; the first run after this update still asks for each of them, and no run after that does.
+
 ## [0.0.20] - 2026-08-28
 
 ### Added
