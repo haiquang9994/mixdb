@@ -49,6 +49,23 @@ const toolsEn = {
       count: "How many",
       generate: "Generate",
     },
+
+    encode: {
+      label: "Encode & hash",
+      tabBase64: "Base64",
+      tabHex: "Hex",
+      tabUrl: "URL",
+      tabHash: "Hash",
+      encode: "Encode",
+      decode: "Decode",
+      hash: "Hash",
+      urlSafe: "URL-safe alphabet",
+      spaced: "Space the bytes",
+      whole: "Whole URL (encodeURI)",
+      algo: "Algorithm",
+      md5Warning: "MD5 is broken. Use it to check existing data, never for passwords.",
+      badInput: "That input could not be read in this format.",
+    },
   },
 };
 

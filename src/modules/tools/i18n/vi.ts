@@ -49,6 +49,23 @@ const toolsVi = {
       count: "Số lượng",
       generate: "Sinh",
     },
+
+    encode: {
+      label: "Mã hoá & băm",
+      tabBase64: "Base64",
+      tabHex: "Hex",
+      tabUrl: "URL",
+      tabHash: "Băm",
+      encode: "Mã hoá",
+      decode: "Giải mã",
+      hash: "Băm",
+      urlSafe: "Bảng chữ url-safe",
+      spaced: "Cách nhau từng byte",
+      whole: "Cả URL (encodeURI)",
+      algo: "Thuật toán",
+      md5Warning: "MD5 đã bị phá. Dùng để đối chiếu dữ liệu có sẵn, đừng dùng cho mật khẩu.",
+      badInput: "Không đọc được đầu vào theo định dạng này.",
+    },
   },
 };
 
