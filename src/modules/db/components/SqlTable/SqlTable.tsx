@@ -63,14 +63,14 @@ const VIRTUAL_COLUMNS_FROM = 40;
 const NO_EDGES: readonly number[] = [0];
 
 /** How tall a row of this grid is — stated, never measured; see `virtualRows.ts` for why that
- *  distinction is what makes a window of rows sound. 27px is what a row here comes to: an 18px
+ *  distinction is what makes a window of rows sound. 29px is what a row here comes to: a 20px
  *  line, 4px of padding above and below, and the 1px rule underneath. The stylesheet pins the rows
  *  to it, so changing the grid's font or padding means changing this with them.
  *
  *  Was 33px, back when the line was 24px. `gridRows.test.ts` guards the half of that promise a
  *  stylesheet can break — a cell that takes vertical padding again would make a drawn row taller
  *  than this says it is, and the end of the page would drift as you scrolled towards it. */
-const ROW_HEIGHT = 27;
+const ROW_HEIGHT = 29;
 
 /** What a cell spends on itself before any text goes in it: 8px of padding either side and the 1px
  *  rule down its right edge. */

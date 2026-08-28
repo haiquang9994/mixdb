@@ -61,7 +61,7 @@ const FIND_FROM = 20;
  * How tall a row of this grid is — stated, never measured. See `virtualRows.ts` for why that
  * distinction is the whole of what makes a window of rows sound.
  *
- * It is 25px because that is what a row here comes to: an 18px line, 3px of padding above and
+ * It is 27px because that is what a row here comes to: a 20px line, 3px of padding above and
  * below, and the 1px rule underneath. The stylesheet pins all four — the line height explicitly,
  * so that no glyph in a cell can quietly make a row taller than this says it is.
  *
@@ -69,7 +69,7 @@ const FIND_FROM = 20;
  * grid pads 3px where they pad 4px, because a result set is read in bulk and the other three are
  * read a row at a time.
  */
-export const ROW_HEIGHT = 25;
+export const ROW_HEIGHT = 27;
 
 /** What a cell of this grid spends on itself: 8px of padding either side, and the 1px rule down its
  *  right edge. */

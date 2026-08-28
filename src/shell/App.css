@@ -12,8 +12,8 @@
   --font-mono: "Fira Code", ui-monospace, monospace;
 
   font-family: var(--font-ui);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 400;
 
   /* Bốn bậc, và không có bậc thứ năm.
@@ -23,13 +23,13 @@
      `0.9em` khác ra một cỡ chữ không ai định. Bốn con số này là thang; một cỡ chữ ngoài chúng là
      một sai sót, không phải một lựa chọn.
 
-     13px chứ không phải 16px vì đây là công cụ người ta mở tám tiếng một ngày để làm việc, không
+     14px chứ không phải 16px vì đây là công cụ người ta mở tám tiếng một ngày để làm việc, không
      phải một trang để ngắm: chữ nhỏ hơn nghĩa là nhiều dòng dữ liệu hơn trên một màn, và đó là
      thứ đáng đánh đổi ở đây. */
-  --text-xs: 11px; /* badge, caption, chú thích */
-  --text-sm: 12px; /* label phụ, dòng trạng thái */
-  --text-md: 13px; /* thân, mọi control */
-  --text-lg: 15px; /* tiêu đề pane, tiêu đề dialog */
+  --text-xs: 12px; /* badge, caption, chú thích */
+  --text-sm: 13px; /* label phụ, dòng trạng thái */
+  --text-md: 14px; /* thân, mọi control */
+  --text-lg: 16px; /* tiêu đề pane, tiêu đề dialog */
 
   color: #0f0f0f;
   background-color: #f6f6f6;
