@@ -1,0 +1,115 @@
+/**
+ * Module Tools gọi mọi thứ là gì, bằng tiếng Việt.
+ *
+ * Dữ liệu thuần, không import gì từ `src/i18n/`: `dicts.ts` import file này, nên bất cứ thứ gì
+ * import ngược ra từ đó sẽ khép vòng.
+ */
+const toolsVi = {
+  toolbox: {
+    newTabTitle: "Công cụ",
+    list: "Công cụ",
+    empty: "Chưa có công cụ nào.",
+    groupData: "Dữ liệu",
+    groupEncode: "Mã hoá & ID",
+    groupTime: "Thời gian",
+    groupInfra: "Kết nối & hạ tầng",
+    groupText: "Văn bản",
+    copy: "Chép",
+    copied: "Đã chép",
+    input: "Đầu vào",
+    output: "Đầu ra",
+
+    timestamp: {
+      label: "Mốc thời gian",
+      value: "Mốc thời gian hoặc ngày giờ",
+      placeholder: "1787875200 hoặc 2026-08-28T00:00:00Z",
+      now: "Bây giờ",
+      timeZone: "Múi giờ",
+      searchZone: "Tìm múi giờ…",
+      guessedSeconds: "Đọc là Unix giây.",
+      guessedMillis: "Đọc là Unix mili giây.",
+      guessedMicros: "Đọc là Unix micro giây.",
+      guessedIso: "Đọc là ngày giờ ISO 8601.",
+      unreadable: "Không phải mốc thời gian hay ngày giờ ISO 8601.",
+      isoUtc: "ISO 8601 (UTC)",
+      isoLocal: "Theo múi giờ đã chọn",
+      unixSeconds: "Unix giây",
+      unixMillis: "Unix mili giây",
+      relative: "Tương đối",
+    },
+
+    case: {
+      label: "Đổi kiểu chữ",
+      style: "Kiểu",
+      placeholder: "Mỗi dòng một tên — dán thẳng cả danh sách cột vào đây.",
+    },
+
+    ids: {
+      label: "Sinh ID",
+      kind: "Kiểu",
+      count: "Số lượng",
+      generate: "Sinh",
+    },
+
+    encode: {
+      label: "Mã hoá & băm",
+      tabBase64: "Base64",
+      tabHex: "Hex",
+      tabUrl: "URL",
+      tabHash: "Băm",
+      encode: "Mã hoá",
+      decode: "Giải mã",
+      hash: "Băm",
+      urlSafe: "Bảng chữ url-safe",
+      spaced: "Cách nhau từng byte",
+      whole: "Cả URL (encodeURI)",
+      algo: "Thuật toán",
+      md5Warning: "MD5 đã bị phá. Dùng để đối chiếu dữ liệu có sẵn, đừng dùng cho mật khẩu.",
+      badInput: "Không đọc được đầu vào theo định dạng này.",
+    },
+
+    jwt: {
+      label: "Đọc JWT",
+      token: "Token",
+      header: "Header",
+      payload: "Payload",
+      signature: "Chữ ký",
+      notVerified: "Chữ ký không được kiểm chứng. Đây chỉ là đọc token.",
+      valid: "Còn hạn",
+      expired: "Đã hết hạn",
+      expiresAt: "Hết hạn lúc",
+      issuedAt: "Cấp lúc",
+      notBefore: "Chưa dùng được trước",
+      badShape: "Token phải có đúng ba phần ngăn bằng dấu chấm.",
+      badBase64: "Đây không phải base64url.",
+      badJson: "Giải được base64 nhưng bên trong không phải JSON.",
+    },
+
+    sqlToMongo: {
+      label: "SQL sang MongoDB",
+      sql: "SQL",
+      dialect: "Dialect",
+      translate: "Dịch",
+      bestEffort: "Bản dịch là gần đúng. Đọc lại trước khi chạy.",
+      result: "Truy vấn MongoDB",
+      unsupportedTitle: "Không dịch được",
+      warningsTitle: "Đọc kỹ trước khi chạy",
+      unsupportedJoin: "JOIN không có tương ứng khi chỉ có một collection:",
+      unsupportedSubquery: "Không dịch subquery:",
+      unsupportedUnion: "UNION không có tương ứng:",
+      unsupportedCte: "Không dịch mệnh đề WITH:",
+      unsupportedWindow: "Không dịch window function:",
+      unsupportedDml: "Chỉ dịch SELECT, không dịch:",
+      unsupportedCase: "Không dịch CASE:",
+      unsupportedFunction: "Không dịch hàm vô hướng này:",
+      unsupportedMulti: "Mỗi lần dán một câu lệnh thôi:",
+      unsupportedParse: "Đây không phải SQL đọc được:",
+      warningIsNull: "Trong Mongo, `{ trường: null }` khớp cả tài liệu không có trường đó:",
+      warningType: "Mongo phân biệt chuỗi với số; SQL thì ép kiểu giúp:",
+      warningObjectId: "Giá trị này trông như một ObjectId — có thể cần `ObjectId(\"…\")`:",
+      warningStarWithGroupBy: "`SELECT *` cùng `GROUP BY` không có tương ứng trong Mongo:",
+    },
+  },
+};
+
+export default toolsVi;

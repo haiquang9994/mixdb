@@ -33,6 +33,7 @@ export {
   SettingsIcon,
   StopIcon,
   TerminalIcon,
+  ToolsIcon,
   TrashIcon,
   UploadIcon,
 } from "./icons";

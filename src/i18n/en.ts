@@ -36,6 +36,7 @@ const en = {
     moduleDatabase: "Database",
     moduleRest: "REST",
     moduleTerminal: "Terminal",
+    moduleTools: "Tools",
   },
   pagination: {
     previousPage: "Previous page",

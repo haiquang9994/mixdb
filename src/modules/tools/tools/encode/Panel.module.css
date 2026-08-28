@@ -1,0 +1,74 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 46rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  cursor: pointer;
+  opacity: 0.65;
+}
+
+.tab:hover {
+  background: var(--hover-bg);
+}
+
+.tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.tab.active {
+  opacity: 1;
+  color: var(--accent-text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fieldLabel {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.check {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.algo {
+  min-width: 9rem;
+}
+
+.warning {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--danger-text);
+}
