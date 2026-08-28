@@ -1,5 +1,8 @@
 import type { ToolDefinition } from "./tool";
+import TimestampPanel from "./tools/timestamp/Panel";
 
 /** Mọi tool module này có. Thêm một tool là một dòng ở đây — và file này là chỗ duy nhất
  *  `ToolsTab` học được tool nào tồn tại. */
-export const TOOLS: ToolDefinition[] = [];
+export const TOOLS: ToolDefinition[] = [
+  { id: "timestamp", labelKey: "toolbox.timestamp.label", group: "time", Panel: TimestampPanel },
+];

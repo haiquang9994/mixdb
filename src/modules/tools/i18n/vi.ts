@@ -18,6 +18,24 @@ const toolsVi = {
     copied: "Đã chép",
     input: "Đầu vào",
     output: "Đầu ra",
+
+    timestamp: {
+      label: "Mốc thời gian",
+      value: "Mốc thời gian hoặc ngày giờ",
+      placeholder: "1787875200 hoặc 2026-08-28T00:00:00Z",
+      now: "Bây giờ",
+      timeZone: "Múi giờ",
+      guessedSeconds: "Đọc là Unix giây.",
+      guessedMillis: "Đọc là Unix mili giây.",
+      guessedMicros: "Đọc là Unix micro giây.",
+      guessedIso: "Đọc là ngày giờ ISO 8601.",
+      unreadable: "Không phải mốc thời gian hay ngày giờ ISO 8601.",
+      isoUtc: "ISO 8601 (UTC)",
+      isoLocal: "Theo múi giờ đã chọn",
+      unixSeconds: "Unix giây",
+      unixMillis: "Unix mili giây",
+      relative: "Tương đối",
+    },
   },
 };
 
