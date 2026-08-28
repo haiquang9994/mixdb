@@ -184,3 +184,68 @@ describe("translate — cảnh báo", () => {
     expect(result.warnings[0].fragment).toBe("a");
   });
 });
+
+describe("translate — pipeline", () => {
+  it("GROUP BY với COUNT(*) thành $group rồi $project", async () => {
+    const out = (await ok("SELECT city, COUNT(*) AS n FROM users GROUP BY city")).output;
+    expect(out.startsWith("db.users.aggregate([")).toBe(true);
+    expect(out).toContain('"_id": "$city"');
+    expect(out).toContain('"$sum": 1');
+    expect(out).toContain('"city": "$_id"');
+  });
+
+  it("COUNT(col) bỏ qua NULL, nên không phải $sum 1", async () => {
+    const out = (await ok("SELECT city, COUNT(email) AS n FROM users GROUP BY city")).output;
+    expect(out).toContain('"$cond"');
+    expect(out).toContain('"$eq"');
+  });
+
+  it("WHERE thành $match trước $group, HAVING thành $match sau", async () => {
+    const out = (
+      await ok(
+        "SELECT city, COUNT(*) AS n FROM users WHERE age > 18 GROUP BY city HAVING COUNT(*) > 5",
+      )
+    ).output;
+    const beforeGroup = out.indexOf('"$match"');
+    const group = out.indexOf('"$group"');
+    const afterGroup = out.lastIndexOf('"$match"');
+    expect(beforeGroup).toBeGreaterThan(-1);
+    expect(beforeGroup).toBeLessThan(group);
+    expect(afterGroup).toBeGreaterThan(group);
+  });
+
+  it("SUM, AVG, MIN, MAX thành toán tử cùng tên", async () => {
+    const out = (
+      await ok("SELECT e, SUM(a) AS s, AVG(b) AS v, MIN(c) AS lo, MAX(d) AS hi FROM t GROUP BY e")
+    ).output;
+    for (const op of ["$sum", "$avg", "$min", "$max"]) expect(out).toContain(op);
+  });
+
+  it("DISTINCT thành $group không có hàm gộp nào", async () => {
+    const out = (await ok("SELECT DISTINCT city FROM users")).output;
+    expect(out).toContain('"$group"');
+    expect(out).toContain('"_id"');
+    expect(out).toContain('"city"');
+  });
+
+  it("một hàm gộp không có GROUP BY vẫn đi pipeline, gộp cả bảng", async () => {
+    const out = (await ok("SELECT COUNT(*) AS n FROM users")).output;
+    expect(out).toContain('"$group"');
+    expect(out).toContain('"_id": null');
+  });
+
+  it("ORDER BY, LIMIT thành stage cuối, đúng thứ tự", async () => {
+    const out = (await ok("SELECT city, COUNT(*) AS n FROM u GROUP BY city ORDER BY n DESC LIMIT 5"))
+      .output;
+    expect(out.indexOf('"$sort"')).toBeLessThan(out.indexOf('"$limit"'));
+  });
+
+  it("một truy vấn không có gì cần gộp vẫn đi đường find(), không đi pipeline", async () => {
+    expect((await ok("SELECT a FROM t WHERE b = 1")).output).toContain(".find(");
+  });
+
+  it("cảnh báo SELECT * cùng GROUP BY — MySQL cho qua, Mongo không có tương ứng", async () => {
+    const result = await ok("SELECT * FROM users GROUP BY city");
+    expect(result.warnings.map((w) => w.code)).toContain("starWithGroupBy");
+  });
+});

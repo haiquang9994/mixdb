@@ -244,6 +244,114 @@ function buildLimit(limit: unknown): [number | null, number | null] {
   return [values[0] ?? null, hasOffset ? values[1] : null];
 }
 
+/** Node `aggr_func` của một cột, nếu cột đó là một hàm gộp. */
+function aggregateOf(entry: unknown): Node | null {
+  if (!isNode(entry) || !isNode(entry.expr)) return null;
+  return entry.expr.type === "aggr_func" ? entry.expr : null;
+}
+
+/** Câu này có cần pipeline không, hay `find()` là đủ. */
+function needsPipeline(ast: Node): boolean {
+  if (ast.groupby || ast.having) return true;
+  if (typeof ast.distinct === "string" && ast.distinct.toUpperCase() === "DISTINCT") return true;
+  return Array.isArray(ast.columns) && ast.columns.some((entry) => aggregateOf(entry) !== null);
+}
+
+/** Biểu thức `$group` cho một hàm gộp. */
+function accumulator(fn: Node): unknown {
+  const name = String(fn.name ?? "").toUpperCase();
+  const arg = isNode(fn.args) && isNode(fn.args.expr) ? fn.args.expr : null;
+
+  if (name === "COUNT") {
+    if (!arg || arg.type === "star") return { $sum: 1 };
+    // `COUNT(col)` của SQL bỏ qua NULL. Dịch nó thành `$sum: 1` là loại lỗi chạy êm và ra số sai.
+    return { $sum: { $cond: [{ $eq: [`$${columnName(arg)}`, null] }, 0, 1] } };
+  }
+
+  const field = arg ? `$${columnName(arg)}` : null;
+  switch (name) {
+    case "SUM":
+      return { $sum: field };
+    case "AVG":
+      return { $avg: field };
+    case "MIN":
+      return { $min: field };
+    case "MAX":
+      return { $max: field };
+    default:
+      return { $sum: 1 };
+  }
+}
+
+/** Tên các cột trong `GROUP BY`. */
+function groupKeys(groupby: unknown): string[] {
+  if (!isNode(groupby) || !Array.isArray(groupby.columns)) return [];
+  return groupby.columns.filter(isNode).map(columnName).filter(Boolean);
+}
+
+/**
+ * Các stage của một aggregation pipeline.
+ *
+ * Thứ tự cố định, và hai `$match` ở hai vị trí khác nhau **chính là** chỗ `WHERE` khác `HAVING`:
+ * `WHERE` lọc trước khi gộp, `HAVING` lọc kết quả đã gộp. Đặt sai thì truy vấn vẫn chạy và vẫn ra
+ * số — chỉ là số khác.
+ */
+function buildPipeline(ast: Node, ctx: Context): unknown[] {
+  const stages: unknown[] = [];
+
+  if (ast.where) stages.push({ $match: buildFilter(ast.where, ctx) });
+
+  const keys = groupKeys(ast.groupby);
+  const columns = Array.isArray(ast.columns) ? ast.columns : [];
+  const distinct = typeof ast.distinct === "string" && ast.distinct.toUpperCase() === "DISTINCT";
+
+  /* Khoá gộp: các cột GROUP BY, hoặc — với DISTINCT — chính các cột được chọn. Một hàm gộp không
+     có GROUP BY thì gộp cả bảng, và khoá là `null`. */
+  const plainColumns = columns
+    .filter((entry) => aggregateOf(entry) === null)
+    .map((entry) => (isNode(entry) && isNode(entry.expr) ? columnName(entry.expr) : ""))
+    .filter((name) => name !== "" && name !== "*");
+
+  const keyFields = keys.length > 0 ? keys : distinct ? plainColumns : [];
+  const id =
+    keyFields.length === 0
+      ? null
+      : keyFields.length === 1
+        ? `$${keyFields[0]}`
+        : Object.fromEntries(keyFields.map((name) => [name, `$${name}`]));
+
+  const group: Record<string, unknown> = { _id: id };
+  for (const entry of columns) {
+    const fn = aggregateOf(entry);
+    if (!fn || !isNode(entry)) continue;
+    const alias = typeof entry.as === "string" ? entry.as : String(fn.name ?? "value").toLowerCase();
+    group[alias] = accumulator(fn);
+  }
+  stages.push({ $group: group });
+
+  if (ast.having) stages.push({ $match: buildFilter(ast.having, ctx) });
+
+  /* `$project` đưa khoá gộp từ `_id` trở lại tên cột như trong `SELECT` — không có nó thì kết quả
+     mang một trường tên `_id` mà câu SQL không hề nhắc tới. */
+  if (keyFields.length > 0) {
+    const project: Record<string, unknown> = { _id: 0 };
+    for (const name of keyFields) {
+      project[name] = keyFields.length === 1 ? "$_id" : `$_id.${name}`;
+    }
+    for (const key of Object.keys(group)) if (key !== "_id") project[key] = 1;
+    stages.push({ $project: project });
+  }
+
+  const sort = buildSort(ast.orderby);
+  if (sort) stages.push({ $sort: sort });
+
+  const [limit, skip] = buildLimit(ast.limit);
+  if (skip !== null) stages.push({ $skip: skip });
+  if (limit !== null) stages.push({ $limit: limit });
+
+  return stages;
+}
+
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 
 function formatFind(
@@ -309,6 +417,22 @@ export async function translate(sql: string, dialect: Dialect): Promise<Translat
   const collection = isNode(first) && typeof first.table === "string" ? first.table : "collection";
 
   const ctx: Context = { dialect, warnings: [] };
+
+  const selectsStar =
+    Array.isArray(ast.columns) &&
+    ast.columns.some(
+      (entry) => isNode(entry) && isNode(entry.expr) && columnName(entry.expr) === "*",
+    );
+  if (selectsStar && ast.groupby) warn(ctx, "starWithGroupBy", "*");
+
+  if (needsPipeline(ast)) {
+    return {
+      ok: true,
+      output: `db.${collection}.aggregate(${json(buildPipeline(ast, ctx))})`,
+      warnings: ctx.warnings,
+    };
+  }
+
   const [limit, skip] = buildLimit(ast.limit);
 
   return {
