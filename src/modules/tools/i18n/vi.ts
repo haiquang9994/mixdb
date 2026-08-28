@@ -195,6 +195,10 @@ const toolsVi = {
       warningStarWithGroupBy: "`SELECT *` cùng `GROUP BY` không có tương ứng trong Mongo:",
     },
   },
+
+  error: {
+    portScanFailed: "Không đọc được danh sách cổng đang mở: {{tool}} không chạy được.",
+  },
 };
 
 export default toolsVi;

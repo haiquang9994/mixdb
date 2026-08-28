@@ -28,7 +28,13 @@ export const EN = {
   ...restEn,
   ...terminalEn,
   ...toolsEn,
-  error: { ...shared.error, ...dbEn.error, ...restEn.error, ...terminalEn.error },
+  error: {
+    ...shared.error,
+    ...dbEn.error,
+    ...restEn.error,
+    ...terminalEn.error,
+    ...toolsEn.error,
+  },
 };
 
 export const VI = {
@@ -37,7 +43,13 @@ export const VI = {
   ...restVi,
   ...terminalVi,
   ...toolsVi,
-  error: { ...sharedVi.error, ...dbVi.error, ...restVi.error, ...terminalVi.error },
+  error: {
+    ...sharedVi.error,
+    ...dbVi.error,
+    ...restVi.error,
+    ...terminalVi.error,
+    ...toolsVi.error,
+  },
 };
 
 /* Outside `error`, no two dictionaries may name the same group: the second spread would silently

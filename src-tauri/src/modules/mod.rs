@@ -122,5 +122,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         terminal::commands::terminal_write,
         terminal::commands::terminal_resize,
         terminal::commands::terminal_close,
+        // ── tools ──
+        tools::commands::tools_listening_ports,
     ]
 }

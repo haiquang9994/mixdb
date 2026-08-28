@@ -195,6 +195,12 @@ const toolsEn = {
       warningStarWithGroupBy: "SELECT * with GROUP BY has no Mongo equivalent:",
     },
   },
+
+  /* Phần nhóm `error` mà module này phát ra. `dicts.ts` gộp nhóm này bằng tay — nó là nhóm duy
+     nhất được phép trùng tên giữa các từ điển. */
+  error: {
+    portScanFailed: "Could not read the list of open ports: {{tool}} did not run.",
+  },
 };
 
 export default toolsEn;
