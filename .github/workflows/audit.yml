@@ -51,7 +51,7 @@ jobs:
 
       # A prebuilt binary rather than `cargo install`, which would compile cargo-audit itself on
       # every run for a job that reads one lock file.
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2.87.0
         with:
           tool: cargo-audit
 

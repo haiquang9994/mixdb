@@ -66,10 +66,14 @@ function patch(relative, pattern, replacement, expected = 1) {
   console.log(`${after === before ? "already" : "set    "} ${relative}`);
 }
 
+/** Where the repository lives, for the compare links at the foot of the changelog. */
+const REPO_URL = "https://github.com/haiquang9994/mixdb";
+
 // First, because it is the one that can refuse. A changelog with nothing written in it stops the
 // bump, and stopping it after four files had already been rewritten would leave exactly the
 // half-bumped state the rest of this script exists to prevent.
 cutChangelog();
+linkChangelog();
 
 patch("package.json", /("version"\s*:\s*)"[^"]*"/, `$1"${version}"`);
 patch("src-tauri/tauri.conf.json", /("version"\s*:\s*)"[^"]*"/, `$1"${version}"`);
@@ -138,6 +142,44 @@ function cutChangelog() {
 
   writeFileSync(path, `${before.slice(0, start)}${cut}${tail === "" ? "" : `\n${tail}`}`);
   console.log("set     CHANGELOG.md");
+}
+
+/**
+ * Adds this version's link definition and moves `[Unreleased]` on to compare from it.
+ *
+ * The bracketed names in the headings are links in Keep a Changelog, and a file whose definitions
+ * stop being written is worse than one that never had them: the headings still look like links and
+ * silently render as plain text. So this is done by the script that cuts the section rather than by
+ * whoever remembers.
+ *
+ * Idempotent the same way `cutChangelog` is — a definition for this version already present means
+ * the bump has been run before.
+ */
+function linkChangelog() {
+  const path = join(root, "CHANGELOG.md");
+  const before = readFileSync(path, "utf8");
+  const escaped = version.replace(/\./g, "\\.");
+
+  if (new RegExp(`^\\[${escaped}\\]:`, "m").test(before)) {
+    console.log("already CHANGELOG.md links");
+    return;
+  }
+  const unreleased = /^\[Unreleased\]:.*$/m;
+  if (!unreleased.test(before)) {
+    throw new Error("Cannot find the `[Unreleased]:` link definition in CHANGELOG.md.");
+  }
+
+  // The version currently at the top of the definitions, which is the one this release follows.
+  const previous = before.match(/^\[(\d+\.\d+\.\d+)\]:/m)?.[1];
+  const link = previous
+    ? `[${version}]: ${REPO_URL}/compare/v${previous}...v${version}`
+    : `[${version}]: ${REPO_URL}/releases/tag/v${version}`;
+
+  writeFileSync(
+    path,
+    before.replace(unreleased, `[Unreleased]: ${REPO_URL}/compare/v${version}...HEAD\n${link}`),
+  );
+  console.log("set     CHANGELOG.md links");
 }
 
 console.log(`\nMixDB is now ${version}. Commit, then tag it:\n  git tag v${version} && git push origin v${version}`);

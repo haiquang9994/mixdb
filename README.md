@@ -15,9 +15,11 @@ Các loại database đều có workspace riêng:
 
 Ứng dụng hỗ trợ kết nối qua **SSH tunnel**, lưu lại thông tin đã dùng (saved connections, saved hosts, REST environment) với mật khẩu và giá trị bí mật cất trong kho credential của hệ điều hành, và **tự cập nhật** (tải bản mới ở nền, hỏi, cài rồi khởi động lại — mỗi bản cập nhật đều được kiểm chữ ký trước).
 
-## Trạng thái hiện tại
+## Tính năng
 
-Phiên bản mới nhất: **0.0.18** (2026-08-27). Xem [CHANGELOG.md](CHANGELOG.md) để biết chi tiết từng bản; những điểm đáng chú ý gần đây:
+Phiên bản mới nhất: **0.0.18** (2026-08-27). Phần dưới mô tả app hiện làm được những gì —
+*không* phải danh sách thay đổi: **cái gì đổi ở bản nào thì đọc [CHANGELOG.md](CHANGELOG.md)**,
+nơi duy nhất ghi điều đó.
 
 **Toàn app**
 

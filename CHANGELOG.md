@@ -19,7 +19,8 @@ npm run set-version 0.1.0  # cuts ## [Unreleased] into ## [0.1.0] - <today> and 
 ```
 
 Every entry sits under one of three headings — `### Added`, `### Changed`, `### Fixed` — and is one
-short line. `Fixed` is for bugs in a *released* version: repairing something still sitting unreleased
+short line. The bracketed version in each heading is a link, defined at the foot of the file; the
+release script writes the new definition as it cuts a section, so there is nothing to remember. `Fixed` is for bugs in a *released* version: repairing something still sitting unreleased
 above it means editing that entry, not adding a new one. The full rules, for whoever is writing:
 [.agent/conventions/changelog.md](.agent/conventions/changelog.md).
 
@@ -48,6 +49,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 ### Fixed
 
 - Enter no longer confirms a dialog that deletes something; it now cancels, like Escape.
+- MixDB starts faster: a tab's workspace is now loaded when it is first opened rather than all three at launch.
 - A session too large to store no longer crashes the window; the previous one is kept instead.
 - Closing a REST tab while a request is in flight now cancels it, instead of leaving it running to its timeout.
 - A tool download interrupted by a crash no longer leaves hundreds of megabytes behind; MixDB now clears it on the next start.
@@ -424,3 +426,24 @@ with saved connections kept in the OS credential store rather than in a file.
 
 MixDB updates itself from here on: it downloads a new version in the background, asks, then
 installs it and restarts. Every update is checked against MixDB's signing key first.
+
+<!-- Where each version's heading points, which is what makes the bracketed names above
+     links rather than decoration. `set-version.mjs` adds a line here as it cuts a section,
+     so this stays in step without anyone remembering it. -->
+
+[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.18...HEAD
+[0.0.18]: https://github.com/haiquang9994/mixdb/compare/v0.0.17...v0.0.18
+[0.0.17]: https://github.com/haiquang9994/mixdb/compare/v0.0.16...v0.0.17
+[0.0.16]: https://github.com/haiquang9994/mixdb/compare/v0.0.15...v0.0.16
+[0.0.15]: https://github.com/haiquang9994/mixdb/compare/v0.0.14...v0.0.15
+[0.0.14]: https://github.com/haiquang9994/mixdb/compare/v0.0.13...v0.0.14
+[0.0.13]: https://github.com/haiquang9994/mixdb/compare/v0.0.12...v0.0.13
+[0.0.12]: https://github.com/haiquang9994/mixdb/compare/v0.0.11...v0.0.12
+[0.0.11]: https://github.com/haiquang9994/mixdb/compare/v0.0.10...v0.0.11
+[0.0.10]: https://github.com/haiquang9994/mixdb/compare/v0.0.9...v0.0.10
+[0.0.9]: https://github.com/haiquang9994/mixdb/compare/v0.0.8...v0.0.9
+[0.0.8]: https://github.com/haiquang9994/mixdb/compare/v0.0.7...v0.0.8
+[0.0.7]: https://github.com/haiquang9994/mixdb/compare/v0.0.6...v0.0.7
+[0.0.6]: https://github.com/haiquang9994/mixdb/compare/v0.0.5...v0.0.6
+[0.0.5]: https://github.com/haiquang9994/mixdb/compare/v0.0.4...v0.0.5
+[0.0.4]: https://github.com/haiquang9994/mixdb/releases/tag/v0.0.4

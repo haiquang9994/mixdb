@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useState } from "react";
+import LoadingOverlay from "../components/LoadingOverlay";
 import GlassFilter from "./components/GlassFilter";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
@@ -264,13 +265,18 @@ function App() {
               className="tab-panel"
               style={{ display: tab.id === activeId ? "flex" : "none" }}
             >
-              <Tab
-                active={tab.id === activeId}
-                onTitleChange={(title) => renameTab(tab.id, title)}
-                onBadgesChange={(badges) => setTabBadges(tab.id, badges)}
-                restored={tab.state}
-                onStateChange={(state) => setTabState(tab.id, state)}
-              />
+              {/* Each module's workspace arrives on first use — see the note beside its `Tab`.
+                  One boundary per tab and not one around the list: a tab still loading must not
+                  take the panes beside it off screen while it does. */}
+              <Suspense fallback={<LoadingOverlay />}>
+                <Tab
+                  active={tab.id === activeId}
+                  onTitleChange={(title) => renameTab(tab.id, title)}
+                  onBadgesChange={(badges) => setTabBadges(tab.id, badges)}
+                  restored={tab.state}
+                  onStateChange={(state) => setTabState(tab.id, state)}
+                />
+              </Suspense>
             </div>
           );
         })}

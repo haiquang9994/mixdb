@@ -2,10 +2,13 @@
   "name": "mixdb",
   "private": true,
   "version": "0.0.18",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc -b && vite build",
     "test": "vitest run",
     "lint": "eslint . --max-warnings 47",
     "preview": "vite preview",
