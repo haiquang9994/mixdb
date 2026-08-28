@@ -11,16 +11,21 @@ use super::{in_background, tools_dir, TOOLS_PROGRESS_EVENT};
 
 /// Every dump tool and where it stands: a path the user chose, a copy MixDB downloaded, something
 /// already on the machine, or nothing at all.
+///
+/// Off the runtime, like everything else here: finding a tool walks `PATH` stat-ing candidates,
+/// and one entry on an unreachable network share is enough to hang whichever thread does it.
 #[tauri::command]
 pub async fn tools_status(app: AppHandle) -> Result<Vec<tools::ToolStatus>, AppError> {
-    Ok(tools::status(&tools_dir(&app)?))
+    let dir = tools_dir(&app)?;
+    in_background(move || Ok(tools::status(&dir))).await
 }
 
 /// Whether a suite is usable at all — what the dump and restore buttons check before running.
 #[tauri::command]
 pub async fn tools_ready(app: AppHandle, suite: String) -> Result<bool, AppError> {
     let suite = tools::Suite::parse(&suite)?;
-    Ok(tools::installed(suite, &tools_dir(&app)?))
+    let dir = tools_dir(&app)?;
+    in_background(move || Ok(tools::installed(suite, &dir))).await
 }
 
 /// Whether MixDB can fetch this suite for itself on this platform — MySQL publishes a plain
@@ -38,14 +43,16 @@ pub async fn tools_set_path(
     path: Option<String>,
 ) -> Result<(), AppError> {
     let tool = tools::Tool::parse(&tool)?;
-    tools::set_path(tool, path.as_deref(), &tools_dir(&app)?)
+    let dir = tools_dir(&app)?;
+    in_background(move || tools::set_path(tool, path.as_deref(), &dir)).await
 }
 
 /// Deletes the copy MixDB downloaded. What was already on the machine is left where it is.
 #[tauri::command]
 pub async fn tools_uninstall(app: AppHandle, suite: String) -> Result<(), AppError> {
     let suite = tools::Suite::parse(&suite)?;
-    tools::uninstall(suite, &tools_dir(&app)?)
+    let dir = tools_dir(&app)?;
+    in_background(move || tools::uninstall(suite, &dir)).await
 }
 
 /// Downloads one suite of tools.

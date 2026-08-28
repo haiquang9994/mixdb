@@ -1,4 +1,4 @@
-use crate::platform::app_data_dir;
+use crate::platform::{app_data_dir, in_background};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -47,7 +47,12 @@ pub async fn terminal_open(
     });
 
     let session = match target {
-        TerminalTarget::Local { shell, args, cwd } => local::spawn(shell, args, cwd, size, sink)?,
+        /* Off the runtime: opening a pty is ConPTY on Windows and `forkpty` on Unix, both
+           blocking, and the shell behind it may be on a network drive or a WSL distribution that
+           has to start first. */
+        TerminalTarget::Local { shell, args, cwd } => {
+            in_background(move || local::spawn(shell, args, cwd, size, sink)).await?
+        }
         // Xác thực hỏng, vân tay đổi, máy chủ không tới được — tất cả hỏng ở đây, trước khi có
         // phiên nào để đưa vào map. Đó là thứ frontend đưa về `ErrorBanner` ngay tại form.
         TerminalTarget::Ssh(ssh) => remote::spawn(&ssh, &app_data_dir(&app)?, size, sink).await?,

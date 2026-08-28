@@ -48,6 +48,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 ### Fixed
 
 - Enter no longer confirms a dialog that deletes something; it now cancels, like Escape.
+- The SSH host keys MixDB has seen are no longer lost if it is interrupted while writing them down.
+- Opening a terminal, or checking which dump tools are installed, no longer briefly freezes the rest of the app.
 - Closing a database tab during a dump or restore now stops the tool, instead of leaving it running to the end.
 - In the dark theme, the red on delete buttons, invalid cells and failure notices is now the readable one the rest of the app already used.
 - Tab now stays inside an open dialog, and focus returns where it was when the dialog closes.

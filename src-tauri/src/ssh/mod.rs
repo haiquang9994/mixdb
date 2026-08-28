@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::platform::in_background;
 use russh::client::{self};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -131,7 +132,18 @@ fn load_known_hosts(path: &Path) -> HashMap<String, String> {
         .unwrap_or_default()
 }
 
+/// Serialises the read-modify-write above.
+///
+/// Two tunnels opening at once to two servers neither of which has been seen before both read the
+/// file, both add their own entry, and whichever writes second drops the other's. A lock private
+/// to this process is enough: the file is MixDB's own, and nothing outside it writes there.
+static KNOWN_HOSTS_LOCK: Mutex<()> = Mutex::new(());
+
 fn remember_host(path: &Path, endpoint: &str, fingerprint: &str) -> Result<(), AppError> {
+    // The guarded value is `()`, so a poisoned lock has nothing left half-written to protect —
+    // panicking here would turn one panic elsewhere into every later connection failing.
+    let _guard = KNOWN_HOSTS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     let mut known = load_known_hosts(path);
     known.insert(endpoint.to_string(), fingerprint.to_string());
     if let Some(parent) = path.parent() {
@@ -140,7 +152,40 @@ fn remember_host(path: &Path, endpoint: &str, fingerprint: &str) -> Result<(), A
     }
     let text = serde_json::to_string_pretty(&known)
         .map_err(|e| err!("error.cannotSaveKnownHost", message = e))?;
-    std::fs::write(path, text).map_err(|e| err!("error.cannotSaveKnownHost", message = e))
+
+    /* Written beside the real file and renamed over it, rather than into it. `std::fs::write`
+       truncates first, so a crash — or a full disk — between the truncate and the last byte leaves
+       an empty or half-written file, `load_known_hosts` reads that as "nothing known", and every
+       server the user has ever connected to is silently accepted afresh on the next run. That is
+       the one failure this file exists to prevent. A rename either happened or did not. */
+    let temp = path.with_extension("json.tmp");
+    std::fs::write(&temp, text).map_err(|e| err!("error.cannotSaveKnownHost", message = e))?;
+    std::fs::rename(&temp, path).map_err(|e| {
+        // Nothing was replaced, so the leftover is only clutter — but it is clutter next to a file
+        // a worried user may well come and read.
+        let _ = std::fs::remove_file(&temp);
+        err!("error.cannotSaveKnownHost", message = e)
+    })
+}
+
+/// Whether this key is the one this address answered with last time.
+///
+/// Split out of the handler because it is all blocking file work and the handler is `async`: the
+/// caller runs it off the runtime. Never returns "no" — a key that does not match is an error with
+/// something to say, and saying it is the only reason this is not a plain `bool`.
+fn verify_host(path: &Path, endpoint: &str, fingerprint: &str) -> Result<(), AppError> {
+    match load_known_hosts(path).get(endpoint) {
+        Some(known) if known == fingerprint => Ok(()),
+        Some(known) => Err(err!(
+            "error.sshHostKeyChanged",
+            endpoint = endpoint,
+            fingerprint = fingerprint,
+            known = known,
+            file = path.display(),
+        )),
+        // First sight of this server: take it on faith, and hold it to that key from now on.
+        None => remember_host(path, endpoint, fingerprint),
+    }
 }
 
 /// Chuyện đang xảy ra với một tunnel, cho ai muốn nói lại với người dùng.
@@ -303,26 +348,17 @@ impl client::Handler for TunnelHandler {
         let fingerprint = server_public_key
             .fingerprint(russh::keys::HashAlg::Sha256)
             .to_string();
+        let path = self.known_hosts.clone();
+        let endpoint = self.endpoint.clone();
 
-        match load_known_hosts(&self.known_hosts).get(&self.endpoint) {
-            Some(known) if known == &fingerprint => Ok(true),
-            Some(known) => {
-                *self.refused.lock().unwrap() = Some(err!(
-                    "error.sshHostKeyChanged",
-                    endpoint = &self.endpoint,
-                    fingerprint = fingerprint,
-                    known = known,
-                    file = self.known_hosts.display(),
-                ));
+        /* Off the runtime: this reads a file and, on a first connection, writes one, and the
+           thread it would do that on is the one driving the handshake. A home directory on a
+           network share is where that stops being theoretical. */
+        match in_background(move || verify_host(&path, &endpoint, &fingerprint)).await {
+            Ok(()) => Ok(true),
+            Err(e) => {
+                *self.refused.lock().unwrap() = Some(e);
                 Ok(false)
-            }
-            // First sight of this server: take it on faith, and hold it to that key from now on.
-            None => {
-                if let Err(e) = remember_host(&self.known_hosts, &self.endpoint, &fingerprint) {
-                    *self.refused.lock().unwrap() = Some(e);
-                    return Ok(false);
-                }
-                Ok(true)
             }
         }
     }
@@ -384,10 +420,18 @@ async fn authenticate_inner(
             .await
             .map_err(|e| err!("error.sshAuthFailed", message = e))?,
         SshAuth::PrivateKey { key_path, passphrase } => {
-            let key_data = std::fs::read_to_string(key_path)
-                .map_err(|e| err!("error.cannotReadPrivateKey", message = e))?;
-            let key_pair = russh::keys::decode_secret_key(&key_data, passphrase.as_deref())
-                .map_err(|e| err!("error.invalidPrivateKey", message = e))?;
+            let key_path = key_path.clone();
+            let passphrase = passphrase.clone();
+            /* Both halves belong off the runtime. Reading is disk; decoding an encrypted key is
+               bcrypt-pbkdf, which is slow on purpose — a key written with OpenSSH's default rounds
+               takes long enough to be felt, and every other command would wait behind it. */
+            let key_pair = in_background(move || {
+                let key_data = std::fs::read_to_string(&key_path)
+                    .map_err(|e| err!("error.cannotReadPrivateKey", message = e))?;
+                russh::keys::decode_secret_key(&key_data, passphrase.as_deref())
+                    .map_err(|e| err!("error.invalidPrivateKey", message = e))
+            })
+            .await?;
             session
                 .authenticate_publickey(
                     &ssh.username,
@@ -724,6 +768,7 @@ pub async fn open_shell(
 #[cfg(test)]
 mod tests {
     use super::{is_transient_accept, known_hosts_file, load_known_hosts, next_backoff, remember_host};
+    use super::verify_host;
     use super::{ACCEPT_ALARM, ACCEPT_RETRY, WATCH_IDLE, WATCH_MAX, WATCH_MIN};
     use std::io::{Error, ErrorKind};
     use std::time::Duration;
@@ -749,6 +794,60 @@ mod tests {
         let known = load_known_hosts(&file);
         assert_eq!(known.get("db.example:22").map(String::as_str), Some("SHA256:ccc"));
         assert_eq!(known.get("other.example:2222").map(String::as_str), Some("SHA256:bbb"));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Two first connections at once. Without a lock around the read-modify-write both threads
+    /// read the same file, both add their own host, and whichever writes last is the only one
+    /// remembered — so the other server is a stranger again next time, and TOFU accepts whatever
+    /// answers for it.
+    #[test]
+    fn hosts_remembered_at_the_same_time_all_survive() {
+        let dir = std::env::temp_dir().join(format!("mixdb-test-{}", uuid::Uuid::new_v4()));
+        let file = known_hosts_file(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::thread::scope(|scope| {
+            for n in 0..8 {
+                let file = &file;
+                scope.spawn(move || {
+                    for round in 0..8 {
+                        let endpoint = format!("host{n}.example:22");
+                        remember_host(file, &endpoint, &format!("SHA256:{n}-{round}")).unwrap();
+                    }
+                });
+            }
+        });
+
+        let known = load_known_hosts(&file);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(known.len(), 8, "an entry was lost to a concurrent write");
+    }
+
+    /// The three answers TOFU has, from the one place that decides them.
+    #[test]
+    fn a_changed_key_is_refused_and_the_known_one_is_not() {
+        let dir = std::env::temp_dir().join(format!("mixdb-test-{}", uuid::Uuid::new_v4()));
+        let file = known_hosts_file(&dir);
+
+        // Never seen: accepted, and written down.
+        verify_host(&file, "db.example:22", "SHA256:aaa").unwrap();
+        assert_eq!(
+            load_known_hosts(&file).get("db.example:22").map(String::as_str),
+            Some("SHA256:aaa"),
+        );
+
+        // Seen, same key: accepted again.
+        verify_host(&file, "db.example:22", "SHA256:aaa").unwrap();
+
+        // Seen, different key: refused, and the fingerprint on file is left alone — accepting the
+        // new one is the user's decision, taken by deleting the entry, not ours.
+        assert!(verify_host(&file, "db.example:22", "SHA256:zzz").is_err());
+        assert_eq!(
+            load_known_hosts(&file).get("db.example:22").map(String::as_str),
+            Some("SHA256:aaa"),
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
