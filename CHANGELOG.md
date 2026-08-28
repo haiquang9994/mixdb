@@ -42,6 +42,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.25] - 2026-08-29
+
 ### Changed
 
 - The interface has been redrawn at a tool's density: sans for labels and menus, Fira Code kept for
@@ -495,7 +497,8 @@ installs it and restarts. Every update is checked against MixDB's signing key fi
      links rather than decoration. `set-version.mjs` adds a line here as it cuts a section,
      so this stays in step without anyone remembering it. -->
 
-[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.24...HEAD
+[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.25...HEAD
+[0.0.25]: https://github.com/haiquang9994/mixdb/compare/v0.0.24...v0.0.25
 [0.0.24]: https://github.com/haiquang9994/mixdb/compare/v0.0.23...v0.0.24
 [0.0.23]: https://github.com/haiquang9994/mixdb/compare/v0.0.22...v0.0.23
 [0.0.22]: https://github.com/haiquang9994/mixdb/compare/v0.0.21...v0.0.22
