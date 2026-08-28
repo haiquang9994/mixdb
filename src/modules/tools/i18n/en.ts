@@ -102,6 +102,19 @@ const toolsEn = {
       notJson: "That did not parse as a flat JSON object.",
     },
 
+    diff: {
+      label: "Diff",
+      left: "Left",
+      right: "Right",
+      ignoreWhitespace: "Ignore whitespace",
+      ignoreCase: "Ignore case",
+      asJson: "Compare as JSON",
+      counts: "+{{added}} −{{removed}}",
+      identical: "The two sides are identical.",
+      tooLarge: "Too much differs to compare — trim it down to about 2000 lines.",
+      notJson: "One of the two sides did not parse as JSON.",
+    },
+
     ids: {
       label: "Id generator",
       kind: "Kind",

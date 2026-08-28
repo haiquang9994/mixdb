@@ -1,0 +1,84 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pair {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.pair > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.check {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fieldLabel {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.counts {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin: 0;
+}
+
+.error {
+  font-size: 0.9rem;
+  color: var(--danger, #d33);
+  margin: 0;
+}
+
+.result {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  overflow: auto;
+  max-height: 28rem;
+}
+
+.line {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 0.5rem;
+  white-space: pre-wrap;
+}
+
+.no {
+  flex: none;
+  width: 3rem;
+  text-align: right;
+  opacity: 0.5;
+  user-select: none;
+}
+
+.add {
+  background: color-mix(in srgb, green 14%, transparent);
+}
+
+.remove {
+  background: color-mix(in srgb, red 14%, transparent);
+}

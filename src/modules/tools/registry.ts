@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "./tool";
 import CasePanel from "./tools/case/Panel";
 import ConvertPanel from "./tools/convert/Panel";
+import DiffPanel from "./tools/diff/Panel";
 import EncodePanel from "./tools/encode/Panel";
 import EnvPanel from "./tools/env/Panel";
 import FormatPanel from "./tools/format/Panel";
@@ -28,4 +29,5 @@ export const TOOLS: ToolDefinition[] = [
   { id: "convert", labelKey: "toolbox.convert.label", group: "data", Panel: ConvertPanel },
   { id: "schema", labelKey: "toolbox.schema.label", group: "data", Panel: SchemaPanel },
   { id: "env", labelKey: "toolbox.env.label", group: "infra", Panel: EnvPanel },
+  { id: "diff", labelKey: "toolbox.diff.label", group: "text", Panel: DiffPanel },
 ];

@@ -102,6 +102,19 @@ const toolsVi = {
       notJson: "Đây không phải một object JSON phẳng.",
     },
 
+    diff: {
+      label: "So sánh",
+      left: "Bên trái",
+      right: "Bên phải",
+      ignoreWhitespace: "Bỏ qua khoảng trắng",
+      ignoreCase: "Bỏ qua hoa thường",
+      asJson: "So sánh như JSON",
+      counts: "+{{added}} −{{removed}}",
+      identical: "Hai bên giống hệt nhau.",
+      tooLarge: "Khác nhau quá nhiều để so — rút lại còn khoảng 2000 dòng.",
+      notJson: "Một trong hai bên không phải JSON đọc được.",
+    },
+
     ids: {
       label: "Sinh ID",
       kind: "Kiểu",
