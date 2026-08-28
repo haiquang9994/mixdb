@@ -18,7 +18,7 @@ Các loại database đều có workspace riêng:
 
 ## Tính năng
 
-Phiên bản mới nhất: **0.0.25** (2026-08-29). Phần dưới mô tả app hiện làm được những gì —
+Phiên bản mới nhất: **0.0.26** (2026-08-29). Phần dưới mô tả app hiện làm được những gì —
 *không* phải danh sách thay đổi: **cái gì đổi ở bản nào thì đọc [CHANGELOG.md](CHANGELOG.md)**,
 nơi duy nhất ghi điều đó.
 

@@ -42,6 +42,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.26] - 2026-08-29
+
 ### Changed
 
 - A terminal tab is named after the saved target it was opened from, without turning the setting on
@@ -506,7 +508,8 @@ installs it and restarts. Every update is checked against MixDB's signing key fi
      links rather than decoration. `set-version.mjs` adds a line here as it cuts a section,
      so this stays in step without anyone remembering it. -->
 
-[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.25...HEAD
+[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.26...HEAD
+[0.0.26]: https://github.com/haiquang9994/mixdb/compare/v0.0.25...v0.0.26
 [0.0.25]: https://github.com/haiquang9994/mixdb/compare/v0.0.24...v0.0.25
 [0.0.24]: https://github.com/haiquang9994/mixdb/compare/v0.0.23...v0.0.24
 [0.0.23]: https://github.com/haiquang9994/mixdb/compare/v0.0.22...v0.0.23
