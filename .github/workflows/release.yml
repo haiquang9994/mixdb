@@ -73,11 +73,23 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-        with:
-          # The universal bundle is two builds stitched together, so both halves need their target.
-          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      # The version comes from src-tauri/rust-toolchain.toml rather than from here, so the bundles
+      # users install are built by the same Rust ci.yml checked them with.
+      - name: Install the pinned Rust toolchain
+        working-directory: src-tauri
+        run: rustup show
+
+      # The universal bundle is two builds stitched together, so both halves need their target.
+      #
+      # This has to run inside src-tauri. rustup reads the pin there and adds the targets to that
+      # toolchain; asked from anywhere else it adds them to `stable`, a separate toolchain cargo
+      # never uses here even when it holds the very same rustc. That is what left v0.0.19's
+      # universal build compiling its aarch64 half for eight minutes and then stopping on
+      # `Target x86_64-apple-darwin is not installed`.
+      - name: Add the macOS targets for the universal bundle
+        if: matrix.target == 'universal-apple-darwin'
+        working-directory: src-tauri
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
