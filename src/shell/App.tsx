@@ -149,24 +149,51 @@ function App() {
           requests, the tabs inside the response pane — already says what it is and takes Enter and
           Space; this one is the app's own tab bar, so being the exception was the wrong way round.
           `Ctrl+Tab` moved between tabs all along, but only once one was already open and focused. */}
-      <TabStrip role="tablist" aria-label={t("app.tabs")} {...reorder.strip}>
-        {/* The app's name is also its settings button, which nothing about a bare word at 70%
-            opacity said — so it wears a surface, a border and a gear, and reads as something to
-            press before it is hovered.
+      <TabStrip
+        role="tablist"
+        aria-label={t("app.tabs")}
+        {...reorder.strip}
+        /* The app's name is also its settings button, which nothing about a bare word at 70%
+           opacity said — so it wears a surface, a border and a gear, and reads as something to
+           press before it is hovered.
 
-            Once an update is out, this is also the way back to it after the panel in the corner is
-            gone, so it carries a dot until the user installs or skips that version. A download
-            waved away mid-flight goes on, and finishes behind this dot. */}
-        <button
-          type="button"
-          className={update.pending ? "brand brand-update" : "brand"}
-          onClick={() => setSettingsOpen(true)}
-          title={update.pending && update.release ? t("update.available", { version: update.release.version }) : t("app.settings")}
-          aria-label={t("app.settings")}
-        >
-          MixDB
-          <SettingsIcon className="brand-gear" size={14} />
-        </button>
+           Once an update is out, this is also the way back to it after the panel in the corner is
+           gone, so it carries a dot until the user installs or skips that version. A download
+           waved away mid-flight goes on, and finishes behind this dot.
+
+           In `leading`, so that a window full of tabs cannot scroll the way into Settings off the
+           left-hand edge — it is the one control that is there on every screen the app has. */
+        leading={
+          <button
+            type="button"
+            className={update.pending ? "brand brand-update" : "brand"}
+            onClick={() => setSettingsOpen(true)}
+            title={update.pending && update.release ? t("update.available", { version: update.release.version }) : t("app.settings")}
+            aria-label={t("app.settings")}
+          >
+            MixDB
+            <SettingsIcon className="brand-gear" size={14} />
+          </button>
+        }
+        trailing={
+          <TabAction
+            onClick={(e) => {
+              // One module and a menu would be a list of one, so the button just opens it — which
+              // is what it did before there was a registry at all.
+              if (MODULES.length < 2) {
+                openTab();
+                return;
+              }
+              const rect = e.currentTarget.getBoundingClientRect();
+              setModuleMenu({ x: rect.left, y: rect.bottom });
+            }}
+            title={t("app.newConnectionTab")}
+            aria-label={t("app.newConnectionTab")}
+          >
+            <PlusIcon />
+          </TabAction>
+        }
+      >
         {tabs.map((tab) => {
           const def = moduleById(tab.moduleId);
           return (
@@ -215,22 +242,6 @@ function App() {
             </Tab>
           );
         })}
-        <TabAction
-          onClick={(e) => {
-            // One module and a menu would be a list of one, so the button just opens it — which is
-            // what it did before there was a registry at all.
-            if (MODULES.length < 2) {
-              openTab();
-              return;
-            }
-            const rect = e.currentTarget.getBoundingClientRect();
-            setModuleMenu({ x: rect.left, y: rect.bottom });
-          }}
-          title={t("app.newConnectionTab")}
-          aria-label={t("app.newConnectionTab")}
-        >
-          <PlusIcon />
-        </TabAction>
       </TabStrip>
 
       {/* Unreachable while `MODULES` holds one entry, and here so that adding the second is a line

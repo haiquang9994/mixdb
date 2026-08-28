@@ -14,6 +14,8 @@ const en = {
     duplicate: "Duplicate",
     browse: "Browse...",
     close: "Close",
+    scrollTabsLeft: "Scroll tabs left",
+    scrollTabsRight: "Scroll tabs right",
     loading: "Loading...",
     // Why anything that would write is greyed out, wherever in the workspace it is. One sentence
     // rather than one per panel: it is the same fact, and it names where to undo it.

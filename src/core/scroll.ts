@@ -143,6 +143,12 @@ export function useScrollAcceleration(): void {
       const delta = e.deltaY;
       if (e.deltaX !== 0 || delta === 0 || !isWheelNotch(e)) return;
 
+      /* A box that scrolls sideways — a strip of tabs — turns the notch a quarter and takes it
+         itself. This listener is on the window in the capture phase, so it sees the notch before
+         that box does; without this it would hand it to whatever pane happens to sit behind the
+         strip, and the tabs and the pane would both move at once. */
+      if (e.target instanceof Element && e.target.closest("[data-hscroll]") !== null) return;
+
       const pane = paneFor(e.target, delta);
       if (!pane) return;
 

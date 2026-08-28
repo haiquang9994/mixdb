@@ -49,6 +49,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 ### Changed
 
 - The saved connection the form is holding is scrolled into view in the list beside it.
+- Tab strips scroll sideways under the wheel, with an arrow at each end where tabs are hidden. The
+  MixDB button and `[+]` are held at the edges instead of scrolling away, and the scrollbar is gone.
 
 ## [0.0.19] - 2026-08-28
 

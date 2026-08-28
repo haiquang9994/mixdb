@@ -42,7 +42,19 @@ function RequestTabs({ tabs, activeId, onSelect, onClose, onReorder, onNew, labe
   const { t } = useTranslation();
   const reorder = useTabReorder(onReorder);
   return (
-    <TabStrip role="tablist" className={className} {...reorder.strip}>
+    <TabStrip
+      role="tablist"
+      className={className}
+      {...reorder.strip}
+      /* Held against the right edge rather than trailing the last tab, as the shell's is: a row of
+         requests that has run past the edge is exactly the row on which a new one is hardest to
+         reach, and that is the row it matters on. */
+      trailing={
+        <TabAction aria-label={t("rest.newRequest")} title={t("rest.newRequest")} onClick={onNew}>
+          <PlusIcon size="1em" />
+        </TabAction>
+      }
+    >
       {tabs.map((request) => (
         <Tab
           key={request.id}
@@ -60,15 +72,6 @@ function RequestTabs({ tabs, activeId, onSelect, onClose, onReorder, onNew, labe
           <TabTitle>{label(request)}</TabTitle>
         </Tab>
       ))}
-      {/* Sits after the last tab, as the shell's does after its own — the same gesture in the same
-          place, one row down. */}
-      <TabAction
-        aria-label={t("rest.newRequest")}
-        title={t("rest.newRequest")}
-        onClick={onNew}
-      >
-        <PlusIcon size="1em" />
-      </TabAction>
     </TabStrip>
   );
 }

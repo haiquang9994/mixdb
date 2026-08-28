@@ -16,6 +16,8 @@ const vi: SharedDict = {
     duplicate: "Nhân bản",
     browse: "Duyệt...",
     close: "Đóng",
+    scrollTabsLeft: "Cuộn tab sang trái",
+    scrollTabsRight: "Cuộn tab sang phải",
     loading: "Đang tải...",
     readOnlyConnection: "Kết nối này được đánh dấu chỉ đọc. Đổi lại ở menu chuột phải của kết nối.",
     readOnly: "Chỉ đọc",

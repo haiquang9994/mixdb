@@ -1,6 +1,8 @@
 import { useRef, type ButtonHTMLAttributes, type HTMLAttributes, type MouseEvent, type ReactNode } from "react";
-import { CloseIcon } from "../../icons";
+import { ChevronLeftIcon, ChevronRightIcon, CloseIcon } from "../../icons";
+import { useTranslation } from "../../i18n";
 import { useTabSlide } from "./slide";
+import { useActiveTabInView, useStripScroll } from "./useStripScroll";
 import styles from "./TabStrip.module.css";
 
 /**
@@ -18,22 +20,78 @@ import styles from "./TabStrip.module.css";
  * component costs more than the duplication it replaced.
  *
  * To recolour the open tab's accent bar, set `--tab-accent` on the tab. See `TabStrip.module.css`.
+ *
+ * **The tabs scroll; what is held at either end does not.** More tabs than room used to mean a
+ * scrollbar under the whole strip, the app's own settings button included — so the one control
+ * that is there on every screen scrolled away with them. It sits in `leading` now, outside the part
+ * that moves, and `[+]` sits in `trailing` for the same reason: both are actions on the strip
+ * rather than tabs on it, and an action you have to go looking for is one that has been mislaid.
  */
 
 interface TabStripProps extends HTMLAttributes<HTMLDivElement> {
   /** `small` is a strip inside a pane. See the note in `TabStrip.module.css`. */
   size?: "normal" | "small";
+  /** Held against the left edge, outside the part that scrolls. */
+  leading?: ReactNode;
+  /** Held against the right edge, outside the part that scrolls. */
+  trailing?: ReactNode;
+  /** What `useTabReorder().strip` spreads. Named here rather than left to the rest, because it has
+   *  to land on the element that actually scrolls — a drag reads `scrollLeft` off it to carry the
+   *  strip along when a tab reaches either end. */
+  "data-tab-strip"?: string;
 }
 
-export function TabStrip({ size = "normal", className, children, ...rest }: TabStripProps) {
+export function TabStrip({
+  size = "normal",
+  leading,
+  trailing,
+  className,
+  children,
+  "data-tab-strip": dragStrip,
+  ...rest
+}: TabStripProps) {
+  const { t } = useTranslation();
   const classes = [styles.strip, size === "small" && styles.small, className];
   const ref = useRef<HTMLDivElement>(null);
   // Costs one measurement per render and does nothing at all to a strip whose tabs never move —
   // a pane strip carries no `data-tab-id` and so has nothing to measure. See `slide.ts`.
   useTabSlide(ref);
+  const { overflowing, atStart, atEnd, scrollBy } = useStripScroll(ref);
+  useActiveTabInView(ref);
   return (
-    <div ref={ref} className={classes.filter(Boolean).join(" ")} {...rest}>
-      {children}
+    <div className={classes.filter(Boolean).join(" ")} {...rest}>
+      {leading}
+      {/* Both arrows or neither, and only ever disabled in between: see `useStripScroll.ts`. */}
+      {overflowing && (
+        <button
+          type="button"
+          className={styles.arrow}
+          disabled={atStart}
+          aria-label={t("common.scrollTabsLeft")}
+          title={t("common.scrollTabsLeft")}
+          onClick={() => scrollBy(-1)}
+        >
+          <ChevronLeftIcon size={14} />
+        </button>
+      )}
+      {/* `data-hscroll` is read by `core/scroll.ts`, which listens for the wheel on the window and
+          would otherwise hand this strip's notches to whatever pane sits behind it. */}
+      <div ref={ref} className={styles.scroller} data-hscroll="" data-tab-strip={dragStrip}>
+        {children}
+      </div>
+      {overflowing && (
+        <button
+          type="button"
+          className={styles.arrow}
+          disabled={atEnd}
+          aria-label={t("common.scrollTabsRight")}
+          title={t("common.scrollTabsRight")}
+          onClick={() => scrollBy(1)}
+        >
+          <ChevronRightIcon size={14} />
+        </button>
+      )}
+      {trailing}
     </div>
   );
 }
@@ -75,6 +133,9 @@ export function Tab({
   return (
     <div
       className={classes.filter(Boolean).join(" ")}
+      /* So the strip can find the open tab and keep it in view without being told which one it is —
+         it takes its tabs as children and never looks inside them. See `useActiveTabInView`. */
+      data-active={active ? "" : undefined}
       onMouseDown={(e: MouseEvent<HTMLDivElement>) => {
         // Chromium answers a middle press with the autoscroll cursor, which then eats the release
         // this tab is waiting for. Refused here rather than in `onAuxClick`, which comes too late.

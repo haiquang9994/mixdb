@@ -12,12 +12,59 @@
   background: rgb(128 128 128 / 0.08);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  /* Nothing here scrolls. The strip is the band across the window; what moves is the box below,
+     and what is held at either end of it — the settings button, `[+]`, the two arrows — is held
+     because it is out here rather than in there. */
+  min-width: 0;
+}
+
+/* The tabs, and only the tabs.
+ *
+ * No scrollbar: a bar under the tabs would sit between them and the pane they open, drawing a
+ * second edge a finger's width above the real one. The two arrows outside this box say what it
+ * would have said, and say it where there is room for it. */
+.scroller {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  /* So a tab's `offsetLeft` is measured from the strip, which is the one coordinate space both
-     halves of a reorder agree on — see `useTabReorder.ts` and `slide.ts`. */
+  scrollbar-width: none;
+  /* So a tab's `offsetLeft` is measured from the box it scrolls in, which is the one coordinate
+     space both halves of a reorder agree on — see `useTabReorder.ts` and `slide.ts`. */
   position: relative;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/* Where the tabs run off the edge. Drawn like `.action` below — it is an action on the strip, not
+   another tab on it — and greyed out rather than taken away at either end, so the strip does not
+   change width the moment it is scrolled to one. */
+.arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
+  padding: 0.3em 0.2em;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.arrow:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 .tab {
