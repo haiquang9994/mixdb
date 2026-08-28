@@ -222,6 +222,16 @@ function TerminalSettings() {
         </label>
         <p className={styles.hint}>{t("terminal.settingsRightClickPastesHint")}</p>
 
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            checked={settings.titleShowsTargetName}
+            onChange={(e) => updateTerminalSettings({ titleShowsTargetName: e.target.checked })}
+          />
+          <span>{t("terminal.settingsTitleShowsTargetName")}</span>
+        </label>
+        <p className={styles.hint}>{t("terminal.settingsTitleShowsTargetNameHint")}</p>
+
         {error && <p className={styles.hint}>{error}</p>}
         <p className={styles.hint}>{t("terminal.settingsGlobalHint")}</p>
       </div>

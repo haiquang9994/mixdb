@@ -75,6 +75,9 @@ const terminalVi: TerminalDict = {
     settingsRightClickPastes: "Chuột phải dán luôn thay vì mở menu",
     settingsRightClickPastesHint:
       "Đúng cách PuTTY làm. Tắt thì chuột phải mở menu của chính terminal.",
+    settingsTitleShowsTargetName: "Tên tab là tên đích đã lưu",
+    settingsTitleShowsTargetNameHint:
+      "\"Prod DB\" thay cho deploy@example.com hay Git Bash. Phiên không đến từ một đích đã lưu vẫn giữ tên như hiện nay.",
     settingsGlobalHint:
       "Cài đặt này áp cho mọi tab terminal, kể cả tab đang mở.",
     shortcutFind: "Tìm trong phần đã cuộn qua",

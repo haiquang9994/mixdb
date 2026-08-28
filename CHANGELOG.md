@@ -42,6 +42,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- Terminal settings: name a tab after its saved target instead of `user@host` or the shell.
+
 ## [0.0.19] - 2026-08-28
 
 ### Added

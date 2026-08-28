@@ -24,6 +24,15 @@ export interface TerminalSettings {
   defaultCwd: string | null;
   /** Chuột phải dán thẳng thay vì mở menu — quy ước của PuTTY, và người quen nó thì rất quen. */
   rightClickPastes: boolean;
+  /**
+   * Tab mang tên đích đã lưu thay vì `user@host` hoặc tên shell.
+   *
+   * Ai mở năm tab tới năm máy chủ của cùng một hệ thống thì `deploy@10.0.0.7` không phân biệt được
+   * cái nào với cái nào, còn "Prod DB" thì được. Ai chỉ mở một hai phiên thì ngược lại — nên đây là
+   * một công tắc chứ không phải một quyết định. Phiên không đến từ đích đã lưu vẫn tên như cũ:
+   * không có gì để hiện. Xem `terminalTitle` bên `session.ts`.
+   */
+  titleShowsTargetName: boolean;
 }
 
 /** Cái xterm đang được dựng bằng từ đợt 1, giữ nguyên làm mặc định. */
@@ -49,6 +58,7 @@ export const DEFAULT_SETTINGS: TerminalSettings = {
   defaultShell: null,
   defaultCwd: null,
   rightClickPastes: false,
+  titleShowsTargetName: false,
 };
 
 const CURSOR_STYLES: readonly CursorStyle[] = ["block", "underline", "bar"];
@@ -91,6 +101,7 @@ export function sanitizeSettings(raw: unknown): TerminalSettings {
     defaultShell: optionalText(record.defaultShell),
     defaultCwd: optionalText(record.defaultCwd),
     rightClickPastes: record.rightClickPastes === true,
+    titleShowsTargetName: record.titleShowsTargetName === true,
   };
 }
 

@@ -76,6 +76,9 @@ const terminalEn = {
     settingsRightClickPastes: "Right-click pastes instead of opening a menu",
     settingsRightClickPastesHint:
       "The way PuTTY behaves. With it off, a right-click opens the terminal's own menu.",
+    settingsTitleShowsTargetName: "Name the tab after the saved target",
+    settingsTitleShowsTargetNameHint:
+      "\"Prod DB\" rather than deploy@example.com or Git Bash. A session that did not come from a saved target keeps the name it has now.",
     settingsGlobalHint: "These settings apply to every terminal tab, open ones included.",
     shortcutFind: "Find in the scrollback",
     findPlaceholder: "Find",

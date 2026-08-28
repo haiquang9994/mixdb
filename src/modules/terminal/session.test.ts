@@ -67,14 +67,29 @@ describe("terminalTarget", () => {
 
 describe("terminalTitle", () => {
   it("names the tab after the shell, not after its path", () => {
-    expect(terminalTitle(bash)).toBe("Git Bash");
-    expect(terminalTitle(ubuntu)).toBe("WSL: Ubuntu");
+    expect(terminalTitle(bash, null)).toBe("Git Bash");
+    expect(terminalTitle(ubuntu, null)).toBe("WSL: Ubuntu");
   });
 
   /* `user@host`, not the saved host's name: a tab is a few characters wide, and what has to be
-     readable there is which machine the keystrokes are going to. */
+     readable there is which machine the keystrokes are going to. That is what the tab is called
+     unless the user asks for the other one — see the setting below. */
   it("names an SSH session after user@host", () => {
-    expect(terminalTitle(remote)).toBe("deploy@example.com");
+    expect(terminalTitle(remote, null)).toBe("deploy@example.com");
+  });
+
+  /* Cái tên đã lưu thắng cả hai, và thắng ở cả hai loại phiên: người đặt tên "Prod DB" cho một
+     máy chủ là người muốn đọc "Prod DB" trên tab, chứ không phải đọc lại cái họ vừa gõ vào form. */
+  it("names the tab after the saved target when one is given", () => {
+    expect(terminalTitle(remote, "Prod DB")).toBe("Prod DB");
+    expect(terminalTitle(bash, "Dự án A")).toBe("Dự án A");
+  });
+
+  /* Không có gì để hiện thì không đổi gì. Một tên rỗng là một entry chưa đặt tên, không phải một
+     yêu cầu để tab trống tên. */
+  it("falls back when the saved name is empty", () => {
+    expect(terminalTitle(remote, "")).toBe("deploy@example.com");
+    expect(terminalTitle(remote, "   ")).toBe("deploy@example.com");
   });
 });
 

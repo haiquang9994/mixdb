@@ -12,9 +12,17 @@ export function terminalTarget(choice: TerminalChoice): TerminalTarget {
   return { type: "ssh", ...choice.config };
 }
 
-/** Tên tab: tên shell, hoặc `user@host` — không phải đường dẫn và không phải tên host đã lưu, vì
- *  tab bar chỉ rộng vài chữ. */
-export function terminalTitle(choice: TerminalChoice): string {
+/**
+ * Tên tab: tên shell, hoặc `user@host` — không phải đường dẫn, vì tab bar chỉ rộng vài chữ.
+ *
+ * `savedName` là tên của đích đã lưu mà phiên này đến từ đó, và nó thắng cả hai khi có. Ai đưa nó
+ * xuống đây là việc của người gọi: `TerminalTab` chỉ đưa khi cài đặt *tên tab là tên đích* đang
+ * bật và `choice.targetId` tra ra được một entry. Nên hàm này không biết gì về cài đặt ấy, và
+ * `null` vẫn là hành vi từ trước tới nay.
+ */
+export function terminalTitle(choice: TerminalChoice, savedName: string | null): string {
+  // Một entry chưa đặt tên là không có gì để hiện, không phải một yêu cầu để tab trống tên.
+  if (savedName !== null && savedName.trim() !== "") return savedName;
   return choice.kind === "local"
     ? shellLabel(choice.shell.name)
     : `${choice.config.username}@${choice.config.host}`;

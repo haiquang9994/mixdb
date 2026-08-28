@@ -49,6 +49,7 @@ describe("sanitizeSettings", () => {
     expect(settings.fontFamily).toBe(DEFAULT_FONT_FAMILY);
     expect(settings.cursorStyle).toBe(DEFAULT_SETTINGS.cursorStyle);
     expect(settings.rightClickPastes).toBe(false);
+    expect(settings.titleShowsTargetName).toBe(false);
   });
 
   it("keeps every field a full file gives it", () => {
@@ -61,6 +62,7 @@ describe("sanitizeSettings", () => {
       defaultShell: "pwsh",
       defaultCwd: "C:\\work",
       rightClickPastes: true,
+      titleShowsTargetName: true,
     };
     expect(sanitizeSettings(stored)).toEqual(stored);
   });
@@ -82,6 +84,7 @@ describe("sanitizeSettings", () => {
       defaultShell: "",
       defaultCwd: 42,
       rightClickPastes: "on",
+      titleShowsTargetName: 1,
     });
     expect(settings.fontFamily).toBe(DEFAULT_FONT_FAMILY);
     expect(settings.fontSize).toBe(DEFAULT_FONT_SIZE);
@@ -90,6 +93,7 @@ describe("sanitizeSettings", () => {
     expect(settings.defaultShell).toBeNull();
     expect(settings.defaultCwd).toBeNull();
     expect(settings.rightClickPastes).toBe(false);
+    expect(settings.titleShowsTargetName).toBe(false);
   });
 });
 

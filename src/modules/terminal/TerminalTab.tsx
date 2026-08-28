@@ -8,6 +8,7 @@ import { localShells, type SessionExit } from "./api";
 import TargetForm from "./components/TargetForm";
 import TerminalView from "./components/TerminalView";
 import { useSavedTargets, useSavedTargetsLoaded } from "./savedTargetsStore";
+import { useTerminalSettings } from "./settingsStore";
 import { parseTerminalTabState, tabStateFor } from "./tabState";
 import { terminalBadgeMarks, terminalTarget, terminalTitle } from "./session";
 import type { TerminalChoice } from "./types";
@@ -34,15 +35,25 @@ function TerminalTab({ active, onTitleChange, onBadgesChange, restored, onStateC
      trước tới giờ chỉ `TargetForm` gọi nó, mà form thì không có mặt khi tab đang khôi phục. */
   const savedTargets = useSavedTargets();
   const savedTargetsLoaded = useSavedTargetsLoaded();
+  const settings = useTerminalSettings();
   /** Việc khôi phục đã có lượt của nó chưa — thắng hay thua đều tính. Thiếu cái này thì một tab
    *  khác lưu thêm một đích là snapshot mới, effect chạy lại, và tab này mở phiên thứ hai. */
   const restoreTried = useRef(false);
 
+  /* Tên của đích đã lưu mà phiên này đến từ đó, khi cài đặt hỏi tới nó. Tắt cài đặt là `null`,
+     và `terminalTitle` quay về cách đặt tên cũ — nên đổi công tắc là mọi tab đang mở đổi tên ngay,
+     đúng như mọi cài đặt khác trong file này. Đích bị xoá cũng ra `null`: tab giữ tên nó đang có
+     thay vì trống, vì `find` không tìm thấy gì. */
+  const savedName =
+    settings.titleShowsTargetName && choice?.targetId
+      ? (savedTargets.find((target) => target.id === choice.targetId)?.name ?? null)
+      : null;
+
   useEffect(() => {
-    onTitleChange(choice ? terminalTitle(choice) : t("terminal.newTabTitle"));
+    onTitleChange(choice ? terminalTitle(choice, savedName) : t("terminal.newTabTitle"));
   // `lang` beside `t`: `t` is one function for the life of the app now, so it is `lang` that says
   // this holds words and has to be built again when they change. See `i18n/index.tsx`.
-  }, [choice, onTitleChange, t, lang]);
+  }, [choice, savedName, onTitleChange, t, lang]);
 
   /* `useMemo` chứ không dựng thẳng trong effect, và effect không lấy `onBadgesChange` làm phụ
      thuộc: shell so danh sách badge theo tham chiếu (xem `shell/tabs.ts`), nên một mảng mới là một
