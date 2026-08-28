@@ -42,6 +42,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- Six more tools: format & minify, data conversion, schema from JSON, `.env` conversion, diff, and a
+  regex tester.
+
 ## [0.0.21] - 2026-08-28
 
 ### Fixed

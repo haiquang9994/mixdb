@@ -115,6 +115,20 @@ const toolsVi = {
       notJson: "Một trong hai bên không phải JSON đọc được.",
     },
 
+    regex: {
+      label: "Regex",
+      pattern: "Mẫu",
+      subject: "Thử trên",
+      replacement: "Thay bằng",
+      run: "Chạy",
+      matches: "{{count}} match",
+      noMatch: "Không khớp gì.",
+      truncated: "Chỉ hiện 500 match đầu.",
+      replaced: "Sau khi thay",
+      groups: "Nhóm bắt",
+      timeout: "Mẫu này quá tốn — nhiều khả năng là backtracking.",
+    },
+
     ids: {
       label: "Sinh ID",
       kind: "Kiểu",

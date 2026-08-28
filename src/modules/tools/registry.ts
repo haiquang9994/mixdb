@@ -7,6 +7,7 @@ import EnvPanel from "./tools/env/Panel";
 import FormatPanel from "./tools/format/Panel";
 import IdsPanel from "./tools/ids/Panel";
 import JwtPanel from "./tools/jwt/Panel";
+import RegexPanel from "./tools/regex/Panel";
 import SchemaPanel from "./tools/schema/Panel";
 import SqlToMongoPanel from "./tools/sql-to-mongo/Panel";
 import TimestampPanel from "./tools/timestamp/Panel";
@@ -30,4 +31,5 @@ export const TOOLS: ToolDefinition[] = [
   { id: "schema", labelKey: "toolbox.schema.label", group: "data", Panel: SchemaPanel },
   { id: "env", labelKey: "toolbox.env.label", group: "infra", Panel: EnvPanel },
   { id: "diff", labelKey: "toolbox.diff.label", group: "text", Panel: DiffPanel },
+  { id: "regex", labelKey: "toolbox.regex.label", group: "text", Panel: RegexPanel },
 ];

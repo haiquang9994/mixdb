@@ -115,6 +115,20 @@ const toolsEn = {
       notJson: "One of the two sides did not parse as JSON.",
     },
 
+    regex: {
+      label: "Regex tester",
+      pattern: "Pattern",
+      subject: "Test against",
+      replacement: "Replacement",
+      run: "Run",
+      matches: "{{count}} matches",
+      noMatch: "No match.",
+      truncated: "Only the first 500 matches are shown.",
+      replaced: "After replacing",
+      groups: "Capture groups",
+      timeout: "That pattern is too expensive — most likely catastrophic backtracking.",
+    },
+
     ids: {
       label: "Id generator",
       kind: "Kind",
