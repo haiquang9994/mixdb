@@ -127,13 +127,21 @@ impl PgPassFile {
         Ok(Self { path })
     }
 
-    /// The environment the tool is run with: where to find this file, and how long to wait for a
-    /// server that never answers. Not asking for a password interactively is `--no-password`, which
-    /// goes on the command line beside it.
-    fn env(&self) -> Vec<(&'static str, String)> {
+    /// The environment the tool is run with: where to find this file, how long to wait for a
+    /// server that never answers, and which database to open. Not asking for a password
+    /// interactively is `--no-password`, which goes on the command line beside it.
+    ///
+    /// `PGDATABASE` rather than `--dbname=`, which is where the database used to go: libpq reads a
+    /// `dbname` holding an `=`, or starting `postgresql://`, as a whole connection string and
+    /// expands it. So a database named `dbname=other` is not opened — it is *parsed*, and the tool
+    /// connects wherever the name says, which for a restore means writing a file into a database
+    /// nobody chose. `PGDATABASE` is only ever a name; libpq fills it in as a default, after the
+    /// point where that expansion happens.
+    fn env(&self, database: &str) -> Vec<(&'static str, String)> {
         vec![
             ("PGPASSFILE", self.path.display().to_string()),
             ("PGCONNECT_TIMEOUT", "10".to_string()),
+            ("PGDATABASE", database.to_string()),
         ]
     }
 }
@@ -610,6 +618,81 @@ fn is_mariadb_tool(tool: &Path) -> bool {
     })
 }
 
+/// The command line a mysqldump run is given, with the database name last.
+///
+/// Its own function so that what goes on that line can be read — and tested — without a server to
+/// point it at: everything here is a decision, and several of them are conditional.
+fn mysqldump_args(
+    defaults_file: &Path,
+    charset: &str,
+    mariadb: bool,
+    column_statistics: bool,
+    mode: DumpMode,
+    database: &str,
+) -> Vec<String> {
+    let mut args = vec![
+        // Must come first: mysqldump reads its option files before anything else on the line.
+        format!("--defaults-extra-file={}", defaults_file.display()),
+        format!("--default-character-set={charset}"),
+        // Names each table on standard error as it reaches it, which is the only account mysqldump
+        // gives of how far along it is. It goes nowhere near the dump itself, which is standard
+        // output.
+        "--verbose".to_string(),
+        // Timestamps come out as they are stored rather than converted to UTC, so a restore onto
+        // a server in another time zone still reads back the same wall-clock values.
+        "--skip-tz-utc".to_string(),
+        // The usual bundle: drop-and-create, extended inserts, quick, disable-keys, set-charset.
+        "--opt".to_string(),
+        "--no-autocommit".to_string(),
+        // Takes the whole dump from one consistent snapshot instead of locking the tables.
+        "--single-transaction".to_string(),
+        "--no-tablespaces".to_string(),
+        // Binary columns as hex rather than as escaped text: no character set can touch them, so
+        // they come back byte for byte.
+        "--hex-blob".to_string(),
+        "--force".to_string(),
+    ];
+    // Both are MySQL's tool's alone, and MariaDB's refuses the whole run over either — see
+    // [`is_mariadb_tool`].
+    if !mariadb {
+        // Otherwise an 8.0 mysqldump writes a `SET @@GLOBAL.GTID_PURGED` the restoring server
+        // usually refuses, and which has nothing to do with the data being carried across.
+        args.push("--set-gtid-purged=OFF".to_string());
+        if !column_statistics {
+            args.push("--column-statistics=0".to_string());
+        }
+    }
+    match mode {
+        DumpMode::Structure => {
+            args.push("--no-data".to_string());
+            args.push("--routines".to_string());
+            args.push("--events".to_string());
+        }
+        DumpMode::Data => {
+            args.push("--no-create-info".to_string());
+            // Both belong to the structure, and mysqldump writes them beside the tables they are
+            // attached to — which a data-only dump has none of.
+            args.push("--skip-triggers".to_string());
+            args.push("--skip-routines".to_string());
+        }
+        DumpMode::All => {
+            args.push("--routines".to_string());
+            args.push("--events".to_string());
+        }
+    }
+    /* End of options. Without it a database whose name begins with `-` is read as one — and
+       mysqldump has short options that take no argument, so `-x` is not rejected, it silently
+       turns on `--lock-all-tables` and then dumps nothing at all. Both MySQL's `my_getopt` and
+       MariaDB's stop at a bare `--`. */
+    args.push("--".to_string());
+    // The bare name rather than `--databases`, which is what would put `CREATE DATABASE` and a
+    // `USE` at the head of the file. Without them the dump names no database at all, so it
+    // restores into whichever one it is pointed at — at the cost of the database's own default
+    // character set, which each table carries its own copy of anyway.
+    args.push(database.to_string());
+    args
+}
+
 /// Writes `database` to `path` as SQL.
 ///
 /// `charset` is the character set the dump is transferred in — see `mysql_structure::dump_charset`
@@ -640,63 +723,14 @@ pub fn mysql_dump(
     watch: &Watch<'_>,
 ) -> Result<(), AppError> {
     let options = OptionFile::new(host, port, user, password)?;
-
-    let mut args = vec![
-        // Must come first: mysqldump reads its option files before anything else on the line.
-        format!("--defaults-extra-file={}", options.path.display()),
-        format!("--default-character-set={charset}"),
-        // Names each table on standard error as it reaches it, which is the only account mysqldump
-        // gives of how far along it is. It goes nowhere near the dump itself, which is standard
-        // output.
-        "--verbose".to_string(),
-        // Timestamps come out as they are stored rather than converted to UTC, so a restore onto
-        // a server in another time zone still reads back the same wall-clock values.
-        "--skip-tz-utc".to_string(),
-        // The usual bundle: drop-and-create, extended inserts, quick, disable-keys, set-charset.
-        "--opt".to_string(),
-        "--no-autocommit".to_string(),
-        // Takes the whole dump from one consistent snapshot instead of locking the tables.
-        "--single-transaction".to_string(),
-        "--no-tablespaces".to_string(),
-        // Binary columns as hex rather than as escaped text: no character set can touch them, so
-        // they come back byte for byte.
-        "--hex-blob".to_string(),
-        "--force".to_string(),
-    ];
-    // Both are MySQL's tool's alone, and MariaDB's refuses the whole run over either — see
-    // [`is_mariadb_tool`].
-    if !is_mariadb_tool(tool) {
-        // Otherwise an 8.0 mysqldump writes a `SET @@GLOBAL.GTID_PURGED` the restoring server
-        // usually refuses, and which has nothing to do with the data being carried across.
-        args.push("--set-gtid-purged=OFF".to_string());
-        if !column_statistics {
-            args.push("--column-statistics=0".to_string());
-        }
-    }
-    match mode {
-        DumpMode::Structure => {
-            args.push("--no-data".to_string());
-            args.push("--routines".to_string());
-            args.push("--events".to_string());
-        }
-        DumpMode::Data => {
-            args.push("--no-create-info".to_string());
-            // Both belong to the structure, and mysqldump writes them beside the tables they are
-            // attached to — which a data-only dump has none of.
-            args.push("--skip-triggers".to_string());
-            args.push("--skip-routines".to_string());
-        }
-        DumpMode::All => {
-            args.push("--routines".to_string());
-            args.push("--events".to_string());
-        }
-    }
-    // The bare name rather than `--databases`, which is what would put `CREATE DATABASE` and a
-    // `USE` at the head of the file. Without them the dump names no database at all, so it
-    // restores into whichever one it is pointed at — at the cost of the database's own default
-    // character set, which each table carries its own copy of anyway.
-    args.push(database.to_string());
-
+    let args = mysqldump_args(
+        &options.path,
+        charset,
+        is_mariadb_tool(tool),
+        column_statistics,
+        mode,
+        database,
+    );
     let out = create_file(path)?;
     let mut tracker = Tracker::new(tables, path, mode != DumpMode::Structure);
     run(
@@ -711,6 +745,22 @@ pub fn mysql_dump(
         }
         (watch.report)(tracker.progress());
     })
+}
+
+/// The command line the `mysql` client is given, with the database to restore into last.
+fn mysql_restore_args(defaults_file: &Path, database: &str) -> Vec<String> {
+    vec![
+        format!("--defaults-extra-file={}", defaults_file.display()),
+        // Only the initial setting: a dump carries its own `SET NAMES`, which takes over from here.
+        "--default-character-set=utf8mb4".to_string(),
+        // Stop at the first statement the server rejects instead of carrying on and leaving a
+        // half-restored database behind with the reason scrolled off.
+        "--batch".to_string(),
+        // See [`mysqldump_args`]: the same `--` for the same reason, and here a database named
+        // `-e` would not merely stop the restore, it would be read as a statement to run.
+        "--".to_string(),
+        database.to_string(),
+    ]
 }
 
 /// Replays a SQL file through the `mysql` client.
@@ -735,16 +785,7 @@ pub fn mysql_restore(
     watch: &Watch<'_>,
 ) -> Result<(), AppError> {
     let options = OptionFile::new(host, port, user, password)?;
-
-    let args = vec![
-        format!("--defaults-extra-file={}", options.path.display()),
-        // Only the initial setting: a dump carries its own `SET NAMES`, which takes over from here.
-        "--default-character-set=utf8mb4".to_string(),
-        // Stop at the first statement the server rejects instead of carrying on and leaving a
-        // half-restored database behind with the reason scrolled off.
-        "--batch".to_string(),
-        database.to_string(),
-    ];
+    let args = mysql_restore_args(&options.path, database);
 
     let file = open_file(path)?;
     // A file whose size cannot be read is still restored, just without a percentage to go with it.
@@ -794,31 +835,8 @@ fn pg_reached_table(line: &str) -> Option<String> {
     Some(super::postgres::qualify(schema, table))
 }
 
-/// Writes `database` to `path` as SQL.
-///
-/// The dump carries no `CREATE DATABASE` — that would be `--create` — so it restores into whichever
-/// database it is pointed at, as the MySQL one does. Ownership and privileges are left out for the
-/// same reason: a dump that names roles restores only onto a server that has them, and the roles of
-/// the server it came from are not part of what the user asked to back up.
-///
-/// `tables` is every table of the database against what its rows weigh on the server, which is what
-/// the progress reported through `watch` is worked out from; see [`Tracker`]. Empty when the server
-/// would not say, which costs the dump nothing but its percentage.
-#[allow(clippy::too_many_arguments)]
-pub fn postgres_dump(
-    tool: &Path,
-    host: &str,
-    port: u16,
-    user: &str,
-    password: &str,
-    database: &str,
-    mode: DumpMode,
-    path: &str,
-    tables: &[(String, u64)],
-    watch: &Watch<'_>,
-) -> Result<(), AppError> {
-    let pgpass = PgPassFile::new(host, port, user, password)?;
-
+/// The command line a pg_dump run is given. The database is not on it — see [`PgPassFile::env`].
+fn pg_dump_args(host: &str, port: u16, user: &str, mode: DumpMode) -> Vec<String> {
     let mut args = vec![
         format!("--host={host}"),
         format!("--port={port}"),
@@ -843,7 +861,8 @@ pub fn postgres_dump(
         // in a repeatable-read transaction of its own accord. `--serializable-deferrable` would go
         // further and is deliberately not used — it can sit waiting for a snapshot with no
         // serialization anomalies in it, which on a busy server is a dump that never starts.
-        format!("--dbname={database}"),
+        //
+        // The database itself is not here: it goes in the environment. See [`PgPassFile::env`].
     ];
     match mode {
         // Sequences, functions and triggers all belong to the structure and come with it; there is
@@ -852,11 +871,46 @@ pub fn postgres_dump(
         DumpMode::Data => args.push("--data-only".to_string()),
         DumpMode::All => {}
     }
+    args
+}
+
+/// Writes `database` to `path` as SQL.
+///
+/// The dump carries no `CREATE DATABASE` — that would be `--create` — so it restores into whichever
+/// database it is pointed at, as the MySQL one does. Ownership and privileges are left out for the
+/// same reason: a dump that names roles restores only onto a server that has them, and the roles of
+/// the server it came from are not part of what the user asked to back up.
+///
+/// `tables` is every table of the database against what its rows weigh on the server, which is what
+/// the progress reported through `watch` is worked out from; see [`Tracker`]. Empty when the server
+/// would not say, which costs the dump nothing but its percentage.
+#[allow(clippy::too_many_arguments)]
+pub fn postgres_dump(
+    tool: &Path,
+    host: &str,
+    port: u16,
+    user: &str,
+    password: &str,
+    database: &str,
+    mode: DumpMode,
+    path: &str,
+    tables: &[(String, u64)],
+    watch: &Watch<'_>,
+) -> Result<(), AppError> {
+    let pgpass = PgPassFile::new(host, port, user, password)?;
+    let args = pg_dump_args(host, port, user, mode);
 
     let out = create_file(path)?;
     let mut tracker = Tracker::new(tables, path, mode != DumpMode::Structure);
     run(
-        Invocation { tool, args: &args, env: &pgpass.env(), stdin: None, stdout: Some(out), name: "pg_dump" },
+        Invocation {
+            tool,
+            args: &args,
+            env: &pgpass.env(database),
+            stdin: None,
+            stdout: Some(out),
+            name: "pg_dump",
+        },
         watch,
         |tick| {
         if let Tick::Line(line) = tick {
@@ -963,6 +1017,21 @@ fn pg_preamble(file: &mut File, path: &str) -> Result<Option<Lead>, AppError> {
     Ok(lead)
 }
 
+/// The command line the `psql` client is given. As in [`pg_dump_args`], the database is not on it.
+fn psql_args(host: &str, port: u16, user: &str) -> Vec<String> {
+    vec![
+        format!("--host={host}"),
+        format!("--port={port}"),
+        format!("--username={user}"),
+        "--no-password".to_string(),
+        // The user's own `~/.psqlrc` is not read: it may set anything at all — a pager, a format,
+        // `ON_ERROR_ROLLBACK` — and none of it belongs in the middle of a restore.
+        "--no-psqlrc".to_string(),
+        "--quiet".to_string(),
+        "--set=ON_ERROR_STOP=1".to_string(),
+    ]
+}
+
 /// Replays a SQL file through `psql`, into `database`.
 ///
 /// `ON_ERROR_STOP` is what makes a failure a failure: without it psql reports the statement it
@@ -984,19 +1053,7 @@ pub fn postgres_restore(
     watch: &Watch<'_>,
 ) -> Result<(), AppError> {
     let pgpass = PgPassFile::new(host, port, user, password)?;
-
-    let args = vec![
-        format!("--host={host}"),
-        format!("--port={port}"),
-        format!("--username={user}"),
-        "--no-password".to_string(),
-        // The user's own `~/.psqlrc` is not read: it may set anything at all — a pager, a format,
-        // `ON_ERROR_ROLLBACK` — and none of it belongs in the middle of a restore.
-        "--no-psqlrc".to_string(),
-        "--quiet".to_string(),
-        "--set=ON_ERROR_STOP=1".to_string(),
-        format!("--dbname={database}"),
-    ];
+    let args = psql_args(host, port, user);
 
     let mut file = open_file(path)?;
     // A dump written by a newer pg_dump than the server it is going into needs a word changing
@@ -1009,7 +1066,14 @@ pub fn postgres_restore(
     let fed = Fed { file, path: path.to_string(), sent, lead };
 
     run(
-        Invocation { tool, args: &args, env: &pgpass.env(), stdin: Some(fed), stdout: None, name: "psql" },
+        Invocation {
+            tool,
+            args: &args,
+            env: &pgpass.env(database),
+            stdin: Some(fed),
+            stdout: None,
+            name: "psql",
+        },
         watch,
         |_| {
         (watch.report)(Progress {
@@ -1223,6 +1287,75 @@ pub fn mongo_restore(
 #[cfg(test)]
 mod tests {
     use super::{pg_reached_table, pg_rewrite_preamble, run, tool_uri, Invocation, Watch};
+
+    /// Where the database name goes on a MySQL command line, and what stands in front of it.
+    ///
+    /// `my_getopt` reads any argument beginning with `-` as an option wherever it appears, so a
+    /// database named `-x` used to be swallowed as one — and mysqldump's short options are mostly
+    /// flags, which means it is not even rejected: the dump runs, on the wrong terms, over no
+    /// database at all. A bare `--` ends the options in both MySQL's parser and MariaDB's.
+    #[test]
+    fn a_mysql_database_name_is_passed_as_a_name_and_not_as_an_option() {
+        for args in [
+            mysqldump_args(Path::new("opts.cnf"), "utf8mb4", false, true, DumpMode::All, "-x"),
+            mysql_restore_args(Path::new("opts.cnf"), "-x"),
+        ] {
+            assert_eq!(args.last().map(String::as_str), Some("-x"), "{args:?}");
+            assert_eq!(args[args.len() - 2], "--", "{args:?}");
+            // And exactly one: a second would be handed to the tool as a table name.
+            assert_eq!(args.iter().filter(|arg| *arg == "--").count(), 1, "{args:?}");
+        }
+    }
+
+    /// The switches that depend on which tool and which server this is. MariaDB's mysqldump
+    /// refuses the whole run over either of the two MySQL-only ones — see `is_mariadb_tool`.
+    #[test]
+    fn mysqldump_only_asks_mysqls_own_tool_for_mysql_only_options() {
+        let mysql = mysqldump_args(Path::new("o"), "utf8mb4", false, false, DumpMode::All, "db");
+        assert!(mysql.iter().any(|arg| arg == "--set-gtid-purged=OFF"));
+        assert!(mysql.iter().any(|arg| arg == "--column-statistics=0"));
+
+        // A server that does have the histogram table is not told to skip it.
+        let has_stats = mysqldump_args(Path::new("o"), "utf8mb4", false, true, DumpMode::All, "db");
+        assert!(!has_stats.iter().any(|arg| arg == "--column-statistics=0"));
+
+        let mariadb = mysqldump_args(Path::new("o"), "utf8mb4", true, false, DumpMode::All, "db");
+        assert!(!mariadb.iter().any(|arg| arg.starts_with("--set-gtid-purged")));
+        assert!(!mariadb.iter().any(|arg| arg.starts_with("--column-statistics")));
+    }
+
+    /// The database reaches the PostgreSQL tools through the environment, and nowhere else.
+    ///
+    /// libpq expands a `dbname` that holds an `=` — or that starts `postgresql://` — into a whole
+    /// connection string, so a name like `dbname=other` on the command line does not open a
+    /// database of that name, it opens whichever server and database the name spells out. For a
+    /// restore that is a file written into a database nobody chose. `PGDATABASE` is read as a
+    /// plain name.
+    #[test]
+    fn the_postgres_database_never_reaches_the_command_line() {
+        let hostile = "dbname=elsewhere host=attacker.example";
+        for args in [
+            pg_dump_args("localhost", 5432, "u", DumpMode::All),
+            psql_args("localhost", 5432, "u"),
+        ] {
+            assert!(
+                !args.iter().any(|arg| arg.contains("--dbname")),
+                "the database is back on the command line: {args:?}",
+            );
+            assert!(!args.iter().any(|arg| arg.contains(hostile)), "{args:?}");
+        }
+
+        let pgpass = PgPassFile::new("localhost", 5432, "u", "p").unwrap();
+        let env = pgpass.env(hostile);
+        assert_eq!(
+            env.iter().find(|(key, _)| *key == "PGDATABASE").map(|(_, value)| value.as_str()),
+            Some(hostile),
+        );
+    }
+    use super::{
+        mysql_restore_args, mysqldump_args, pg_dump_args, psql_args, DumpMode, PgPassFile,
+    };
+    use std::path::Path;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;

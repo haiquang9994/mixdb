@@ -48,6 +48,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 ### Fixed
 
 - Enter no longer confirms a dialog that deletes something; it now cancels, like Escape.
+- A database whose name starts with `-`, or contains `=`, can now be dumped and restored; on PostgreSQL such a name could send the tool to another server entirely.
 - The SSH host keys MixDB has seen are no longer lost if it is interrupted while writing them down.
 - Opening a terminal, or checking which dump tools are installed, no longer briefly freezes the rest of the app.
 - Closing a database tab during a dump or restore now stops the tool, instead of leaving it running to the end.
