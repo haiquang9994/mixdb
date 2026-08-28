@@ -42,6 +42,13 @@ const toolsVi = {
       style: "Kiểu",
       placeholder: "Mỗi dòng một tên — dán thẳng cả danh sách cột vào đây.",
     },
+
+    ids: {
+      label: "Sinh ID",
+      kind: "Kiểu",
+      count: "Số lượng",
+      generate: "Sinh",
+    },
   },
 };
 

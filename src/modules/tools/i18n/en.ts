@@ -42,6 +42,13 @@ const toolsEn = {
       style: "Style",
       placeholder: "One name per line — paste a column list straight in.",
     },
+
+    ids: {
+      label: "Id generator",
+      kind: "Kind",
+      count: "How many",
+      generate: "Generate",
+    },
   },
 };
 
