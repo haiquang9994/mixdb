@@ -1,4 +1,3 @@
-use crate::platform::hide_console;
 use std::path::PathBuf;
 
 use super::models::LocalShell;
@@ -114,7 +113,7 @@ fn wsl_distros() -> Vec<String> {
        nơi duy nhất cả app đặt cờ đó. */
     let mut command = std::process::Command::new("wsl.exe");
     command.args(["-l", "-q"]);
-    let output = match hide_console(&mut command).output()
+    let output = match crate::platform::hide_console(&mut command).output()
     {
         Ok(output) if output.status.success() => output,
         _ => return Vec::new(),
