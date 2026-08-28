@@ -36,6 +36,12 @@ const toolsEn = {
       unixMillis: "Unix milliseconds",
       relative: "Relative",
     },
+
+    case: {
+      label: "Case converter",
+      style: "Style",
+      placeholder: "One name per line — paste a column list straight in.",
+    },
   },
 };
 

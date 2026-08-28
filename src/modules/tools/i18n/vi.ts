@@ -36,6 +36,12 @@ const toolsVi = {
       unixMillis: "Unix mili giây",
       relative: "Tương đối",
     },
+
+    case: {
+      label: "Đổi kiểu chữ",
+      style: "Kiểu",
+      placeholder: "Mỗi dòng một tên — dán thẳng cả danh sách cột vào đây.",
+    },
   },
 };
 
