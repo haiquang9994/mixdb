@@ -110,10 +110,43 @@ export function readSession(): StoredSession | null {
   );
 }
 
+/**
+ * Writes the session down, or gives up quietly.
+ *
+ * Nothing here is worth an error: the session is a convenience, and the app it would fail is one
+ * the user is in the middle of using. Two things can fail. `localStorage` throws
+ * `QuotaExceededError` once the origin is full — a tab whose module keeps a large `state` is
+ * enough — and `JSON.stringify` throws on a module slot holding something that is not JSON, a
+ * cycle or a `BigInt`. Uncaught, either one comes out of an effect that runs on every tab and
+ * badge change, which is to say it takes the whole window down over and over.
+ *
+ * The read side has always been this defensive — `parseSession` treats anything it cannot
+ * understand as no session at all. This is the same answer on the way out: the next launch opens a
+ * fresh tab, which is what the first launch does.
+ */
+/**
+ * Writes the session down, or gives up quietly.
+ *
+ * Nothing here is worth an error: the session is a convenience, and the app it would fail is one
+ * the user is in the middle of using. Two things can fail. `localStorage` throws
+ * `QuotaExceededError` once the origin is full — a tab whose module keeps a large `state` is
+ * enough — and `JSON.stringify` throws on a module slot holding something that is not JSON, a
+ * cycle or a `BigInt`. Uncaught, either one comes out of an effect that runs on every tab and
+ * badge change, which is to say it takes the whole window down over and over.
+ *
+ * The read side has always been this defensive — `parseSession` treats anything it cannot
+ * understand as no session at all. This is the same answer on the way out: the next launch opens a
+ * fresh tab, which is what the first launch does.
+ */
 export function writeSession(tabs: TabInfo[], activeId: string): void {
   const session: StoredSession = {
     tabs: tabs.map(({ id, moduleId, title, state }) => ({ id, moduleId, title, state })),
     activeId,
   };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // Deliberately not cleared either: what is already stored is an older session, and an older
+    // session is better than none.
+  }
 }

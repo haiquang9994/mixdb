@@ -14,6 +14,19 @@ import type { ShortcutGroup } from "./types";
  * `handler` is read at the moment the key is pressed rather than when the listener was registered,
  * so it may close over state freely — a pane mid-request checks for that inside it, exactly as its
  * button's `disabled` does.
+ *
+ * **When two panes claim the same chord, the one that registered last wins** — see `decide`, which
+ * orders by registration and not by the catalogue. That order is React's effect order: children
+ * before parents, and within a parent the order the elements are written in. So `rest.closeRequest`
+ * beats `app.closeTab` on `Ctrl+W` because the REST pane is a child of the shell, not because
+ * anything says so.
+ *
+ * Which is worth knowing before relying on it. Two shortcuts that share a chord and are enabled
+ * together are a clash — DEV logs one — and the tie is broken by where the components happen to
+ * sit. Moving a `useShortcut` call above another in the same component silently changes which one
+ * runs. If a pair ever needs an order that does not follow from the tree, the answer is for the
+ * outer one to turn its `enabled` off while the inner one is up, which states the intent instead of
+ * inheriting it.
  */
 export function useShortcut(id: string, handler: () => void, enabled: boolean): void {
   // Through a ref so the registration is made once per spell of being on screen, rather than torn

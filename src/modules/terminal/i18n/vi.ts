@@ -1,4 +1,9 @@
-const terminalVi = {
+import type { TerminalDict } from "./en";
+
+/* Annotated, so that a key added to `en.ts` and forgotten here is a compile error rather than a
+   Vietnamese window with an English word in it. The two happened to match already — 1112 keys
+   each — which is exactly the state in which nothing is noticed when they stop. */
+const terminalVi: TerminalDict = {
   terminal: {
     newTabTitle: "Terminal mới",
     localTitle: "Shell cục bộ",

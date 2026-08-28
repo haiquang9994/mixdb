@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { parseSession } from "./session";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TabInfo } from "./tabs";
+import { parseSession, writeSession } from "./session";
 
 const MODULE_IDS = ["db", "rest", "terminal"];
 
@@ -106,5 +107,85 @@ describe("parseSession", () => {
       activeId: "a",
     };
     expect(parseSession(stored(session), MODULE_IDS)?.tabs).toEqual([SESSION.tabs[0]]);
+  });
+});
+
+/** A `localStorage` that can be told to refuse, which is the case worth testing. */
+function fakeStorage(setItem?: () => never) {
+  const store = new Map<string, string>();
+  return {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: setItem ?? ((key: string, value: string) => void store.set(key, value)),
+    removeItem: (key: string) => void store.delete(key),
+    read: (key: string) => store.get(key) ?? null,
+    seed: (key: string, value: string) => void store.set(key, value),
+  };
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("writeSession", () => {
+  const TABS: TabInfo[] = [
+    { id: "a", moduleId: "db", title: "demo", badges: [], state: { savedId: "c-1" } },
+    { id: "b", moduleId: "terminal", title: "localhost", badges: [] },
+  ];
+
+  it("stores the tabs, without the parts that are not the session's", () => {
+    const storage = fakeStorage();
+    vi.stubGlobal("localStorage", storage);
+
+    writeSession(TABS, "b");
+    const written = JSON.parse(storage.read("mixdb-session") ?? "null");
+    expect(written).toEqual({
+      tabs: [
+        { id: "a", moduleId: "db", title: "demo", state: { savedId: "c-1" } },
+        { id: "b", moduleId: "terminal", title: "localhost" },
+      ],
+      activeId: "b",
+    });
+    // Badges are worked out afresh each launch, so storing them would only mean showing a stale
+    // one until the pane caught up.
+    expect(written.tabs.some((tab: Record<string, unknown>) => "badges" in tab)).toBe(false);
+  });
+
+  it("survives a storage that refuses to store", () => {
+    // `QuotaExceededError` once the origin is full, which a tab with a large `state` is enough
+    // for. Uncaught, this comes out of an effect that runs on every tab and badge change — so it
+    // does not fail the write, it fails the window, repeatedly.
+    const storage = fakeStorage(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
+    vi.stubGlobal("localStorage", storage);
+
+    expect(() => writeSession(TABS, "b")).not.toThrow();
+  });
+
+  it("survives a module slot that is not JSON", () => {
+    const storage = fakeStorage();
+    vi.stubGlobal("localStorage", storage);
+
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    const tabs: TabInfo[] = [{ id: "a", moduleId: "db", title: "demo", badges: [], state: cycle }];
+    expect(() => writeSession(tabs, "a")).not.toThrow();
+
+    // And `BigInt`, which `JSON.stringify` refuses outright rather than looping on.
+    const big: TabInfo[] = [
+      { id: "a", moduleId: "db", title: "demo", badges: [], state: { n: 1n } },
+    ];
+    expect(() => writeSession(big, "a")).not.toThrow();
+  });
+
+  it("leaves the older session where it is when it cannot write a newer one", () => {
+    // An older session is better than none: the alternative is a launch that opens a blank tab
+    // because the launch before it ran out of quota once.
+    const storage = fakeStorage();
+    vi.stubGlobal("localStorage", storage);
+    storage.seed("mixdb-session", '{"tabs":[],"activeId":"a"}');
+
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    writeSession([{ id: "a", moduleId: "db", title: "d", badges: [], state: cycle }], "a");
+    expect(storage.read("mixdb-session")).toBe('{"tabs":[],"activeId":"a"}');
   });
 });

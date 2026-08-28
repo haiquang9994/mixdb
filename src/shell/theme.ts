@@ -107,8 +107,16 @@ function applyGlass(on: boolean): void {
 }
 
 /* Read before React mounts: the stored choice has to be on the root element for the very first
-   paint, otherwise the window flashes the default accent on every launch. */
+   paint, otherwise the window flashes the default accent on every launch.
+
+   The theme is here too, and it is the one of the four that is applied twice: `theme-preload.js`
+   sets it earlier still, before the bundle has even been fetched, which is what stops a dark app
+   flashing white while it loads. That file is the optimisation and this is the guarantee — a
+   preload that 404s, is blocked, or is dropped by a future change to `index.html` would otherwise
+   leave the theme unset for the whole session, and nothing would look wrong enough at build time
+   to notice. Applying it again costs one attribute write against a value that is already there. */
 applyPlatform();
+applyTheme(readStoredTheme());
 applyAccent(readStoredAccent());
 applyGlass(readStoredGlass());
 

@@ -102,4 +102,9 @@ const terminalEn = {
   },
 };
 
+/** The shape both dictionaries have to have — see `vi.ts`, which is annotated with it, and
+ *  `DbDict`/`RestDict`, which are the same arrangement. English is the source of the shape
+ *  because it is the fallback: a key missing here is a key with nothing to fall back to. */
+export type TerminalDict = typeof terminalEn;
+
 export default terminalEn;
