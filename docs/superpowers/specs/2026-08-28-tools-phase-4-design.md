@@ -139,13 +139,26 @@ test, thứ chạm hệ điều hành thì không.
 
 | Nền tảng | Lệnh | Phần khó |
 | --- | --- | --- |
-| Windows | `netstat -ano -p TCP`, rồi `tasklist /FO CSV /NH` để tra tên theo PID | Bảng canh cột, có cả dòng IPv6 dạng `[::]:445`; lọc theo trạng thái `LISTENING` |
+| Windows | `netstat -ano`, rồi `tasklist /FO CSV /NH` để tra tên theo PID | Bảng canh cột, có cả dòng IPv6 dạng `[::]:445`; lọc theo trạng thái `LISTENING` |
 | Linux | `ss -lntp` | `users:(("nginx",pid=123,fd=6))` — tên và PID nằm lồng trong ngoặc |
 | macOS | `lsof -nP -iTCP -sTCP:LISTEN -Fpcn` | Dạng field: mỗi dòng một trường, dòng `p`/`c` mở đầu một tiến trình rồi các dòng `n` thuộc về nó |
 
 **Không dùng `Get-NetTCPConnection` trên Windows**, dù nó ra dữ liệu sạch hơn: nó cần PowerShell, và
 execution policy trên một máy công ty có thể chặn. `netstat` thì có ở mọi bản Windows và không hỏi
 gì.
+
+Và **`netstat -ano` chứ không phải `netstat -ano -p TCP`**, dù cờ `-p TCP` trông đúng hơn: đã đo
+trên máy thật, `-p TCP` **lọc mất toàn bộ IPv6** — một service chỉ nghe trên `[::]` sẽ biến mất khỏi
+bảng mà không có dấu hiệu gì. IPv6 nằm dưới `-p TCPv6`, và chạy hai lệnh để ghép lại thì tốn hơn là
+lọc trong bộ đọc. Bỏ `-p` thì output có thêm UDP, nhưng phân biệt được bằng số cột — cũng đã đo:
+
+| Loại dòng | Số cột | Cột |
+| --- | --- | --- |
+| TCP | 5 | `Proto` `Local` `Foreign` `State` `PID` |
+| UDP | 4 | `Proto` `Local` `Foreign` `PID` — **không có cột trạng thái** |
+
+Nên luật của bộ đọc là: đúng 5 cột, cột đầu là `TCP`, cột thứ tư là `LISTENING`. UDP tự rụng vì
+thiếu cột, và TCP đang `ESTABLISHED` tự rụng vì sai trạng thái.
 
 `ss -lntp` không dùng cờ `-H`: cờ đó chỉ có ở `iproute2` đời mới, và bỏ dòng tiêu đề trong bộ đọc
 thì rẻ hơn là đòi hỏi phiên bản. Máy Linux không có `ss` thì lùi về `lsof` — cùng bộ đọc với macOS.
