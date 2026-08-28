@@ -181,7 +181,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::models::{Output, OutputSink, TerminalSize};
 use super::state::Session;
-use super::stream::coalesce;
+use super::stream::{coalesce, QUEUE_DEPTH};
 use crate::error::AppError;
 
 /// Đệm đọc một lần từ pty. Nhỏ hơn khung IPC nhiều — bộ gom lô mới là chỗ quyết định khung to
@@ -266,7 +266,7 @@ pub fn spawn(
     let master = Arc::new(StdMutex::new(Some(pair.master)));
     let killer = child.clone_killer();
 
-    let (raw_tx, raw_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (raw_tx, raw_rx) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
     let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (resize_tx, mut resize_rx) = mpsc::unbounded_channel::<TerminalSize>();
     let (exit_tx, exit_rx) = oneshot::channel::<Option<i32>>();
@@ -280,7 +280,7 @@ pub fn spawn(
             match reader.read(&mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    if raw_tx.send(buffer[..n].to_vec()).is_err() {
+                    if raw_tx.blocking_send(buffer[..n].to_vec()).is_err() {
                         break;
                     }
                 }

@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::models::{Output, OutputSink, TerminalSize};
 use super::state::Session;
-use super::stream::coalesce;
+use super::stream::{coalesce, QUEUE_DEPTH};
 use crate::error::AppError;
 use crate::ssh::SshConfig;
 
@@ -25,7 +25,7 @@ pub async fn spawn(
         .await?
         .split();
 
-    let (raw_tx, raw_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (raw_tx, raw_rx) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
     let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (resize_tx, mut resize_rx) = mpsc::unbounded_channel::<TerminalSize>();
     let (exit_tx, exit_rx) = oneshot::channel::<Option<i32>>();
@@ -38,7 +38,7 @@ pub async fn spawn(
         while let Some(msg) = read.wait().await {
             match msg {
                 ChannelMsg::Data { data } => {
-                    if raw_tx.send(data.to_vec()).is_err() {
+                    if raw_tx.send(data.to_vec()).await.is_err() {
                         break;
                     }
                 }
@@ -46,7 +46,7 @@ pub async fn spawn(
                    ra — và một dòng lỗi không hiện lên màn hình thì tệ hơn là hiện lẫn vào dòng
                    khác. */
                 ChannelMsg::ExtendedData { data, .. } => {
-                    if raw_tx.send(data.to_vec()).is_err() {
+                    if raw_tx.send(data.to_vec()).await.is_err() {
                         break;
                     }
                 }
