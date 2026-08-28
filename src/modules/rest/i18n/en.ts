@@ -73,7 +73,7 @@ const restEn = {
     // Environments
     envLabel: "Environment",
     envNone: "No environment",
-    envManage: "Manage environments\u2026",
+    envManage: "Manage environments",
     envDialogTitle: "Environments",
     envNew: "New",
     envDefaultName: "New environment",

@@ -152,15 +152,23 @@
   white-space: nowrap;
 }
 
+/* Two states, two materials, so the list can be read without moving the pointer off it: the
+   accent is what has been *chosen*, and the app's own neutral hover is where the pointer *is*.
+   The accent used to be spent on the second of those, which left the chosen option with nothing
+   but a weight and a text colour — and reading a row as bolder than its neighbours takes a
+   comparison, where a filled row takes a glance. */
 .optionActive {
-  background: rgb(var(--accent-rgb) / 0.12);
+  background: var(--hover-bg);
 }
 
 .optionSelected {
+  background: rgb(var(--accent-rgb) / 0.12);
   color: var(--accent-text);
   font-weight: 600;
 }
 
+/* The chosen option under the pointer. Deeper than either on its own rather than a third colour:
+   it is both states at once, and it should read as both. */
 .optionSelected.optionActive {
   background: rgb(var(--accent-rgb) / 0.18);
 }
@@ -183,7 +191,7 @@
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-:root[data-theme="dark"] .optionActive {
+:root[data-theme="dark"] .optionSelected {
   background: rgb(var(--accent-rgb) / 0.25);
 }
 
@@ -200,7 +208,7 @@
     border-color: rgba(255, 255, 255, 0.2);
   }
 
-  :root:not([data-theme]) .optionActive {
+  :root:not([data-theme]) .optionSelected {
     background: rgb(var(--accent-rgb) / 0.25);
   }
 

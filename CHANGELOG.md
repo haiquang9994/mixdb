@@ -42,10 +42,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Changed
+
+- A dropdown fills in the option it is showing and opens with it in the middle of the list.
+
 ### Fixed
 
 - Menus, dropdowns and tooltips are frosted again on macOS instead of being a clear film over the
   content behind them.
+- Small interface fixes in the REST environment picker and method selector.
 
 ## [0.0.23] - 2026-08-28
 

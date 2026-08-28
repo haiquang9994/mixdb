@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDownIcon } from "../../icons";
 import { useTranslation } from "../../i18n";
+import { centeredScrollTop } from "./scroll";
 import styles from "./Select.module.css";
 
 export interface SelectOption<T extends string | number> {
@@ -98,6 +99,7 @@ function Select<T extends string | number>({
   const listRef = useRef<HTMLUListElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const skipScrollRef = useRef(false);
+  const centredRef = useRef(false);
 
   const selected = options.find((o) => o.value === value);
 
@@ -227,6 +229,48 @@ function Select<T extends string | number>({
       setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
     }
   }, [open, query, selectedIndex]);
+
+  /* Opens the list on the option it is showing, in the middle of the menu rather than wherever
+   * the top of the list happens to leave it. A select down its own list — a column, a database,
+   * one of forty operators — otherwise opens on options that have nothing to do with the value in
+   * the trigger, and the first thing the user has to do is find out where they are.
+   *
+   * A layout effect, so the list has never been painted at the top: as a passive one the menu
+   * appears at the top of its list and jumps a frame later, which reads as the menu correcting a
+   * mistake it made in front of you.
+   *
+   * Once per opening, held by the ref rather than by the dependency list. `selectedIndex` has to
+   * be a dependency — it is what is being scrolled to, and options that arrive after the menu is
+   * already up would otherwise never be centred at all — but re-running on every change of it
+   * would also re-centre on each keystroke in the search box, dragging the list out from under a
+   * pointer that has not moved. The ref is only set once an option was actually found, so a menu
+   * opened over an empty list is still centred by the render that fills it.
+   *
+   * The minimal scroll below is left to it after that: with the option centred it has nothing to
+   * do until an arrow key moves off it, which is exactly when it should take over. */
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!open) {
+      centredRef.current = false;
+      return;
+    }
+    if (centredRef.current || !list || selectedIndex < 0) return;
+    const el = list.children[selectedIndex] as HTMLElement | undefined;
+    if (!el) return;
+    /* Measured against the list's own box rather than read off `offsetTop`, which is relative to
+       whichever ancestor is positioned — here the menu, so a select with a search box above its
+       list would centre on a number that had the box's height built into it. Adding back what the
+       list is already scrolled by is what turns the two rects into a content offset. */
+    const listRect = list.getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
+    list.scrollTop = centeredScrollTop({
+      itemTop: rect.top - listRect.top + list.scrollTop,
+      itemHeight: rect.height,
+      viewportHeight: list.clientHeight,
+      scrollHeight: list.scrollHeight,
+    });
+    centredRef.current = true;
+  }, [open, selectedIndex]);
 
   useEffect(() => {
     if (!open || activeIndex < 0) return;

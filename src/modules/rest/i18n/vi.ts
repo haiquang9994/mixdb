@@ -65,7 +65,7 @@ const restVi: RestDict = {
     hideValue: "Ẩn",
     envLabel: "Environment",
     envNone: "Không dùng environment",
-    envManage: "Quản lý environment\u2026",
+    envManage: "Quản lý environment",
     envDialogTitle: "Environment",
     envNew: "Thêm",
     envDefaultName: "Environment mới",

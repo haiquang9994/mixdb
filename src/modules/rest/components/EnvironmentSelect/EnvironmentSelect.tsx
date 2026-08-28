@@ -1,4 +1,5 @@
 import Select from "../../../../components/Select";
+import { SettingsIcon } from "../../../../icons";
 import { useTranslation } from "../../../../i18n";
 import type { Environment } from "../../environments";
 import styles from "./EnvironmentSelect.module.css";
@@ -23,8 +24,10 @@ interface Props {
  * the workspace, not of a request: the same request is sent against dev and against prod, and the
  * list of requests does not change when the environment does.
  *
- * *Manage environments…* is the last entry rather than a button of its own — it is reached rarely,
- * and it is reached from here, which is the only place the environments are named.
+ * *Manage environments* is the last entry rather than a button of its own — it is reached rarely,
+ * and it is reached from here, which is the only place the environments are named. It is the one
+ * entry that does not pick anything, so it is the one entry that carries a mark: the gear says it
+ * opens something, which is the job the trailing ellipsis used to do in a word.
  */
 function EnvironmentSelect({ environments, value, onChange, onManage }: Props) {
   const { t } = useTranslation();
@@ -44,7 +47,18 @@ function EnvironmentSelect({ environments, value, onChange, onManage }: Props) {
       options={[
         { value: NONE, label: t("rest.envNone") },
         ...environments.map((env) => ({ value: env.id, label: env.name })),
-        { value: MANAGE, label: t("rest.envManage") },
+        {
+          value: MANAGE,
+          /* `inline-flex`, not `flex`, and that is what `optionAlign="right"` above is asking
+             for: a block would fill the row and take the mark with it to the left edge, away
+             from the names it is listed under. */
+          label: (
+            <span className={styles.manage}>
+              <SettingsIcon size="1em" />
+              {t("rest.envManage")}
+            </span>
+          ),
+        },
       ]}
       onChange={(picked) => {
         if (picked === MANAGE) {

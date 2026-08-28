@@ -3,3 +3,12 @@
 .select {
   min-width: 0;
 }
+
+/* The gear and its words, kept on one line and kept together at whichever edge the option is
+   aligned to. Sized at 1em rather than left to the icon grid's default so the mark matches the
+   text it is standing beside rather than the row it is sitting in. */
+.manage {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
