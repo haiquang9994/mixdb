@@ -1,5 +1,6 @@
 import type { ToolDefinition } from "./tool";
 import CasePanel from "./tools/case/Panel";
+import ConvertPanel from "./tools/convert/Panel";
 import EncodePanel from "./tools/encode/Panel";
 import FormatPanel from "./tools/format/Panel";
 import IdsPanel from "./tools/ids/Panel";
@@ -22,4 +23,5 @@ export const TOOLS: ToolDefinition[] = [
   { id: "encode", labelKey: "toolbox.encode.label", group: "encode", Panel: EncodePanel },
   { id: "jwt", labelKey: "toolbox.jwt.label", group: "encode", Panel: JwtPanel },
   { id: "format", labelKey: "toolbox.format.label", group: "text", Panel: FormatPanel },
+  { id: "convert", labelKey: "toolbox.convert.label", group: "data", Panel: ConvertPanel },
 ];

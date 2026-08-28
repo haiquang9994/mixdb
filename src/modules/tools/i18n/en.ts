@@ -59,6 +59,26 @@ const toolsEn = {
       errorAt: "Line {{line}}, column {{column}}: {{message}}",
     },
 
+    convert: {
+      label: "Convert",
+      from: "From",
+      to: "To",
+      delimiter: "Delimiter",
+      header: "First row is a header",
+      table: "Table name",
+      dialect: "Dialect",
+      multiRow: "One statement, many rows",
+      run: "Convert",
+      placeholder: "Paste JSON, YAML or CSV",
+      failedEmpty: "There is nothing to convert.",
+      failedSame: "Both sides are the same format.",
+      failedNeedsRows: "CSV and INSERT need an array of flat objects.",
+      failedParse: "That did not parse: {{detail}}",
+      warningPrecision:
+        "This JSON has an integer too long for JavaScript; converting rounds it. Use Format & minify to keep it exact.",
+      insertNote: "Read this before you run it. It is not a substitute for a parameterised query.",
+    },
+
     ids: {
       label: "Id generator",
       kind: "Kind",

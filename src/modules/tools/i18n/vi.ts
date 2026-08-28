@@ -59,6 +59,26 @@ const toolsVi = {
       errorAt: "Dòng {{line}}, cột {{column}}: {{message}}",
     },
 
+    convert: {
+      label: "Chuyển đổi",
+      from: "Từ",
+      to: "Sang",
+      delimiter: "Dấu phân cách",
+      header: "Dòng đầu là tiêu đề",
+      table: "Tên bảng",
+      dialect: "Dialect",
+      multiRow: "Một câu lệnh, nhiều dòng",
+      run: "Chuyển đổi",
+      placeholder: "Dán JSON, YAML hoặc CSV vào đây",
+      failedEmpty: "Không có gì để chuyển đổi.",
+      failedSame: "Hai đầu đang cùng một định dạng.",
+      failedNeedsRows: "CSV và INSERT cần một mảng các object phẳng.",
+      failedParse: "Không đọc được: {{detail}}",
+      warningPrecision:
+        "JSON này có số nguyên dài quá sức JavaScript; chuyển đổi sẽ làm tròn nó. Dùng Format & minify nếu cần giữ nguyên.",
+      insertNote: "Đọc kỹ trước khi chạy. Đây không phải cách thay cho truy vấn tham số hoá.",
+    },
+
     ids: {
       label: "Sinh ID",
       kind: "Kiểu",
