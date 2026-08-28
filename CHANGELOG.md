@@ -42,6 +42,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Changed
+
+- A terminal tab is named after the saved target it was opened from, without turning the setting on
+  first. The setting is still there to turn it off.
+
+### Fixed
+
+- The chosen database kind and connection method can be told from the others in the dark theme.
+
 ## [0.0.25] - 2026-08-29
 
 ### Changed

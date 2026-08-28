@@ -49,7 +49,19 @@ describe("sanitizeSettings", () => {
     expect(settings.fontFamily).toBe(DEFAULT_FONT_FAMILY);
     expect(settings.cursorStyle).toBe(DEFAULT_SETTINGS.cursorStyle);
     expect(settings.rightClickPastes).toBe(false);
-    expect(settings.titleShowsTargetName).toBe(false);
+    expect(settings.titleShowsTargetName).toBe(DEFAULT_SETTINGS.titleShowsTargetName);
+  });
+
+  /* Chưa ai chạm vào cài đặt thì tab vẫn mang tên đích đã lưu: đó là cái người mở năm phiên tới
+     năm máy chủ cần, và `deploy@10.0.0.7` năm lần thì không. */
+  it("names a tab after its saved target until told otherwise", () => {
+    expect(sanitizeSettings({}).titleShowsTargetName).toBe(true);
+  });
+
+  /* Mặc định bật, nên `false` trong file là một câu người dùng đã nói — không phải một trường
+     thiếu. Nó phải sống sót, đúng như `cursorBlink: false` sống sót. */
+  it("keeps a setting the user turned off", () => {
+    expect(sanitizeSettings({ titleShowsTargetName: false }).titleShowsTargetName).toBe(false);
   });
 
   it("keeps every field a full file gives it", () => {
@@ -93,7 +105,7 @@ describe("sanitizeSettings", () => {
     expect(settings.defaultShell).toBeNull();
     expect(settings.defaultCwd).toBeNull();
     expect(settings.rightClickPastes).toBe(false);
-    expect(settings.titleShowsTargetName).toBe(false);
+    expect(settings.titleShowsTargetName).toBe(DEFAULT_SETTINGS.titleShowsTargetName);
   });
 });
 

@@ -78,6 +78,13 @@
   --surface-bg: #ffffff;
   --page-bg: #f6f6f6;
 
+  /* Nền của ô đang được chọn trong một segmented control — `.choice-active` bên `modules/db/db.css`,
+     `.tab.active` bên `modules/tools/.../encode`. Riêng ra khỏi `--surface-bg` vì cả nhóm quanh nó
+     đã tô `--hover-bg`: trong theme tối `--surface-bg` đúng bằng màu trang, nên ô đang chọn hoá ra
+     *tối hơn* nhóm và đọc ra như một lỗ thủng, còn những ô không được chọn mới là cái trông nổi
+     lên. Ô được chọn phải nổi khỏi nhóm ở cả hai theme, nên nó có token riêng. */
+  --choice-active-bg: var(--surface-bg);
+
   /* What a *pinned* strip paints with: a grid's header, its totals, the column of buttons held
      against the right edge. These are the one part of the app proper that live content passes
      behind, so they are the one part that can be real glass — but only when the setting is on, and
@@ -673,6 +680,9 @@ textarea:focus {
   --control-bg-active: #0f0f0f69;
   --surface-bg: #2f2f2f;
   --page-bg: #2f2f2f;
+  /* Một lớp trắng, dày hơn `--hover-bg` mà cả nhóm đang tô — cùng cách `--qe-card-bg`
+     nâng một card lên khỏi trang. */
+  --choice-active-bg: rgb(255 255 255 / 0.16);
 
   /* A control casts nothing here — a dark shadow on a dark page only muddies it — while what
      floats needs a heavier one to separate at all. */
@@ -745,6 +755,9 @@ textarea:focus {
     --control-bg-active: #0f0f0f69;
     --surface-bg: #2f2f2f;
     --page-bg: #2f2f2f;
+    /* Một lớp trắng, dày hơn `--hover-bg` mà cả nhóm đang tô — cùng cách `--qe-card-bg`
+       nâng một card lên khỏi trang. */
+    --choice-active-bg: rgb(255 255 255 / 0.16);
 
     --shadow-sm: none;
     --shadow-md: 0 4px 16px rgb(0 0 0 / 0.45);

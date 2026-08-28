@@ -46,7 +46,7 @@
 
 .tab.active {
   opacity: 1;
-  background: var(--surface-bg);
+  background: var(--choice-active-bg);
   box-shadow: var(--shadow-sm);
 }
 

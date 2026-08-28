@@ -31,6 +31,9 @@ export interface TerminalSettings {
    * cái nào với cái nào, còn "Prod DB" thì được. Ai chỉ mở một hai phiên thì ngược lại — nên đây là
    * một công tắc chứ không phải một quyết định. Phiên không đến từ đích đã lưu vẫn tên như cũ:
    * không có gì để hiện. Xem `terminalTitle` bên `session.ts`.
+   *
+   * Bật sẵn: người đã đặt tên cho một đích đã nói tên nào là tên họ đọc ra, và tab thì là chỗ duy
+   * nhất cái tên ấy được đọc lại. Tắt nó đi thì công sức đặt tên chỉ còn thấy trong form.
    */
   titleShowsTargetName: boolean;
 }
@@ -58,7 +61,7 @@ export const DEFAULT_SETTINGS: TerminalSettings = {
   defaultShell: null,
   defaultCwd: null,
   rightClickPastes: false,
-  titleShowsTargetName: false,
+  titleShowsTargetName: true,
 };
 
 const CURSOR_STYLES: readonly CursorStyle[] = ["block", "underline", "bar"];
@@ -101,7 +104,13 @@ export function sanitizeSettings(raw: unknown): TerminalSettings {
     defaultShell: optionalText(record.defaultShell),
     defaultCwd: optionalText(record.defaultCwd),
     rightClickPastes: record.rightClickPastes === true,
-    titleShowsTargetName: record.titleShowsTargetName === true,
+    /* `typeof` chứ không phải `=== true`, không như dòng trên: cái này mặc định bật, nên một file
+       thiếu nó phải lấy mặc định, còn `false` viết trong file là một câu người dùng đã nói và phải
+       sống sót. Cùng hình dạng với `cursorBlink`. */
+    titleShowsTargetName:
+      typeof record.titleShowsTargetName === "boolean"
+        ? record.titleShowsTargetName
+        : DEFAULT_SETTINGS.titleShowsTargetName,
   };
 }
 
