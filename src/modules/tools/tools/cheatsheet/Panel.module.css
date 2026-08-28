@@ -23,7 +23,7 @@
 }
 
 .fieldLabel {
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   opacity: 0.7;
 }
 
@@ -53,7 +53,7 @@
 }
 
 .note {
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   opacity: 0.8;
   margin: 0;
 }

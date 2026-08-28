@@ -20,13 +20,13 @@
 
 .panelTitle {
   margin: 0;
-  font-size: 0.95em;
+  font-size: var(--text-md);
   opacity: 0.8;
 }
 
 /* How many of the database's tables the search left, beside the heading that names it. */
 .matchCount {
-  font-size: 0.8em;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   opacity: 0.55;
 }
@@ -109,7 +109,7 @@
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
-  font-size: 0.9em;
+  font-size: var(--text-md);
 }
 
 .grid th,
@@ -201,7 +201,7 @@
 .note {
   flex-shrink: 0;
   margin: 0;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   opacity: 0.55;
 }
 

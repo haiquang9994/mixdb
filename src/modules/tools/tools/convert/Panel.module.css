@@ -24,7 +24,7 @@
   display: flex;
   gap: 0.35rem;
   align-items: center;
-  font-size: 0.9rem;
+  font-size: var(--text-md);
 }
 
 .field {
@@ -34,19 +34,19 @@
 }
 
 .fieldLabel {
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   opacity: 0.7;
 }
 
 .note,
 .warning {
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   opacity: 0.8;
   margin: 0;
 }
 
 .error {
-  font-size: 0.9rem;
+  font-size: var(--text-md);
   color: var(--danger, #d33);
   margin: 0;
 }

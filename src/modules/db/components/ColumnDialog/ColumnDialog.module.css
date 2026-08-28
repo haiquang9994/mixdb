@@ -44,7 +44,7 @@
   flex-direction: column;
   gap: 0.25rem;
   min-width: 0;
-  font-size: 0.9em;
+  font-size: var(--text-md);
 }
 
 .field input {
@@ -85,7 +85,7 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.9em;
+  font-size: var(--text-md);
   cursor: pointer;
 }
 
@@ -120,7 +120,7 @@
 
 .hint {
   margin: 0;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   line-height: 1.4;
   opacity: 0.65;
 }
@@ -136,7 +136,7 @@
   background: rgb(var(--danger-rgb) / 0.12);
   box-shadow: inset 0 0 0 1px rgb(var(--danger-rgb) / 0.35);
   color: var(--danger-text);
-  font-size: 0.9em;
+  font-size: var(--text-md);
   line-height: 1.4;
 }
 

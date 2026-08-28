@@ -12,9 +12,24 @@
   --font-mono: "Fira Code", ui-monospace, monospace;
 
   font-family: var(--font-ui);
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 13px;
+  line-height: 18px;
   font-weight: 400;
+
+  /* Bốn bậc, và không có bậc thứ năm.
+
+     Trước đợt này app có 179 khai báo `font-size` theo `em` và 71 theo `rem` — nghĩa là không có
+     thang nào cả, chỉ có những lần điều chỉnh cục bộ chồng lên nhau, và một `0.9em` nằm trong một
+     `0.9em` khác ra một cỡ chữ không ai định. Bốn con số này là thang; một cỡ chữ ngoài chúng là
+     một sai sót, không phải một lựa chọn.
+
+     13px chứ không phải 16px vì đây là công cụ người ta mở tám tiếng một ngày để làm việc, không
+     phải một trang để ngắm: chữ nhỏ hơn nghĩa là nhiều dòng dữ liệu hơn trên một màn, và đó là
+     thứ đáng đánh đổi ở đây. */
+  --text-xs: 11px; /* badge, caption, chú thích */
+  --text-sm: 12px; /* label phụ, dòng trạng thái */
+  --text-md: 13px; /* thân, mọi control */
+  --text-lg: 15px; /* tiêu đề pane, tiêu đề dialog */
 
   color: #0f0f0f;
   background-color: #f6f6f6;
@@ -291,7 +306,7 @@ body {
   gap: 0.4rem;
   flex: none;
   font-family: inherit;
-  font-size: 0.9em;
+  font-size: var(--text-md);
   font-weight: 700;
   letter-spacing: 0.01em;
   /* Sits a little off the bottom of the bar: the tabs beside it run down to the edge, and the
@@ -551,13 +566,13 @@ body {
 
 .muted {
   opacity: 0.6;
-  font-size: 0.9em;
+  font-size: var(--text-md);
 }
 
 textarea {
   width: 100%;
   font-family: var(--font-mono);
-  font-size: 0.9em;
+  font-size: var(--text-md);
   box-sizing: border-box;
 }
 

@@ -117,7 +117,7 @@
 .label {
   flex: none;
   opacity: 0.7;
-  font-size: 0.9em;
+  font-size: var(--text-md);
 }
 
 .name {
@@ -149,7 +149,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.9em;
+  font-size: var(--text-md);
 }
 
 /* Name, value, the Secret tick, the remove button. */
@@ -162,7 +162,7 @@
 
 .head {
   opacity: 0.7;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   padding: 0 0.15rem;
 }
 

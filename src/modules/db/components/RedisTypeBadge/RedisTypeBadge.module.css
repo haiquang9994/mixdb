@@ -6,7 +6,7 @@
   flex: 0 0 auto;
   width: var(--redis-badge-width, 1.7rem);
   text-align: center;
-  font-size: 0.62rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.02em;
   padding: 0.1rem 0.1rem;

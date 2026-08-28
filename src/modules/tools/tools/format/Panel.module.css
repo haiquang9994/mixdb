@@ -31,18 +31,18 @@
 }
 
 .fieldLabel {
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   opacity: 0.7;
 }
 
 .guess {
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   opacity: 0.7;
   margin: 0;
 }
 
 .error {
-  font-size: 0.9rem;
+  font-size: var(--text-md);
   color: var(--danger, #d33);
   margin: 0;
 }

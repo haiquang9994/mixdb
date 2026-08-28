@@ -7,7 +7,7 @@
   /* Level with the method/URL/Send row across the split, which is what the spec asks for. */
   min-height: 3rem;
   box-sizing: border-box;
-  font-size: 0.9em;
+  font-size: var(--text-md);
 }
 
 .status {

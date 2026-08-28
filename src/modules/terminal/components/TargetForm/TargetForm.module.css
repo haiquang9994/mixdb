@@ -84,7 +84,7 @@
    không phải một phần của nhãn. */
 .hint {
   margin: 0;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   line-height: 1.45;
   opacity: 0.65;
 }

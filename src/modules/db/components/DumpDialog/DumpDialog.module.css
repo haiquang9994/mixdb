@@ -68,11 +68,11 @@
 }
 
 .modeLabel {
-  font-size: 0.95em;
+  font-size: var(--text-md);
 }
 
 .modeHint {
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   line-height: 1.4;
   opacity: 0.65;
 }
