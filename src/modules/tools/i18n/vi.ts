@@ -79,6 +79,17 @@ const toolsVi = {
       insertNote: "Đọc kỹ trước khi chạy. Đây không phải cách thay cho truy vấn tham số hoá.",
     },
 
+    schema: {
+      label: "Sinh schema",
+      target: "Sinh ra",
+      table: "Tên bảng",
+      dialect: "Dialect",
+      rootName: "Tên kiểu",
+      placeholder: '[{"id": 1, "created_at": "2026-08-28T00:00:00Z"}]',
+      notJson: "Đây không phải JSON đọc được.",
+      notObject: "Cần một object, hoặc một mảng object làm mẫu.",
+    },
+
     ids: {
       label: "Sinh ID",
       kind: "Kiểu",

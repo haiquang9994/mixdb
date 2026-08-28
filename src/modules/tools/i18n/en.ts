@@ -79,6 +79,17 @@ const toolsEn = {
       insertNote: "Read this before you run it. It is not a substitute for a parameterised query.",
     },
 
+    schema: {
+      label: "Schema from JSON",
+      target: "Generate",
+      table: "Table name",
+      dialect: "Dialect",
+      rootName: "Type name",
+      placeholder: '[{"id": 1, "created_at": "2026-08-28T00:00:00Z"}]',
+      notJson: "That did not parse as JSON.",
+      notObject: "Give an object, or an array of objects as a sample.",
+    },
+
     ids: {
       label: "Id generator",
       kind: "Kind",

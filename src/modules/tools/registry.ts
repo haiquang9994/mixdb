@@ -5,6 +5,7 @@ import EncodePanel from "./tools/encode/Panel";
 import FormatPanel from "./tools/format/Panel";
 import IdsPanel from "./tools/ids/Panel";
 import JwtPanel from "./tools/jwt/Panel";
+import SchemaPanel from "./tools/schema/Panel";
 import SqlToMongoPanel from "./tools/sql-to-mongo/Panel";
 import TimestampPanel from "./tools/timestamp/Panel";
 
@@ -24,4 +25,5 @@ export const TOOLS: ToolDefinition[] = [
   { id: "jwt", labelKey: "toolbox.jwt.label", group: "encode", Panel: JwtPanel },
   { id: "format", labelKey: "toolbox.format.label", group: "text", Panel: FormatPanel },
   { id: "convert", labelKey: "toolbox.convert.label", group: "data", Panel: ConvertPanel },
+  { id: "schema", labelKey: "toolbox.schema.label", group: "data", Panel: SchemaPanel },
 ];
