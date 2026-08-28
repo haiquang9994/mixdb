@@ -1,3 +1,4 @@
+import { likeToRegex } from "./like";
 import type { Dialect, Translation, Unsupported, Warning } from "./types";
 
 /*
@@ -112,13 +113,28 @@ function literal(node: Node): unknown {
   return node.value;
 }
 
-function buildFilter(node: unknown): unknown {
+const OBJECT_ID = /^[0-9a-f]{24}$/i;
+
+/** Ngữ cảnh đi kèm suốt lượt duyệt: dialect quyết định `LIKE` có phân biệt hoa thường không, và
+ *  cảnh báo được gom vào đây trên đường đi. */
+interface Context {
+  dialect: Dialect;
+  warnings: Warning[];
+}
+
+function warn(ctx: Context, code: Warning["code"], fragment: string) {
+  if (!ctx.warnings.some((w) => w.code === code && w.fragment === fragment)) {
+    ctx.warnings.push({ code, fragment });
+  }
+}
+
+function buildFilter(node: unknown, ctx: Context): unknown {
   if (!isNode(node)) return {};
 
   if (node.type === "function" && functionName(node) === "NOT") {
     const args = isNode(node.args) && Array.isArray(node.args.value) ? node.args.value : [];
     // `$not` của Mongo chỉ đứng bên trong một trường; phủ định cả một điều kiện là `$nor`.
-    return { $nor: args.map(buildFilter) };
+    return { $nor: args.map((arg) => buildFilter(arg, ctx)) };
   }
 
   if (node.type !== "binary_expr") return {};
@@ -127,11 +143,30 @@ function buildFilter(node: unknown): unknown {
   const left = node.left;
   const right = node.right;
 
-  if (operator === "AND") return { $and: [buildFilter(left), buildFilter(right)] };
-  if (operator === "OR") return { $or: [buildFilter(left), buildFilter(right)] };
+  if (operator === "AND") return { $and: [buildFilter(left, ctx), buildFilter(right, ctx)] };
+  if (operator === "OR") return { $or: [buildFilter(left, ctx), buildFilter(right, ctx)] };
 
   if (!isNode(left) || !isNode(right)) return {};
   const field = columnName(left);
+
+  if (operator === "LIKE" || operator === "NOT LIKE" || operator === "ILIKE") {
+    // MySQL không phân biệt hoa thường theo collation mặc định; PostgreSQL thì có, và `ILIKE` là
+    // cách nó nói "đừng phân biệt". Đây là chỗ ô chọn dialect có ảnh hưởng thật.
+    const insensitive = ctx.dialect === "mysql" || operator === "ILIKE";
+    const expr = {
+      $regex: likeToRegex(String(right.value ?? "")),
+      ...(insensitive ? { $options: "i" } : {}),
+    };
+    return { [field]: operator === "NOT LIKE" ? { $not: expr } : expr };
+  }
+
+  if (operator === "IS") warn(ctx, "isNull", field);
+
+  if (operator === "=" && right.type === "single_quote_string") {
+    const value = String(right.value ?? "");
+    if (field === "_id" && OBJECT_ID.test(value)) warn(ctx, "objectId", value);
+    else if (/^\d+$/.test(value)) warn(ctx, "type", field);
+  }
 
   switch (operator) {
     // Dạng ngắn, không `$eq`: đó là cái người ta viết tay, và nó đọc được hơn.
@@ -273,19 +308,19 @@ export async function translate(sql: string, dialect: Dialect): Promise<Translat
   const first = from[0];
   const collection = isNode(first) && typeof first.table === "string" ? first.table : "collection";
 
-  const warnings: Warning[] = [];
+  const ctx: Context = { dialect, warnings: [] };
   const [limit, skip] = buildLimit(ast.limit);
 
   return {
     ok: true,
     output: formatFind(
       collection,
-      buildFilter(ast.where),
+      buildFilter(ast.where, ctx),
       buildProjection(ast.columns),
       buildSort(ast.orderby),
       skip,
       limit,
     ),
-    warnings,
+    warnings: ctx.warnings,
   };
 }

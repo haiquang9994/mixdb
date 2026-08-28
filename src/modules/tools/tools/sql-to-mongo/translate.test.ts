@@ -132,3 +132,55 @@ describe("translate — đường find()", () => {
     expect(result.output).toContain('"age"');
   });
 });
+
+describe("translate — LIKE", () => {
+  it("dùng $regex, và MySQL không phân biệt hoa thường nên thêm $options i", async () => {
+    const out = (await ok("SELECT * FROM u WHERE name LIKE 'abc%'")).output;
+    expect(out).toContain('"$regex": "^abc.*"');
+    expect(out).toContain('"$options": "i"');
+  });
+
+  it("LIKE của PostgreSQL có phân biệt hoa thường, nên không có $options", async () => {
+    const result = await translate("SELECT * FROM u WHERE name LIKE 'abc%'", "postgresql");
+    if (!result.ok) throw new Error("đáng lẽ dịch được");
+    expect(result.output).toContain('"$regex": "^abc.*"');
+    expect(result.output).not.toContain("$options");
+  });
+
+  it("ILIKE của PostgreSQL thì có", async () => {
+    const result = await translate("SELECT * FROM u WHERE name ILIKE 'abc%'", "postgresql");
+    if (!result.ok) throw new Error("đáng lẽ dịch được");
+    expect(result.output).toContain('"$options": "i"');
+  });
+
+  it("NOT LIKE thành $not quanh biểu thức regex", async () => {
+    expect((await ok("SELECT * FROM u WHERE name NOT LIKE 'a%'")).output).toContain('"$not"');
+  });
+});
+
+describe("translate — cảnh báo", () => {
+  const warnings = async (sql: string) => (await ok(sql)).warnings.map((w) => w.code);
+
+  it("cảnh báo IS NULL vì Mongo khớp cả tài liệu thiếu hẳn trường đó", async () => {
+    expect(await warnings("SELECT * FROM u WHERE a IS NULL")).toContain("isNull");
+  });
+
+  it("cảnh báo khi so một cột với chuỗi trông như số", async () => {
+    expect(await warnings("SELECT * FROM u WHERE id = '5'")).toContain("type");
+  });
+
+  it("cảnh báo khi _id bị so với một chuỗi 24 ký tự hex", async () => {
+    expect(await warnings("SELECT * FROM u WHERE _id = '507f1f77bcf86cd799439011'")).toContain(
+      "objectId",
+    );
+  });
+
+  it("không cảnh báo gì cho một truy vấn không có chỗ nào lệch nghĩa", async () => {
+    expect((await ok("SELECT * FROM u WHERE age > 18")).warnings).toEqual([]);
+  });
+
+  it("mỗi cảnh báo mang theo trường nó nói về", async () => {
+    const result = await ok("SELECT * FROM u WHERE a IS NULL");
+    expect(result.warnings[0].fragment).toBe("a");
+  });
+});
