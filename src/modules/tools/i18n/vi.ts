@@ -129,6 +129,23 @@ const toolsVi = {
       timeout: "Mẫu này quá tốn — nhiều khả năng là backtracking.",
     },
 
+    ports: {
+      label: "Cổng đang nghe",
+      refresh: "Tải lại",
+      filter: "Lọc theo cổng",
+      os: "Lệnh cho",
+      colPort: "Cổng",
+      colAddress: "Địa chỉ",
+      colPid: "PID",
+      colProcess: "Tiến trình",
+      unknownProcess: "không rõ",
+      empty: "Không có cổng nào đang được nghe.",
+      noMatch: "Không có cổng nào khớp bộ lọc.",
+      byPid: "Theo PID",
+      byPort: "Theo cổng",
+      note: "MixDB không bao giờ chạy các lệnh này. Chép ra rồi tự chạy.",
+    },
+
     ids: {
       label: "Sinh ID",
       kind: "Kiểu",

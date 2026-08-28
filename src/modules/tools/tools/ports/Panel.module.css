@@ -1,0 +1,82 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 52rem;
+}
+
+.controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.filter {
+  width: 10rem;
+}
+
+.os {
+  min-width: 9rem;
+}
+
+.table {
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  overflow: auto;
+  max-height: 22rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 5rem 9rem 5rem 1fr;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+}
+
+.row:hover {
+  background: var(--hover-bg);
+}
+
+.row.selected,
+.row.selected:hover {
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--accent-text);
+}
+
+.head {
+  font-weight: 600;
+  opacity: 0.6;
+  cursor: default;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+}
+
+.head:hover {
+  background: var(--bg);
+}
+
+.dim {
+  opacity: 0.5;
+}
+
+.note {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin: 0;
+}
+
+.error {
+  font-size: 0.9rem;
+  color: var(--danger, #d33);
+  margin: 0;
+}

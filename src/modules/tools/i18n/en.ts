@@ -129,6 +129,23 @@ const toolsEn = {
       timeout: "That pattern is too expensive — most likely catastrophic backtracking.",
     },
 
+    ports: {
+      label: "Listening ports",
+      refresh: "Refresh",
+      filter: "Filter by port",
+      os: "Commands for",
+      colPort: "Port",
+      colAddress: "Address",
+      colPid: "PID",
+      colProcess: "Process",
+      unknownProcess: "unknown",
+      empty: "Nothing is listening.",
+      noMatch: "No port matches that filter.",
+      byPid: "By PID",
+      byPort: "By port",
+      note: "MixDB never runs these. Copy one and run it yourself.",
+    },
+
     ids: {
       label: "Id generator",
       kind: "Kind",

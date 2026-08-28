@@ -49,3 +49,28 @@ fn collect() -> Result<Vec<ListeningPort>, AppError> {
         .ok_or_else(|| err!("error.portScanFailed", tool = "lsof"))?;
     Ok(ports::parse_lsof(&text))
 }
+
+#[cfg(test)]
+mod tests {
+    /// Chạy lệnh thật của máy đang chạy test và đọc kết quả.
+    ///
+    /// `#[ignore]` vì nó phụ thuộc máy: một container CI không có cổng nào đang nghe, và trên
+    /// Linux nó còn cần `ss` hoặc `lsof` có mặt. Chạy tay bằng
+    /// `cargo test -- --ignored` trên một máy để bàn — đây là thứ duy nhất chứng minh nửa I/O
+    /// nối đúng với nửa bộ đọc, thứ mà fixture không nói được.
+    #[test]
+    #[ignore]
+    fn quet_duoc_cong_that_cua_may_nay() {
+        let ports = super::collect().expect("chạy được lệnh của hệ điều hành");
+
+        // Một máy để bàn luôn có ít nhất một cổng đang nghe.
+        assert!(!ports.is_empty(), "không thấy cổng nào đang nghe");
+        // Cổng 0 nghĩa là bộ đọc đọc trượt cột.
+        assert!(ports.iter().all(|p| p.port != 0), "có cổng đọc ra 0");
+        // Ít nhất một dòng phải tra được tên tiến trình; không cái nào là dấu hiệu bảng tên hỏng.
+        assert!(
+            ports.iter().any(|p| p.process.is_some()),
+            "không dòng nào tra được tên tiến trình"
+        );
+    }
+}
