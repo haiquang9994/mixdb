@@ -196,7 +196,7 @@
    that wrapped to four lines would break that. The whole text is the button's tooltip. */
 .historySql {
   overflow: hidden;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -602,7 +602,7 @@
 .resultStatement {
   flex: 1;
   min-width: 0;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   opacity: 0.6;
   text-align: right;
@@ -1030,4 +1030,15 @@
     --qe-card-bg: rgb(255 255 255 / 0.05);
   }
 
+}
+
+/* Xem ghi chú cùng nội dung ở cuối `SqlTable.module.css`: ô mang giá trị từ server nên mono, tên
+   cột là nhãn nên sans. Cả hai trước đây chỉ mono nhờ thừa kế từ `:root`. */
+.grid tbody td {
+  font-family: var(--font-mono);
+}
+
+.grid thead th {
+  font-family: var(--font-ui);
+  font-weight: 600;
 }

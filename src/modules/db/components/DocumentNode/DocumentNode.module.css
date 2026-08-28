@@ -17,7 +17,7 @@
 }
 
 .key {
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
   font-weight: 600;
   white-space: nowrap;
@@ -44,7 +44,7 @@
   display: inline-block;
   padding: 0 6px;
   border-radius: var(--radius-sm);
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.75em;
   font-weight: 600;
   background: rgb(var(--accent-rgb) / 0.15);
@@ -61,7 +61,7 @@
 }
 
 .value {
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -192,7 +192,7 @@
 .editorDate {
   composes: editorInput;
   min-width: 210px;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .editorNarrow {

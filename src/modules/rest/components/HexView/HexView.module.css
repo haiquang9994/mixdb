@@ -2,7 +2,7 @@
   margin: 0;
   padding: 0.5rem;
   overflow: auto;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   line-height: 1.45;
   white-space: pre;

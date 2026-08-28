@@ -52,7 +52,7 @@
 }
 
 .result {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   font-size: 0.85rem;
   border: 1px solid var(--border-soft);
   border-radius: 4px;

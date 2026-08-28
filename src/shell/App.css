@@ -1,5 +1,17 @@
 :root {
-  font-family: "Fira Code", monospace;
+  /* Chữ có hai vai, không phải một giá trị. `--font-ui` là thứ app tự nói ra — nhãn, nút, tab,
+     menu, tiêu đề. `--font-mono` là thứ đến từ database.
+
+     Ranh giới không phải "chỗ nào trông hợp", mà là: mono khi việc so từng ký tự là thật. Một giá
+     trị `varchar` cần thấy được khoảng trắng cuối và phân biệt được `l` với `1`; nhãn "Save
+     connection" thì không, và sans quét nhanh hơn ở cỡ chữ nhỏ.
+
+     Trước đây chỉ có một vai, nên mọi thứ mang vai đó — kể cả đoạn văn sáu dòng giải thích Liquid
+     glass trong Settings, vốn đang được đọc bằng một font lập trình. */
+  --font-ui: ui-sans-serif, -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Fira Code", ui-monospace, monospace;
+
+  font-family: var(--font-ui);
   font-size: 16px;
   line-height: 24px;
   font-weight: 400;
@@ -544,7 +556,7 @@ body {
 
 textarea {
   width: 100%;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
   box-sizing: border-box;
 }

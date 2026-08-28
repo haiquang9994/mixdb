@@ -475,7 +475,7 @@ fieldset .row label.field-connection-string {
 .field-connection-string input {
   flex: 1;
   min-width: 0;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
 }
 

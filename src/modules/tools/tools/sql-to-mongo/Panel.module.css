@@ -68,7 +68,7 @@
 }
 
 .fragment {
-  font-family: "Fira Code", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82rem;
   padding: 0.05rem 0.3rem;
   border-radius: var(--radius-sm);

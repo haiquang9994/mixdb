@@ -52,3 +52,14 @@
 .draft:focus-within {
   opacity: 1;
 }
+
+/* Tên và giá trị của header/param là dữ liệu gửi đi nguyên trạng — một khoảng trắng thừa ở cuối
+   làm hỏng một request và không nhìn thấy được bằng sans. `Input` đặt `font-family: inherit`, nên
+   trước đợt token font các ô này mono nhờ thừa kế từ `:root`; giờ nói ra. */
+.row input {
+  font-family: var(--font-mono);
+}
+
+.head {
+  font-family: var(--font-ui);
+}

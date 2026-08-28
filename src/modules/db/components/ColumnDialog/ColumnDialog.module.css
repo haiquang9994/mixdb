@@ -72,7 +72,7 @@
 .typeArg {
   flex: 0 0 7.5rem;
   min-width: 0;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .toggles {
@@ -115,7 +115,7 @@
 .defaultInput {
   width: 100%;
   box-sizing: border-box;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .hint {

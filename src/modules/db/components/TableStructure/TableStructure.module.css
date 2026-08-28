@@ -162,7 +162,7 @@
 }
 
 .mono {
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em;
 }
 
@@ -257,7 +257,7 @@
   border-color: rgb(var(--accent-rgb) / 0.45);
   color: var(--accent-text);
   background: rgb(var(--accent-rgb) / 0.1);
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-ui);
   opacity: 1;
 }
 
@@ -300,3 +300,14 @@
 
 /* No dark overrides here any more: the sticky header and pinned column take `--page-bg` and the key
    badge is written in `--accent-*`, and both of those already carry the theme's own values. */
+
+/* Ô ở đây là tên cột, kiểu dữ liệu và giá trị mặc định — tất cả đều là thứ người ta đọc từng ký
+   tự (`varchar(255)` khác `varchar(25)`), nên mono. Header là nhãn, nên sans. */
+.grid tbody td {
+  font-family: var(--font-mono);
+}
+
+.grid thead th {
+  font-family: var(--font-ui);
+  font-weight: 600;
+}

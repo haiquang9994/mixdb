@@ -131,7 +131,7 @@
 
 .rest-swap-name {
   flex: none;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   color: var(--accent-text);
 }
 

@@ -37,7 +37,7 @@
 .url {
   flex: 1;
   min-width: 0;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .send {

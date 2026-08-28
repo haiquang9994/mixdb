@@ -3,7 +3,7 @@
   padding: 0.6rem 0.75rem;
   border-radius: var(--radius-md);
   background: var(--hover-bg);
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   line-height: 1.5;
   white-space: pre-wrap;

@@ -23,7 +23,7 @@
 }
 
 .prefix {
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.95em;
   font-weight: 600;
   overflow: hidden;
@@ -145,7 +145,7 @@
 .name {
   flex: 1;
   min-width: 0;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   overflow: hidden;
   text-overflow: ellipsis;

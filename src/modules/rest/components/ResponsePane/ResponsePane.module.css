@@ -16,7 +16,7 @@
 .raw {
   margin: 0;
   padding: 0.5rem;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   line-height: 1.5;
   white-space: pre;
@@ -42,7 +42,7 @@
   grid-template-columns: minmax(8rem, auto) minmax(0, 1fr);
   gap: 0.15rem 0.75rem;
   padding: 0.5rem;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   align-content: start;
 }

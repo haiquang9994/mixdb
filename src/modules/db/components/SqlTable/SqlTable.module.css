@@ -267,3 +267,19 @@
 
 /* No dark overrides here any more: the sticky header takes `--page-bg` and the FK badge is written
    in `--accent-*`, and both of those already carry the theme's own values. */
+
+/* Hai vai của chữ, nói tường minh ở chỗ trước đây không ai nói gì.
+   Trước đợt token font, cả ô lẫn header đều mono vì thừa kế từ `:root` — không phải vì có ai chọn
+   thế. Đổi `:root` sang sans là cả hai lặng lẽ thành sans, và ô dữ liệu mất đúng thứ khiến mono
+   đáng giá: khoảng trắng cuối một `varchar` nhìn thấy được, `l` phân biệt được với `1`, và các cột
+   số thẳng hàng nhau.
+
+   Header thì ngược lại: tên cột là nhãn app viết ra, không phải giá trị để so từng ký tự. */
+.sqlTable tbody td {
+  font-family: var(--font-mono);
+}
+
+.scroll thead th {
+  font-family: var(--font-ui);
+  font-weight: 600;
+}
