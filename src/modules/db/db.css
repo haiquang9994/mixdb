@@ -53,12 +53,20 @@
 }
 
 /* The list scrolls inside the sidebar, so the title pins to the top of it and the
-   items pass underneath instead of pushing it out of view. */
+   items pass underneath instead of pushing it out of view.
+
+   A pinned strip like the grids' headers, so it paints the rail rather than the surface: the
+   cards sit on the page, and `--surface-bg` put a white slab over `--page-bg` behind the title —
+   a rectangle that stopped dead at the add button's edge and at the first card. `--rail-bg` is
+   the page's own colour until the glass setting turns it into a tint over a blur, so the strip
+   hides what slides under it without ever being a shape of its own. */
 .saved-list-header {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--surface-bg);
+  background: var(--rail-bg);
+  -webkit-backdrop-filter: var(--rail-filter);
+  backdrop-filter: var(--rail-filter);
   /* Flush with the cards below on both sides, so the title starts on their left edge and the add
      button ends on their right. The top padding keeps the title off the edge of the scroll box
      and stays part of the sticky band. */
@@ -870,17 +878,4 @@ fieldset .row label.field-connection-string {
   display: flex;
   align-items: center;
   gap: 1rem;
-}
-
-/* The glass look of the one surface above that takes one. The `@supports` guard is written out
-   again here rather than leaving it in the shell's `glass.css`: that is the price of no database
-   class living outside this file. */
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  /* A rail like the grids': the connection cards scroll under this heading, so it frosts them
-     rather than hiding them behind a slab of a colour the page no longer is. */
-  :root[data-glass="on"] .saved-list-header {
-    background: var(--rail-bg);
-    -webkit-backdrop-filter: var(--rail-filter);
-    backdrop-filter: var(--rail-filter);
-  }
 }

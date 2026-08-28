@@ -47,6 +47,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 - Six more tools: format & minify, data conversion, schema from JSON, `.env` conversion, diff, and a
   regex tester.
 
+### Fixed
+
+- Spacing and colour fixes in the REST request tables and the database connection sidebar.
+
 ## [0.0.21] - 2026-08-28
 
 ### Fixed
