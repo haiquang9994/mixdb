@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   addConnection,
@@ -9,6 +9,7 @@ import {
 } from "./savedConnectionsStore";
 import type { ConnectionConfig, DbKind, SavedConnection } from "./types";
 import { parseDbTabState } from "./tabState";
+import { scrollTopFor } from "./savedListScroll";
 import SqlWorkspace from "./sql/SqlWorkspace";
 import { SqlProvider } from "./sql/context";
 import { SQL_ENGINES, isSqlKind } from "./engines";
@@ -449,6 +450,37 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     else applySavedConnection(entry);
   }, [restoredState, savedConnectionsLoaded, savedConnections]);
 
+  /* The list, its sticky title and the row marked as the one being edited — read by the effect
+     below, which is the only thing that touches them. */
+  const savedListRef = useRef<HTMLElement>(null);
+  const savedHeaderRef = useRef<HTMLDivElement>(null);
+  const activeRowRef = useRef<HTMLLIElement>(null);
+
+  /* The connection the form is holding, brought into view in the list beside it.
+
+     Two moments where it would otherwise not be: the app coming back up on a connection saved
+     sixty names down the alphabet, and Disconnect putting the form back after a session. Both
+     render this list from nothing, scrolled to the top, with the marked row somewhere below the
+     fold — the mark is there and says nothing to anyone who cannot see it.
+
+     A layout effect, so the list is already in the right place the first time it is painted rather
+     than jumping there afterwards. `connectionId` is a dependency because leaving a workspace is
+     what mounts this list again; `savedConnectionsLoaded` because the list is empty until the file
+     has been read, and the row to scroll to does not exist before then. `scrollTopFor` answers
+     `null` for a row already in view, so clicking around the list scrolls nothing. */
+  useLayoutEffect(() => {
+    const list = savedListRef.current;
+    const row = activeRowRef.current;
+    if (list === null || row === null) return;
+    const top = row.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop;
+    const target = scrollTopFor(
+      { top, height: row.offsetHeight },
+      { scrollTop: list.scrollTop, height: list.clientHeight },
+      savedHeaderRef.current?.offsetHeight ?? 0,
+    );
+    if (target !== null) list.scrollTop = target;
+  }, [connectionId, editingId, savedConnectionsLoaded, orderedConnections]);
+
   async function updateSidebarWidth(width: number) {
     if (!editingId) return;
     const entry = savedConnections.find((c) => c.id === editingId);
@@ -502,8 +534,8 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
   if (!connectionId) {
     return (
       <div className="login-view">
-        <aside className="saved-list">
-          <div className="saved-list-header">
+        <aside className="saved-list" ref={savedListRef}>
+          <div className="saved-list-header" ref={savedHeaderRef}>
             <h3>{t("connection.connections")}</h3>
             {/* Creating a connection is an action on the list, not one of its rows, so it sits in
                 the header where it stays reachable however far the names scroll. */}
@@ -519,7 +551,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
           </div>
           <ul>
             {orderedConnections.map((c) => (
-              <li key={c.id}>
+              <li key={c.id} ref={c.id === editingId ? activeRowRef : null}>
                 <button
                   type="button"
                   className={`saved-item${c.id === editingId ? " saved-item-active" : ""}${
