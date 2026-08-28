@@ -3,6 +3,7 @@ import {
   addSnippet,
   fill,
   paramsOf,
+  readSnippets,
   removeSnippet,
   updateSnippet,
   type Snippet,
@@ -96,5 +97,26 @@ describe("thao tác trên danh sách", () => {
     const copy = [...list];
     removeSnippet(list, list[0]!.id);
     expect(list).toEqual(copy);
+  });
+});
+
+describe("readSnippets", () => {
+  const good = { id: "a", title: "T", group: "g", template: "cmd" };
+
+  it("giữ mục đúng shape", () => {
+    expect(readSnippets([good])).toEqual([good]);
+  });
+
+  // Một file bị sửa tay làm mất mục hỏng chứ không được làm hỏng cả tool.
+  it("bỏ mục thiếu trường hoặc sai kiểu", () => {
+    expect(readSnippets([good, { id: "b" }, { ...good, id: "" }, { ...good, template: 7 }])).toEqual(
+      [good],
+    );
+  });
+
+  it("trả mảng rỗng cho thứ không phải mảng", () => {
+    expect(readSnippets(null)).toEqual([]);
+    expect(readSnippets({ id: "a" })).toEqual([]);
+    expect(readSnippets("hỏng")).toEqual([]);
   });
 });

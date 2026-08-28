@@ -146,6 +146,23 @@ const toolsVi = {
       note: "MixDB không bao giờ chạy các lệnh này. Chép ra rồi tự chạy.",
     },
 
+    cheatsheet: {
+      label: "Cheatsheet",
+      snippet: "Lệnh",
+      add: "Snippet mới",
+      edit: "Sửa",
+      remove: "Xoá",
+      save: "Lưu",
+      cancel: "Huỷ",
+      title: "Tên",
+      group: "Nhóm",
+      template: "Template — tham số viết {{name}}",
+      noParams: "Lệnh này không có tham số nào.",
+      empty: "Chọn một lệnh.",
+      result: "Lệnh",
+      note: "Ngoặc là việc của template. MixDB không tự bọc ngoặc quanh thứ bạn gõ.",
+    },
+
     ids: {
       label: "Sinh ID",
       kind: "Kiểu",

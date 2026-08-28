@@ -69,3 +69,26 @@ export function updateSnippet(list: Snippet[], id: string, draft: SnippetDraft):
 export function removeSnippet(list: Snippet[], id: string): Snippet[] {
   return list.filter((snippet) => snippet.id !== id);
 }
+
+function isSnippet(value: unknown): value is Snippet {
+  if (typeof value !== "object" || value === null) return false;
+  const it = value as Record<string, unknown>;
+  return (
+    typeof it.id === "string" &&
+    it.id !== "" &&
+    typeof it.title === "string" &&
+    typeof it.group === "string" &&
+    typeof it.template === "string"
+  );
+}
+
+/**
+ * Đọc thứ lấy từ đĩa lên thành một danh sách snippet.
+ *
+ * Kiểm shape và chỉ shape, như `parseToolsTabState` làm — và nằm ở đây chứ không trong
+ * `snippetsStore.ts` vì đây là phần thuần, tức là phần test được. Một file do bản cũ ghi ra, hoặc
+ * một file bị sửa tay, làm mất mục hỏng chứ không làm hỏng cả tool.
+ */
+export function readSnippets(value: unknown): Snippet[] {
+  return Array.isArray(value) ? value.filter(isSnippet) : [];
+}

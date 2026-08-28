@@ -146,6 +146,23 @@ const toolsEn = {
       note: "MixDB never runs these. Copy one and run it yourself.",
     },
 
+    cheatsheet: {
+      label: "Cheatsheet",
+      snippet: "Command",
+      add: "New snippet",
+      edit: "Edit",
+      remove: "Delete",
+      save: "Save",
+      cancel: "Cancel",
+      title: "Title",
+      group: "Group",
+      template: "Template — write parameters as {{name}}",
+      noParams: "This command takes no parameters.",
+      empty: "Pick a command.",
+      result: "Command",
+      note: "Quoting is up to the template. MixDB does not add quotes around what you type.",
+    },
+
     ids: {
       label: "Id generator",
       kind: "Kind",
