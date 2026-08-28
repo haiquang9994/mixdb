@@ -14,6 +14,21 @@ use crate::error::AppError;
 use keyring::Entry;
 use std::collections::HashMap;
 
+/// Stands in for a secret wherever a `Debug` line would otherwise print one.
+///
+/// Prints as `"***"`, and through `Option` as `Some("***")` or `None` — so a redacted line still
+/// says whether there was a password at all, which is nearly always the actual question.
+///
+/// Holds nothing on purpose: a type that carried the secret in order to hide it would only be one
+/// stray `.0` away from printing it.
+pub struct Redacted;
+
+impl std::fmt::Debug for Redacted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("\"***\"")
+    }
+}
+
 /// The name MixDB's entries appear under in the OS credential store.
 const SERVICE: &str = "MixDB";
 

@@ -1,3 +1,4 @@
+use crate::secrets::Redacted;
 use crate::ssh::SshConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -11,7 +12,7 @@ pub enum DbKind {
     Redis,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ConnectionConfig {
     pub kind: DbKind,
     pub host: String,
@@ -34,6 +35,32 @@ pub struct ConnectionConfig {
     /// (useful when already tunneled over SSH, or against servers with SSL
     /// configs too old for any modern TLS backend to negotiate).
     pub use_ssl: Option<bool>,
+}
+
+/// Written out rather than derived, so that a password cannot reach a log line, an error message
+/// or a panic backtrace by accident.
+///
+/// Nothing prints a `ConnectionConfig` today. That is the point: the cost of keeping it that way
+/// by discipline is that every future `{config:?}` has to be caught in review by someone who
+/// remembers this struct has a password in it, and one that is not caught leaves no trace of
+/// having gone wrong.
+impl std::fmt::Debug for ConnectionConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConnectionConfig")
+            .field("kind", &self.kind)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| Redacted))
+            .field("database", &self.database)
+            /* All of it, not just the credentials in it: masking part of a URI means parsing one,
+               and a parser that is slightly wrong here prints exactly what it was written to
+               hide. What is lost is the host, which `host` above already carries. */
+            .field("uri", &self.uri.as_ref().map(|_| Redacted))
+            .field("ssh", &self.ssh)
+            .field("use_ssl", &self.use_ssl)
+            .finish()
+    }
 }
 
 /// What the header shows about a server: its version, and the machine it runs on.
@@ -98,4 +125,54 @@ pub struct SqlProblem {
     /// `error` for text the server cannot parse at all; `warning` for everything else, which is
     /// anything that might only be wrong from where the check is standing.
     pub severity: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ConnectionConfig, DbKind};
+    use crate::ssh::{SshAuth, SshConfig};
+
+    /// Every secret a connection can carry, and none of them in the `Debug` line.
+    ///
+    /// The check is on the rendered string rather than on the impl, because what matters is not
+    /// which fields were listed — it is that nothing anywhere in the output is the password. That
+    /// covers `SshConfig`, whose own `Debug` is derived, and it will still cover a field added
+    /// later that someone forgets to redact.
+    #[test]
+    fn a_connection_never_prints_what_it_knows() {
+        let config = ConnectionConfig {
+            kind: DbKind::Mysql,
+            host: "db.example".to_string(),
+            port: 3306,
+            username: Some("root".to_string()),
+            password: Some("hunter2".to_string()),
+            database: Some("shop".to_string()),
+            uri: Some("mongodb://root:swordfish@db.example/shop".to_string()),
+            ssh: Some(SshConfig {
+                host: "jump.example".to_string(),
+                port: 22,
+                username: "deploy".to_string(),
+                auth: SshAuth::Password { password: "correcthorse".to_string() },
+            }),
+            use_ssl: Some(true),
+        };
+
+        let printed = format!("{config:?}");
+        for secret in ["hunter2", "swordfish", "correcthorse"] {
+            assert!(!printed.contains(secret), "{secret} leaked: {printed}");
+        }
+        // Still worth reading: which server, which user, and that there was a password at all.
+        assert!(printed.contains("db.example"));
+        assert!(printed.contains("root"));
+        assert!(printed.contains("Some(\"***\")"));
+
+        // A passphrase on a key file goes the same way, and the path does not.
+        let key = SshAuth::PrivateKey {
+            key_path: "/home/me/.ssh/id_ed25519".to_string(),
+            passphrase: Some("let me in".to_string()),
+        };
+        let printed = format!("{key:?}");
+        assert!(!printed.contains("let me in"), "{printed}");
+        assert!(printed.contains("id_ed25519"), "{printed}");
+    }
 }

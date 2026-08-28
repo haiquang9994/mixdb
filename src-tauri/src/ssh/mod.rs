@@ -1,5 +1,6 @@
 use crate::error::AppError;
 use crate::platform::in_background;
+use crate::secrets::Redacted;
 use russh::client::{self};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -13,11 +14,32 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 /// How to prove who you are to the SSH server.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum SshAuth {
     Password { password: String },
     PrivateKey { key_path: String, passphrase: Option<String> },
+}
+
+/// Redacted by hand, for the reason `ConnectionConfig`'s is. This one covers more than itself:
+/// `SshConfig` derives its `Debug` from here, and so does `TerminalTarget` from that — so the
+/// terminal's copy of the problem is fixed by fixing the leaf rather than each of the three.
+impl std::fmt::Debug for SshAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Password { .. } => f
+                .debug_struct("Password")
+                .field("password", &Redacted)
+                .finish(),
+            Self::PrivateKey { key_path, passphrase } => f
+                .debug_struct("PrivateKey")
+                // The path is not a secret and is the whole of what is worth knowing when a key
+                // will not load — which is the one time anybody prints this.
+                .field("key_path", key_path)
+                .field("passphrase", &passphrase.as_ref().map(|_| Redacted))
+                .finish(),
+        }
+    }
 }
 
 /// The server to tunnel through. Config of this layer rather than of whatever is at the far end,
