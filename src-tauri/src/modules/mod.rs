@@ -3,6 +3,7 @@
 pub mod db;
 pub mod rest;
 pub mod terminal;
+pub mod tools;
 
 /// Every command of every module.
 ///
