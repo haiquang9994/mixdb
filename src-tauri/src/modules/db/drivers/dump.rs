@@ -1287,6 +1287,48 @@ pub fn mongo_restore(
 #[cfg(test)]
 mod tests {
     use super::{pg_reached_table, pg_rewrite_preamble, run, tool_uri, Invocation, Watch};
+    use super::split_uri;
+
+    /// Where a MongoDB URI comes apart, and the two characters that decide it wrongly if the
+    /// splitting is done from the left.
+    ///
+    /// A password may hold an `@` — it is percent-encoded in a well-formed URI, but the box this
+    /// comes from takes what the user pastes — so the host list starts after the *last* `@`, not
+    /// the first. And the `?` that starts the options is found before the `/` that starts the
+    /// path, since an option value may contain a slash (`tlsCAFile=/etc/ca.pem`).
+    #[test]
+    fn a_mongo_uri_comes_apart_at_the_right_characters() {
+        let (head, hosts, path, query) = split_uri("mongodb://db.example:27017").unwrap();
+        assert_eq!((head.as_str(), hosts.as_str()), ("mongodb://", "db.example:27017"));
+        assert_eq!((path.as_str(), query.as_str()), ("", ""));
+
+        let (head, hosts, path, query) =
+            split_uri("mongodb://root:pw@a:27017,b:27017/shop?replicaSet=rs0").unwrap();
+        assert_eq!(head, "mongodb://root:pw@");
+        assert_eq!(hosts, "a:27017,b:27017");
+        assert_eq!(path, "/shop");
+        assert_eq!(query, "?replicaSet=rs0");
+
+        // An `@` in the password: split from the left, `pw` would be the whole credential and
+        // `me.com:pw2@host` the host list.
+        let (head, hosts, ..) = split_uri("mongodb://root:p@ssw0rd@db.example/shop").unwrap();
+        assert_eq!(head, "mongodb://root:p@ssw0rd@");
+        assert_eq!(hosts, "db.example");
+
+        // A `/` inside an option value belongs to the options, not to a path.
+        let (_, hosts, path, query) =
+            split_uri("mongodb://db.example/?tlsCAFile=/etc/ssl/ca.pem").unwrap();
+        assert_eq!(hosts, "db.example");
+        assert_eq!(path, "/");
+        assert_eq!(query, "?tlsCAFile=/etc/ssl/ca.pem");
+
+        // The other scheme, which is the whole reason the scheme is kept rather than rebuilt.
+        let (head, ..) = split_uri("mongodb+srv://root:pw@cluster.example/shop").unwrap();
+        assert_eq!(head, "mongodb+srv://root:pw@");
+
+        assert!(split_uri("db.example:27017").is_err());
+    }
+
 
     /// Where the database name goes on a MySQL command line, and what stands in front of it.
     ///

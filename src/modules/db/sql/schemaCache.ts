@@ -36,7 +36,19 @@ function cacheKey(connectionId: string, database: string): string {
   return `${connectionId}\u0000${database}`;
 }
 
-function read(api: SqlApi, connectionId: string, database: string): Promise<SqlSchemaOutline> {
+/**
+ * The outline for one connection and database, from the cache when it is there and from the server
+ * when it is not — with two callers asking at once sharing the one call.
+ *
+ * Exported for the tests rather than for anyone else: the hook below is the only caller, but what
+ * makes this worth having — that a read overtaken by an invalidation is answered with and then
+ * thrown away — cannot be reached through a hook without a DOM to render one in.
+ */
+export function readSchemaOutline(
+  api: SqlApi,
+  connectionId: string,
+  database: string,
+): Promise<SqlSchemaOutline> {
   const key = cacheKey(connectionId, database);
   const cached = cache.get(key);
   if (cached) return Promise.resolve(cached);
@@ -122,7 +134,7 @@ export function useSchemaOutline(
         return;
       }
       setOutline(null);
-      read(api, connectionId, database)
+      readSchemaOutline(api, connectionId, database)
         .then((result) => {
           if (!cancelled && mine === attempt) setOutline(result);
         })

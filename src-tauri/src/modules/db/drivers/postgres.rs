@@ -1220,6 +1220,53 @@ pub(super) fn column_value(row: &PgRow, i: usize) -> Value {
 #[cfg(test)]
 mod tests {
     use super::{build_where, is_decodable, map_error, qualify, quote_ident, resolve, Filter};
+    use super::{key_predicate, placeholder};
+    use serde_json::{Map, Value};
+
+    /// A placeholder carries the column's own type with it.
+    ///
+    /// Every value the frontend sends is text, so without the cast PostgreSQL sees `$1` as
+    /// `unknown` and refuses to compare it to an `integer` or a `timestamptz` — the update fails
+    /// on a type error rather than on anything the user did.
+    #[test]
+    fn a_placeholder_is_cast_to_the_column_it_stands_for() {
+        let mut types = BTreeMap::new();
+        types.insert("age".to_string(), "integer".to_string());
+        types.insert("tags".to_string(), "text[]".to_string());
+
+        assert_eq!(placeholder(1, "age", &types), "$1::integer");
+        assert_eq!(placeholder(2, "tags", &types), "$2::text[]");
+        // A column that is not in the catalogue does not exist; the statement will say so, and
+        // saying so is better than casting to a type invented here.
+        assert_eq!(placeholder(3, "nope", &types), "$3");
+    }
+
+    /// `IS NOT DISTINCT FROM`, not `=`.
+    ///
+    /// A key column that is itself NULL compares to NULL as NULL under `=` — which is not true —
+    /// so a row with a NULL in its key could never be found again after being edited once.
+    #[test]
+    fn a_key_predicate_can_match_a_null_key() {
+        let mut types = BTreeMap::new();
+        types.insert("id".to_string(), "integer".to_string());
+        types.insert("region".to_string(), "text".to_string());
+
+        let mut key = Map::new();
+        key.insert("id".to_string(), Value::String("7".to_string()));
+        assert_eq!(
+            key_predicate(&key, &types, 1),
+            r#""id" IS NOT DISTINCT FROM $1::integer"#,
+        );
+
+        // A composite key, numbered on from where the caller left off — the placeholders before
+        // it belong to the columns being written.
+        key.insert("region".to_string(), Value::Null);
+        assert_eq!(
+            key_predicate(&key, &types, 4),
+            r#""id" IS NOT DISTINCT FROM $4::integer AND "region" IS NOT DISTINCT FROM $5::text"#,
+        );
+    }
+
     use std::collections::BTreeMap;
 
     fn filter(column: &str, operator: &str, value: Option<&str>) -> Filter {

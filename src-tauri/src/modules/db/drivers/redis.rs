@@ -185,6 +185,15 @@ pub async fn list_databases(conn: &mut ConnectionManager) -> Result<Vec<DbInfo>,
         .await
         .map_err(|e| err!("error.redis", message = e))?;
 
+    Ok(databases(count, &keyspace_counts(&keyspace)))
+}
+
+/// How many keys each database holds, read off `INFO keyspace`.
+///
+/// Its own function so that the shape of the reply — which is a server's, not this app's — can be
+/// checked without a server. A line that is not one of these is skipped rather than guessed at:
+/// the reply opens with a `# Keyspace` header, and a future Redis may add more.
+fn keyspace_counts(keyspace: &str) -> HashMap<i64, i64> {
     let mut counts: HashMap<i64, i64> = HashMap::new();
     for line in keyspace.lines() {
         let Some((name, stats)) = line.split_once(':') else { continue };
@@ -197,17 +206,23 @@ pub async fn list_databases(conn: &mut ConnectionManager) -> Result<Vec<DbInfo>,
             .unwrap_or(0);
         counts.insert(index, keys);
     }
+    counts
+}
 
+/// Every database the sidebar lists: all `count` of them, with the ones `INFO keyspace` named
+/// carrying their key counts and the rest showing zero.
+fn databases(count: i64, counts: &HashMap<i64, i64>) -> Vec<DbInfo> {
     // A database beyond the configured count can still be the one in use, when the count came
-    // from the fallback above — keep any index the keyspace named, whatever the count says.
+    // from the fallback in `database_count` — keep any index the keyspace named, whatever the
+    // count says.
     let highest_used = counts.keys().copied().max().unwrap_or(-1);
     let total = count.max(highest_used + 1);
-    Ok((0..total)
+    (0..total)
         .map(|index| DbInfo {
             index,
             keys: counts.get(&index).copied().unwrap_or(0),
         })
-        .collect())
+        .collect()
 }
 
 /// Points this connection at another numbered database. Sticky: the connection is one per open
@@ -533,6 +548,52 @@ pub async fn delete_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The reply `INFO keyspace` actually gives, header and all.
+    #[test]
+    fn the_keyspace_reply_is_read_for_the_databases_it_names() {
+        let reply = "# Keyspace\r\ndb0:keys=12,expires=1,avg_ttl=0\r\ndb3:keys=1,expires=0\r\n";
+        let counts = keyspace_counts(reply);
+        assert_eq!(counts.get(&0), Some(&12));
+        assert_eq!(counts.get(&3), Some(&1));
+        // Only what it named: every other index exists, it is simply empty, and that is the
+        // list's business rather than this one's.
+        assert_eq!(counts.len(), 2);
+
+        // Nothing to read is not a failure — it is what an empty server answers.
+        assert!(keyspace_counts("# Keyspace\r\n").is_empty());
+        assert!(keyspace_counts("").is_empty());
+
+        // A line that is not a database is skipped rather than guessed at.
+        assert!(keyspace_counts("notadb:keys=1\ndbx:keys=1\ndb1\n").is_empty());
+
+        // A database line with no `keys=` in it still counts as a database, with nothing in it.
+        assert_eq!(keyspace_counts("db2:expires=0").get(&2), Some(&0));
+    }
+
+    /// The list the sidebar shows: every configured database, whether or not it holds anything.
+    #[test]
+    fn the_database_list_covers_the_count_and_anything_beyond_it_that_is_in_use() {
+        let counts = HashMap::from([(0i64, 12i64), (3, 1)]);
+        let list = databases(16, &counts);
+        assert_eq!(list.len(), 16);
+        assert_eq!(list[0].keys, 12);
+        assert_eq!(list[1].keys, 0);
+        assert_eq!(list[3].keys, 1);
+        assert_eq!(list[15].index, 15);
+
+        // The case the count came from the fallback: a server whose `CONFIG GET` is disabled but
+        // which is really running 32 databases, with data in one of the upper ones. Dropping it
+        // would hide the database the user is looking at.
+        let counts = HashMap::from([(20i64, 5i64)]);
+        let list = databases(16, &counts);
+        assert_eq!(list.len(), 21);
+        assert_eq!(list[20].keys, 5);
+
+        // A server with nothing anywhere still lists its databases.
+        assert_eq!(databases(16, &HashMap::new()).len(), 16);
+    }
+
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
