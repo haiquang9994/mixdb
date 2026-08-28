@@ -474,6 +474,29 @@ pub fn cancel_db_transfer(state: State<'_, DbState>, id: String) {
     cancel_transfer_in(&state, &id);
 }
 
+/// Remembers which server-side session a run is using, and forgets it however the run ends.
+///
+/// The entry must go whether the script finished, failed, or was killed: left behind, it names a
+/// session that by the next press of Cancel is running somebody else's statement. A guard rather
+/// than a line at the end of the function, for the reason [`Transfer`] is one — an early `?` or a
+/// panic would step over that line.
+struct RunningQuery<'a> {
+    state: &'a DbState,
+    run_id: String,
+}
+
+impl<'a> RunningQuery<'a> {
+    fn start(state: &'a DbState, run_id: &str) -> Self {
+        Self { state, run_id: run_id.to_string() }
+    }
+}
+
+impl Drop for RunningQuery<'_> {
+    fn drop(&mut self) {
+        self.state.running_queries.lock().unwrap().remove(&self.run_id);
+    }
+}
+
 /// Registers a transfer for the length of its run, and takes it out again however it ends.
 ///
 /// A guard rather than a pair of calls because the middle of it is a `?` away from returning: a
@@ -511,11 +534,41 @@ impl Drop for Transfer<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cancel_transfer_in, Transfer};
+    use super::{cancel_transfer_in, RunningQuery, Transfer};
     use crate::error::AppError;
     use crate::modules::db::state::DbState;
     use std::cell::Cell;
     use std::sync::atomic::Ordering;
+
+    /// Two scripts running on one connection are two entries, and each forgets only its own.
+    ///
+    /// Keyed by connection — as this was — the second run's insert would land on the first's key:
+    /// Cancel on the first would kill the second, and then whichever finished first would remove
+    /// the entry the other was still relying on, so the survivor could not be cancelled at all.
+    /// That the key is the run and not the connection is now the command signatures' business;
+    /// what is checked here is the half that is not — that finishing forgets one run, not the map.
+    #[test]
+    fn two_runs_on_one_connection_keep_their_own_session_ids() {
+        let state = DbState::default();
+        let session = |run: &str| state.running_queries.lock().unwrap().get(run).copied();
+
+        let first = RunningQuery::start(&state, "run-1");
+        state.running_queries.lock().unwrap().insert("run-1".to_string(), 111);
+        let second = RunningQuery::start(&state, "run-2");
+        state.running_queries.lock().unwrap().insert("run-2".to_string(), 222);
+
+        assert_eq!(session("run-1"), Some(111));
+        assert_eq!(session("run-2"), Some(222));
+
+        // The first script finishing leaves the second's thread id where the Cancel button can
+        // still find it.
+        drop(first);
+        assert_eq!(session("run-1"), None);
+        assert_eq!(session("run-2"), Some(222));
+
+        drop(second);
+        assert!(state.running_queries.lock().unwrap().is_empty());
+    }
 
     /* What the tab closing has to be able to do, without a database in the room: reach a running
        transfer and set the flag its tool is polling. */

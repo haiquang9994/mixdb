@@ -74,8 +74,8 @@ export const postgresApi: SqlApi = {
     return invoke<SqlSchemaOutline>("postgres_schema_outline", { id, database });
   },
 
-  runScript(id, sql, database) {
-    return invoke<SqlStatementResult[]>("postgres_run_script", { id, sql, database });
+  runScript(id, runId, sql, database) {
+    return invoke<SqlStatementResult[]>("postgres_run_script", { id, runId, sql, database });
   },
 
   validateSql(id, sql, database) {
@@ -85,8 +85,8 @@ export const postgresApi: SqlApi = {
   // No database named: `pg_cancel_backend` is a server-level function, so the cancel reaches a
   // session on any database of the same server — which is what lets it go out on whichever pool
   // is already open rather than needing the one the script is running on.
-  cancelQuery(id) {
-    return invoke<void>("postgres_cancel_query", { id });
+  cancelQuery(id, runId) {
+    return invoke<void>("postgres_cancel_query", { id, runId });
   },
 
   // Changing the shape of a database or a table. `collation` is sent for both of the two that take

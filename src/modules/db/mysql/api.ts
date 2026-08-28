@@ -123,12 +123,12 @@ export const mysqlApi: SqlApi = {
     return invoke<void>("mysql_drop_index", { id, database, table, name });
   },
 
-  runScript(id, sql, database) {
-    return invoke<SqlStatementResult[]>("mysql_run_script", { id, sql, database });
+  runScript(id, runId, sql, database) {
+    return invoke<SqlStatementResult[]>("mysql_run_script", { id, runId, sql, database });
   },
 
-  cancelQuery(id) {
-    return invoke<void>("mysql_cancel_query", { id });
+  cancelQuery(id, runId) {
+    return invoke<void>("mysql_cancel_query", { id, runId });
   },
 
   validateSql(id, sql, database) {

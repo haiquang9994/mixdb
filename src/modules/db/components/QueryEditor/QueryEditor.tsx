@@ -258,6 +258,12 @@ function QueryEditor({
    *  per schema and would otherwise be holding the value `running` had when it was built. */
   const busy = useRef(false);
 
+  /** Which run Cancel is for. Minted per run rather than taken from the connection: a connection
+   *  can be running a script for another editor, and a cancel naming only the connection would
+   *  reach whichever of them started last. `null` between runs, which is why Cancel on nothing is
+   *  not sent at all. */
+  const runId = useRef<string | null>(null);
+
   /**
    * The two error checks, as the editor wants them.
    *
@@ -455,6 +461,8 @@ function QueryEditor({
 
   async function run(text: string, statements: SqlStatement[]) {
     busy.current = true;
+    const thisRun = crypto.randomUUID();
+    runId.current = thisRun;
     // Whatever the pane was doing, a run is a request to see what comes back.
     pane.reveal();
     setRunning(true);
@@ -487,7 +495,7 @@ function QueryEditor({
           });
 
     try {
-      const produced = await api.runScript(connectionId, sent, database || undefined);
+      const produced = await api.runScript(connectionId, thisRun, sent, database || undefined);
       setResults(produced);
       // The last result set is the one on screen when the script finishes, so it is the one worth
       // counting. A statement that failed stops the script, so at most the last carries a reason.
@@ -520,6 +528,7 @@ function QueryEditor({
       remember(null, message);
     } finally {
       busy.current = false;
+      runId.current = null;
       setRunning(false);
       setCancelling(false);
     }
@@ -553,10 +562,11 @@ function QueryEditor({
    * {@link run} — with the killed statement carrying the server's reason — so there is nothing to
    * do here but say that it has been asked for. */
   async function cancel() {
-    if (!running || cancelling) return;
+    const run = runId.current;
+    if (!running || cancelling || run === null) return;
     setCancelling(true);
     try {
-      await api.cancelQuery(connectionId);
+      await api.cancelQuery(connectionId, run);
     } catch (e) {
       setError(errorMessage(t, e));
       setCancelling(false);

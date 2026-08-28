@@ -184,8 +184,17 @@ export interface SqlApi {
    *
    * `database` is what unqualified table names resolve against, the way they do everywhere else in
    * the workspace.
+   *
+   * `runId` names this run and nothing else, and is what {@link cancelQuery} is given to stop it.
+   * A connection is not enough to name it by: one connection can be running two scripts, and then
+   * a cancel aimed at either would reach whichever started last.
    */
-  runScript(id: string, sql: string, database?: string): Promise<SqlStatementResult[]>;
+  runScript(
+    id: string,
+    runId: string,
+    sql: string,
+    database?: string,
+  ): Promise<SqlStatementResult[]>;
 
   /**
    * Stops the script this connection is running, by asking the server to kill the statement in
@@ -193,9 +202,10 @@ export interface SqlApi {
    *
    * The killed statement comes back through {@link runScript} as a failed one, carrying the
    * server's own words — so the results of the statements before it are still shown. Cancelling
-   * when nothing is running does nothing and reports no error.
+   * a run that has already finished — or one that never started — does nothing and reports no
+   * error: the button is pressed while the results are on their way back often enough.
    */
-  cancelQuery(id: string): Promise<void>;
+  cancelQuery(id: string, runId: string): Promise<void>;
 
   /**
    * Asks the server what it makes of one statement, without running it.

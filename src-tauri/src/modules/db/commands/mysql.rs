@@ -1,7 +1,7 @@
 //! Every MySQL and MariaDB command. Which of the two answered is a property of the
 //! connection, read once when it was opened - see `drivers::mysql::detect_mariadb`.
 
-use super::Transfer;
+use super::{RunningQuery, Transfer};
 use std::sync::atomic::Ordering;
 use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::error::AppError;
@@ -405,23 +405,22 @@ pub async fn mysql_drop_index(
 pub async fn mysql_run_script(
     state: State<'_, DbState>,
     id: String,
+    run_id: String,
     sql: String,
     database: Option<String>,
 ) -> Result<Vec<StatementResult>, AppError> {
     let pool = mysql_pool(&state, &id).await?;
-    let result = mysql_script::run(&pool, &sql, database.as_deref(), |thread| {
+    // However it ended — finished, failed, or killed from `mysql_cancel_query` — dropping this is
+    // what forgets the thread id.
+    let _running = RunningQuery::start(&state, &run_id);
+    mysql_script::run(&pool, &sql, database.as_deref(), |thread| {
         state
             .running_queries
             .lock()
             .unwrap()
-            .insert(id.clone(), thread);
+            .insert(run_id.clone(), thread);
     })
-    .await;
-    // However it ended — finished, failed, or killed from `mysql_cancel_query` — there is nothing
-    // left to cancel, and the id would otherwise name a session running someone else's statement
-    // by the time the button was next pressed.
-    state.running_queries.lock().unwrap().remove(&id);
-    result
+    .await
 }
 
 /// Asks MySQL to parse one statement without running it, for the editor's error checking.
@@ -441,14 +440,21 @@ pub async fn mysql_validate_sql(
     mysql_script::validate(&pool, &sql, database.as_deref()).await
 }
 
-/// Stops the script this connection is running, if it is running one.
+/// Stops the run named by `run_id`, if it is still running.
+///
+/// `run_id` and not just the connection: the button belongs to one editor, and what it means is
+/// "stop the script *I* started" — see [`DbState::running_queries`].
 ///
 /// Asking to cancel what has already finished is not an error: the button is pressed while the
 /// results are on their way back often enough, and the user's intent — that it not still be
 /// running — is satisfied either way.
 #[tauri::command]
-pub async fn mysql_cancel_query(state: State<'_, DbState>, id: String) -> Result<(), AppError> {
-    let thread = state.running_queries.lock().unwrap().get(&id).copied();
+pub async fn mysql_cancel_query(
+    state: State<'_, DbState>,
+    id: String,
+    run_id: String,
+) -> Result<(), AppError> {
+    let thread = state.running_queries.lock().unwrap().get(&run_id).copied();
     let Some(thread) = thread else {
         return Ok(());
     };

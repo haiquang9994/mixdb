@@ -4,7 +4,7 @@
 //! something different: there it names a database to reach into from the one connection, here it
 //! picks which pool the command runs on. See `postgres_pool`.
 
-use super::Transfer;
+use super::{RunningQuery, Transfer};
 use std::sync::atomic::Ordering;
 use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::error::AppError;
@@ -167,18 +167,17 @@ pub async fn postgres_schema_outline(
 pub async fn postgres_run_script(
     state: State<'_, DbState>,
     id: String,
+    run_id: String,
     sql: String,
     database: Option<String>,
 ) -> Result<Vec<StatementResult>, AppError> {
     let pool = postgres_pool(&state, &id, database.as_deref().unwrap_or("")).await?;
-    let result = postgres_script::run(&pool, &sql, |pid| {
-        state.running_queries.lock().unwrap().insert(id.clone(), pid);
+    // However it ended, dropping this is what forgets the pid.
+    let _running = RunningQuery::start(&state, &run_id);
+    postgres_script::run(&pool, &sql, |pid| {
+        state.running_queries.lock().unwrap().insert(run_id.clone(), pid);
     })
-    .await;
-    // However it ended, there is nothing left to cancel — and the pid would otherwise name a
-    // session running someone else's statement by the time the button was next pressed.
-    state.running_queries.lock().unwrap().remove(&id);
-    result
+    .await
 }
 
 /// Asks PostgreSQL to parse one statement without running it, for the editor's error checking.
@@ -193,7 +192,7 @@ pub async fn postgres_validate_sql(
     postgres_script::validate(&pool, &sql).await
 }
 
-/// Stops the script this connection is running, if it is running one.
+/// Stops the run named by `run_id`, if it is still running — see [`DbState::running_queries`].
 ///
 /// The cancel goes out on a connection of its own, since the one being cancelled is busy — and to
 /// the same database, because a backend pid is only cancellable from the server it belongs to.
@@ -201,9 +200,10 @@ pub async fn postgres_validate_sql(
 pub async fn postgres_cancel_query(
     state: State<'_, DbState>,
     id: String,
+    run_id: String,
     database: Option<String>,
 ) -> Result<(), AppError> {
-    let pid = state.running_queries.lock().unwrap().get(&id).copied();
+    let pid = state.running_queries.lock().unwrap().get(&run_id).copied();
     let Some(pid) = pid else {
         return Ok(());
     };

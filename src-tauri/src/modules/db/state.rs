@@ -58,10 +58,15 @@ pub struct DbState {
     /// again before anything is run on what was found — a query awaited while holding it would
     /// stop every other command in the app, in every tab, for as long as it took.
     pub connections: Mutex<HashMap<String, ActiveConnection>>,
-    /// The server-side id of the session each connection is running a script on, while it runs
-    /// one — MySQL's thread id, or PostgreSQL's backend pid. It is what `KILL QUERY` and
-    /// `pg_cancel_backend` name, and so the only thing that lets the Cancel button reach a
-    /// statement already in flight.
+    /// The server-side id of the session each *run* is using while it lasts — MySQL's thread id,
+    /// or PostgreSQL's backend pid. It is what `KILL QUERY` and `pg_cancel_backend` name, and so
+    /// the only thing that lets the Cancel button reach a statement already in flight.
+    ///
+    /// Keyed by the run, not by the connection. Two scripts on one connection are two runs, and a
+    /// map keyed by the connection would fail them both: the second's insert would overwrite the
+    /// first's, so Cancel on the first would kill the second, and then whichever finished first
+    /// would remove the entry the other was still relying on. One `QueryEditor` per workspace
+    /// hides all of that today — a second query tab is what would show it.
     ///
     /// A blocking lock rather than an async one: nothing is awaited while it is held, and it has
     /// to be usable from the plain closure `mysql_script::run` announces the id through.
