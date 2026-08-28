@@ -51,9 +51,9 @@ function formatCount(value: number): string {
 const VIRTUAL_FROM = 60;
 
 /** How tall a row of this grid is — stated, never measured; see `virtualRows.ts` for why that
- *  distinction is what makes a window of rows sound. 33px is what a row here has always come to: a
- *  24px line, 4px of padding above and below, and the 1px rule underneath. */
-const ROW_HEIGHT = 33;
+ *  distinction is what makes a window of rows sound. 27px is what a row here comes to: an 18px
+ *  line, 4px of padding above and below, and the 1px rule underneath. Was 33px on a 24px line. */
+const ROW_HEIGHT = 27;
 
 /** How one row reads, column by column, for the sizer row that gives each column its width. The
  *  same strings the cells below are drawn from, so the column is sized by what is actually in it. */

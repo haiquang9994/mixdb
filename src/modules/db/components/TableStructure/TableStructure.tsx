@@ -66,9 +66,9 @@ function isFunctional(index: SqlTableIndex): boolean {
 const VIRTUAL_FROM = 60;
 
 /** How tall a row of these grids is — stated, never measured; see `virtualRows.ts` for why that
- *  distinction is what makes a window of rows sound. 33px is what a row here has always come to: a
- *  24px line (the row buttons are 24px too), 4px of padding above and below, and the 1px rule. */
-const ROW_HEIGHT = 33;
+ *  distinction is what makes a window of rows sound. 27px is what a row here comes to: an 18px
+ *  line, 4px of padding above and below, and the 1px rule. Was 33px on a 24px line. */
+const ROW_HEIGHT = 27;
 
 /** Which dialog is open and on what: an entry with nothing in it is the "add" form. */
 type ColumnDialogState = { column?: SqlStructureColumn };
