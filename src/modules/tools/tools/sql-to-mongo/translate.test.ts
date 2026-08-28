@@ -214,6 +214,23 @@ describe("translate — pipeline", () => {
     expect(afterGroup).toBeGreaterThan(group);
   });
 
+  it("HAVING lọc theo alias mà $group vừa tạo, không theo một tên rỗng", async () => {
+    const out = (
+      await ok("SELECT city, COUNT(*) AS n FROM users GROUP BY city HAVING COUNT(*) > 5")
+    ).output;
+    expect(out).toContain('"n": {\n        "$gt": 5\n      }');
+    expect(out).not.toContain('""');
+  });
+
+  it("HAVING dùng một hàm gộp không có trong SELECT thì $group phải tự thêm nó vào", async () => {
+    const out = (await ok("SELECT city FROM users GROUP BY city HAVING COUNT(*) > 5")).output;
+    expect(out).not.toContain('""');
+    // Trường phụ trợ phải được gộp để lọc được, rồi bị $project bỏ đi.
+    expect(out).toContain('"$sum": 1');
+    const project = out.slice(out.indexOf('"$project"'));
+    expect(project).not.toContain("_having");
+  });
+
   it("SUM, AVG, MIN, MAX thành toán tử cùng tên", async () => {
     const out = (
       await ok("SELECT e, SUM(a) AS s, AVG(b) AS v, MIN(c) AS lo, MAX(d) AS hi FROM t GROUP BY e")

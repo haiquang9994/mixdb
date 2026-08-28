@@ -44,6 +44,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
+- Tools: a fourth kind of tab, holding a SQL-to-MongoDB translator, a timestamp converter,
+  encode/hash, a JWT decoder, a bulk id generator and a case converter.
 - Terminal settings: name a tab after its saved target instead of `user@host` or the shell.
 
 ### Changed

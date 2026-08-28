@@ -357,7 +357,15 @@ module này được đặt hàng.
 Đúng những chỗ này và không chỗ nào khác:
 
 - `src/shell/registry.ts` — một dòng trong `MODULES`.
-- `src/i18n/dicts.ts` — một cặp import, bốn chỗ spread.
+- `src/i18n/dicts.ts` — một cặp import, bốn chỗ spread, và bốn term nữa trong `Collision`.
+
+  **Nhóm i18n của module là `toolbox`, không phải `tools`.** Module `db` đã sở hữu nhóm `tools` —
+  `tools.title`, `tools.download`, … cho phần tải `pg_dump`/`mysqldump` trong Settings — và spread
+  thứ hai sẽ nuốt trọn nhóm thứ nhất, mất hai chục khoá mà không ai thấy. Id module vẫn là `tools`
+  và tên hiển thị vẫn là "Công cụ"; chỉ namespace i18n đổi. Lưới kiểu `Collision` trong `dicts.ts`
+  là thứ bắt được chuyện này, và nó chỉ bắt được nếu module mới được nối vào — "module thứ ba thêm
+  ba term", nên module thứ tư thêm bốn.
+
 - `src/icons/icons.tsx` và `src/icons/index.ts` — thêm `ToolsIcon`.
 - `src/i18n/{en,vi}.ts` — khoá `app.moduleTools`.
 - `CHANGELOG.md` — một dòng dưới `## [Unreleased]` mỗi giai đoạn.

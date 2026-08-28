@@ -120,6 +120,22 @@ const OBJECT_ID = /^[0-9a-f]{24}$/i;
 interface Context {
   dialect: Dialect;
   warnings: Warning[];
+  /**
+   * Tên mà `$group` đã đặt cho từng hàm gộp, tra theo {@link aggrKey}.
+   *
+   * Chỉ có mặt khi đang dịch `HAVING`. `HAVING COUNT(*) > 5` nói về **kết quả đã gộp**, nên vế
+   * trái của nó là một `aggr_func` chứ không phải một cột — không có bảng này thì tên trường ra
+   * rỗng, và `$match: { "": … }` là một truy vấn chạy được nhưng không khớp gì cả.
+   */
+  aggrAlias?: Map<string, string>;
+}
+
+/** Chữ ký của một hàm gộp, đủ để nhận ra `COUNT(*)` trong `HAVING` là `COUNT(*)` trong `SELECT`. */
+function aggrKey(fn: Node): string {
+  const name = String(fn.name ?? "").toUpperCase();
+  const arg = isNode(fn.args) && isNode(fn.args.expr) ? fn.args.expr : null;
+  const inner = !arg || arg.type === "star" ? "*" : columnName(arg);
+  return `${name}(${inner})`;
 }
 
 function warn(ctx: Context, code: Warning["code"], fragment: string) {
@@ -147,7 +163,9 @@ function buildFilter(node: unknown, ctx: Context): unknown {
   if (operator === "OR") return { $or: [buildFilter(left, ctx), buildFilter(right, ctx)] };
 
   if (!isNode(left) || !isNode(right)) return {};
-  const field = columnName(left);
+  // Trong `HAVING`, vế trái là một hàm gộp và tên của nó là tên `$group` vừa đặt.
+  const field =
+    left.type === "aggr_func" ? (ctx.aggrAlias?.get(aggrKey(left)) ?? "") : columnName(left);
 
   if (operator === "LIKE" || operator === "NOT LIKE" || operator === "ILIKE") {
     // MySQL không phân biệt hoa thường theo collation mặc định; PostgreSQL thì có, và `ILIKE` là
@@ -321,24 +339,51 @@ function buildPipeline(ast: Node, ctx: Context): unknown[] {
         : Object.fromEntries(keyFields.map((name) => [name, `$${name}`]));
 
   const group: Record<string, unknown> = { _id: id };
+  const aggrAlias = new Map<string, string>();
   for (const entry of columns) {
     const fn = aggregateOf(entry);
     if (!fn || !isNode(entry)) continue;
     const alias = typeof entry.as === "string" ? entry.as : String(fn.name ?? "value").toLowerCase();
     group[alias] = accumulator(fn);
+    aggrAlias.set(aggrKey(fn), alias);
   }
+
+  /* Một hàm gộp chỉ xuất hiện trong `HAVING` vẫn phải được gộp, nếu không thì không có gì để lọc.
+     Nó vào `$group` dưới một tên phụ trợ và bị `$project` bỏ đi sau đó — người dùng không hỏi nó,
+     nên nó không nên có mặt trong kết quả. */
+  const helpers: string[] = [];
+  const findAggregates = (value: unknown) => {
+    if (Array.isArray(value)) return value.forEach(findAggregates);
+    if (!isNode(value)) return;
+    if (value.type === "aggr_func") {
+      const key = aggrKey(value);
+      if (!aggrAlias.has(key)) {
+        const name = `_having${helpers.length}`;
+        aggrAlias.set(key, name);
+        group[name] = accumulator(value);
+        helpers.push(name);
+      }
+      return;
+    }
+    Object.values(value).forEach(findAggregates);
+  };
+  if (ast.having) findAggregates(ast.having);
+
   stages.push({ $group: group });
 
-  if (ast.having) stages.push({ $match: buildFilter(ast.having, ctx) });
+  if (ast.having) stages.push({ $match: buildFilter(ast.having, { ...ctx, aggrAlias }) });
 
   /* `$project` đưa khoá gộp từ `_id` trở lại tên cột như trong `SELECT` — không có nó thì kết quả
-     mang một trường tên `_id` mà câu SQL không hề nhắc tới. */
-  if (keyFields.length > 0) {
+     mang một trường tên `_id` mà câu SQL không hề nhắc tới. Nó cũng là chỗ các tên phụ trợ ở trên
+     biến mất: `$project` liệt kê cái được giữ, nên không kể tên là đủ để bỏ. */
+  if (keyFields.length > 0 || helpers.length > 0) {
     const project: Record<string, unknown> = { _id: 0 };
     for (const name of keyFields) {
       project[name] = keyFields.length === 1 ? "$_id" : `$_id.${name}`;
     }
-    for (const key of Object.keys(group)) if (key !== "_id") project[key] = 1;
+    for (const key of Object.keys(group)) {
+      if (key !== "_id" && !helpers.includes(key)) project[key] = 1;
+    }
     stages.push({ $project: project });
   }
 
