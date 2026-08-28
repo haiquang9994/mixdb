@@ -42,6 +42,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Fixed
+
+- The listening ports tool no longer flashes a black console window on Windows.
+
 ## [0.0.22] - 2026-08-28
 
 ### Added

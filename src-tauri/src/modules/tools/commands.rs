@@ -4,7 +4,7 @@
 //! và tự chạy, và đó là ranh giới an toàn của cả module chứ không phải sự lười.
 
 use crate::error::AppError;
-use crate::platform::in_background;
+use crate::platform::{hide_console, in_background};
 use std::process::Command;
 
 use super::ports::{self, ListeningPort};
@@ -18,8 +18,16 @@ pub async fn tools_listening_ports() -> Result<Vec<ListeningPort>, AppError> {
     in_background(collect).await
 }
 
+/// Chạy một chương trình của hệ điều hành và lấy stdout của nó.
+///
+/// `hide_console` là bắt buộc, không phải cho đẹp: `netstat`, `tasklist` và `lsof` đều là chương
+/// trình console, nên trên Windows mỗi lần mở tool hay bấm Refresh sẽ có một cửa sổ đen loé lên
+/// rồi tắt — đúng cái mà người dùng đọc là phần mềm đang chạy lén sau lưng họ. Xem
+/// `crate::platform::hide_console`.
 fn output_of(program: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new(program).args(args).output().ok()?;
+    let mut command = Command::new(program);
+    command.args(args);
+    let out = hide_console(&mut command).output().ok()?;
     Some(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 

@@ -98,6 +98,10 @@ src-tauri/src/       Rust backend
   [.agent/conventions/component-structure.md](.agent/conventions/component-structure.md).
 - **A new backend command touches five places.** Follow
   [.agent/conventions/adding-a-command.md](.agent/conventions/adding-a-command.md).
+- **Every `std::process::Command` goes through `crate::platform::hide_console`.** Without it
+  Windows opens a black console window for the child, which flashes over the app and reads as
+  malware to the user. See
+  [.agent/conventions/spawning-processes.md](.agent/conventions/spawning-processes.md).
 - Commit messages need a `type(scope): message` prefix (see the global rules).
 - **Never link to a file under `docs/superpowers/plans/`.** Those are local-only implementation
   plans, gitignored and absent on every other machine. Link to `docs/superpowers/specs/` instead —
