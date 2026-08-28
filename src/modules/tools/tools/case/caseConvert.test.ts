@@ -29,6 +29,23 @@ describe("splitWords", () => {
     expect(splitWords("   ")).toEqual([]);
     expect(splitWords("")).toEqual([]);
   });
+
+  /* Chữ có dấu là chữ, không phải dấu ngăn. Một phép tách chỉ biết `a-zA-Z` sẽ xé "có gì hot"
+     thành `c`, `g`, `hot` — mỗi chữ có dấu thành một ranh giới từ. */
+  it("giữ nguyên chữ tiếng Việt thay vì coi dấu là ranh giới từ", () => {
+    expect(splitWords("có gì hot")).toEqual(["có", "gì", "hot"]);
+    expect(splitWords("Xin chào bạn")).toEqual(["xin", "chào", "bạn"]);
+    expect(splitWords("tên_người_dùng")).toEqual(["tên", "người", "dùng"]);
+  });
+
+  it("tách được camelCase có dấu", () => {
+    expect(splitWords("địaChỉNhà")).toEqual(["địa", "chỉ", "nhà"]);
+  });
+
+  it("giữ được chữ của bảng chữ cái khác", () => {
+    expect(splitWords("städteListe")).toEqual(["städte", "liste"]);
+    expect(splitWords("日本語 test")).toEqual(["日本語", "test"]);
+  });
 });
 
 describe("convert", () => {
@@ -46,5 +63,13 @@ describe("convert", () => {
 
   it("trả lại nguyên dòng khi không tách được từ nào", () => {
     expect(convert("   ", "camel")).toBe("   ");
+  });
+
+  it("đổi được cả tên có dấu", () => {
+    expect(convert("có gì hot", "snake")).toBe("có_gì_hot");
+    expect(convert("có gì hot", "camel")).toBe("cóGìHot");
+    expect(convert("có gì hot", "pascal")).toBe("CóGìHot");
+    expect(convert("có gì hot", "constant")).toBe("CÓ_GÌ_HOT");
+    expect(convert("có gì hot", "title")).toBe("Có Gì Hot");
   });
 });

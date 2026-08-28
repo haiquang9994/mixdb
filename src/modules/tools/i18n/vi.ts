@@ -25,6 +25,7 @@ const toolsVi = {
       placeholder: "1787875200 hoặc 2026-08-28T00:00:00Z",
       now: "Bây giờ",
       timeZone: "Múi giờ",
+      searchZone: "Tìm múi giờ…",
       guessedSeconds: "Đọc là Unix giây.",
       guessedMillis: "Đọc là Unix mili giây.",
       guessedMicros: "Đọc là Unix micro giây.",

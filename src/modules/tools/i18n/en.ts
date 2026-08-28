@@ -25,6 +25,7 @@ const toolsEn = {
       placeholder: "1787875200 or 2026-08-28T00:00:00Z",
       now: "Now",
       timeZone: "Time zone",
+      searchZone: "Search zones…",
       guessedSeconds: "Read as Unix seconds.",
       guessedMillis: "Read as Unix milliseconds.",
       guessedMicros: "Read as Unix microseconds.",
