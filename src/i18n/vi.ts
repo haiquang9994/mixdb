@@ -31,6 +31,7 @@ const vi: SharedDict = {
     moduleDatabase: "Database",
     moduleRest: "REST",
     moduleTerminal: "Terminal",
+    moduleTools: "Công cụ",
   },
   pagination: {
     previousPage: "Trang trước",

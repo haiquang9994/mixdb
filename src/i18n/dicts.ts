@@ -6,6 +6,8 @@ import restEn from "../modules/rest/i18n/en";
 import restVi from "../modules/rest/i18n/vi";
 import terminalEn from "../modules/terminal/i18n/en";
 import terminalVi from "../modules/terminal/i18n/vi";
+import toolsEn from "../modules/tools/i18n/en";
+import toolsVi from "../modules/tools/i18n/vi";
 
 /*
  * The dictionaries, assembled from the shared half and each module's own.
@@ -25,6 +27,7 @@ export const EN = {
   ...dbEn,
   ...restEn,
   ...terminalEn,
+  ...toolsEn,
   error: { ...shared.error, ...dbEn.error, ...restEn.error, ...terminalEn.error },
 };
 
@@ -33,6 +36,7 @@ export const VI = {
   ...dbVi,
   ...restVi,
   ...terminalVi,
+  ...toolsVi,
   error: { ...sharedVi.error, ...dbVi.error, ...restVi.error, ...terminalVi.error },
 };
 
@@ -46,6 +50,10 @@ type Collision =
   | Exclude<Extract<keyof typeof dbEn, keyof typeof restEn>, "error">
   | Exclude<Extract<keyof typeof shared, keyof typeof terminalEn>, "error">
   | Exclude<Extract<keyof typeof dbEn, keyof typeof terminalEn>, "error">
-  | Exclude<Extract<keyof typeof restEn, keyof typeof terminalEn>, "error">;
+  | Exclude<Extract<keyof typeof restEn, keyof typeof terminalEn>, "error">
+  | Exclude<Extract<keyof typeof shared, keyof typeof toolsEn>, "error">
+  | Exclude<Extract<keyof typeof dbEn, keyof typeof toolsEn>, "error">
+  | Exclude<Extract<keyof typeof restEn, keyof typeof toolsEn>, "error">
+  | Exclude<Extract<keyof typeof terminalEn, keyof typeof toolsEn>, "error">;
 const noCollision: [Collision] extends [never] ? true : never = true;
 void noCollision;

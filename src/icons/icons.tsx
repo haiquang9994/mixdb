@@ -375,3 +375,13 @@ export function StopIcon(props: IconProps) {
     </Icon>
   );
 }
+
+/** Một chiếc cờ-lê — hộp đồ nghề của module Tools. */
+export function ToolsIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M14.7 6.3a4 4 0 0 0 5 5l-8.4 8.4a2.1 2.1 0 0 1-3-3z" />
+      <path d="M14.7 6.3 17.5 3.5" />
+    </Icon>
+  );
+}
