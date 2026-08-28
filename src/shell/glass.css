@@ -47,8 +47,10 @@
  * their own; the modals get theirs through `dialogMotion.module.css`, which every one of them
  * already composes, so a new dialog is glass without being asked.
  *
- * The `-webkit-` line is the plain frost, for WebKit builds that take the property but not a filter
- * reference; Blink reads the unprefixed line after it and wins the cascade.
+ * The `-webkit-` line and the unprefixed one beside it are the same plain frost, which is all the
+ * material any engine is promised. The bend is added on top of it, further down and only where an
+ * engine resolves a reference filter on a backdrop — the two are not a fallback pair, and writing
+ * them as one is what left the Mac with no frost at all. The note on that rule has the details.
  *
  * The whole thing is guarded on `backdrop-filter` as well as on the setting: without the property a
  * 14%-white pane over a table is unreadable, so an engine that lacks it keeps the opaque surface no
@@ -59,7 +61,9 @@
      — a dark tint here would just read as a shadow. This is the knob to turn if a dense grid ever
      shows through the text, and it is most of what separates glass from a smeared window: at 0.14
      a table's rows stayed legible *through* the pane, which reads as dirt rather than as depth.
-     Raised from 0.28 once the effect had been seen on a second engine — see the note below. */
+     Raised from 0.28 once the effect had been seen on a second engine — where, it turned out, the
+     pane had no frost under the tint at all. One number for both engines again now that it does;
+     what the two make of the same alpha is the frost's business, and both are running one. */
   --glass-tint: rgb(255 255 255 / 0.36);
   /* The lit rim. Bright on the top-left where the light comes from, weaker on the return edge. */
   --glass-rim-lit: rgb(255 255 255 / 0.7);
@@ -86,28 +90,6 @@
      one material rather than as an effect laid over a different app. */
   --glass-chrome-tint: rgb(255 255 255 / 0.45);
   --glass-control-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), 0 1px 2px rgb(0 0 0 / 0.06);
-}
-
-/* WHAT THE ENGINE MAKES OF THE TINT
- *
- * The numbers above are alphas, not amounts of frost, and how much of the page survives under one
- * of them is the frost's business — which is the webview's, not ours. WebView2 lands near what
- * these were picked against; WebKit lets visibly more through the same pane, so the menu that
- * reads as frosted on Windows reads as a film laid over the table on a Mac. Rather than chase one
- * number that is wrong on one of the two, the tint is raised where the engine spends it: a little
- * for everyone above, and again here.
- *
- * Only the lens moves. The sheet keeps `--glass-sheet-tint`, in the app's own surface colour,
- * because a dialog was never the surface showing its background through; the ground, the chrome
- * and the rails are flat colour or their own blur, with no gap to close.
- *
- * Kept above the dark blocks on purpose: this selector weighs exactly what theirs do, so below
- * them it would take the light tint into the dark theme.
- *
- * `data-platform` is written on the root at load, in `theme.ts`. Linux is left on the shared
- * value — it is WebKit too and probably wants this one, but it has not been looked at on one. */
-:root[data-glass="on"][data-platform="mac"] {
-  --glass-tint: rgb(255 255 255 / 0.55);
 }
 
 /* On #2f2f2f a white rim at 70% is a chrome outline, not a highlight, and the tint at 36% turns the
@@ -137,18 +119,6 @@
   }
 }
 
-/* The same engine gap on the dark theme, where there is less room to spend: 0.22 over #242527 is
-   already most of the way to the surface colour, so the Mac's step is the smaller of the two. */
-:root[data-glass="on"][data-platform="mac"][data-theme="dark"] {
-  --glass-tint: rgb(255 255 255 / 0.36);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root[data-glass="on"][data-platform="mac"]:not([data-theme]) {
-    --glass-tint: rgb(255 255 255 / 0.36);
-  }
-}
-
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root[data-glass="on"] .glass,
   :root[data-glass="on"] .glass-pill,
@@ -172,7 +142,7 @@
 
   :root[data-glass="on"] .glass {
     -webkit-backdrop-filter: blur(20px) saturate(1.7);
-    backdrop-filter: url(#mixdb-glass-panel);
+    backdrop-filter: blur(20px) saturate(1.7);
   }
 
   /* A lens rim reads as a lens when it is continuous, and a rounded rectangle breaks it into four
@@ -180,6 +150,27 @@
   :root[data-glass="on"] .glass-pill {
     border-radius: 999px;
     -webkit-backdrop-filter: blur(16px) saturate(1.7);
+    backdrop-filter: blur(16px) saturate(1.7);
+  }
+
+  /* THE BEND, WHERE AN ENGINE DRAWS IT
+   *
+   * The frost above is the whole material on its own; this replaces it with the frost *and* the
+   * lensing, out of the filters in `components/GlassFilter`, and it is asked for by name because
+   * only Blink resolves a reference filter on a backdrop. WebKit accepts the declaration and then
+   * paints nothing for it (WebKit bug 245510) — and since Safari 18 `-webkit-backdrop-filter` is
+   * an alias of the same property rather than a second one, an unguarded `url()` written after it
+   * does not sit beside the frost as its fallback, it overwrites it. That is a lens with no frost
+   * at all, which is exactly how the menus read on a Mac: a film over a live table.
+   *
+   * So the bend is a thing Windows is given rather than a thing the others are denied. An engine
+   * this file has not been looked at on keeps the plain frost, which is the half that works
+   * everywhere; `data-platform` is written on the root at load, in `theme.ts`. */
+  :root[data-glass="on"][data-platform="windows"] .glass {
+    backdrop-filter: url(#mixdb-glass-panel);
+  }
+
+  :root[data-glass="on"][data-platform="windows"] .glass-pill {
     backdrop-filter: url(#mixdb-glass-pill);
   }
 

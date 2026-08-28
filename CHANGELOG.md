@@ -42,6 +42,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Fixed
+
+- Menus, dropdowns and tooltips are frosted again on macOS instead of being a clear film over the
+  content behind them.
+
 ## [0.0.23] - 2026-08-28
 
 ### Fixed

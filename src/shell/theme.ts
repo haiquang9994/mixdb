@@ -78,11 +78,10 @@ function applyAccent(accent: AccentColor): void {
 /* Which webview is drawing the window, as an attribute CSS can select on.
  *
  * Not a preference and not stored anywhere: it is written every load from the user agent, and it
- * exists for the one question `glass.css` has that a media query cannot ask — the same tint over
- * the same blur lets a different amount of the page through on WebKit than it does on WebView2,
- * so the glass has to know which of the two it is being drawn by. Every platform is named rather
- * than just the one that needs it, so the next rule that has to split does not have to add the
- * other half of the answer first.
+ * exists for the one question `glass.css` has that neither a media query nor `@supports` can ask —
+ * whether this engine *draws* a reference filter on a backdrop, which WebKit says it takes and then
+ * ignores. Every platform is named rather than just the one that needs it, so the next rule that
+ * has to split does not have to add the other half of the answer first.
  *
  * Written out in full, unlike the three above, because there is no default to be the absence of:
  * a root with no `data-platform` is a root the script has not run on yet. */
