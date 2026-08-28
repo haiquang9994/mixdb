@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { fill, paramsOf } from "./snippets";
+import {
+  addSnippet,
+  fill,
+  paramsOf,
+  removeSnippet,
+  updateSnippet,
+  type Snippet,
+} from "./snippets";
 
 describe("paramsOf", () => {
   it("lấy tham số theo thứ tự xuất hiện", () => {
@@ -46,5 +53,48 @@ describe("fill", () => {
   // Tool không bọc ngoặc hộ: người viết template quyết định chỗ nào cần ngoặc.
   it("không tự bọc ngoặc cho giá trị có dấu cách", () => {
     expect(fill("mysql -p'{{password}}'", { password: "mật khẩu" })).toBe("mysql -p'mật khẩu'");
+  });
+});
+
+const draft = { title: "Dump", group: "mysql", template: "mysqldump {{db}}" };
+
+describe("thao tác trên danh sách", () => {
+  it("thêm vào cuối và đặt id", () => {
+    const list = addSnippet([], draft);
+    expect(list).toHaveLength(1);
+    expect(list[0]?.title).toBe("Dump");
+    expect(list[0]?.id).not.toBe("");
+  });
+
+  it("không đặt trùng id cho hai snippet", () => {
+    const list = addSnippet(addSnippet([], draft), draft);
+    expect(list[0]?.id).not.toBe(list[1]?.id);
+  });
+
+  it("sửa đúng một mục và giữ nguyên id", () => {
+    const list = addSnippet([], draft);
+    const id = list[0]!.id;
+    const after = updateSnippet(list, id, { ...draft, title: "Khác" });
+    expect(after[0]?.id).toBe(id);
+    expect(after[0]?.title).toBe("Khác");
+  });
+
+  it("bỏ qua khi sửa một id không có", () => {
+    const list = addSnippet([], draft);
+    expect(updateSnippet(list, "khong-co", draft)).toEqual(list);
+  });
+
+  it("xoá đúng một mục", () => {
+    const list = addSnippet(addSnippet([], draft), { ...draft, title: "Hai" });
+    const after = removeSnippet(list, list[0]!.id);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.title).toBe("Hai");
+  });
+
+  it("không đụng vào mảng gốc", () => {
+    const list: Snippet[] = addSnippet([], draft);
+    const copy = [...list];
+    removeSnippet(list, list[0]!.id);
+    expect(list).toEqual(copy);
   });
 });

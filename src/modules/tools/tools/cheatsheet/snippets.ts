@@ -42,3 +42,30 @@ export function fill(template: string, values: Record<string, string>): string {
     return value === undefined || value === "" ? whole : value;
   });
 }
+
+/** Một snippet đang được soạn: mọi thứ trừ `id`, thứ chỉ danh sách mới đặt được. */
+export type SnippetDraft = Omit<Snippet, "id">;
+
+/**
+ * Id không đụng nhau, không cần `crypto.randomUUID`.
+ *
+ * Danh sách này là của một người trên một máy và dài vài chục mục; thứ duy nhất id phải làm là
+ * phân biệt hai mục thêm liền nhau, và một bộ đếm chạy sau mốc thời gian làm được đúng thế.
+ */
+let counter = 0;
+function nextId(): string {
+  counter += 1;
+  return `s${Date.now().toString(36)}${counter.toString(36)}`;
+}
+
+export function addSnippet(list: Snippet[], draft: SnippetDraft): Snippet[] {
+  return [...list, { ...draft, id: nextId() }];
+}
+
+export function updateSnippet(list: Snippet[], id: string, draft: SnippetDraft): Snippet[] {
+  return list.map((snippet) => (snippet.id === id ? { ...draft, id } : snippet));
+}
+
+export function removeSnippet(list: Snippet[], id: string): Snippet[] {
+  return list.filter((snippet) => snippet.id !== id);
+}
