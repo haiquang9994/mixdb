@@ -134,7 +134,17 @@
   border-color: var(--control-border-focus);
 }
 
+/* On a layer of its own, for as long as the menu is up. Moving the pointer down a list repaints
+   one row at a time, and the engine redraws only that row's rectangle — which comes back not
+   quite matching the pixels around it. The mismatch lands on the row's edge as a hairline, and a
+   hairline appearing above one option and below another reads as the options themselves
+   shifting; scrolled to the foot of a long list, where the rows sit half a device pixel off, it
+   is plain to see. The glass filter widens what a repaint has to resample and makes it worse, but
+   it is there with the glass off too. A composited layer is repainted whole, so there is no edge
+   for one to land on. It is the case `will-change` is actually meant for: the layer is created
+   with the open menu and goes with it. */
 .listbox {
+  will-change: transform;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;

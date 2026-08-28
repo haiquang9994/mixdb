@@ -42,6 +42,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Fixed
+
+- The options of a long dropdown no longer flicker as the pointer moves over them.
+
 ## [0.0.24] - 2026-08-28
 
 ### Changed
