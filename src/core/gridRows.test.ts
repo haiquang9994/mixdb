@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -17,20 +15,9 @@ import { describe, expect, it } from "vitest";
  * Vitest ở đây chạy môi trường node, không có DOM, nên chiều cao thật không đo được. Cái đo được
  * là stylesheet, và đây là điều kiện duy nhất trên stylesheet có thể phá bất biến kia.
  *
- * Đọc từ đĩa: `?raw` trong cấu hình này trả về chuỗi rỗng, và một test parse chuỗi rỗng thì xanh
- * mà chưa kiểm gì — xem ghi chú trong `shell/fonts.test.ts`.
+ * `?raw` chỉ trả về nội dung thật vì `vite.config.ts` bật `test.css` — xem ghi chú trong
+ * `shell/fonts.test.ts`. Case đầu tiên bên dưới canh điều đó.
  */
-
-const SRC = join(import.meta.dirname, "..");
-
-function stylesheets(dir: string): { path: string; css: string }[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) return stylesheets(full);
-    if (!entry.name.endsWith(".css")) return [];
-    return [{ path: relative(SRC, full).replace(/\\/g, "/"), css: readFileSync(full, "utf8") }];
-  });
-}
 
 /** Mọi khối `selector { … }` trong cùng, tách như `glass.test.ts` tách chúng. */
 function blocks(css: string) {
@@ -40,7 +27,13 @@ function blocks(css: string) {
   });
 }
 
-const sheets = stylesheets(join(SRC, "modules/db"));
+const sheets = Object.entries(
+  import.meta.glob("../modules/db/**/*.css", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>,
+).map(([path, css]) => ({ path, css }));
 
 describe("grid rows", () => {
   it("đọc được stylesheet, không phải một mớ rỗng", () => {

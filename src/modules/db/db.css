@@ -414,11 +414,63 @@ fieldset .row input {
   }
 }
 
+/* Hai hàng trông giống nhau nhưng làm hai việc khác hẳn, nên chúng thôi dùng chung một hình dạng.
+
+   `.method-tab` là **điều hướng**: Data / Structure / Statistics / Query đưa bạn sang một view khác
+   của cùng một bảng. Nó giữ gạch chân — và giờ nó là tầng duy nhất trong app dùng gạch chân, nên
+   gạch chân lại có nghĩa. Trước đây tab cửa sổ cũng mang một vạch 2px như vậy (ở cạnh trên), và một
+   tín hiệu dùng cho mọi tầng thì không xếp hạng được tầng nào.
+
+   `.choice` bên dưới là **một lựa chọn về form**: chọn MySQL hay Postgres, TCP/IP hay SSH. Đổi nó
+   đổi các ô ở dưới, không đưa bạn đi đâu cả. Nên nó trông như thứ nó là — một segmented control —
+   chứ không như tab. */
 .method-tabs {
   display: flex;
   gap: 0.25rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 1rem;
+}
+
+/* Một hàng lựa chọn: cả nhóm là một control, ô được chọn nổi lên khỏi nền của nhóm. */
+.choice-row {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 0.15rem;
+  margin-bottom: 1rem;
+  padding: 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--hover-bg);
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.3em 0.7em;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.choice:hover {
+  opacity: 1;
+}
+
+.choice-active {
+  opacity: 1;
+  background: var(--surface-bg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Chỉ logo mang màu thương hiệu; tên bên cạnh giữ màu chữ, để một hàng bốn lựa chọn đọc ra một
+   control chứ không phải bốn từ nhiều màu. Giống hệt lý do của `.method-tab-icon`. */
+.choice-icon {
+  color: var(--kind);
 }
 
 .method-tab {

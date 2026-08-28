@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import css from "./glass.css?raw";
 
 /**
  * What the two engines make of `backdrop-filter`, asserted against the stylesheet itself.
@@ -16,16 +15,14 @@ import { describe, expect, it } from "vitest";
  * beside the prefixed line as its replacement — it overwrites it, and takes down the frost the
  * prefixed line was there to provide.
  *
- * Đọc từ đĩa bằng `node:fs`. Đến 2026-08-29 file này dùng `import css from "./glass.css?raw"`, và
- * trong cấu hình vitest ở đây hậu tố `?raw` trả về **chuỗi rỗng** — plugin CSS của Vite xử lý file
- * trước khi nó kịp có tác dụng. Cả hai test bên dưới parse chuỗi rỗng, được 0 rule, lọc ra mảng
- * rỗng, rồi khẳng định `[] === []`: chúng xanh suốt mà chưa từng đọc một dòng CSS nào. Một tấm
- * lưới an toàn hỏng im lặng còn tệ hơn không có lưới, vì nó còn làm người ta thôi nhìn.
+ * Đến 2026-08-29 hai test dưới đây **chưa từng đọc một dòng CSS nào**. Vitest stub mọi request
+ * `.css` ra chuỗi rỗng trừ khi `test.css` được bật, và stub đó trả lời cả `?raw`. Chúng parse
+ * chuỗi rỗng, được 0 rule, lọc ra mảng rỗng, rồi khẳng định `[] === []` — xanh suốt nhiều tháng.
+ * Một tấm lưới an toàn hỏng im lặng còn tệ hơn không có lưới, vì nó còn làm người ta thôi nhìn.
+ * `vite.config.ts` bật `test.css` để sửa nguyên nhân; case đầu tiên bên dưới canh phần ngọn.
  */
 describe("glass.css", () => {
-  const css = readFileSync(join(import.meta.dirname, "glass.css"), "utf8");
-
-  /* Canh chính cái bẫy trên: nếu nguồn đọc lại rỗng, hai test dưới lại xanh mà không kiểm gì. */
+  /* Canh chính cái bẫy trên: nếu nguồn lại rỗng, hai test dưới lại xanh mà không kiểm gì. */
   it("đọc được stylesheet", () => {
     expect(css).toContain("backdrop-filter");
   });

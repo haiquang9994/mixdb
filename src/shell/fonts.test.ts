@@ -1,6 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
+import appCss from "./App.css?raw";
 
 /**
  * Hai vai của chữ, khẳng định trên chính stylesheet.
@@ -11,36 +10,24 @@ import { describe, expect, it } from "vitest";
  * — vốn tình cờ cũng là Fira Code. Nó đúng nhờ tai nạn, và cái tai nạn đó biến mất đúng lúc `:root`
  * chuyển sang sans. Triệu chứng duy nhất là một dialog đổi font, nên nó được khẳng định ở đây.
  *
- * Stylesheet được đọc từ đĩa bằng `node:fs`, không phải qua `?raw`. Trong cấu hình vitest này
- * `import css from "./x.css?raw"` trả về **chuỗi rỗng** — plugin CSS của Vite xử lý file trước khi
- * hậu tố `?raw` kịp có tác dụng. Một test parse chuỗi rỗng thì được 0 rule, lọc ra mảng rỗng, và
- * khẳng định `[] === []`: nó xanh mà chưa từng kiểm gì. Đó là lý do ở đây đọc đĩa, và là lý do
- * `stylesheets()` được canh bằng một test riêng bên dưới — một tấm lưới an toàn hỏng im lặng thì
- * tệ hơn là không có lưới, vì nó còn làm người ta yên tâm.
+ * `?raw` chỉ trả về nội dung thật vì `vite.config.ts` bật `test.css`: mặc định Vitest stub mọi
+ * `.css` thành chuỗi rỗng, kể cả qua `?raw`. Đó là lý do case đầu tiên bên dưới tồn tại — một test
+ * parse chuỗi rỗng thì xanh mà chưa đọc dòng nào, và `glass.test.ts` đã xanh đúng như thế suốt từ
+ * ngày nó được viết.
  */
 
-const SRC = join(import.meta.dirname, "..");
-
-/** Mọi `.css` dưới `src/`, theo đường dẫn tương đối với `src/` cho thông báo lỗi đọc được. */
-function stylesheets(dir: string = SRC): { path: string; css: string }[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) return stylesheets(full);
-    if (!entry.name.endsWith(".css")) return [];
-    return [{ path: relative(SRC, full).replace(/\\/g, "/"), css: readFileSync(full, "utf8") }];
-  });
-}
-
-const sheets = stylesheets();
-
-/** `App.css` một mình — nơi mọi token được định nghĩa. */
-const appCss = sheets.find(({ path }) => path === "shell/App.css")!.css;
+/** Mọi stylesheet dưới `src/`. `App.css` nằm trong đó và được lọc ra ở chỗ cần. */
+const sheets = import.meta.glob("../**/*.css", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
 
 describe("font tokens", () => {
   it("đọc được stylesheet, không phải một mớ rỗng", () => {
-    // Cái bẫy mà `?raw` rơi vào, canh ở đây để nó không quay lại im lặng.
-    expect(sheets.length).toBeGreaterThan(40);
-    expect(sheets.every(({ css }) => css.length > 0)).toBe(true);
+    const values = Object.values(sheets);
+    expect(values.length).toBeGreaterThan(40);
+    expect(values.every((css) => css.length > 0)).toBe(true);
     expect(appCss).toContain(":root");
   });
 
@@ -50,17 +37,17 @@ describe("font tokens", () => {
   });
 
   it("không stylesheet nào gọi tên font ngoài chỗ định nghĩa token", () => {
-    const offenders = sheets
-      .filter(({ path }) => path !== "shell/App.css")
-      .filter(({ css }) => /font-family:[^;]*(Fira Code|system-ui|sans-serif|monospace)/.test(css))
-      .map(({ path }) => path);
+    const offenders = Object.entries(sheets)
+      .filter(([path]) => !path.endsWith("/App.css"))
+      .filter(([, css]) => /font-family:[^;]*(Fira Code|system-ui|sans-serif|monospace)/.test(css))
+      .map(([path]) => path);
     expect(offenders).toEqual([]);
   });
 
   it("mọi var(--font-*) được dùng đều có định nghĩa", () => {
     const defined = new Set([...appCss.matchAll(/(--font-[\w-]+):/g)].map(([, name]) => name));
     const used = new Set(
-      sheets.flatMap(({ css }) =>
+      Object.values(sheets).flatMap((css) =>
         [...css.matchAll(/var\((--font-[\w-]+)/g)].map(([, name]) => name),
       ),
     );

@@ -5,10 +5,21 @@
   max-width: 46rem;
 }
 
+/* Đây là một hàng *lựa chọn* — chọn Base64 hay URL hay hash — chứ không phải điều hướng: đổi nó
+   đổi cách ô bên dưới được xử lý, không đưa bạn sang màn khác. Nên nó là segmented control, cùng
+   hình dạng với `.choice-row` trong `modules/db/db.css`.
+
+   Trước đây nó gạch chân bằng `inset 0 -2px 0 var(--accent)` — cách viết thứ ba của cùng một vạch
+   2px mà tab cửa sổ và `.method-tab` cũng dùng, ở ba tầng khác nhau. Một tín hiệu dùng cho mọi
+   tầng thì thôi xếp hạng được tầng nào. */
 .tabs {
-  display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--border-soft);
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--hover-bg);
 }
 
 .tab {
@@ -17,14 +28,15 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  padding: 0.4rem 0.75rem;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  opacity: 0.65;
+  opacity: 0.7;
+  white-space: nowrap;
 }
 
 .tab:hover {
-  background: var(--hover-bg);
+  opacity: 1;
 }
 
 .tab:focus-visible {
@@ -34,8 +46,8 @@
 
 .tab.active {
   opacity: 1;
-  color: var(--accent-text);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  background: var(--surface-bg);
+  box-shadow: var(--shadow-sm);
 }
 
 .field {
