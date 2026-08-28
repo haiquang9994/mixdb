@@ -42,6 +42,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.20] - 2026-08-28
+
 ### Added
 
 - Tools: a fourth kind of tab, holding a SQL-to-MongoDB translator, a timestamp converter,
@@ -446,7 +448,8 @@ installs it and restarts. Every update is checked against MixDB's signing key fi
      links rather than decoration. `set-version.mjs` adds a line here as it cuts a section,
      so this stays in step without anyone remembering it. -->
 
-[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.19...HEAD
+[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.20...HEAD
+[0.0.20]: https://github.com/haiquang9994/mixdb/compare/v0.0.19...v0.0.20
 [0.0.19]: https://github.com/haiquang9994/mixdb/compare/v0.0.18...v0.0.19
 [0.0.18]: https://github.com/haiquang9994/mixdb/compare/v0.0.17...v0.0.18
 [0.0.17]: https://github.com/haiquang9994/mixdb/compare/v0.0.16...v0.0.17
