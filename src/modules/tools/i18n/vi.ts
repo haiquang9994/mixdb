@@ -90,6 +90,18 @@ const toolsVi = {
       notObject: "Cần một object, hoặc một mảng object làm mẫu.",
     },
 
+    env: {
+      label: "Biến môi trường",
+      from: "Từ",
+      to: "Sang",
+      formatEnv: ".env",
+      formatJson: "JSON",
+      formatExport: "export",
+      formatDocker: "docker -e",
+      placeholder: 'DB_HOST=localhost\nDB_PASSWORD="mật khẩu"',
+      notJson: "Đây không phải một object JSON phẳng.",
+    },
+
     ids: {
       label: "Sinh ID",
       kind: "Kiểu",

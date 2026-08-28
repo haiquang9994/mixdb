@@ -90,6 +90,18 @@ const toolsEn = {
       notObject: "Give an object, or an array of objects as a sample.",
     },
 
+    env: {
+      label: "Environment variables",
+      from: "From",
+      to: "To",
+      formatEnv: ".env",
+      formatJson: "JSON",
+      formatExport: "export",
+      formatDocker: "docker -e",
+      placeholder: 'DB_HOST=localhost\nDB_PASSWORD="a secret"',
+      notJson: "That did not parse as a flat JSON object.",
+    },
+
     ids: {
       label: "Id generator",
       kind: "Kind",
