@@ -5,6 +5,7 @@ MixDB là ứng dụng desktop (Tauri 2 + React 19 + TypeScript). Cửa sổ app
 - **Database** — client cho MySQL, PostgreSQL, MongoDB và Redis.
 - **REST** — soạn và gửi HTTP request, đọc response, giữ lịch sử và biến theo environment.
 - **Terminal** — mở shell ngay trên máy hoặc trên server qua SSH.
+- **Tools** — mười lăm tiện ích nhỏ hay phải với tay tới khi đang làm việc với DB, API hay máy chủ.
 
 Các loại database đều có workspace riêng:
 
@@ -17,14 +18,14 @@ Các loại database đều có workspace riêng:
 
 ## Tính năng
 
-Phiên bản mới nhất: **0.0.21** (2026-08-28). Phần dưới mô tả app hiện làm được những gì —
+Phiên bản mới nhất: **0.0.22** (2026-08-28). Phần dưới mô tả app hiện làm được những gì —
 *không* phải danh sách thay đổi: **cái gì đổi ở bản nào thì đọc [CHANGELOG.md](CHANGELOG.md)**,
 nơi duy nhất ghi điều đó.
 
 **Toàn app**
 
 - App đã tách thành shell + module: shell giữ thanh tab, phím tắt và Settings, mỗi module là một thư mục trong `src/modules/`.
-- `Ctrl/Cmd+T` mở tab mặc định (Database), `Ctrl/Cmd+1` / `2` / `3` mở thẳng tab Database / REST / Terminal, `Ctrl+Tab` và `Ctrl+Shift+Tab` chuyển tab vòng qua hai đầu.
+- `Ctrl/Cmd+T` mở tab mặc định (Database), `Ctrl/Cmd+1` / `2` / `3` / `4` mở thẳng tab Database / REST / Terminal / Tools, `Ctrl+Tab` và `Ctrl+Shift+Tab` chuyển tab vòng qua hai đầu.
 - Mở lại app là thanh tab của lần đóng trước quay về; chỉ tab đang active tự mở lại, số còn lại chờ tới khi được chọn.
 - Settings có pane Appearance, Shortcuts, một pane cho mỗi module (Database, REST, Terminal) và Update. Shortcuts liệt kê mọi phím tắt Ctrl/Cmd trong app.
 - Appearance có tuỳ chọn **liquid glass** cho các lớp nổi (menu, dropdown, tooltip, dialog), mặc định tắt.
@@ -52,13 +53,23 @@ nơi duy nhất ghi điều đó.
 - Mở shell trên máy — PowerShell, Command Prompt, Git Bash, WSL, login shell — hoặc trên server qua SSH, với saved host mà mật khẩu nằm trong kho credential của hệ điều hành.
 - Tìm trong scrollback, menu chuột phải riêng, và font/cỡ chữ chỉnh ở pane Terminal trong Settings.
 
+**Tools**
+
+- Một tab Tools là danh sách tool bên trái, panel bên phải; tiêu đề tab lấy tên tool đang mở nên mở nhiều tab Tools vẫn phân biệt được, và tool đã chọn quay lại khi mở lại app.
+- *Data* — dịch SQL sang query MongoDB, chuyển đổi JSON/YAML/CSV/`INSERT`, dựng schema (DDL hoặc type) từ JSON mẫu, sinh id hàng loạt (UUID v4/v7, ULID, NanoID).
+- *Text* — format & minify JSON/XML/SQL, đổi kiểu đặt tên (camelCase, snake_case…), so hai bên (bỏ qua khoảng trắng/hoa thường, hoặc so như JSON), và thử regex kèm capture group và replace.
+- *Encoding & IDs* — Base64/Hex/URL encode-decode và hash (MD5, SHA), đọc JWT ra header, payload và hạn dùng (chỉ đọc, không kiểm chữ ký).
+- *Time* — đọc timestamp Unix (giây/mili/micro) hay ISO 8601 rồi đổi qua lại theo múi giờ chọn sẵn; múi giờ được nhớ giữa các phiên.
+- *Connection & infrastructure* — tách chuỗi kết nối ra host/user/database rồi xuất lại thành URI, JDBC, `.env` hoặc `docker -e`; đổi `.env` qua JSON/`export`/`docker -e`; liệt kê cổng đang nghe trên máy kèm PID và tên tiến trình; và một cheatsheet lệnh có tham số điền vào chỗ trống, thêm được snippet của riêng bạn.
+- Nội dung ô vào/ra không bao giờ xuống đĩa — các tool này hay nhận token và chuỗi kết nối có mật khẩu. Phần cổng cũng chỉ đọc: lệnh giết tiến trình được in ra để bạn tự chạy, MixDB không chạy hộ.
+
 ## Kiến trúc
 
 - `src/` — Frontend React + TypeScript.
   - `src/shell/` — thanh tab, menu `[+]`, phím tắt, Settings. Shell không biết gì về module; `src/shell/registry.ts` là file duy nhất ngoài `src/modules/` gọi tên module.
-  - `src/modules/` — từng module (`db`, `rest`, `terminal`) mang theo component, store, phím tắt và i18n của chính nó. Trong `db`, `sql/` là workspace dùng chung cho các engine SQL (MySQL, PostgreSQL) cùng lớp `SqlApi`/`SqlDialect`, code riêng nằm ở `mysql/`, `postgres/`, `mongo/`, `redis/`.
+  - `src/modules/` — từng module (`db`, `rest`, `terminal`, `tools`) mang theo component, store, phím tắt và i18n của chính nó. Trong `db`, `sql/` là workspace dùng chung cho các engine SQL (MySQL, PostgreSQL) cùng lớp `SqlApi`/`SqlDialect`, code riêng nằm ở `mysql/`, `postgres/`, `mongo/`, `redis/`. Trong `tools`, mỗi tool là một thư mục dưới `tools/tools/` và `registry.ts` là chỗ duy nhất liệt kê chúng.
   - `src/core/`, `src/components/`, `src/icons/`, `src/i18n/` — helper, primitive UI, icon và chuỗi dùng chung.
-- `src-tauri/` — Backend Rust (Tauri). Mỗi module có phần backend riêng trong `src-tauri/src/modules/` (`db`, `rest`, `terminal`), dùng chung `error.rs`, `secrets.rs` và `ssh/`. Kết nối tới MySQL và PostgreSQL đi qua `sqlx`, MongoDB qua `mongodb`, Redis qua `redis`, HTTP qua `reqwest`, pty qua `portable-pty`, SSH qua `russh`. Frontend không nói chuyện trực tiếp với database hay mạng, mọi thứ đi qua `invoke(...)`.
+- `src-tauri/` — Backend Rust (Tauri). Mỗi module có phần backend riêng trong `src-tauri/src/modules/` (`db`, `rest`, `terminal`, `tools`), dùng chung `error.rs`, `secrets.rs` và `ssh/`. Kết nối tới MySQL và PostgreSQL đi qua `sqlx`, MongoDB qua `mongodb`, Redis qua `redis`, HTTP qua `reqwest`, pty qua `portable-pty`, SSH qua `russh`; module Tools gần như chạy trọn trong frontend, backend của nó chỉ có một lệnh đọc danh sách cổng đang nghe. Frontend không nói chuyện trực tiếp với database hay mạng, mọi thứ đi qua `invoke(...)`.
 
 Chi tiết cho người (hoặc agent) sửa code: [AGENT.md](AGENT.md) và [.agent/](.agent/).
 

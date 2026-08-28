@@ -1,6 +1,6 @@
 [package]
 name = "mixdb"
-version = "0.0.21"
+version = "0.0.22"
 # Both are read back out into the installer's metadata, so they are what a user sees in
 # Add/Remove Programs rather than notes to ourselves.
 description = "MixDB - multi-database desktop client (MySQL, PostgreSQL, MongoDB, Redis)"

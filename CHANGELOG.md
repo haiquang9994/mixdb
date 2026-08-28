@@ -42,6 +42,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.22] - 2026-08-28
+
 ### Added
 
 - Nine more tools: format & minify, data conversion, schema from JSON, `.env` conversion, diff, a
@@ -466,7 +468,8 @@ installs it and restarts. Every update is checked against MixDB's signing key fi
      links rather than decoration. `set-version.mjs` adds a line here as it cuts a section,
      so this stays in step without anyone remembering it. -->
 
-[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.21...HEAD
+[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.22...HEAD
+[0.0.22]: https://github.com/haiquang9994/mixdb/compare/v0.0.21...v0.0.22
 [0.0.21]: https://github.com/haiquang9994/mixdb/compare/v0.0.20...v0.0.21
 [0.0.20]: https://github.com/haiquang9994/mixdb/compare/v0.0.19...v0.0.20
 [0.0.19]: https://github.com/haiquang9994/mixdb/compare/v0.0.18...v0.0.19
