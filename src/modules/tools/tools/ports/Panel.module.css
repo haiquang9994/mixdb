@@ -29,7 +29,9 @@
 
 .row {
   display: grid;
-  grid-template-columns: 5rem 9rem 5rem 1fr;
+  /* Địa chỉ rộng hơn hẳn ba cột kia: một IPv6 như `fe80::1ff:fe23:4567` dài gấp mấy lần
+     `0.0.0.0`, và cột 9rem cũ cắt cụt nó. */
+  grid-template-columns: 4.5rem 15rem 4.5rem 1fr;
   gap: 0.5rem;
   padding: 0.3rem 0.5rem;
   font-size: 0.85rem;
@@ -42,6 +44,14 @@
   width: 100%;
 }
 
+/* Ô nào dài quá thì cắt bằng dấu ba chấm chứ không đẩy cột bên cạnh đi. Giá trị đầy đủ nằm ở
+   `title`, và một IPv6 dài vẫn chép được từ ô kết quả bên dưới. */
+.row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .row:hover {
   background: var(--hover-bg);
 }
@@ -52,21 +62,39 @@
   color: var(--accent-text);
 }
 
+/* `--surface-bg` chứ không phải `--bg`: biến kia không tồn tại trong repo, nên nền của hàng tiêu
+   đề dính lại là trong suốt, và các hàng cuộn qua bên dưới thì đọc lẫn vào nó. */
 .head {
   font-weight: 600;
   opacity: 0.6;
   cursor: default;
   position: sticky;
   top: 0;
-  background: var(--bg);
+  z-index: 1;
+  background: var(--surface-bg);
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .head:hover {
-  background: var(--bg);
+  background: var(--surface-bg);
 }
 
 .dim {
   opacity: 0.5;
+}
+
+.kill {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.75rem;
+}
+
+.killTitle {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .note {

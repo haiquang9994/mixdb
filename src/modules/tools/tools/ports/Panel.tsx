@@ -6,6 +6,7 @@ import { errorMessage } from "../../../../core/errors";
 import { useTranslation } from "../../../../i18n";
 import CopyField from "../../components/CopyField";
 import { listeningPorts, type ListeningPort } from "./api";
+import { matchesFilter } from "./filter";
 import { hostOs, killByPid, killByPort, type KillOs } from "./kill";
 import styles from "./Panel.module.css";
 
@@ -22,6 +23,9 @@ function PortsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState<ListeningPort | null>(null);
+  /* Số cổng của khối lệnh kill, tách khỏi bảng. Bấm một hàng thì điền vào đây, nhưng gõ tay cũng
+     được — nhu cầu thật là giết một cổng trên **máy khác**, máy mà bảng này không thấy. */
+  const [killPort, setKillPort] = useState("");
   // Mặc định theo máy đang chạy, nhưng đổi tay được: người ngồi Windows vẫn hay cần lệnh Linux.
   const [os, setOs] = useState<KillOs>(hostOs);
   const [busy, setBusy] = useState(false);
@@ -51,12 +55,10 @@ function PortsPanel() {
 
   useEffect(load, [load]);
 
-  const shown = useMemo(() => {
-    const rows = ports ?? [];
-    const needle = filter.trim();
-    if (needle === "") return rows;
-    return rows.filter((row) => String(row.port).includes(needle));
-  }, [ports, filter]);
+  const shown = useMemo(
+    () => (ports ?? []).filter((row) => matchesFilter(row, filter)),
+    [ports, filter],
+  );
 
   return (
     <div className={styles.panel}>
@@ -70,13 +72,6 @@ function PortsPanel() {
           placeholder={t("toolbox.ports.filter")}
           aria-label={t("toolbox.ports.filter")}
           className={styles.filter}
-        />
-        <Select
-          value={os}
-          options={OSES}
-          onChange={setOs}
-          ariaLabel={t("toolbox.ports.os")}
-          className={styles.os}
         />
       </div>
 
@@ -106,12 +101,18 @@ function PortsPanel() {
                 type="button"
                 className={isSelected ? `${styles.row} ${styles.selected}` : styles.row}
                 aria-current={isSelected ? "true" : undefined}
-                onClick={() => setSelected(row)}
+                onClick={() => {
+                  setSelected(row);
+                  setKillPort(String(row.port));
+                }}
               >
-                <span>{row.port}</span>
-                <span>{row.address}</span>
-                <span>{row.pid}</span>
-                <span className={row.process ? undefined : styles.dim}>
+                <span title={String(row.port)}>{row.port}</span>
+                <span title={row.address}>{row.address}</span>
+                <span title={String(row.pid)}>{row.pid}</span>
+                <span
+                  className={row.process ? undefined : styles.dim}
+                  title={row.process ?? undefined}
+                >
                   {row.process ?? t("toolbox.ports.unknownProcess")}
                 </span>
               </button>
@@ -120,19 +121,47 @@ function PortsPanel() {
         </div>
       ) : null}
 
-      {selected ? (
-        <>
+      {/* Khối này **không phụ thuộc vào bảng ở trên**: nhu cầu thật hay gặp là giết một cổng trên
+          một máy khác, có thể khác hệ điều hành, mà bảng của máy này không thấy. Chọn OS, gõ số
+          cổng, chép lệnh. */}
+      <section className={styles.kill}>
+        <h3 className={styles.killTitle}>{t("toolbox.ports.killTitle")}</h3>
+        <div className={styles.controls}>
+          <Select
+            value={os}
+            options={OSES}
+            onChange={setOs}
+            ariaLabel={t("toolbox.ports.os")}
+            className={styles.os}
+          />
+          <Input
+            value={killPort}
+            onChange={(event) => setKillPort(event.target.value.replace(/[^\d]/g, ""))}
+            placeholder={t("toolbox.ports.portInput")}
+            aria-label={t("toolbox.ports.portInput")}
+            className={styles.filter}
+            inputMode="numeric"
+          />
+        </div>
+
+        {killPort !== "" ? (
+          <CopyField
+            label={`${t("toolbox.ports.byPort")} · ${killPort}`}
+            value={killByPort(os, Number(killPort))}
+          />
+        ) : null}
+
+        {/* Lệnh theo PID chỉ có nghĩa với một hàng của **máy này**: PID của máy khác thì bảng
+            không biết. */}
+        {selected ? (
           <CopyField
             label={`${t("toolbox.ports.byPid")} · ${selected.pid}`}
             value={killByPid(os, selected.pid)}
           />
-          <CopyField
-            label={`${t("toolbox.ports.byPort")} · ${selected.port}`}
-            value={killByPort(os, selected.port)}
-          />
-          <p className={styles.note}>{t("toolbox.ports.note")}</p>
-        </>
-      ) : null}
+        ) : null}
+
+        <p className={styles.note}>{t("toolbox.ports.note")}</p>
+      </section>
     </div>
   );
 }
