@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "./tool";
 import CasePanel from "./tools/case/Panel";
 import EncodePanel from "./tools/encode/Panel";
+import FormatPanel from "./tools/format/Panel";
 import IdsPanel from "./tools/ids/Panel";
 import JwtPanel from "./tools/jwt/Panel";
 import SqlToMongoPanel from "./tools/sql-to-mongo/Panel";
@@ -20,4 +21,5 @@ export const TOOLS: ToolDefinition[] = [
   { id: "ids", labelKey: "toolbox.ids.label", group: "data", Panel: IdsPanel },
   { id: "encode", labelKey: "toolbox.encode.label", group: "encode", Panel: EncodePanel },
   { id: "jwt", labelKey: "toolbox.jwt.label", group: "encode", Panel: JwtPanel },
+  { id: "format", labelKey: "toolbox.format.label", group: "text", Panel: FormatPanel },
 ];

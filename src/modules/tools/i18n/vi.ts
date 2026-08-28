@@ -44,6 +44,21 @@ const toolsVi = {
       placeholder: "Mỗi dòng một tên — dán thẳng cả danh sách cột vào đây.",
     },
 
+    format: {
+      label: "Format & minify",
+      kind: "Định dạng",
+      auto: "Tự đoán",
+      indent: "Thụt lề",
+      dialect: "Dialect",
+      formatAction: "Format",
+      minifyAction: "Minify",
+      guessedJson: "Đọc như JSON.",
+      guessedXml: "Đọc như XML.",
+      guessedSql: "Đọc như SQL.",
+      placeholder: "Dán JSON, XML hoặc SQL vào đây",
+      errorAt: "Dòng {{line}}, cột {{column}}: {{message}}",
+    },
+
     ids: {
       label: "Sinh ID",
       kind: "Kiểu",

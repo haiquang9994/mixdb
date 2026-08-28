@@ -44,6 +44,21 @@ const toolsEn = {
       placeholder: "One name per line — paste a column list straight in.",
     },
 
+    format: {
+      label: "Format & minify",
+      kind: "Format",
+      auto: "Auto-detect",
+      indent: "Indent",
+      dialect: "Dialect",
+      formatAction: "Format",
+      minifyAction: "Minify",
+      guessedJson: "Read as JSON.",
+      guessedXml: "Read as XML.",
+      guessedSql: "Read as SQL.",
+      placeholder: "Paste JSON, XML or SQL",
+      errorAt: "Line {{line}}, column {{column}}: {{message}}",
+    },
+
     ids: {
       label: "Id generator",
       kind: "Kind",
