@@ -278,14 +278,19 @@
   box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
-/* Fills whatever the sidebar leaves, up to a ceiling: past ~1020px a form of three side-by-side
+/* Fills whatever the sidebar leaves, up to a ceiling: past this width a form of three side-by-side
    fields just spreads out, and Mongo's single full-width connection string turns into one
    absurdly long input. Growing into the space instead of holding a fixed width is what keeps a
-   narrow window from pushing fields out of view. */
+   narrow window from pushing fields out of view.
+
+   Trần hạ từ 1020px xuống 620px. Lý do cũ vẫn đúng, chỉ là 1020px chưa đủ thấp để nó thành thật:
+   trên một cửa sổ 1440px, ô "Host" rộng 470px và form trải hết 1020px trong khi hai phần ba màn
+   hình bên dưới bỏ trống — đó vẫn là hình dạng của `width: 100%`, chỉ bị chặn muộn. 620px là chỗ
+   Host và Port còn đứng cạnh nhau vừa vặn, và là bề ngang một form đọc theo chiều dọc nên có. */
 .login-form {
   flex: 1;
   min-width: 0;
-  max-width: 1020px;
+  max-width: 620px;
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -298,10 +303,29 @@
   overscroll-behavior: contain;
 }
 
+/* `<fieldset>` giữ vai ngữ nghĩa của nó — nó nhóm các control lại, và trình đọc màn hình đọc
+   `<legend>` kèm mỗi field bên trong — nhưng bỏ hết trang trí mặc định của trình duyệt. Cái viền
+   có chữ cắt ngang không phải một quyết định thiết kế, nó là hình dạng HTML sinh ra khi không ai
+   nói gì; và nó lộ ra rõ hơn hẳn từ lúc chrome chuyển sang sans, vì mọi thứ quanh nó đã thôi trông
+   như bản nháp. */
 fieldset {
-  border-radius: 8px;
-  margin-bottom: 1rem;
+  min-width: 0;
+  margin: 0 0 1.4rem;
+  padding: 0;
+  border: none;
   text-align: left;
+}
+
+/* Tên nhóm, không phải một cái nhãn dán trên viền: nhỏ, in hoa, giãn chữ, mờ đi. Nó xếp hạng
+   dưới mọi label trong nhóm, vì nó nói nhóm này là gì chứ không hỏi người dùng điều gì. */
+fieldset legend {
+  margin-bottom: 0.6rem;
+  padding: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  opacity: 0.55;
 }
 
 /* Vertical gap matches the margin between rows, so a pair that wraps sits exactly as far apart as
