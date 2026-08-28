@@ -42,6 +42,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.24] - 2026-08-28
+
 ### Changed
 
 - A dropdown fills in the option it is showing and opens with it in the middle of the list.
@@ -484,7 +486,8 @@ installs it and restarts. Every update is checked against MixDB's signing key fi
      links rather than decoration. `set-version.mjs` adds a line here as it cuts a section,
      so this stays in step without anyone remembering it. -->
 
-[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.23...HEAD
+[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.24...HEAD
+[0.0.24]: https://github.com/haiquang9994/mixdb/compare/v0.0.23...v0.0.24
 [0.0.23]: https://github.com/haiquang9994/mixdb/compare/v0.0.22...v0.0.23
 [0.0.22]: https://github.com/haiquang9994/mixdb/compare/v0.0.21...v0.0.22
 [0.0.21]: https://github.com/haiquang9994/mixdb/compare/v0.0.20...v0.0.21
