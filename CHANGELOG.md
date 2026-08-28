@@ -44,8 +44,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
-- Six more tools: format & minify, data conversion, schema from JSON, `.env` conversion, diff, and a
-  regex tester.
+- Nine more tools: format & minify, data conversion, schema from JSON, `.env` conversion, diff, a
+  regex tester, the ports listening on this machine, a cheatsheet of commands with fill-in
+  parameters, and a connection string reader.
 
 ### Fixed
 

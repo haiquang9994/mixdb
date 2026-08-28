@@ -129,6 +129,60 @@ const toolsEn = {
       timeout: "That pattern is too expensive — most likely catastrophic backtracking.",
     },
 
+    ports: {
+      label: "Listening ports",
+      refresh: "Refresh",
+      filter: "Filter by port or process",
+      os: "Commands for",
+      colPort: "Port",
+      colAddress: "Address",
+      colPid: "PID",
+      colProcess: "Process",
+      unknownProcess: "unknown",
+      empty: "Nothing is listening.",
+      noMatch: "Nothing matches that filter.",
+      killTitle: "Kill a port",
+      portInput: "Port",
+      byPid: "By PID",
+      byPort: "By port",
+      note: "MixDB never runs these. Copy one and run it yourself.",
+    },
+
+    cheatsheet: {
+      label: "Cheatsheet",
+      snippet: "Command",
+      add: "New snippet",
+      edit: "Edit",
+      remove: "Delete",
+      save: "Save",
+      cancel: "Cancel",
+      title: "Title",
+      group: "Group",
+      template: "Template — write parameters as {{name}}",
+      noParams: "This command takes no parameters.",
+      empty: "Pick a command.",
+      result: "Command",
+      note: "Quoting is up to the template. MixDB does not add quotes around what you type.",
+    },
+
+    connection: {
+      label: "Connection string",
+      paste: "Paste a connection string",
+      unreadable: "That is not a connection string MixDB knows.",
+      kind: "Database",
+      host: "Host",
+      port: "Port",
+      user: "User",
+      password: "Password",
+      database: "Database",
+      srvNote: "mongodb+srv takes its host and port from DNS, so there is no port to set.",
+      uri: "URI",
+      jdbc: "JDBC",
+      jdbcNone: "MongoDB and Redis have no JDBC standard.",
+      env: ".env",
+      docker: "docker -e",
+    },
+
     ids: {
       label: "Id generator",
       kind: "Kind",
@@ -194,6 +248,12 @@ const toolsEn = {
       warningObjectId: "This looks like an ObjectId — it may need `ObjectId(\"…\")`:",
       warningStarWithGroupBy: "SELECT * with GROUP BY has no Mongo equivalent:",
     },
+  },
+
+  /* Phần nhóm `error` mà module này phát ra. `dicts.ts` gộp nhóm này bằng tay — nó là nhóm duy
+     nhất được phép trùng tên giữa các từ điển. */
+  error: {
+    portScanFailed: "Could not read the list of open ports: {{tool}} did not run.",
   },
 };
 

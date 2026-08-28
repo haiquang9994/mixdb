@@ -1,5 +1,7 @@
 import type { ToolDefinition } from "./tool";
 import CasePanel from "./tools/case/Panel";
+import CheatsheetPanel from "./tools/cheatsheet/Panel";
+import ConnectionPanel from "./tools/connection/Panel";
 import ConvertPanel from "./tools/convert/Panel";
 import DiffPanel from "./tools/diff/Panel";
 import EncodePanel from "./tools/encode/Panel";
@@ -7,6 +9,7 @@ import EnvPanel from "./tools/env/Panel";
 import FormatPanel from "./tools/format/Panel";
 import IdsPanel from "./tools/ids/Panel";
 import JwtPanel from "./tools/jwt/Panel";
+import PortsPanel from "./tools/ports/Panel";
 import RegexPanel from "./tools/regex/Panel";
 import SchemaPanel from "./tools/schema/Panel";
 import SqlToMongoPanel from "./tools/sql-to-mongo/Panel";
@@ -32,4 +35,17 @@ export const TOOLS: ToolDefinition[] = [
   { id: "env", labelKey: "toolbox.env.label", group: "infra", Panel: EnvPanel },
   { id: "diff", labelKey: "toolbox.diff.label", group: "text", Panel: DiffPanel },
   { id: "regex", labelKey: "toolbox.regex.label", group: "text", Panel: RegexPanel },
+  { id: "ports", labelKey: "toolbox.ports.label", group: "infra", Panel: PortsPanel },
+  {
+    id: "cheatsheet",
+    labelKey: "toolbox.cheatsheet.label",
+    group: "infra",
+    Panel: CheatsheetPanel,
+  },
+  {
+    id: "connection",
+    labelKey: "toolbox.connection.label",
+    group: "infra",
+    Panel: ConnectionPanel,
+  },
 ];

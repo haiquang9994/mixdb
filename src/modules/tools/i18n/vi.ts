@@ -129,6 +129,60 @@ const toolsVi = {
       timeout: "Mẫu này quá tốn — nhiều khả năng là backtracking.",
     },
 
+    ports: {
+      label: "Cổng đang nghe",
+      refresh: "Tải lại",
+      filter: "Lọc theo cổng hoặc tiến trình",
+      os: "Lệnh cho",
+      colPort: "Cổng",
+      colAddress: "Địa chỉ",
+      colPid: "PID",
+      colProcess: "Tiến trình",
+      unknownProcess: "không rõ",
+      empty: "Không có cổng nào đang được nghe.",
+      noMatch: "Không có gì khớp bộ lọc.",
+      killTitle: "Giết một cổng",
+      portInput: "Cổng",
+      byPid: "Theo PID",
+      byPort: "Theo cổng",
+      note: "MixDB không bao giờ chạy các lệnh này. Chép ra rồi tự chạy.",
+    },
+
+    cheatsheet: {
+      label: "Cheatsheet",
+      snippet: "Lệnh",
+      add: "Snippet mới",
+      edit: "Sửa",
+      remove: "Xoá",
+      save: "Lưu",
+      cancel: "Huỷ",
+      title: "Tên",
+      group: "Nhóm",
+      template: "Template — tham số viết {{name}}",
+      noParams: "Lệnh này không có tham số nào.",
+      empty: "Chọn một lệnh.",
+      result: "Lệnh",
+      note: "Ngoặc là việc của template. MixDB không tự bọc ngoặc quanh thứ bạn gõ.",
+    },
+
+    connection: {
+      label: "Chuỗi kết nối",
+      paste: "Dán một chuỗi kết nối vào đây",
+      unreadable: "Đây không phải chuỗi kết nối MixDB đọc được.",
+      kind: "Loại DB",
+      host: "Host",
+      port: "Cổng",
+      user: "Người dùng",
+      password: "Mật khẩu",
+      database: "Database",
+      srvNote: "mongodb+srv lấy host và cổng từ DNS, nên không có cổng để đặt.",
+      uri: "URI",
+      jdbc: "JDBC",
+      jdbcNone: "MongoDB và Redis không có chuẩn JDBC.",
+      env: ".env",
+      docker: "docker -e",
+    },
+
     ids: {
       label: "Sinh ID",
       kind: "Kiểu",
@@ -194,6 +248,10 @@ const toolsVi = {
       warningObjectId: "Giá trị này trông như một ObjectId — có thể cần `ObjectId(\"…\")`:",
       warningStarWithGroupBy: "`SELECT *` cùng `GROUP BY` không có tương ứng trong Mongo:",
     },
+  },
+
+  error: {
+    portScanFailed: "Không đọc được danh sách cổng đang mở: {{tool}} không chạy được.",
   },
 };
 

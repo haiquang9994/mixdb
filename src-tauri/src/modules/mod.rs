@@ -3,6 +3,7 @@
 pub mod db;
 pub mod rest;
 pub mod terminal;
+pub mod tools;
 
 /// Every command of every module.
 ///
@@ -104,12 +105,12 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         db::commands::redis::redis_scan_keys,
         db::commands::redis::redis_key_value,
         db::commands::redis::redis_delete_keys,
-        db::commands::tools::tools_status,
-        db::commands::tools::tools_ready,
-        db::commands::tools::tools_downloadable,
-        db::commands::tools::tools_install,
-        db::commands::tools::tools_uninstall,
-        db::commands::tools::tools_set_path,
+        db::commands::tools::dumptools_status,
+        db::commands::tools::dumptools_ready,
+        db::commands::tools::dumptools_downloadable,
+        db::commands::tools::dumptools_install,
+        db::commands::tools::dumptools_uninstall,
+        db::commands::tools::dumptools_set_path,
         // ── rest ──
         rest::commands::rest_send,
         rest::commands::rest_cancel,
@@ -121,5 +122,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         terminal::commands::terminal_write,
         terminal::commands::terminal_resize,
         terminal::commands::terminal_close,
+        // ── tools ──
+        tools::commands::tools_listening_ports,
     ]
 }
