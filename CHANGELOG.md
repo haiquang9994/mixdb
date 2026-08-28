@@ -44,16 +44,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Changed
 
-- The interface reads at a tool's density: labels, buttons and menus are in the system sans face,
-  data and editors stay in Fira Code, and a smaller type scale fits about a quarter more rows on a
-  screen.
-- A new default accent colour. The ten you can pick from are unchanged.
-- The open tab is outlined in the accent rather than barred along its top edge, and no longer goes
-  bold — so choosing a tab no longer changes its width.
-- Each level of the app marks what is selected in its own way: window tabs by their outline, a
-  workspace's Data/Structure/Statistics/Query by an underline, and the database and connection
-  method pickers as the choices they are rather than as a third row of tabs.
-- The connection form drops the browser's default fieldset borders and holds a readable width.
+- The interface has been redrawn at a tool's density: sans for labels and menus, Fira Code kept for
+  data, smaller type that fits about a quarter more rows, and a new default accent.
 
 ### Fixed
 
