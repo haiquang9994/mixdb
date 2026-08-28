@@ -164,9 +164,25 @@ chuỗi chưa đóng.
 
 ### 3.3 XML
 
-`DOMParser` của trình duyệt đã parse và báo lỗi hộ — lỗi hiện ra thành một phần tử `parsererror`
-trong cây trả về, và tool nhận ra nó để báo thay vì in ra rác. Phần còn lại là một hàm đi cây và in
-thụt lề, giữ comment, CDATA và processing instruction nguyên trạng.
+**Không dùng `DOMParser`.** Nó là API của trình duyệt và không tồn tại trong Node, mà vitest chạy
+trong Node và repo cố ý không có jsdom — nên mọi test cho phần XML sẽ không chạy được. Một tool có
+cùng loại bẫy im lặng như JSON ở 3.2 mà lại là tool duy nhất trong module không test được là cái giá
+quá cao để đổi lấy vài chục dòng.
+
+Thay vào đó: một bộ parse XML tự viết ra cây nhẹ, rồi một hàm in cây đó ra có thụt lề. Cùng hình với
+bộ tách token JSON, cùng lý do.
+
+```ts
+export type XmlNode =
+  | { kind: "element"; name: string; attrs: string; selfClosing: boolean; children: XmlNode[] }
+  /** Comment, CDATA, processing instruction và doctype đi qua nguyên văn — không có gì để in lại. */
+  | { kind: "text" | "comment" | "cdata" | "pi" | "doctype"; raw: string };
+```
+
+Đổi lại còn được thứ `DOMParser` không cho: lỗi có **vị trí**. Thẻ chưa đóng và thẻ đóng lệch tên
+đều chỉ đúng chỗ, thay vì một phần tử `parsererror` với câu chữ khác nhau ở mỗi trình duyệt.
+
+Comment, CDATA, processing instruction và doctype giữ nguyên trạng.
 
 Một luật, vì phá nó là đổi tài liệu: **không thụt lề lại nội dung hỗn hợp.** Phần tử có cả text lẫn
 phần tử con — `<p>xin <b>chào</b> bạn</p>` — thì khoảng trắng *là* dữ liệu, và thêm xuống dòng vào
@@ -339,9 +355,17 @@ export type DiffResult =
   | { ok: false; reason: "tooLarge" };
 ```
 
-LCS là O(n×m) cả thời gian lẫn bộ nhớ, nên **chặn ở 5000 dòng mỗi bên** và trả về `tooLarge` kèm một
-câu giải thích. Không chặn thì hai file 50 nghìn dòng làm treo cả cửa sổ, và trong một app desktop
-thì đó là mất tab chứ không phải chờ lâu.
+LCS là O(n×m) cả thời gian lẫn bộ nhớ, và bộ nhớ mới là chỗ đau: một bảng 5000×5000 ô 4 byte là
+**95 MB** cho một lần bấm. Nên hai bước, theo đúng thứ tự:
+
+1. **Cắt phần đầu và phần đuôi giống nhau** trước khi chạy LCS. Mười dòng khác nhau giữa hai file 50
+   nghìn dòng thì bảng chỉ còn 10×10. Đây là thứ làm tool dùng được với file thật, và nó là chừng
+   mười dòng code.
+2. **Chặn phần giữa ở 2000 dòng mỗi bên** — 16 MB, chấp nhận được — và trả `tooLarge` kèm một câu
+   giải thích khi vượt.
+
+Không chặn thì hai file thật sự khác nhau hoàn toàn làm treo cả cửa sổ, và trong một app desktop thì
+đó là mất tab chứ không phải chờ lâu.
 
 Ba ô đánh dấu: bỏ qua khoảng trắng, bỏ qua hoa thường, và **so sánh như JSON** — ô cuối chạy cả hai
 bên qua `formatJson` ở 3.2 trước khi diff, nên hai đoạn JSON viết một dòng và viết thụt lề không còn
@@ -393,7 +417,8 @@ Bốn thứ **không** kéo về, và lý do:
   devDependency.
 - **thư viện CSV** — phần khó là ngoặc kép lồng, và nó là 60 dòng đáng test.
 - **thư viện diff** — LCS theo dòng là 80 dòng.
-- **thư viện XML** — `DOMParser` đã có sẵn trong runtime.
+- **thư viện XML** — bộ parse ở 3.3 là 150 dòng, và nó chạy được trong test, khác với `DOMParser`.
+- **jsdom** — phi mục tiêu của spec mẹ, và 3.3 đã bỏ thứ duy nhất cần tới nó.
 
 ## 10. Việc ngoài `src/modules/tools/`
 
@@ -406,20 +431,21 @@ giai đoạn 1.
 
 ## 11. Thứ tự làm
 
-Mười ba task. Format đi trước vì `formatJson` là thứ tool Diff dùng lại ở task 12.
+Mười bốn task. Format đi trước vì `formatJson` là thứ tool Diff dùng lại ở task 13.
 
 | # | Task | Test |
 | --- | --- | --- |
 | 1 | `formatJson` / `minifyJson` — bộ tách token | Bảng bốn dòng ở 3.2, JSON lồng, vị trí lỗi |
-| 2 | XML format/minify, SQL format/minify | Nội dung hỗn hợp, chuỗi và comment trong SQL |
-| 3 | Panel `format` + đoán định dạng + registry + i18n | — |
-| 4 | CSV đọc/ghi | Bảng case RFC 4180 |
-| 5 | YAML qua `js-yaml`, trục chuyển đổi | `yes` vẫn là chuỗi |
-| 6 | Bộ sinh INSERT | Escape theo từng dialect |
-| 7 | Panel `convert` + registry + i18n | — |
-| 8 | `inferSchema` | Hợp nhất khoá, nới kiểu, optional |
-| 9 | Ba bộ sinh mã | Ánh xạ ở mục 5, đặt tên, lồng nhau |
-| 10 | Panel `schema` + registry + i18n | — |
-| 11 | `.env` đọc/ghi bốn dạng + Panel + registry + i18n | Bảng luật ở mục 6 |
-| 12 | `diffLines` + Panel + registry + i18n | LCS, `tooLarge`, so sánh như JSON |
-| 13 | Regex worker + Panel + registry + i18n + CHANGELOG | Match rỗng, hạn 1 giây |
+| 2 | XML: parse ra cây, in có thụt lề, minify | Nội dung hỗn hợp, CDATA, thẻ đóng lệch |
+| 3 | SQL minify, đoán định dạng | Chuỗi và comment trong SQL |
+| 4 | Panel `format` + registry + i18n | — |
+| 5 | CSV đọc/ghi | Bảng case RFC 4180 |
+| 6 | YAML qua `js-yaml`, trục chuyển đổi | `yes` vẫn là chuỗi |
+| 7 | Bộ sinh INSERT | Escape theo từng dialect |
+| 8 | Panel `convert` + registry + i18n | — |
+| 9 | `inferSchema` | Hợp nhất khoá, nới kiểu, optional |
+| 10 | Ba bộ sinh mã | Ánh xạ ở mục 5, đặt tên, lồng nhau |
+| 11 | Panel `schema` + registry + i18n | — |
+| 12 | `.env` đọc/ghi bốn dạng + Panel + registry + i18n | Bảng luật ở mục 6 |
+| 13 | `diffLines` + Panel + registry + i18n | Cắt đầu đuôi, `tooLarge`, so sánh như JSON |
+| 14 | Regex worker + Panel + registry + i18n + CHANGELOG | Match rỗng, hạn 1 giây |
