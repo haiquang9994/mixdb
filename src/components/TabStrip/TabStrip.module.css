@@ -43,7 +43,15 @@
 
 /* Where the tabs run off the edge. Drawn like `.action` below — it is an action on the strip, not
    another tab on it — and greyed out rather than taken away at either end, so the strip does not
-   change width the moment it is scrolled to one. */
+   change width the moment it is scrolled to one.
+
+   Narrow on purpose, and this is the one rule here that another file depends on: the two arrows
+   together have to be wider than whatever the caller puts in `trailing`, which for both strips that
+   have one is a `.action` holding a single icon. `TabStrip.tsx` says why — the two appear and
+   disappear against each other, and a `trailing` wider than both arrows would leave a band of
+   widths the strip could flicker in. A chevron beside an icon with twice its side padding clears
+   that comfortably: two of these are around 58px with the gaps between them, against 40px for an
+   action holding one icon. */
 .arrow {
   display: inline-flex;
   align-items: center;
@@ -53,7 +61,7 @@
   box-shadow: none;
   background: transparent;
   color: inherit;
-  padding: 0.3em 0.2em;
+  padding: 0.3em 0.4em;
   border-radius: 4px;
   cursor: pointer;
 }

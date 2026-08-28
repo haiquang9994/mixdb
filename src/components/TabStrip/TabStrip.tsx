@@ -24,8 +24,13 @@ import styles from "./TabStrip.module.css";
  * **The tabs scroll; what is held at either end does not.** More tabs than room used to mean a
  * scrollbar under the whole strip, the app's own settings button included — so the one control
  * that is there on every screen scrolled away with them. It sits in `leading` now, outside the part
- * that moves, and `[+]` sits in `trailing` for the same reason: both are actions on the strip
- * rather than tabs on it, and an action you have to go looking for is one that has been mislaid.
+ * that moves: it is an action on the strip rather than a tab on it, and an action you have to go
+ * looking for is one that has been mislaid.
+ *
+ * `trailing` — `[+]` in both strips that have one — moves. A strip whose tabs all fit keeps it
+ * where it has always been, a step after the last tab, which is where the eye goes for one more of
+ * something. It is only pinned to the right edge once the tabs run past it, which is the one case
+ * where trailing the last tab means being off the screen.
  */
 
 interface TabStripProps extends HTMLAttributes<HTMLDivElement> {
@@ -78,6 +83,15 @@ export function TabStrip({
           would otherwise hand this strip's notches to whatever pane sits behind it. */}
       <div ref={ref} className={styles.scroller} data-hscroll="" data-tab-strip={dragStrip}>
         {children}
+        {/* In the scroll box while everything fits, out of it once the tabs overflow.
+
+            Moving it changes what is measured, which is a loop waiting to happen: taking it out of
+            the box shrinks what is in the box, and could put the strip back under the line it just
+            crossed. It cannot, and the reason is a width: leaving costs the box `trailing`, and
+            arriving costs it two arrows. As long as `trailing` is the narrower of the two there is
+            no gap between the two thresholds for the strip to sit in and flicker — see the arrow's
+            padding in `TabStrip.module.css`, which is what keeps that true. */}
+        {!overflowing && trailing}
       </div>
       {overflowing && (
         <button
@@ -91,7 +105,7 @@ export function TabStrip({
           <ChevronRightIcon size={14} />
         </button>
       )}
-      {trailing}
+      {overflowing && trailing}
     </div>
   );
 }
