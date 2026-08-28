@@ -32,7 +32,7 @@
   align-items: flex-start;
   gap: 8px;
   margin: 0;
-  font-size: 0.95em;
+  font-size: var(--text-md);
   line-height: 1.5;
   /* Câu lỗi thường dẫn lại lời của máy chủ, có khi không có chỗ nào để ngắt dòng. */
   overflow-wrap: anywhere;

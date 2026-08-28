@@ -79,8 +79,8 @@
    horizontal scrollbar under a paragraph is a paragraph nobody finishes. */
 .text {
   margin: 0;
-  font-family: "Fira Code", monospace;
-  font-size: 0.9em;
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
   white-space: pre-wrap;
   word-break: break-word;
   user-select: text;
@@ -100,7 +100,7 @@
   background: rgb(var(--danger-rgb) / 0.12);
   box-shadow: inset 0 0 0 1px rgb(var(--danger-rgb) / 0.35);
   color: var(--danger-text);
-  font-size: 0.9em;
+  font-size: var(--text-md);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }

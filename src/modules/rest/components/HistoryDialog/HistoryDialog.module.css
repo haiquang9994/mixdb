@@ -125,7 +125,7 @@
   align-items: center;
   gap: 0.6rem;
   padding-left: 3.7rem;
-  font-size: 0.8em;
+  font-size: var(--text-sm);
   opacity: 0.8;
   font-variant-numeric: tabular-nums;
 }
@@ -181,7 +181,7 @@
   border-radius: var(--radius-md);
   background: var(--code-bg, rgba(127, 127, 127, 0.08));
   font-family: var(--font-mono);
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   white-space: pre-wrap;
   word-break: break-word;
 }

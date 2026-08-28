@@ -10,13 +10,13 @@
 }
 
 .groupLabel {
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   opacity: 0.6;
 }
 
 .hint {
   margin: 0;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   line-height: 1.45;
   opacity: 0.65;
 }
@@ -43,7 +43,7 @@
 }
 
 .unit {
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   opacity: 0.65;
 }
 

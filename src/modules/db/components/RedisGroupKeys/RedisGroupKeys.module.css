@@ -23,8 +23,8 @@
 }
 
 .prefix {
-  font-family: "Fira Code", monospace;
-  font-size: 0.95em;
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -33,7 +33,7 @@
 }
 
 .meta {
-  font-size: 0.82em;
+  font-size: var(--text-sm);
   opacity: 0.65;
 }
 
@@ -61,7 +61,7 @@
 .notice {
   flex-shrink: 0;
   margin: 0;
-  font-size: 0.82em;
+  font-size: var(--text-sm);
   line-height: 1.35;
   color: var(--c-orange-text);
 }
@@ -78,7 +78,7 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -145,8 +145,8 @@
 .name {
   flex: 1;
   min-width: 0;
-  font-family: "Fira Code", monospace;
-  font-size: 0.85em;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -159,7 +159,7 @@
   justify-content: space-between;
   gap: 0.6rem;
   flex-shrink: 0;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
 }
 
 .showMore {

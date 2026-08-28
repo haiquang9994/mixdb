@@ -42,6 +42,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Changed
+
+- The interface has been redrawn at a tool's density: sans for labels and menus, Fira Code kept for
+  data, smaller type that fits about a quarter more rows, and a new default accent.
+
 ### Fixed
 
 - The options of a long dropdown no longer flicker as the pointer moves over them.

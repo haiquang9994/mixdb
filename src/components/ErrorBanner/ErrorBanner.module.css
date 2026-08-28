@@ -50,7 +50,7 @@
   background-color: rgb(var(--danger-rgb) / 0.15);
   box-shadow: none;
   color: var(--danger);
-  font-size: 0.95em;
+  font-size: var(--text-md);
   line-height: 1;
   cursor: pointer;
 }

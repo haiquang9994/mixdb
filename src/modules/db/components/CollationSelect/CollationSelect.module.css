@@ -9,6 +9,6 @@
 
 .charset {
   flex: 0 0 auto;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   opacity: 0.6;
 }

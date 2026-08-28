@@ -14,8 +14,19 @@ import css from "./glass.css?raw";
  * property rather than a second one, so a `backdrop-filter: url(…)` written after it does not sit
  * beside the prefixed line as its replacement — it overwrites it, and takes down the frost the
  * prefixed line was there to provide.
+ *
+ * Đến 2026-08-29 hai test dưới đây **chưa từng đọc một dòng CSS nào**. Vitest stub mọi request
+ * `.css` ra chuỗi rỗng trừ khi `test.css` được bật, và stub đó trả lời cả `?raw`. Chúng parse
+ * chuỗi rỗng, được 0 rule, lọc ra mảng rỗng, rồi khẳng định `[] === []` — xanh suốt nhiều tháng.
+ * Một tấm lưới an toàn hỏng im lặng còn tệ hơn không có lưới, vì nó còn làm người ta thôi nhìn.
+ * `vite.config.ts` bật `test.css` để sửa nguyên nhân; case đầu tiên bên dưới canh phần ngọn.
  */
 describe("glass.css", () => {
+  /* Canh chính cái bẫy trên: nếu nguồn lại rỗng, hai test dưới lại xanh mà không kiểm gì. */
+  it("đọc được stylesheet", () => {
+    expect(css).toContain("backdrop-filter");
+  });
+
   /** Every innermost `selector { … }` in the file, as the selector it is drawn for and its
    *  declarations. Innermost because the pattern admits no braces on either side, so an at-rule's
    *  own line is never mistaken for a rule of its own. */

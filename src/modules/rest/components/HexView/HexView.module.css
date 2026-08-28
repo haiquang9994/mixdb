@@ -2,13 +2,13 @@
   margin: 0;
   padding: 0.5rem;
   overflow: auto;
-  font-family: "Fira Code", monospace;
-  font-size: 0.85em;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
   line-height: 1.45;
   white-space: pre;
 }
 
 .notice {
   padding: 0.4rem 0.5rem;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
 }

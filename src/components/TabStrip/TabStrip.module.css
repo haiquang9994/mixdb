@@ -90,8 +90,8 @@
   cursor: pointer;
   white-space: nowrap;
   max-width: 200px;
-  /* Background only. The active tab's `box-shadow` is where the accent, the glass rim and the
-     read-only amber all land, and none of those is something to watch slide into place. */
+  /* Background only. The active tab's `box-shadow` is where its hairline and the glass rim land,
+     and neither is something to watch slide into place. */
   transition: background-color 120ms ease;
 }
 
@@ -107,20 +107,40 @@
   border-color: transparent;
 }
 
-/* The one piece of chrome that says which tab you are looking at, so it is where the accent
-   belongs most. It lifts to the surface colour and takes a bar of accent along its top edge —
-   `inset` so the bar sits inside the tab's own rounded corners.
+/* Tab đang mở, nói bằng ba thứ cùng lúc — và không thứ nào trong ba làm nó đổi bề rộng.
 
-   The bar's colour comes from `--tab-accent`, which is this component's one public knob and the
-   reason it can be a CSS Module at all. A caller that needs a different bar sets the variable on
-   the tab and is done — `modules/db/db.css` paints a read-only connection's bar amber in one
-   line. The alternative was for callers to out-specify a class they cannot name, which is what
-   they used to do against the old global `.tab-active`, in two places, one of them a rule copied
-   out under `@supports` purely to survive the glass rim below. */
+   Trước đây nó nói bằng một vạch accent 2px ở cạnh trên, cộng `font-weight: 600`. Cả hai đều phải
+   đi:
+
+   - Vạch 2px từng là thứ **duy nhất** app dùng để nói "cái này đang được chọn", ở bốn tầng lồng
+     nhau cùng lúc: tab cửa sổ, tab nội dung của workspace, picker chọn loại DB, picker TCP/IP|SSH
+     — và trên hai cạnh đối nhau mà sự khác nhau đó không mang nghĩa gì. Một tín hiệu đánh dấu mọi
+     tầng thì thôi xếp hạng được tầng nào. Vạch giờ chỉ còn ở một tầng (`.method-tab` trong
+     `modules/db/db.css`), nên ở đó nó lấy lại được nghĩa.
+   - Chữ đậm rộng hơn chữ thường, nên bật nó theo trạng thái làm tab đổi bề rộng khi được chọn và
+     đẩy mọi tab phía sau sang chỗ khác. Trên một dải tab, thứ duy nhất được phép dịch chuyển là
+     thứ người dùng đang kéo.
+
+   Cái thay thế chúng vẫn là accent — màu người dùng chọn vẫn ở đây, và vẫn là mảng màu lớn nhất
+   trên khung app — nhưng nó **vẽ hình của tab** thay vì gắn thêm một thanh vào tab: một viền chạy
+   quanh cả bốn cạnh. Cùng một màu, khác hẳn một hình, nên nó không lặp lại tín hiệu mà ba tầng bên
+   dưới đang dùng.
+
+   `--tab-accent` vẫn là knob công khai của component và không bị bỏ; nó chỉ thôi được rule này
+   dùng. Dấu read-only, thứ từng dựa vào vạch amber, giờ tự đứng bằng nền và viền của chính badge —
+   xem `.tab-lock` trong `modules/db/db.css`. */
 .tabActive {
   background: var(--surface-bg);
-  box-shadow: inset 0 2px 0 var(--tab-accent, var(--accent));
-  font-weight: 600;
+  /* Viền accent chạy quanh cả tab, không phải một vạch ở một cạnh. Nó vẫn là màu người dùng chọn —
+     nhưng nó vẽ *hình* của tab thay vì gắn thêm một thanh vào tab, nên nó không lặp lại tín hiệu
+     mà ba tầng bên dưới đang dùng. */
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.55);
+  /* Và tab liền mặt với pane bên dưới: 1px này đè lên đường kẻ đáy của dải tab, nên tab đang mở
+     không còn bị một nét ngăn với nội dung của nó. Đó là thứ làm một cái tab đọc ra là tab, và nó
+     đổi chiều cao chứ không đổi bề rộng — dải tab lúc nào cũng có đúng một tab đang mở, nên chiều
+     cao của dải không nhúc nhích. */
+  margin-bottom: -1px;
+  padding-bottom: calc(0.45rem + 1px);
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -144,10 +164,11 @@
   transition: none;
 }
 
-/* The open tab keeps its accent bar while it travels. */
+/* Tab đang mở giữ nguyên hình khối của nó khi được nhấc lên; chỉ có bóng đổ nói rằng nó đang ở
+   trên tay. */
 .tabActive[data-dragging] {
   box-shadow:
-    inset 0 2px 0 var(--tab-accent, var(--accent)),
+    inset 0 0 0 1px rgb(var(--accent-rgb) / 0.55),
     0 0 12px rgb(0 0 0 / 0.24);
 }
 
@@ -168,7 +189,7 @@
   padding: 0.2em 0.3em;
   border-radius: 4px;
   line-height: 1;
-  font-size: 0.9em;
+  font-size: var(--text-md);
   cursor: pointer;
 }
 
@@ -209,7 +230,7 @@
 
 .small .tab {
   padding: 0.35rem 0.6rem;
-  font-size: 0.9em;
+  font-size: var(--text-md);
   opacity: 0.75;
   transition: background-color 120ms ease, opacity 120ms ease;
 }
@@ -238,13 +259,13 @@
     background: var(--glass-chrome-tint);
   }
 
-  /* The open tab, lifted: the accent bar it already carries, plus the rim that says the surface it
-     is drawn on is the same one the menus and dialogs are cut from. */
+  /* The open tab, lifted: the rim that says the surface it is drawn on is the same one the menus
+     and dialogs are cut from. Dưới glass, chính cái rim này là hình khối phân biệt tab đang mở —
+     không cần thêm vạch nào. */
   :global(:root[data-glass="on"]) .strip:not(.small) .tabActive {
     box-shadow:
-      inset 0 2px 0 var(--tab-accent, var(--accent)),
       inset 1px 1px 1.5px -0.5px var(--glass-rim-lit),
-      inset 0 0 0 1px var(--glass-rim-hairline);
+      inset 0 0 0 1px rgb(var(--accent-rgb) / 0.55);
   }
 
   /* The same rim, plus the shadow of a tab in hand — restated because the rule above out-names the
@@ -252,9 +273,8 @@
      round. */
   :global(:root[data-glass="on"]) .strip:not(.small) .tabActive[data-dragging] {
     box-shadow:
-      inset 0 2px 0 var(--tab-accent, var(--accent)),
       inset 1px 1px 1.5px -0.5px var(--glass-rim-lit),
-      inset 0 0 0 1px var(--glass-rim-hairline),
+      inset 0 0 0 1px rgb(var(--accent-rgb) / 0.55),
       0 0 12px rgb(0 0 0 / 0.24);
   }
 }

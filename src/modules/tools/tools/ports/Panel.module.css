@@ -42,7 +42,7 @@
   grid-template-columns: 4.5rem 15rem 4.5rem 1fr;
   gap: 0.5rem;
   padding: 0.3rem 0.5rem;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   cursor: pointer;
   border: none;
   background: transparent;
@@ -104,18 +104,18 @@
 
 .killTitle {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-md);
   font-weight: 600;
 }
 
 .note {
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   opacity: 0.8;
   margin: 0;
 }
 
 .error {
-  font-size: 0.9rem;
+  font-size: var(--text-md);
   color: var(--danger, #d33);
   margin: 0;
 }

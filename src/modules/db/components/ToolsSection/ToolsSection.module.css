@@ -9,13 +9,13 @@
 }
 
 .sectionLabel {
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   opacity: 0.6;
 }
 
 .hint {
   margin: 0;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   line-height: 1.45;
   opacity: 0.65;
 }
@@ -32,7 +32,7 @@
   background: var(--hover-bg);
   padding: 0.3em 0.7em;
   border-radius: var(--radius-sm);
-  font-size: 0.85em;
+  font-size: var(--text-sm);
 }
 
 .toolButton:hover:not(:disabled) {
@@ -59,7 +59,7 @@
 }
 
 .toolSuiteName {
-  font-size: 0.9em;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 
@@ -81,7 +81,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
-  font-size: 0.82em;
+  font-size: var(--text-sm);
   opacity: 0.75;
 }
 
@@ -137,7 +137,7 @@
   align-items: center;
   gap: 0.35rem;
   margin: 0;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   /* The `-text` variant, which is the one App.css keeps readable against the page in both
      themes — the plain swatch colour is for painting, not for reading. */
   color: var(--c-green-text);
@@ -161,14 +161,14 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.9em;
+  font-size: var(--text-md);
 }
 
 .toolBadge {
   padding: 0.05em 0.4em;
   border-radius: var(--radius-sm);
   background: rgba(128, 128, 128, 0.18);
-  font-size: 0.75em;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   opacity: 0.8;
@@ -182,7 +182,7 @@
 
 /* A path is long and its end is the informative part, so it is clipped at the front. */
 .toolPath {
-  font-size: 0.8em;
+  font-size: var(--text-sm);
   opacity: 0.6;
   overflow: hidden;
   white-space: nowrap;
@@ -198,7 +198,7 @@
   background: rgb(var(--danger-rgb) / 0.12);
   box-shadow: inset 0 0 0 1px rgb(var(--danger-rgb) / 0.35);
   color: var(--danger-text);
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }

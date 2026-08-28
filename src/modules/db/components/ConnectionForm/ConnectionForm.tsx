@@ -157,19 +157,19 @@ function ConnectionForm({
 
       <fieldset>
         <legend>{t("connection.databaseLegend")}</legend>
-        <div className="method-tabs" role="tablist">
+        <div className="choice-row" role="tablist">
           {(["mysql", "postgres", "mongo", "redis"] as DbKind[]).map((k) => (
             <button
               key={k}
               type="button"
               role="tab"
               aria-selected={kind === k}
-              className={`method-tab kind-${k}${kind === k ? " method-tab-active" : ""}`}
+              className={`choice kind-${k}${kind === k ? " choice-active" : ""}`}
               onClick={() => changeKind(k)}
             >
-              {/* Logo before the name, not instead of it: the tabs are the one place the kinds are
+              {/* Logo before the name, not instead of it: this row is the one place the kinds are
                   read side by side, so the word stays and the mark only makes it quicker to find. */}
-              <DatabaseIcon kind={k} className="method-tab-icon" size="1.05em" />
+              <DatabaseIcon kind={k} className="choice-icon" size="1.05em" />
               {t(KIND_LABEL[k])}
             </button>
           ))}
@@ -251,12 +251,12 @@ function ConnectionForm({
 
       <fieldset>
         <legend>{t("connection.connectionMethodLegend")}</legend>
-        <div className="method-tabs" role="tablist">
+        <div className="choice-row" role="tablist">
           <button
             type="button"
             role="tab"
             aria-selected={tunnelType === "direct"}
-            className={`method-tab${tunnelType === "direct" ? " method-tab-active" : ""}`}
+            className={`choice${tunnelType === "direct" ? " choice-active" : ""}`}
             onClick={() => set("tunnelType", "direct")}
           >
             {t("connection.methodTcpIp")}
@@ -265,7 +265,7 @@ function ConnectionForm({
             type="button"
             role="tab"
             aria-selected={tunnelType === "ssh"}
-            className={`method-tab${tunnelType === "ssh" ? " method-tab-active" : ""}`}
+            className={`choice${tunnelType === "ssh" ? " choice-active" : ""}`}
             onClick={() => set("tunnelType", "ssh")}
           >
             {t("connection.methodSsh")}

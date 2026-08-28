@@ -3,7 +3,7 @@
   flex-direction: column;
   gap: 0.3rem;
   padding: 0 0.5rem 0.4rem;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
 }
 
 .line {

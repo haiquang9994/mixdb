@@ -72,7 +72,7 @@
 .summary,
 .hint {
   margin: 0;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   line-height: 1.45;
 }
 
@@ -89,7 +89,7 @@
 .changes {
   margin: 0;
   padding-left: 1.1em;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
   line-height: 1.45;
   opacity: 0.85;
 }
@@ -169,7 +169,7 @@
   background: rgb(var(--accent-rgb) / 0.15);
   color: var(--accent-text);
   border-radius: var(--radius-md);
-  font-size: 0.9em;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 
@@ -183,7 +183,7 @@
   box-shadow: none;
   background: var(--hover-bg);
   border-radius: var(--radius-md);
-  font-size: 0.85em;
+  font-size: var(--text-sm);
 }
 
 .secondary:hover {
