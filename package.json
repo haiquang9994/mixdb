@@ -1,6 +1,7 @@
 {
   "name": "mixdb",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "version": "0.0.26",
   "engines": {
     "node": ">=20"

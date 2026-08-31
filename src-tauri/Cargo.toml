@@ -5,6 +5,7 @@ version = "0.0.26"
 # Add/Remove Programs rather than notes to ourselves.
 description = "MixDB - multi-database desktop client (MySQL, PostgreSQL, MongoDB, Redis)"
 authors = ["mixnz"]
+license = "GPL-3.0-or-later"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

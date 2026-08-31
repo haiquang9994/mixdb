@@ -134,3 +134,12 @@ khi chính bạn bấm tải.
 
 Bản đầy đủ — kể cả đường dẫn tới nơi app lưu dữ liệu trên từng hệ điều hành — nằm ở
 [chính sách quyền riêng tư](https://mixnz.github.io/mixdb/privacy), nguồn trong [site/privacy/](site/privacy/).
+
+## Giấy phép
+
+Copyright © 2026 mixnz (Nguyễn Hải Quang).
+
+MixDB phát hành theo [GNU General Public License v3.0 hoặc mới hơn](LICENSE). Bạn được tự do dùng,
+sửa và phân phối lại — với điều kiện bản phân phối lại cũng kèm mã nguồn và cũng theo GPL.
+
+Một giấy phép duy nhất cho toàn bộ dự án, không có bản thương mại song song.
