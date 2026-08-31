@@ -1,4 +1,6 @@
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "../../../i18n";
+import { PRIVACY_POLICY_URL } from "../../links";
 import type { UpdateCheck } from "../../update";
 import styles from "./SettingsModal.module.css";
 
@@ -96,6 +98,22 @@ function UpdateSection({ update }: Props) {
         <p className={styles.hint}>{t("update.lastChecked", { at: formatChecked(lastChecked) })}</p>
       )}
       <p className={styles.hint}>{status === "downloaded" ? t("update.restartHint") : t("update.autoHint")}</p>
+
+      {/* The privacy policy sits in this pane rather than one of its own. It is the only pane about
+          the app itself rather than about what you do with it — it is where the running version is
+          named — and a sixth entry in the column for a single outbound link would cost the reader
+          more than it gives them. Most people arrive at the policy from the store listing anyway;
+          this is the copy that is here when they look for it inside the app. */}
+      <div className={styles.updateRow}>
+        <span className={styles.hint}>{t("settings.privacyHint")}</span>
+        <button
+          type="button"
+          className={styles.toolButton}
+          onClick={() => void openUrl(PRIVACY_POLICY_URL)}
+        >
+          {t("settings.privacyPolicy")}
+        </button>
+      </div>
     </div>
   );
 }

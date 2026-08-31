@@ -31,3 +31,7 @@ docs/superpowers/plans/
 
 # Whatever an assistant leaves behind in the working copy.
 .claude/
+
+# Copied in from public/logo.svg by the Pages workflow, never committed — see
+# .github/workflows/pages.yml.
+site/logo.svg

@@ -83,6 +83,9 @@ const en = {
     language: "Language",
     languageEnglish: "English",
     languageVietnamese: "Ti\u1ebfng Vi\u1ec7t",
+    privacyPolicy: "Privacy policy",
+    privacyHint:
+      "MixDB collects nothing about you and has no server of its own. What it keeps, it keeps on this machine.",
   },
   // The Ctrl/Cmd chords the app answers, as Settings lists them. A module's own chords are named in
   // that module's dictionary, beside the rest of its words — see `src/i18n/dicts.ts`, which will

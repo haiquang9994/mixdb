@@ -125,3 +125,12 @@ Lệnh này sẽ build frontend (`tsc && vite build`) rồi đóng gói thành i
 | `npm run set-version <v>` | Bump version ở sáu file mang version (kể cả dòng version ngay trên README này) và cắt mục changelog cho bản phát hành |
 
 Quy trình phát hành: [docs/RELEASING.md](docs/RELEASING.md).
+
+## Quyền riêng tư
+
+MixDB không thu thập gì về bạn: không tài khoản, không máy chủ của riêng nó, không analytics hay
+telemetry. App chỉ tự ra mạng để hỏi GitHub xem có bản mới không, và để tải công cụ dump/restore
+khi chính bạn bấm tải.
+
+Bản đầy đủ — kể cả đường dẫn tới nơi app lưu dữ liệu trên từng hệ điều hành — nằm ở
+[chính sách quyền riêng tư](https://mixnz.github.io/mixdb/privacy), nguồn trong [site/privacy/](site/privacy/).
