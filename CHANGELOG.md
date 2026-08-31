@@ -32,7 +32,7 @@ installed copy of MixDB is shown. So what is written here is what users read —
 **Released sections are not edited or deleted.** They are the record of what shipped in which
 version, which is exactly what someone three versions behind needs when deciding whether to
 update. The one exception is a release that is withdrawn: once it is gone from
-[Releases](https://github.com/haiquang9994/mixdb/releases) nobody can install it, so its section here
+[Releases](https://github.com/mixnz/mixdb/releases) nobody can install it, so its section here
 would describe a version that no longer exists. The file grows by a handful of lines per release;
 if it ever gets genuinely unwieldy, the oldest versions move to `docs/changelog/` and a link goes
 at the bottom — the entries survive either way.
@@ -508,27 +508,27 @@ installs it and restarts. Every update is checked against MixDB's signing key fi
      links rather than decoration. `set-version.mjs` adds a line here as it cuts a section,
      so this stays in step without anyone remembering it. -->
 
-[Unreleased]: https://github.com/haiquang9994/mixdb/compare/v0.0.26...HEAD
-[0.0.26]: https://github.com/haiquang9994/mixdb/compare/v0.0.25...v0.0.26
-[0.0.25]: https://github.com/haiquang9994/mixdb/compare/v0.0.24...v0.0.25
-[0.0.24]: https://github.com/haiquang9994/mixdb/compare/v0.0.23...v0.0.24
-[0.0.23]: https://github.com/haiquang9994/mixdb/compare/v0.0.22...v0.0.23
-[0.0.22]: https://github.com/haiquang9994/mixdb/compare/v0.0.21...v0.0.22
-[0.0.21]: https://github.com/haiquang9994/mixdb/compare/v0.0.20...v0.0.21
-[0.0.20]: https://github.com/haiquang9994/mixdb/compare/v0.0.19...v0.0.20
-[0.0.19]: https://github.com/haiquang9994/mixdb/compare/v0.0.18...v0.0.19
-[0.0.18]: https://github.com/haiquang9994/mixdb/compare/v0.0.17...v0.0.18
-[0.0.17]: https://github.com/haiquang9994/mixdb/compare/v0.0.16...v0.0.17
-[0.0.16]: https://github.com/haiquang9994/mixdb/compare/v0.0.15...v0.0.16
-[0.0.15]: https://github.com/haiquang9994/mixdb/compare/v0.0.14...v0.0.15
-[0.0.14]: https://github.com/haiquang9994/mixdb/compare/v0.0.13...v0.0.14
-[0.0.13]: https://github.com/haiquang9994/mixdb/compare/v0.0.12...v0.0.13
-[0.0.12]: https://github.com/haiquang9994/mixdb/compare/v0.0.11...v0.0.12
-[0.0.11]: https://github.com/haiquang9994/mixdb/compare/v0.0.10...v0.0.11
-[0.0.10]: https://github.com/haiquang9994/mixdb/compare/v0.0.9...v0.0.10
-[0.0.9]: https://github.com/haiquang9994/mixdb/compare/v0.0.8...v0.0.9
-[0.0.8]: https://github.com/haiquang9994/mixdb/compare/v0.0.7...v0.0.8
-[0.0.7]: https://github.com/haiquang9994/mixdb/compare/v0.0.6...v0.0.7
-[0.0.6]: https://github.com/haiquang9994/mixdb/compare/v0.0.5...v0.0.6
-[0.0.5]: https://github.com/haiquang9994/mixdb/compare/v0.0.4...v0.0.5
-[0.0.4]: https://github.com/haiquang9994/mixdb/releases/tag/v0.0.4
+[Unreleased]: https://github.com/mixnz/mixdb/compare/v0.0.26...HEAD
+[0.0.26]: https://github.com/mixnz/mixdb/compare/v0.0.25...v0.0.26
+[0.0.25]: https://github.com/mixnz/mixdb/compare/v0.0.24...v0.0.25
+[0.0.24]: https://github.com/mixnz/mixdb/compare/v0.0.23...v0.0.24
+[0.0.23]: https://github.com/mixnz/mixdb/compare/v0.0.22...v0.0.23
+[0.0.22]: https://github.com/mixnz/mixdb/compare/v0.0.21...v0.0.22
+[0.0.21]: https://github.com/mixnz/mixdb/compare/v0.0.20...v0.0.21
+[0.0.20]: https://github.com/mixnz/mixdb/compare/v0.0.19...v0.0.20
+[0.0.19]: https://github.com/mixnz/mixdb/compare/v0.0.18...v0.0.19
+[0.0.18]: https://github.com/mixnz/mixdb/compare/v0.0.17...v0.0.18
+[0.0.17]: https://github.com/mixnz/mixdb/compare/v0.0.16...v0.0.17
+[0.0.16]: https://github.com/mixnz/mixdb/compare/v0.0.15...v0.0.16
+[0.0.15]: https://github.com/mixnz/mixdb/compare/v0.0.14...v0.0.15
+[0.0.14]: https://github.com/mixnz/mixdb/compare/v0.0.13...v0.0.14
+[0.0.13]: https://github.com/mixnz/mixdb/compare/v0.0.12...v0.0.13
+[0.0.12]: https://github.com/mixnz/mixdb/compare/v0.0.11...v0.0.12
+[0.0.11]: https://github.com/mixnz/mixdb/compare/v0.0.10...v0.0.11
+[0.0.10]: https://github.com/mixnz/mixdb/compare/v0.0.9...v0.0.10
+[0.0.9]: https://github.com/mixnz/mixdb/compare/v0.0.8...v0.0.9
+[0.0.8]: https://github.com/mixnz/mixdb/compare/v0.0.7...v0.0.8
+[0.0.7]: https://github.com/mixnz/mixdb/compare/v0.0.6...v0.0.7
+[0.0.6]: https://github.com/mixnz/mixdb/compare/v0.0.5...v0.0.6
+[0.0.5]: https://github.com/mixnz/mixdb/compare/v0.0.4...v0.0.5
+[0.0.4]: https://github.com/mixnz/mixdb/releases/tag/v0.0.4

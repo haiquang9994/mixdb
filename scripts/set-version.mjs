@@ -67,7 +67,7 @@ function patch(relative, pattern, replacement, expected = 1) {
 }
 
 /** Where the repository lives, for the compare links at the foot of the changelog. */
-const REPO_URL = "https://github.com/haiquang9994/mixdb";
+const REPO_URL = "https://github.com/mixnz/mixdb";
 
 // First, because it is the one that can refuse. A changelog with nothing written in it stops the
 // bump, and stopping it after four files had already been rewritten would leave exactly the

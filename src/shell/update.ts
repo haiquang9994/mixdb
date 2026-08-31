@@ -22,7 +22,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check as checkForUpdate, type Update } from "@tauri-apps/plugin-updater";
 
-const REPO = "haiquang9994/mixdb";
+const REPO = "mixnz/mixdb";
 
 /** Where a user is sent when the automatic path fails them — a `.deb` install, a locked-down
  *  machine, a download that will not complete. */

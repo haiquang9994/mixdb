@@ -175,7 +175,7 @@ nothing in the app has to change.
 Implemented in [`src/shell/update.ts`](../src/shell/update.ts), on top of Tauri's updater plugin. It:
 
 - waits 6 seconds after launch so it does not land on top of the connection form;
-- GETs `https://github.com/haiquang9994/mixdb/releases/latest/download/latest.json` and compares
+- GETs `https://github.com/mixnz/mixdb/releases/latest/download/latest.json` and compares
   its version against the running one;
 - shows a panel in the corner offering **Update now**, **Later** (comes back next launch) and
   **Skip this one** (silences that version only, and can be undone in Settings);
@@ -189,12 +189,16 @@ Implemented in [`src/shell/update.ts`](../src/shell/update.ts), on top of Tauri'
 On Windows the installer is what closes and reopens the app; on macOS and Linux the files are
 swapped underneath the running process, which then calls `relaunch()` itself.
 
-Three things must hold for it to work:
+Four things must hold for it to work:
 
 - the version in `tauri.conf.json` is the real one — the app reports that, not `package.json`.
   This is why `npm run set-version` exists rather than editing files by hand;
 - `bundle.createUpdaterArtifacts` stays `true`, and `includeUpdaterJson` stays on in the workflow;
-- the two signing secrets are set on the repository.
+- the two signing secrets are set on the repository;
+- the bundle identifier stays `io.github.haiquang9994.mixdb`. It names the app on the machine, not
+  the repository it is built from. The repository moved to `mixnz/mixdb`; the identifier did not,
+  because changing it installs a second MixDB beside every existing one, strands that copy's
+  settings and leaves it with no upgrade path.
 
 Nothing about it needs the webview's CSP: the request, the signature check and the install all
 happen in Rust.

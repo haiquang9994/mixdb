@@ -4,7 +4,7 @@ version = "0.0.26"
 # Both are read back out into the installer's metadata, so they are what a user sees in
 # Add/Remove Programs rather than notes to ourselves.
 description = "MixDB - multi-database desktop client (MySQL, PostgreSQL, MongoDB, Redis)"
-authors = ["haiquang9994"]
+authors = ["mixnz"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
