@@ -167,8 +167,47 @@ Updates raise none of that again, which is the point of having them:
 So the release notes still have to carry the first-launch instructions — the template in the
 workflow does — but a user only reads them once.
 
-If code-signing certificates are bought later, they go into the workflow as further secrets and
-nothing in the app has to change.
+### When a certificate arrives
+
+The plan is SignPath Foundation, which signs open-source projects for free with the key held in an
+HSM. That is why MixDB is GPL-3.0 — the reasoning is in
+[`.agent/decisions/2026-08-31-gpl-and-signpath-for-free-code-signing.md`](../.agent/decisions/2026-08-31-gpl-and-signpath-for-free-code-signing.md).
+What follows applies to any Windows certificate, however it is obtained.
+
+**The trap, first, because getting it wrong breaks every installed copy.** `createUpdaterArtifacts`
+makes Tauri write the `.sig` beside the installer *during* `tauri build`. The obvious way to add
+signing — build, upload the artifact, send it away to be signed, put the signed one back — changes
+the installer's bytes **after** that `.sig` was computed over the unsigned ones. The signature no
+longer matches the file. Nothing fails at release time; the failure lands later, on every user, as
+an update their copy refuses to install. There is no way to reach them afterwards except by asking
+them to download the installer by hand.
+
+So the Authenticode signature has to exist before the updater signature is made. Two orders do that:
+
+- **Sign during bundling.** `bundle.windows.signCommand` in `tauri.conf.json` is invoked for each
+  file with `%1` as its path, before the NSIS bundle is assembled and therefore before the `.sig`
+  is written. This also signs `MixDB.exe` inside the installer rather than only the installer
+  itself. It needs signing to complete unattended, without a human approving each request.
+- **Sign after, then re-sign for the updater.** Authenticode-sign the finished installer, then run
+  `tauri signer sign` over the *signed* file and rebuild `latest.json` from that. Fewer moving
+  parts, and it suits a signing service that queues requests — but only the installer ends up
+  signed.
+
+Prefer the first if the service will sign unattended. An installed `MixDB.exe` with no signature is
+a loose end even once SmartScreen is satisfied.
+
+**Four files change, not one:**
+
+- `.github/workflows/release.yml` — the signing step, and the release-notes template, which
+  currently tells every reader that MixDB is not code-signed.
+- `src-tauri/tauri.conf.json` — `signCommand`, if signing happens during bundling.
+- This file — the section above says signing is not done.
+- `site/code-signing/` — the published policy opens by saying it is not yet in effect.
+
+**Verify on a pre-release, never on a real one.** Publish the first signed build marked as a
+pre-release, install an older MixDB on a clean machine, and let it update itself to it. That
+exercises the one thing that cannot be undone. A `.sig` mismatch found there costs a tag; found on
+a real release it strands everyone who had the app installed.
 
 ## How updating works
 
@@ -211,3 +250,42 @@ one. Publish a release one version ahead of an old build kept for the purpose, o
 
 Do not test by publishing to the real repository and deleting it afterwards — anyone who launched
 MixDB in that window has already downloaded it.
+
+## Microsoft Store
+
+The Store lists MixDB as an EXE app, which means it hosts nothing: it downloads the installer from
+a URL on this repository's releases and runs it silently. The file a Store customer installs is the
+same file everyone else downloads. There is no separate Store build, and Microsoft signs nothing —
+see *Signing* above for who does.
+
+**The package URL is versioned, and its bytes must never change afterwards.** That is a Store rule,
+not a convention: Microsoft keeps a copy of what passed certification, notices when the file at the
+URL is swapped, and re-certifies it behind your back. It happens to cost nothing here, because the
+release assets already carry the version in the filename —
+
+```
+https://github.com/mixnz/mixdb/releases/download/v0.0.26/MixDB_0.0.26_x64-setup.exe
+```
+
+— and a published GitHub release asset is immutable. Two things follow. Never delete and re-upload
+an asset on a tag that has been submitted. And never point the Store at
+`releases/latest/download/…`, tempting as a stable URL looks.
+
+**Each release the Store should offer needs an Update submission** with a new versioned URL, and it
+goes through certification again. This is less urgent than it sounds: MixDB updates itself, so
+people who installed from the Store get new versions whether or not a submission followed.
+Re-submitting serves *new* Store installs and stops the listed version drifting. Batching several
+patch releases into one submission is reasonable.
+
+**Supply the GPL as custom licence terms on the listing.** Left at the default, a Store app falls
+under Microsoft's Standard Application License Terms, which conflict with the GPL. Their terms
+permit that conflict only "to the extent required by the FOSS that you use", and only when the
+developer's own terms are given. Accepting the default would put the listing in breach of the
+project's own licence.
+
+Two fields are easy to get wrong for an EXE app. **Installer parameters** must make the installer
+run silently — Tauri's NSIS installer takes `/S`, which is worth testing on a clean machine before
+submitting, because a wrong switch fails every install the Store attempts. **Installer handling**
+maps the installer's exit codes onto the situations the Store has wording for (already installed,
+reboot required, disk full); it is optional, and it is what decides whether a failed install tells
+the user anything useful.
