@@ -42,6 +42,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.27] - 2026-09-03
+
 ### Changed
 
 - New app icon: three coloured platters on a blue tile, drawn full size on Windows and Linux and with the Dock margin on macOS.
@@ -512,7 +514,8 @@ installs it and restarts. Every update is checked against MixDB's signing key fi
      links rather than decoration. `set-version.mjs` adds a line here as it cuts a section,
      so this stays in step without anyone remembering it. -->
 
-[Unreleased]: https://github.com/mixnz/mixdb/compare/v0.0.26...HEAD
+[Unreleased]: https://github.com/mixnz/mixdb/compare/v0.0.27...HEAD
+[0.0.27]: https://github.com/mixnz/mixdb/compare/v0.0.26...v0.0.27
 [0.0.26]: https://github.com/mixnz/mixdb/compare/v0.0.25...v0.0.26
 [0.0.25]: https://github.com/mixnz/mixdb/compare/v0.0.24...v0.0.25
 [0.0.24]: https://github.com/mixnz/mixdb/compare/v0.0.23...v0.0.24
