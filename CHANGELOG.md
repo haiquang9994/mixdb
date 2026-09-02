@@ -42,6 +42,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Changed
+
+- New app icon: three coloured platters on a blue tile, drawn full size on Windows and Linux and with the Dock margin on macOS.
+
 ## [0.0.26] - 2026-08-29
 
 ### Changed

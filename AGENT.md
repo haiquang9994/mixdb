@@ -31,8 +31,10 @@ a line in `src/shell/registry.ts` — see
 | `npm run build:app` | Full production bundle into `src-tauri/target/release/bundle/` |
 | `npm run notes` | Commits since the last tag, grouped — a draft for `## [Unreleased]` |
 | `npm run set-version <v>` | Bump the six files that carry the version and cut the changelog |
+| `npm run icons` | Rebuild `src-tauri/icons/` from the two SVGs in `public/`; macOS gets the padded one |
 
-Releasing is [docs/RELEASING.md](docs/RELEASING.md); the steps are the first section of it.
+Releasing is [docs/RELEASING.md](docs/RELEASING.md); the steps are the first section of it. The
+app icon, and why there are two logo files, is [docs/ICONS.md](docs/ICONS.md).
 
 There is no linter config. `npm run build` is the fastest verification step; TypeScript runs
 `strict`, `noUnusedLocals` and `noUnusedParameters`, so it catches most mistakes. `npm test` runs

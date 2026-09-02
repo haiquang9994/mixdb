@@ -17,6 +17,7 @@
     "dev:app": "tauri dev",
     "build:app": "tauri build",
     "set-version": "node scripts/set-version.mjs",
+    "icons": "node scripts/make-icons.mjs",
     "notes": "node scripts/release-notes.mjs"
   },
   "dependencies": {

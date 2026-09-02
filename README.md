@@ -123,8 +123,9 @@ Lệnh này sẽ build frontend (`tsc && vite build`) rồi đóng gói thành i
 | `npm run tauri` | Gọi trực tiếp Tauri CLI |
 | `npm run notes` | Liệt kê commit kể từ tag gần nhất, gom nhóm — bản nháp cho `## [Unreleased]` |
 | `npm run set-version <v>` | Bump version ở sáu file mang version (kể cả dòng version ngay trên README này) và cắt mục changelog cho bản phát hành |
+| `npm run icons` | Sinh lại bộ icon trong `src-tauri/icons/` từ hai file SVG trong `public/` |
 
-Quy trình phát hành: [docs/RELEASING.md](docs/RELEASING.md).
+Quy trình phát hành: [docs/RELEASING.md](docs/RELEASING.md). Icon app và cách sinh lại: [docs/ICONS.md](docs/ICONS.md).
 
 ## Quyền riêng tư
 
