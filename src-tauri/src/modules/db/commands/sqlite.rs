@@ -7,6 +7,12 @@
 //!
 //! `retry_read!` is not used here. It exists for a pooled connection that died between two
 //! statements; a file that has gone away is not something a second attempt fixes.
+//!
+//! The unused arguments carry `#[allow(unused_variables)]` rather than a leading underscore. The
+//! name of a command's argument is what the frontend's `invoke` has to send, and whether Tauri's
+//! macro strips a `_` on the way to camelCase is a detail nothing in this repo depended on before
+//! — a wrong guess there is a call that fails at runtime with "invalid args" and at build time not
+//! at all. The attribute keeps the name exactly as it is sent.
 
 use crate::error::AppError;
 use crate::modules::db::drivers::{sqlite, sqlite_ddl, sqlite_dump, sqlite_script, sqlite_structure};
@@ -38,21 +44,23 @@ pub async fn sqlite_list_databases(
     Ok(sqlite::list_databases())
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_list_tables(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
 ) -> Result<Vec<String>, AppError> {
     let pool = sqlite_pool(&state, &id).await?;
     sqlite::list_tables(&pool).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_table_data(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
     query: sqlite::PageQuery,
 ) -> Result<sqlite::TablePage, AppError> {
@@ -60,11 +68,12 @@ pub async fn sqlite_table_data(
     sqlite::table_data(&pool, &table, &query).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_table_structure(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
 ) -> Result<sqlite_structure::TableStructure, AppError> {
     let pool = sqlite_pool(&state, &id).await?;
@@ -81,11 +90,12 @@ pub async fn sqlite_schema_outline(
     sqlite_structure::schema_outline(&pool, &database).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_table_stats(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
 ) -> Result<Vec<sqlite_structure::TableStats>, AppError> {
     let pool = sqlite_pool(&state, &id).await?;
     sqlite_structure::table_stats(&pool).await
@@ -100,11 +110,12 @@ pub async fn sqlite_collations(
     sqlite_structure::collations(&pool).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_update_row(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
     updates: Map<String, Value>,
     key: Map<String, Value>,
@@ -113,11 +124,12 @@ pub async fn sqlite_update_row(
     sqlite::update_row(&pool, &table, &updates, &key).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_insert_rows(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
     rows: Vec<Map<String, Value>>,
 ) -> Result<(), AppError> {
@@ -125,11 +137,12 @@ pub async fn sqlite_insert_rows(
     sqlite::insert_rows(&pool, &table, &rows).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_delete_rows(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
     keys: Vec<Map<String, Value>>,
     all: bool,
@@ -141,23 +154,25 @@ pub async fn sqlite_delete_rows(
 
 /// `collation` is accepted and ignored: a SQLite table carries none of its own — see
 /// `sqlite_ddl::create_table`.
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_create_table(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
-    _collation: Option<String>,
+    collation: Option<String>,
 ) -> Result<(), AppError> {
     let pool = sqlite_pool(&state, &id).await?;
     sqlite_ddl::create_table(&pool, &table).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_rename_table(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
     new_name: String,
 ) -> Result<(), AppError> {
@@ -165,22 +180,24 @@ pub async fn sqlite_rename_table(
     sqlite_ddl::rename_table(&pool, &table, &new_name).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_drop_table(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
 ) -> Result<(), AppError> {
     let pool = sqlite_pool(&state, &id).await?;
     sqlite_ddl::drop_table(&pool, &table).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_add_column(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
     spec: sqlite_ddl::ColumnSpec,
 ) -> Result<(), AppError> {
@@ -188,11 +205,12 @@ pub async fn sqlite_add_column(
     sqlite_ddl::add_column(&pool, &table, &spec).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_modify_column(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
     name: String,
     spec: sqlite_ddl::ColumnSpec,
@@ -201,11 +219,12 @@ pub async fn sqlite_modify_column(
     sqlite_ddl::modify_column(&pool, &table, &name, &spec).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_drop_column(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
     name: String,
 ) -> Result<(), AppError> {
@@ -213,11 +232,12 @@ pub async fn sqlite_drop_column(
     sqlite_ddl::drop_column(&pool, &table, &name).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_add_index(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
     spec: sqlite_ddl::IndexSpec,
 ) -> Result<(), AppError> {
@@ -225,11 +245,12 @@ pub async fn sqlite_add_index(
     sqlite_ddl::add_index(&pool, &table, &spec).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_modify_index(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
     name: String,
     spec: sqlite_ddl::IndexSpec,
@@ -238,11 +259,12 @@ pub async fn sqlite_modify_index(
     sqlite_ddl::modify_index(&pool, &table, &name, &spec).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_drop_index(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     table: String,
     name: String,
 ) -> Result<(), AppError> {
@@ -255,25 +277,27 @@ pub async fn sqlite_drop_index(
 /// `run_id` is accepted for the shape the other two engines have and is not remembered anywhere:
 /// nothing here can be cancelled from outside, so there is no pid to file under it — see
 /// `sqlite_script`.
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_run_script(
     state: State<'_, DbState>,
     id: String,
-    _run_id: String,
+    run_id: String,
     sql: String,
-    _database: Option<String>,
+    database: Option<String>,
 ) -> Result<Vec<StatementResult>, AppError> {
     let pool = sqlite_pool(&state, &id).await?;
     sqlite_script::run(&pool, &sql).await
 }
 
 /// Asks SQLite to prepare one statement without running it, for the editor's error checking.
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_validate_sql(
     state: State<'_, DbState>,
     id: String,
     sql: String,
-    _database: Option<String>,
+    database: Option<String>,
 ) -> Result<Option<SqlProblem>, AppError> {
     let pool = sqlite_pool(&state, &id).await?;
     sqlite_script::validate(&pool, &sql).await
@@ -284,11 +308,12 @@ pub async fn sqlite_validate_sql(
 /// `mode` is checked rather than ignored: MixDB does not write a SQLite data dump yet, and a file
 /// asked for as `all` that arrived holding only `CREATE` statements would be a backup someone
 /// found out about at restore time.
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_dump(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     mode: String,
     path: String,
 ) -> Result<(), AppError> {
@@ -299,11 +324,12 @@ pub async fn sqlite_dump(
     sqlite_dump::dump_structure(&pool, std::path::Path::new(&path)).await
 }
 
+#[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_restore(
     state: State<'_, DbState>,
     id: String,
-    _database: String,
+    database: String,
     path: String,
 ) -> Result<(), AppError> {
     let pool = sqlite_pool(&state, &id).await?;
