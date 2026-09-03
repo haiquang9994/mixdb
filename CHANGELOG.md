@@ -42,6 +42,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Fixed
+
+- File properties of the Windows app now show the publisher and copyright instead of blanks.
+
 ## [0.0.29] - 2026-09-04
 
 ### Added

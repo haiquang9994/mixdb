@@ -44,6 +44,8 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "mixnz",
+    "copyright": "Copyright © 2026 mixnz (Nguyễn Hải Quang). GPL-3.0-or-later.",
     "targets": ["nsis", "app", "dmg", "appimage", "deb"],
     "createUpdaterArtifacts": true,
     "icon": [
