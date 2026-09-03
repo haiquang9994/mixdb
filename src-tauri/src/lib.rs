@@ -11,6 +11,18 @@ mod ssh;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before anything else, while this is still one thread with no children: the URL this was
+    // started with, and the credential for it out of the environment. Everything the builder
+    // starts — threads, webview helpers, later a shell in a terminal tab — inherits what is left.
+    let opening = launch::Opening::from_process();
+    let context = tauri::generate_context!();
+
+    // A copy already running takes it and opens the tab. This process is then done, and exiting 0
+    // is what tells the program that started it that the connection was handed on.
+    if launch::forward(&context.config().identifier, &opening) {
+        return;
+    }
+
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -29,16 +41,22 @@ pub fn run() {
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(tauri_plugin_window_state::StateFlags::MAXIMIZED)
                 .build(),
-        );
+        )
+        // Registers `mixdb://` with the OS through the installers, and on macOS delivers the URLs
+        // the OS opens the app with — see `launch::start` for which systems listen to it.
+        .plugin(tauri_plugin_deep_link::init());
 
     // Each module puts its own state in; the list of commands they add up to is
     // `modules::handler`.
+    let builder = launch::register(builder);
     let builder = modules::db::register(builder);
     let builder = modules::rest::register(builder);
     let builder = modules::terminal::register(builder);
 
     builder
-        .setup(|app| {
+        .setup(move |app| {
+            launch::start(app.handle(), opening);
+
             /* Housekeeping rather than startup work. A tool download that the app never came back
                from — a crash, a power cut, a force quit — leaves an unpacked server distribution
                in the tools directory, and this is the only thing that ever collects it. On a
@@ -49,6 +67,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(modules::handler())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(context)
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                launch::stop(app);
+            }
+        });
 }

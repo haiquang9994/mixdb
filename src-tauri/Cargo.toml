@@ -89,4 +89,7 @@ tauri-plugin-process = "2"
 # Remembers only whether the window was left maximized; everything else falls back to the
 # default size in `tauri.conf.json`.
 tauri-plugin-window-state = "2"
+# Registers the `mixdb://` scheme with the OS at install time (NSIS, Info.plist, the .desktop
+# file) and hands the app the URLs the OS opens it with. The URL's meaning is `launch.rs`'s.
+tauri-plugin-deep-link = "2"
 

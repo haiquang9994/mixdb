@@ -18,10 +18,12 @@
 //! `docs/superpowers/specs/2026-09-03-mixengine-connection-handoff-design.md`.
 
 use std::sync::Mutex;
+use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
+use crate::instance;
 use crate::modules::db::handoff;
 use crate::secrets::Redacted;
 
@@ -151,9 +153,139 @@ pub fn accept<R: Runtime>(app: &AppHandle<R>, url: &str, secret: Option<String>)
     }
 }
 
+/// The line a second copy sends the first. No `Debug`: nothing prints it, and it has no business
+/// being printable.
+#[derive(Serialize, Deserialize)]
+struct Message {
+    url: Option<String>,
+    secret: Option<String>,
+}
+
+impl Message {
+    fn from(opening: &Opening) -> Self {
+        Self {
+            url: opening.url.clone(),
+            secret: opening.secret.clone(),
+        }
+    }
+
+    fn line(&self) -> Option<String> {
+        serde_json::to_string(self).ok()
+    }
+}
+
+/// How long a second copy waits for the first to take its line before giving up and becoming a
+/// window of its own. MixEngine judges a started client for one second; a first copy that is
+/// hung should not make the second look hung too.
+const FORWARD_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Hands `opening` to a copy of the app already running, if there is one. `true` means it was
+/// taken and this process has nothing left to do. Called before the builder, so it runs the
+/// exchange on Tauri's runtime itself.
+pub fn forward(identifier: &str, opening: &Opening) -> bool {
+    let Some(line) = Message::from(opening).line() else {
+        return false;
+    };
+    let endpoint = instance::Endpoint::for_app(identifier);
+    tauri::async_runtime::block_on(async {
+        tokio::time::timeout(FORWARD_TIMEOUT, instance::forward(&endpoint, &line))
+            .await
+            .unwrap_or(false)
+    })
+}
+
+/// Everything that happens in `setup`: listen for other copies, accept this process's own
+/// opening, and on the systems where it applies, hook up the OS's scheme handler.
+pub fn start<R: Runtime>(app: &AppHandle<R>, opening: Opening) {
+    let endpoint = instance::Endpoint::for_app(&app.config().identifier);
+    let listener = app.clone();
+    tauri::async_runtime::spawn(instance::serve(endpoint, move |line| {
+        received(&listener, &line)
+    }));
+
+    if let Some(url) = &opening.url {
+        accept(app, url, opening.secret.clone());
+    }
+
+    // The Apple Event is the only way a URL reaches a macOS process — one already running, or one
+    // `open` just started for it. Never with a credential: a link sets no variable, and this
+    // process's own were taken on its first line. Not on Windows or Linux, where the plugin
+    // re-emits `argv` at setup — which `Opening` already read — and a URL arriving later comes
+    // over the channel above rather than through the OS.
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_plugin_deep_link::DeepLinkExt;
+        let handle = app.clone();
+        app.deep_link().on_open_url(move |event| {
+            for url in event.urls() {
+                accept(&handle, url.as_str(), None);
+            }
+        });
+    }
+
+    // An AppImage has no installer to write the scheme handler; the .deb's is written twice, which
+    // is harmless. Best effort — the scheme is a convenience, not something the app needs to run.
+    #[cfg(target_os = "linux")]
+    {
+        use tauri_plugin_deep_link::DeepLinkExt;
+        if let Err(e) = app.deep_link().register_all() {
+            eprintln!("mixdb: could not register the mixdb:// scheme: {e}");
+        }
+    }
+}
+
+/// On the way out: the socket file, on the systems that have one.
+pub fn stop<R: Runtime>(app: &AppHandle<R>) {
+    instance::cleanup(&instance::Endpoint::for_app(&app.config().identifier));
+}
+
+/// A line from another copy: bring the window up, and open what it carried, if anything.
+fn received<R: Runtime>(app: &AppHandle<R>, line: &str) {
+    bring_to_front(app);
+    match serde_json::from_str::<Message>(line) {
+        Ok(Message {
+            url: Some(url),
+            secret,
+        }) => accept(app, &url, secret),
+        Ok(Message { url: None, .. }) => {}
+        Err(e) => eprintln!("mixdb: ignoring a line from another copy: {e}"),
+    }
+}
+
+fn bring_to_front<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What crosses the channel: both halves, and never a third field that could carry anything.
+    #[test]
+    fn a_message_round_trips() {
+        let line = Message::from(&Opening {
+            url: Some("mixdb://connect?x".to_string()),
+            secret: Some("s".to_string()),
+        })
+        .line()
+        .unwrap();
+        assert_eq!(line, r#"{"url":"mixdb://connect?x","secret":"s"}"#);
+        let back: Message = serde_json::from_str(&line).unwrap();
+        assert_eq!(back.url.as_deref(), Some("mixdb://connect?x"));
+        assert_eq!(back.secret.as_deref(), Some("s"));
+
+        let bare = Message::from(&Opening {
+            url: None,
+            secret: None,
+        })
+        .line()
+        .unwrap();
+        assert_eq!(bare, r#"{"url":null,"secret":null}"#);
+    }
 
     fn args(list: &[&str]) -> impl Iterator<Item = String> {
         list.iter()
