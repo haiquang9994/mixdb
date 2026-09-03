@@ -158,6 +158,28 @@ impl HandoffState {
     }
 }
 
+/// A URL that arrived — on the command line, over the channel from a second copy, or from the OS —
+/// turned into a pending handoff and a tab for it. Called by `crate::launch`, which is the one
+/// place a URL is matched to a module.
+pub fn accept<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    url: &str,
+    secret: Option<String>,
+) -> Result<(), AppError> {
+    use tauri::Manager;
+
+    let handoff = parse(url, secret)?;
+    let id = app.state::<HandoffState>().keep(handoff);
+    crate::launch::request(
+        app,
+        crate::launch::TabRequest {
+            module_id: "db",
+            state: serde_json::json!({ "handoffId": id }),
+        },
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

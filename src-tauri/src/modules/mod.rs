@@ -20,6 +20,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::secrets::secrets_save,
         crate::secrets::secrets_load,
         crate::secrets::secrets_delete,
+        crate::launch::launch_take_requests,
         // ── db ──
         db::commands::connect_db,
         db::commands::disconnect_db,
