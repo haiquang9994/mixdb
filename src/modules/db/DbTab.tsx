@@ -9,6 +9,7 @@ import {
 } from "./savedConnectionsStore";
 import type { ConnectionConfig, DbKind, SavedConnection } from "./types";
 import { parseDbTabState } from "./tabState";
+import { takeHandoff } from "./handoff";
 import { scrollTopFor } from "./savedListScroll";
 import SqlWorkspace from "./sql/SqlWorkspace";
 import { SqlProvider } from "./sql/context";
@@ -442,13 +443,40 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
      `openAndConnect` and `applySavedConnection` are deliberately not dependencies; they are rebuilt
      every render. */
   useEffect(() => {
-    if (restoreTried.current || restoredState === null || !savedConnectionsLoaded) return;
+    if (restoreTried.current || restoredState === null || !("savedId" in restoredState) || !savedConnectionsLoaded) return;
     restoreTried.current = true;
     const entry = savedConnections.find((c) => c.id === restoredState.savedId);
     if (entry === undefined) return;
     if (restoredState.connected) openAndConnect(entry);
     else applySavedConnection(entry);
   }, [restoredState, savedConnectionsLoaded, savedConnections]);
+
+  /* A tab opened for a connection another program handed over. Once, like the restore above and
+     through the same ref; unlike it, nothing on disk is waited for — what is taken is in the
+     backend's memory, and it is taken now or not at all.
+
+     The slot is forgotten first: the id means nothing after this call, and the session must not
+     carry a pointer to nowhere. What is left once connected is a tab named after the launcher's
+     label, pointing at no saved connection, with the form holding everything — the password too, so
+     a server that was not up yet is a banner and a Connect button, not a form to fill in again.
+     A take that fails (an id from an old session, a second tab for the same id) is an empty form
+     and no banner: nothing the user did has gone wrong. */
+  useEffect(() => {
+    if (restoreTried.current || restoredState === null || !("handoffId" in restoredState)) return;
+    restoreTried.current = true;
+    onStateChange(undefined);
+    takeHandoff(restoredState.handoffId).then(
+      (handoff) => {
+        if (closedRef.current) return;
+        setForm(formFrom(handoff.config));
+        setSaveAsName(handoff.label);
+        onTitleChange(handoff.label);
+        void connect(handoff.config, handoff.label);
+      },
+      () => {},
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per tab, on the snapshot taken at mount; `connect` and the two callbacks are rebuilt every render.
+  }, [restoredState]);
 
   /* The list, its sticky title and the row marked as the one being edited — read by the effect
      below, which is the only thing that touches them. */

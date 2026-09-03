@@ -33,6 +33,9 @@ rust_decimal = "1.36"
 russh = { version = "0.62.5", default-features = false, features = ["ring", "flate2", "rsa"] }
 tauri-plugin-store = "2.4.4"
 uuid = { version = "1.24.0", features = ["v4"] }
+# Reads the `mixdb://connect?…` URL another program starts MixDB with (`modules/db/handoff.rs`).
+# Already in the tree through the drivers; named here so the parse is ours to call.
+url = "2"
 futures-util = "0.3.33"
 async-trait = "0.1.91"
 base64 = "0.23.1"
@@ -64,6 +67,11 @@ tokio-util = { version = "0.7", features = ["io"] }
 # phải viết một nhánh cho mỗi hệ điều hành. Đây là thư viện WezTerm chạy thật.
 portable-pty = "0.9"
 
+# `getuid`, for the one check the single-instance socket makes before it connects: that the file
+# at its path is this user's. std has the file's owner but not our own id.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # `test-util` không nằm trong feature `full`, mà bộ gom lô chỉ test được khi tua nhanh được
 # đồng hồ — 5ms thật thì test nào cũng thành test đo thời gian.
 [dev-dependencies]
@@ -81,4 +89,7 @@ tauri-plugin-process = "2"
 # Remembers only whether the window was left maximized; everything else falls back to the
 # default size in `tauri.conf.json`.
 tauri-plugin-window-state = "2"
+# Registers the `mixdb://` scheme with the OS at install time (NSIS, Info.plist, the .desktop
+# file) and hands the app the URLs the OS opens it with. The URL's meaning is `launch.rs`'s.
+tauri-plugin-deep-link = "2"
 

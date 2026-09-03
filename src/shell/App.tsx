@@ -13,6 +13,7 @@ import { useAccent, useGlass, useTheme } from "./theme";
 import { useUpdateCheck } from "./update";
 import { useTranslation } from "../i18n";
 import type { TabBadge } from "./module";
+import { onTabRequest, takeTabRequests } from "./launch";
 import { readSession, writeSession } from "./session";
 import { rebadgeTab, restateTab, retitleTab, tabIdAtOffset, type TabInfo } from "./tabs";
 import { DEFAULT_MODULE_ID, MODULES, moduleById } from "./registry";
@@ -25,9 +26,9 @@ import "./glass.css";
 function App() {
   const { t } = useTranslation();
 
-  function newTab(moduleId: string = DEFAULT_MODULE_ID): TabInfo {
+  function newTab(moduleId: string = DEFAULT_MODULE_ID, state?: unknown): TabInfo {
     const def = moduleById(moduleId);
-    return { id: crypto.randomUUID(), moduleId, title: t(def.defaultTitleKey), badges: [] };
+    return { id: crypto.randomUUID(), moduleId, title: t(def.defaultTitleKey), badges: [], state };
   }
 
   /* What was open when the app was last closed, read once on the way up. The strip and, per tab,
@@ -70,8 +71,10 @@ function App() {
     useShortcut(def.id, () => openTab(moduleId), true);
   }
 
-  function openTab(moduleId?: string) {
-    const tab = newTab(moduleId);
+  /* `state` is only ever given by the backend's tab requests below: it is what the module behind
+     the tab reads on mount, through the same `restored` prop a tab from the last session gets. */
+  function openTab(moduleId?: string, state?: unknown) {
+    const tab = newTab(moduleId, state);
     setTabs((prev) => [...prev, tab]);
     setActiveId(tab.id);
   }
@@ -124,6 +127,24 @@ function App() {
   useEffect(() => {
     writeSession(tabs, activeId);
   }, [tabs, activeId]);
+
+  /* Tabs the backend asks for — see `shell/launch.ts` for what they are and why they are drained
+     rather than delivered. No "cancelled" guard around the drain: what has been taken from the
+     backend's queue is gone from it, and a request dropped because StrictMode remounted this
+     component between the call and its answer would be a tab that never opens. */
+  useEffect(() => {
+    const ids = MODULES.map((m) => m.id);
+    async function drain() {
+      const requests = await takeTabRequests(ids).catch(() => []);
+      for (const request of requests) openTab(request.moduleId, request.state);
+    }
+    const unlisten = onTabRequest(() => void drain());
+    void drain();
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `openTab` is rebuilt every render and only ever calls the two stable setters; listening once is the point.
+  }, []);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
