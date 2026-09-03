@@ -114,8 +114,10 @@ last:
   `tauri-plugin-single-instance`, which forwards `argv` only. A second start with no URL just
   brings the window up.
 - `modules/db/handoff.rs` turns the URL into a `ConnectionConfig` kept in `HandoffState` until the
-  tab opened for it calls `handoff_take` once; `DbTab` then fills the form and goes through the
-  ordinary `connect_db`. Nothing is saved unless the user presses Save.
+  tab opened for it calls `handoff_take` once; `DbTab` then fills the form and, when the password
+  came along or the server has no accounts (`handoffArrival.ts`), goes through the ordinary
+  `connect_db`. A `mixdb://` link from a browser brings no password, so that tab waits at the form
+  with the caret in the password field. Nothing is saved unless the user presses Save.
 
 `tauri-plugin-deep-link` registers the scheme through the installers. Only macOS listens to its
 events (the Apple Event is the only way a URL reaches a macOS process); on Windows and Linux the

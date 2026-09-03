@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import Select from "../../../../components/Select";
 import ConfirmDialog from "../../../../components/ConfirmDialog";
@@ -78,6 +79,10 @@ interface Props {
   status: string;
   connecting: boolean;
   tunnelStatus: { tone: string; message: string } | null;
+  /** Bumped each time the tab wants the caret in the password field — a handed-over connection
+   *  that arrived with everything but the password. A counter rather than a flag, so asking twice
+   *  moves it twice. `0`, or absent, asks nothing. */
+  focusPassword?: number;
   onSave: () => void;
   onSaveAsNew: () => void;
   onConnect: () => void;
@@ -95,12 +100,17 @@ function ConnectionForm({
   status,
   connecting,
   tunnelStatus,
+  focusPassword = 0,
   onSave: saveConnection,
   onSaveAsNew: saveConnectionAsNew,
   onConnect: connect,
   onTestTunnel: testTunnel,
 }: Props) {
   const { t } = useTranslation();
+  const passwordRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (focusPassword > 0) passwordRef.current?.focus();
+  }, [focusPassword]);
   const {
     kind, host, port, username, password, database, uri, uriRevealed, confirmingReveal, useSsl,
     tunnelType, sshHost, sshPort, sshUser, sshAuthType, sshPassword, sshKeyPath, sshPassphrase,
@@ -220,6 +230,7 @@ function ConnectionForm({
             <label>
               {t("common.password")}{" "}
               <Input
+                ref={passwordRef}
                 type="password"
                 value={password}
                 onChange={(e) => set("password", e.target.value)}

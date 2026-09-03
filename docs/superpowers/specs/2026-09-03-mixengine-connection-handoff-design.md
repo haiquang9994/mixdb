@@ -275,8 +275,16 @@ export function takeHandoff(id: string): Promise<Handoff>;
 1. `onStateChange(undefined)` **ngay** — tab này không trỏ tới gì bền, session không được giữ
    `handoffId`.
 2. `takeHandoff(id)`. Thành công → `setForm(formFrom(config))`, `setSaveAsName(label)`,
-   `onTitleChange(label)`, `connect(config, label)`. Thất bại (hết hạn) → không làm gì: form trống,
-   không banner, y như tab mở tay.
+   `onTitleChange(label)`, rồi hỏi `arrivesConnected(config)`:
+   - **có mật khẩu, hoặc là Redis** (không có tài khoản) → `connect(config, label)` ngay. Đây là
+     đường MixEngine.
+   - **không có mật khẩu mà server có tài khoản** → không nối. Form đã điền đủ, dòng trạng thái nói
+     "Nhập mật khẩu để kết nối", con trỏ đặt sẵn trong ô mật khẩu (`ConnectionForm` nhận
+     `focusPassword`, một bộ đếm). Đây là đường link `mixdb://` từ trình duyệt hay tài liệu: cùng
+     một URL nhưng không có env đứng sau, và nối bằng mật khẩu rỗng chỉ để nhận "access denied"
+     thì không giúp ai.
+
+   Thất bại (hết hạn) → không làm gì: form trống, không banner, y như tab mở tay.
 
 `connect` đi nguyên đường cũ: `connect_db`, workspace, badge kind. Nối lỗi (server chưa lên) → banner
 lỗi trên form **đã điền đủ kể cả mật khẩu**, bấm Connect là thử lại — không có nhánh riêng nào cho
@@ -386,7 +394,7 @@ $env:MIXENGINE_DB_PASSWORD` → trống. `Get-Content connections.json` → khô
 | Rủi ro | Trả lời |
 | --- | --- |
 | Trang web phát `mixdb://…&password_env=X` để đọc env người dùng | Mục 1: chỉ `MIX*_PASSWORD`; và biến đó chỉ tồn tại trong tiến trình MixEngine khởi động |
-| Trang web phát `mixdb://connect?host=…` để MixDB nối tới host lạ | Nối không mật khẩu, tab hiện ra trước mắt người dùng với host trong form — cái giá của một scheme công khai, và không có gì rò rỉ |
+| Trang web phát `mixdb://connect?host=…` để MixDB nối tới host lạ | Không có mật khẩu thì không nối (mục 4): tab hiện form với host lạ trong đó, người dùng là người bấm Connect. Redis không có tài khoản thì vẫn nối — cái giá của một scheme công khai, và không có gì rò rỉ |
 | Helper của WebView2 / shell trong terminal kế thừa mật khẩu | `remove_var` ở dòng đầu `run()`, trước builder |
 | Tiến trình thứ hai bị coi là thất bại | Thoát 0 trong vài chục ms; `forward` có timeout 3s để không bao giờ treo quá "một giây phán xét" của MixEngine mà không có lý do |
 | Cửa sổ thứ nhất treo | Timeout → tiến trình thứ hai tự mở cửa sổ; pipe/socket tạo thất bại → chạy không kênh |

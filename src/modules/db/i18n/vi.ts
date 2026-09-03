@@ -7,6 +7,7 @@ const dbVi: DbDict = {
     tunnelOk: "\u2713 Tunnel OK \u2014 Xác thực SSH thành công",
     tunnelFailed: "\u2717 {{error}}",
     connecting: "Đang kết nối...",
+    handoffNeedsPassword: "Nhập mật khẩu để kết nối.",
     disconnectHint: "Đóng kết nối này và quay lại màn hình kết nối",
     connectedStatus: "Đã kết nối ({{id}})",
     fallbackTitle: "{{kind}} \u00b7 {{host}}",

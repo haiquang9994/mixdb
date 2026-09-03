@@ -10,6 +10,7 @@ import {
 import type { ConnectionConfig, DbKind, SavedConnection } from "./types";
 import { parseDbTabState } from "./tabState";
 import { takeHandoff } from "./handoff";
+import { arrivesConnected } from "./handoffArrival";
 import { scrollTopFor } from "./savedListScroll";
 import SqlWorkspace from "./sql/SqlWorkspace";
 import { SqlProvider } from "./sql/context";
@@ -150,6 +151,9 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
      leaving a pool nobody can name and only the app quitting can close. */
   const connectingRef = useRef(false);
   const [connecting, setConnecting] = useState(false);
+  /** How many times the form has been asked to put the caret in the password field — see
+   *  `ConnectionForm`'s `focusPassword`. Bumped for a handed-over connection that came without one. */
+  const [focusPassword, setFocusPassword] = useState(0);
 
   /**
    * Whether the tab bar should be showing a lock for this tab.
@@ -460,7 +464,12 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
      label, pointing at no saved connection, with the form holding everything — the password too, so
      a server that was not up yet is a banner and a Connect button, not a form to fill in again.
      A take that fails (an id from an old session, a second tab for the same id) is an empty form
-     and no banner: nothing the user did has gone wrong. */
+     and no banner: nothing the user did has gone wrong.
+
+     Whether it is dialled at once is `arrivesConnected`: a handoff from MixEngine brought the
+     password and is; a `mixdb://` link from a browser brought everything but, and is shown as a
+     form with the caret where the one missing thing goes, rather than dialled to a certain
+     "access denied". */
   useEffect(() => {
     if (restoreTried.current || restoredState === null || !("handoffId" in restoredState)) return;
     restoreTried.current = true;
@@ -471,7 +480,12 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
         setForm(formFrom(handoff.config));
         setSaveAsName(handoff.label);
         onTitleChange(handoff.label);
-        void connect(handoff.config, handoff.label);
+        if (arrivesConnected(handoff.config)) {
+          void connect(handoff.config, handoff.label);
+        } else {
+          setStatus(t("connection.handoffNeedsPassword"));
+          setFocusPassword((count) => count + 1);
+        }
       },
       () => {},
     );
@@ -641,6 +655,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
             status={status}
             connecting={connecting}
             tunnelStatus={tunnelStatus}
+            focusPassword={focusPassword}
             onSave={saveConnection}
             onSaveAsNew={saveConnectionAsNew}
             onConnect={() => connect()}
