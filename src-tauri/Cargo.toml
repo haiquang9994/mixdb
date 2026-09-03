@@ -67,6 +67,11 @@ tokio-util = { version = "0.7", features = ["io"] }
 # phải viết một nhánh cho mỗi hệ điều hành. Đây là thư viện WezTerm chạy thật.
 portable-pty = "0.9"
 
+# `getuid`, for the one check the single-instance socket makes before it connects: that the file
+# at its path is this user's. std has the file's owner but not our own id.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # `test-util` không nằm trong feature `full`, mà bộ gom lô chỉ test được khi tua nhanh được
 # đồng hồ — 5ms thật thì test nào cũng thành test đo thời gian.
 [dev-dependencies]

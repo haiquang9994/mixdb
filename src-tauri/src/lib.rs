@@ -2,6 +2,7 @@
 #[macro_use]
 mod error;
 
+mod instance;
 mod launch;
 mod modules;
 mod platform;

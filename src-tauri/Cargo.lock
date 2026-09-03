@@ -3335,6 +3335,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "keyring",
+ "libc",
  "mongodb",
  "portable-pty",
  "redis",
