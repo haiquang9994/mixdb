@@ -6,6 +6,7 @@
 
 pub mod commands;
 pub mod drivers;
+pub mod handoff;
 pub mod models;
 pub mod state;
 
@@ -14,7 +15,10 @@ pub mod state;
 /// Tauri keys managed state by type, so a second module manages its own struct through a call of
 /// its own here without ever meeting [`state::DbState`].
 pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
-    builder.manage(state::DbState::default())
+    builder
+        .manage(state::DbState::default())
+        // Connections handed over by another program, waiting for their tab — see `handoff.rs`.
+        .manage(handoff::HandoffState::default())
 }
 
 /// Deletes what a tool download that never finished left behind — see

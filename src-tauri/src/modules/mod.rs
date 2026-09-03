@@ -111,6 +111,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         db::commands::tools::dumptools_install,
         db::commands::tools::dumptools_uninstall,
         db::commands::tools::dumptools_set_path,
+        db::commands::handoff::handoff_take,
         // ── rest ──
         rest::commands::rest_send,
         rest::commands::rest_cancel,

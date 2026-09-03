@@ -44,6 +44,7 @@ macro_rules! retry_read {
     }};
 }
 
+pub mod handoff;
 pub mod mongo;
 pub mod mysql;
 pub mod postgres;
