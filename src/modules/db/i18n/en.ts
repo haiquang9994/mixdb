@@ -864,6 +864,7 @@ const dbEn = {
     postgres: "PostgreSQL: {{message}}",
     mongo: "MongoDB: {{message}}",
     redis: "Redis: {{message}}",
+    sqlite: "SQLite: {{message}}",
     // Connections
     unknownConnection: "This connection is no longer open \u2014 connect again.",
     wrongConnectionKind: "This is not a {{kind}} connection.",
@@ -873,6 +874,10 @@ const dbEn = {
       "The connection to the server was lost. If it goes through an SSH tunnel, MixDB is opening it again \u2014 try once more in a moment.",
     noTunnel: "This connection does not go through an SSH tunnel.",
     mongoUriRequired: "A MongoDB connection string is required.",
+    sqlitePathRequired: "Choose the SQLite database file to open.",
+    /* MixDB never creates a database file: a path that is not there is a typo, not an empty
+       database to start filling. */
+    sqliteFileNotFound: "There is no file at {{path}}.",
     /* A `mixdb://connect?…` URL another program started MixDB with — see `handoff.ts`. The first
        is only ever printed to stderr; the second is answered with an empty form. Both exist so a
        code that does reach the screen one day is a sentence rather than its own key. */

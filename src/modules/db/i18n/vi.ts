@@ -850,6 +850,7 @@ const dbVi: DbDict = {
     postgres: "PostgreSQL: {{message}}",
     mongo: "MongoDB: {{message}}",
     redis: "Redis: {{message}}",
+    sqlite: "SQLite: {{message}}",
     // Kết nối
     unknownConnection: "Kết nối này không còn mở — hãy kết nối lại.",
     wrongConnectionKind: "Đây không phải kết nối {{kind}}.",
@@ -859,6 +860,8 @@ const dbVi: DbDict = {
       "Mất kết nối tới máy chủ. Nếu kết nối này đi qua SSH tunnel, MixDB đang mở lại — thử lại sau giây lát.",
     noTunnel: "Kết nối này không đi qua SSH tunnel.",
     mongoUriRequired: "Cần có chuỗi kết nối MongoDB.",
+    sqlitePathRequired: "Hãy chọn file database SQLite cần mở.",
+    sqliteFileNotFound: "Không có file nào ở {{path}}.",
     handoffInvalid: "Không đọc được kết nối MixDB được mở cùng: {{message}}",
     handoffExpired: "Kết nối được chuyển sang này đã được mở rồi.",
     mongoNoTcpHost: "Chuỗi kết nối không chỉ ra host TCP nào để mở tunnel.",

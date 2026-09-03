@@ -27,6 +27,11 @@ pub enum DbHandle {
     /// Behind a lock of its own: unlike the others, a Redis connection is used through `&mut`,
     /// and selecting a database replaces it outright.
     Redis(Arc<Mutex<crate::modules::db::drivers::redis::Connection>>),
+    /// A file rather than a server, so there is no endpoint, no tunnel and no credential behind
+    /// this one — the pool is the whole of it. Still a pool and not a single connection: the
+    /// workspace reads a page of a table while the Query tab runs a script, and SQLite serialises
+    /// those itself.
+    Sqlite(sqlx::SqlitePool),
 }
 
 pub struct ActiveConnection {

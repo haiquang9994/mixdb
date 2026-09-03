@@ -85,6 +85,16 @@ pub fn parse(url: &str, secret: Option<String>) -> Result<Handoff, AppError> {
         Some("mysql") => DbKind::Mysql,
         Some("postgres") => DbKind::Postgres,
         Some("redis") => DbKind::Redis,
+        /* Refused by name rather than by falling through, because the reason is not "not supported
+           yet". `mixdb://` is registered with the operating system, so any web page can hand this
+           process a URL; a `kind=sqlite&path=…` would be that page choosing which file on the
+           user's disk MixDB opens. Nothing else here names a local path, which is what makes this
+           kind the exception. */
+        Some("sqlite") => {
+            return Err(invalid(
+                "kind `sqlite` names a file on this machine, and is not opened from a URL",
+            ))
+        }
         Some(other) => {
             return Err(invalid(format!(
                 "kind `{other}` is not one MixDB opens this way"
@@ -113,6 +123,7 @@ pub fn parse(url: &str, secret: Option<String>) -> Result<Handoff, AppError> {
             password: secret,
             database: present(&parsed, "database"),
             uri: None,
+            path: None,
             ssh: None,
             // "Try TLS, fall back to plaintext": right for MixEngine's loopback servers, which
             // speak none, and not wrong for a server that does.
@@ -263,6 +274,10 @@ mod tests {
             "mixdb://connect?kind=mysql&host=h&port=0",
             "mixdb://connect?kind=mysql&host=h&port=70000",
             "mixdb://connect?kind=mysql&host=h&port=abc",
+            // Refused whether or not it is well formed, and whether or not a path is offered: a
+            // URL is not allowed to choose a file on this machine. See the arm in `parse`.
+            "mixdb://connect?kind=sqlite&host=h&port=1",
+            "mixdb://connect?kind=sqlite&path=C:%5CUsers%5Csomeone%5Cblog.db",
         ] {
             let error = parse(url, None).expect_err(url);
             assert_eq!(error.code, "error.handoffInvalid", "{url}");
