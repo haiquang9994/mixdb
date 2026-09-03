@@ -526,3 +526,255 @@ fn build_where(filters: &[Filter], columns: &[String]) -> Result<(String, Vec<St
     }
     Ok((format!(" WHERE {}", clauses.join(" AND ")), binds))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A real database file, built from `sqlite_fixture.sql` and deleted when the test ends.
+    ///
+    /// The file is real rather than `:memory:` because that is the thing under test: `connect`
+    /// refuses to create one, checks the path first, and reads its own name back out for the
+    /// header. None of that has a meaning for an in-memory database.
+    struct Fixture {
+        path: std::path::PathBuf,
+    }
+
+    impl Fixture {
+        async fn open() -> (Self, SqlitePool) {
+            let path = std::env::temp_dir()
+                .join(format!("mixdb-sqlite-{}.db", uuid::Uuid::new_v4()));
+            // The one place in the app that creates a database file, and it is a test: `connect`
+            // never does — see D5 of the plan this was built from.
+            let pool = SqlitePoolOptions::new()
+                .connect_with(
+                    SqliteConnectOptions::new()
+                        .filename(&path)
+                        .create_if_missing(true),
+                )
+                .await
+                .expect("create the fixture database");
+            for statement in include_str!("sqlite_fixture.sql").split(";\n") {
+                if statement.trim().is_empty() {
+                    continue;
+                }
+                sqlx::raw_sql(statement)
+                    .execute(&pool)
+                    .await
+                    .unwrap_or_else(|e| panic!("fixture statement failed: {e}\n{statement}"));
+            }
+            pool.close().await;
+
+            let pool = connect(path.to_str().unwrap())
+                .await
+                .expect("open the fixture through `connect`");
+            (Self { path }, pool)
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+            // WAL leaves two more behind if anything ever turns it on. Removing them costs nothing
+            // and keeps a failed run from leaving three files in the temp directory instead of one.
+            let _ = std::fs::remove_file(self.path.with_extension("db-wal"));
+            let _ = std::fs::remove_file(self.path.with_extension("db-shm"));
+        }
+    }
+
+    fn page(page_size: i64) -> PageQuery {
+        PageQuery { page: 0, page_size, ..PageQuery::default() }
+    }
+
+    fn filtered(column: &str, operator: &str, value: Option<&str>) -> PageQuery {
+        PageQuery {
+            page: 0,
+            page_size: 50,
+            filters: vec![Filter {
+                column: column.to_string(),
+                operator: operator.to_string(),
+                value: value.map(str::to_string),
+            }],
+            ..PageQuery::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_missing_file_is_an_error_and_stays_missing() {
+        let path = std::env::temp_dir().join(format!("mixdb-absent-{}.db", uuid::Uuid::new_v4()));
+        let error = connect(path.to_str().unwrap()).await.expect_err("should refuse");
+        assert_eq!(error.code, "error.sqliteFileNotFound");
+        // The point of the check, not a side effect of it: opening a path that is not there must
+        // not leave an empty database behind for the user to wonder about.
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn an_empty_path_is_an_error() {
+        assert_eq!(
+            connect("   ").await.expect_err("should refuse").code,
+            "error.sqlitePathRequired"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_header_names_the_file_rather_than_a_machine() {
+        let (fixture, pool) = Fixture::open().await;
+        let info = server_info(&pool).await.unwrap();
+        assert!(info.version.starts_with('3'), "version was {}", info.version);
+        assert_eq!(info.os, fixture.path.file_name().unwrap().to_string_lossy());
+    }
+
+    #[tokio::test]
+    async fn there_is_one_database_and_it_is_called_main() {
+        assert_eq!(list_databases(), vec!["main".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn tables_and_views_are_listed_and_sqlites_own_are_not() {
+        let (_fixture, pool) = Fixture::open().await;
+        let tables = list_tables(&pool).await.unwrap();
+        // `recent` is a view and is in; `sqlite_sequence` exists because `post` is AUTOINCREMENT,
+        // and is out.
+        assert_eq!(tables, vec!["author", "post", "recent", "tag"]);
+    }
+
+    #[tokio::test]
+    async fn a_generated_column_is_read_and_marked() {
+        let (_fixture, pool) = Fixture::open().await;
+        let data = table_data(&pool, "post", &page(50)).await.unwrap();
+
+        // In the grid, in table order — `pragma_table_info` would have left it out entirely.
+        assert_eq!(
+            data.columns,
+            vec!["id", "author_id", "title", "slug", "body", "views", "created_at"]
+        );
+        assert_eq!(data.column_meta["slug"].extra, "generated");
+        assert_eq!(data.rows[0]["slug"], Value::String("hello world".into()));
+    }
+
+    #[tokio::test]
+    async fn only_an_integer_primary_key_counts_as_generated_by_the_engine() {
+        let (_fixture, pool) = Fixture::open().await;
+
+        let post = table_data(&pool, "post", &page(50)).await.unwrap();
+        assert_eq!(post.primary_key, vec!["id"]);
+        assert_eq!(post.auto_increment_column.as_deref(), Some("id"));
+        assert_eq!(post.column_meta["id"].extra, "rowid");
+
+        /* `tag.id` is declared INTEGER and is first in the key, and is still an ordinary column: a
+           rowid alias is a *single*-column key. An INSERT has to give it a value, so reporting it
+           as server-assigned would be a row the grid refuses to write. */
+        let tag = table_data(&pool, "tag", &page(50)).await.unwrap();
+        assert_eq!(tag.primary_key, vec!["id", "label"]);
+        assert_eq!(tag.auto_increment_column, None);
+        assert_eq!(tag.column_meta["id"].extra, "");
+    }
+
+    #[tokio::test]
+    async fn a_column_says_what_it_holds() {
+        let (_fixture, pool) = Fixture::open().await;
+        let data = table_data(&pool, "post", &page(50)).await.unwrap();
+
+        assert_eq!(data.column_meta["title"].data_type, "TEXT");
+        assert!(!data.column_meta["title"].nullable);
+        assert!(data.column_meta["body"].nullable);
+        assert_eq!(data.column_meta["views"].default_value.as_deref(), Some("0"));
+        assert_eq!(
+            data.column_meta["created_at"].default_value.as_deref(),
+            Some("CURRENT_TIMESTAMP")
+        );
+
+        let key = data.column_meta["author_id"].foreign_key.as_ref().unwrap();
+        assert_eq!(key.table, "author");
+        assert_eq!(key.column, "id");
+    }
+
+    #[tokio::test]
+    async fn a_blob_comes_back_base64_and_a_null_comes_back_null() {
+        let (_fixture, pool) = Fixture::open().await;
+        let data = table_data(&pool, "post", &page(50)).await.unwrap();
+        // x'00ff10' — bytes have no JSON of their own.
+        assert_eq!(data.rows[0]["body"], Value::String("AP8Q".into()));
+        assert_eq!(data.rows[1]["body"], Value::Null);
+        assert_eq!(data.rows[2]["views"], Value::Null);
+        // Read off the storage class, not the declared type.
+        assert_eq!(data.rows[0]["views"], Value::from(7));
+    }
+
+    #[tokio::test]
+    async fn a_page_is_cut_out_of_the_sorted_whole() {
+        let (_fixture, pool) = Fixture::open().await;
+        let query = PageQuery {
+            page: 1,
+            page_size: 2,
+            sort_column: Some("id".to_string()),
+            sort_desc: true,
+            filters: Vec::new(),
+        };
+        let data = table_data(&pool, "post", &query).await.unwrap();
+        // `total` counts the table, not the page.
+        assert_eq!(data.total, 3);
+        assert_eq!(data.rows.len(), 1);
+        assert_eq!(data.rows[0]["id"], Value::from(1));
+    }
+
+    #[tokio::test]
+    async fn a_sort_column_that_is_not_a_column_is_ignored() {
+        let (_fixture, pool) = Fixture::open().await;
+        let query = PageQuery {
+            page: 0,
+            page_size: 50,
+            // This is what keeps the value out of the SQL text: it never names a real column, so
+            // it never reaches the ORDER BY at all.
+            sort_column: Some("id; DROP TABLE post".to_string()),
+            sort_desc: false,
+            filters: Vec::new(),
+        };
+        assert_eq!(table_data(&pool, "post", &query).await.unwrap().total, 3);
+    }
+
+    #[tokio::test]
+    async fn filters_compare_as_text_so_a_typed_value_matches_what_is_shown() {
+        let (_fixture, pool) = Fixture::open().await;
+
+        let contains = table_data(&pool, "post", &filtered("title", "contains", Some("post")))
+            .await
+            .unwrap();
+        assert_eq!(contains.total, 1);
+
+        // An integer column, matched against text typed into the box.
+        let eq = table_data(&pool, "post", &filtered("views", "eq", Some("7")))
+            .await
+            .unwrap();
+        assert_eq!(eq.total, 1);
+
+        let null = table_data(&pool, "post", &filtered("body", "isNull", None))
+            .await
+            .unwrap();
+        assert_eq!(null.total, 2);
+    }
+
+    #[tokio::test]
+    async fn a_filter_on_a_column_that_is_not_there_is_refused() {
+        let (_fixture, pool) = Fixture::open().await;
+        // The column name is the one part of a filter that is interpolated, so it is checked
+        // against the table rather than trusted.
+        let error = table_data(&pool, "post", &filtered("title\" IS NULL --", "eq", Some("x")))
+            .await
+            .expect_err("should refuse");
+        assert_eq!(error.code, "error.unknownFilterColumn");
+    }
+
+    #[tokio::test]
+    async fn regexp_is_refused_rather_than_sent() {
+        let (_fixture, pool) = Fixture::open().await;
+        /* The dropdown does not offer it, so this only happens to a filter that arrived some other
+           way — and then it says which operator is unknown, rather than SQLite saying "no such
+           function: regexp" about a query nobody wrote. */
+        let error = table_data(&pool, "post", &filtered("title", "regexp", Some("^H")))
+            .await
+            .expect_err("should refuse");
+        assert_eq!(error.code, "error.unknownFilterOperator");
+    }
+}
