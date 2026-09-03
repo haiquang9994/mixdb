@@ -44,6 +44,16 @@ export interface SavedConnection {
    *  Offered for every kind, because a production Mongo or Redis server is as easy to mistake for
    *  its staging twin as a MySQL one is. */
   readOnly?: boolean;
+  /** The key half of this connection's address in MixEngine's keyring entry — `service="mixengine"`
+   *  is a constant on the Rust side that reads it and is never stored here (T84's D5); this is the
+   *  `<service-id>/<user>` half, e.g. `"mariadb@main/root"`.
+   *
+   *  Safe to keep in `connections.json` in plain text, unlike a password: it is a name, not a
+   *  secret — reading the credential it names still requires the OS credential store to hand it
+   *  over. Set means Save must write this address instead of copying MixEngine's password into
+   *  MixDB's own vault; the password shown in the form is resolved from it fresh on every load, and
+   *  reads as empty rather than an error when MixEngine no longer has that entry. */
+  keyringRef?: string;
 }
 
 export const DEFAULT_PORTS: Record<DbKind, number> = {
