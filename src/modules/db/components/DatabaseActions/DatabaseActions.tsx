@@ -249,6 +249,9 @@ function DatabaseActions({
       {choosingMode && (
         <DumpDialog
           database={database}
+          /* SQLite's dump carries the schema and not the rows — see `sqlite_dump.rs`. Offered as
+             the one choice rather than as one of three, two of which would be refused. */
+          modes={kind === "sqlite" ? ["structure"] : undefined}
           onCancel={() => setChoosingMode(false)}
           onSubmit={(mode) => void runDump(mode)}
         />

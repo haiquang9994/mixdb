@@ -11,5 +11,7 @@ pub mod postgres_structure;
 pub mod redis;
 pub mod sqlite;
 pub mod sqlite_ddl;
+pub mod sqlite_dump;
+pub mod sqlite_script;
 pub mod sqlite_structure;
 pub mod tools;

@@ -106,13 +106,21 @@ export const sqliteApi: SqlApi = {
     return invoke<void>("sqlite_drop_index", { id, database, table, name });
   },
 
-  /* Everything below is a command that does not exist yet. Each throws rather than invoking a name
-     nothing answers to, so that a control reached before its task lands says one sentence instead
-     of failing as "command not found" — and so that this list is the checklist of what is left.
-     They go in the order of the tasks that remove them: the Query tab, then dump and restore. */
+  runScript(id, runId, sql, database) {
+    return invoke<SqlStatementResult[]>("sqlite_run_script", { id, runId, sql, database });
+  },
 
-  runScript(): Promise<SqlStatementResult[]> {
-    return notYet();
+  validateSql(id, sql, database) {
+    return invoke<SqlProblem | null>("sqlite_validate_sql", { id, sql, database });
+  },
+
+  /** Structure only — a data dump is refused by the backend rather than written short. */
+  dump(id, database, mode, path) {
+    return invoke<void>("sqlite_dump", { id, database, mode, path });
+  },
+
+  restore(id, database, path) {
+    return invoke<void>("sqlite_restore", { id, database, path });
   },
 
   cancelQuery() {
@@ -122,32 +130,21 @@ export const sqliteApi: SqlApi = {
     return Promise.resolve();
   },
 
-  validateSql(): Promise<SqlProblem | null> {
-    return notYet();
-  },
-
-  dump() {
-    return notYet();
-  },
-
-  restore() {
-    return notYet();
-  },
-
   /* No such statement, and no such concept: a SQLite database is a file, so creating one is
      creating a file and dropping one is deleting it. Neither is something the workspace's buttons
      should do behind a name that means "run some DDL" — the buttons are closed instead. */
 
   createDatabase() {
-    return notYet();
+    return noDatabases();
   },
 
   dropDatabase() {
-    return notYet();
+    return noDatabases();
   },
 };
 
-/** The one error every unfinished call reports, so that none of them fails as a missing command. */
-function notYet(): Promise<never> {
-  return Promise.reject(new Error("error.sqliteNotImplemented"));
+/** What the two calls that can never exist report, in case a control ever reaches them: no command
+ *  is invoked, so neither fails as "command not found". */
+function noDatabases(): Promise<never> {
+  return Promise.reject(new Error("error.sqliteNoDatabases"));
 }

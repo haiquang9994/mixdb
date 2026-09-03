@@ -23,7 +23,7 @@ The database module, under `modules/db/`:
 | --- | --- |
 | `mod.rs` | `register(builder)`: puts `DbState` and `HandoffState` in the app. |
 | `commands/mod.rs` | Connecting, disconnecting, and the private helpers the rest are built on: `handle`, `mysql_pool`, `postgres_pool`, `mongo_client`, `redis_connection`, `sql_endpoint`, `in_background`, `app_data_dir`. |
-| `commands/{mysql,postgres,mongo,redis,tools}.rs` | The `#[tauri::command]` functions. Thin: look the handle up, delegate to `drivers/`. |
+| `commands/{mysql,postgres,sqlite,mongo,redis,tools}.rs` | The `#[tauri::command]` functions. Thin: look the handle up, delegate to `drivers/`. |
 | `commands/handoff.rs` | `handoff_take`: the tab opened for a handed-over connection takes it, once. |
 | `models.rs` | `DbKind`, `ConnectionConfig` — the serde types crossing the boundary. |
 | `state.rs` | `DbState { connections: Mutex<HashMap<String, ActiveConnection>> }`, `DbHandle`. |
@@ -35,6 +35,11 @@ The database module, under `modules/db/`:
 | `drivers/postgres_structure.rs` | The Structure and Statistics tabs, reported in the shapes `mysql_structure.rs` reports so one grid draws either. |
 | `drivers/postgres_ddl.rs` | Tables, columns and indexes changed — one property at a time, unlike MySQL's `CHANGE COLUMN`. |
 | `drivers/postgres_script.rs` | The counterpart of `mysql_script.rs`: split, run statement by statement, validate one without running it. |
+| `drivers/sqlite.rs` | Connect to a **file**, read a page, write rows. No endpoint, no tunnel, no TLS — and metadata read through the `pragma_*` table-valued functions, since a `PRAGMA` takes no bind parameters. |
+| `drivers/sqlite_structure.rs` | The Structure and Statistics tabs. Row counts are counted rather than estimated, and sizes come from `dbstat` — which exists because the app bundles its own SQLite. |
+| `drivers/sqlite_ddl.rs` | What SQLite's `ALTER TABLE` can do, which is four things. A column edit that is not a rename is refused by name rather than rebuilt around. |
+| `drivers/sqlite_script.rs` | Split and run. No cancel: the statement runs in this process, so there is no session to stop. |
+| `drivers/sqlite_dump.rs` | Structure out of `sqlite_master` and back in. The one dump that is not a child process. |
 | `drivers/mongo.rs` | Connect, list, find, paging, document CRUD. |
 | `drivers/redis.rs` | Connect, SCAN paging, typed value reads, delete. |
 | `drivers/dump.rs` | Backup and restore by driving the vendors' own tools — `mysqldump`, `pg_dump`, `mongodump` and their restores. |

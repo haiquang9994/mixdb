@@ -9,8 +9,8 @@
 //! statements; a file that has gone away is not something a second attempt fixes.
 
 use crate::error::AppError;
-use crate::modules::db::drivers::{sqlite, sqlite_ddl, sqlite_structure};
-use crate::modules::db::models::ServerInfo;
+use crate::modules::db::drivers::{sqlite, sqlite_ddl, sqlite_dump, sqlite_script, sqlite_structure};
+use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use serde_json::{Map, Value};
 use crate::modules::db::state::DbState;
 use tauri::State;
@@ -248,4 +248,64 @@ pub async fn sqlite_drop_index(
 ) -> Result<(), AppError> {
     let pool = sqlite_pool(&state, &id).await?;
     sqlite_ddl::drop_index(&pool, &table, &name).await
+}
+
+/// Runs the user's script.
+///
+/// `run_id` is accepted for the shape the other two engines have and is not remembered anywhere:
+/// nothing here can be cancelled from outside, so there is no pid to file under it — see
+/// `sqlite_script`.
+#[tauri::command]
+pub async fn sqlite_run_script(
+    state: State<'_, DbState>,
+    id: String,
+    _run_id: String,
+    sql: String,
+    _database: Option<String>,
+) -> Result<Vec<StatementResult>, AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_script::run(&pool, &sql).await
+}
+
+/// Asks SQLite to prepare one statement without running it, for the editor's error checking.
+#[tauri::command]
+pub async fn sqlite_validate_sql(
+    state: State<'_, DbState>,
+    id: String,
+    sql: String,
+    _database: Option<String>,
+) -> Result<Option<SqlProblem>, AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_script::validate(&pool, &sql).await
+}
+
+/// Writes the schema to `path`.
+///
+/// `mode` is checked rather than ignored: MixDB does not write a SQLite data dump yet, and a file
+/// asked for as `all` that arrived holding only `CREATE` statements would be a backup someone
+/// found out about at restore time.
+#[tauri::command]
+pub async fn sqlite_dump(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    mode: String,
+    path: String,
+) -> Result<(), AppError> {
+    if mode != "structure" {
+        return Err(err!("error.sqliteDataDumpUnsupported"));
+    }
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_dump::dump_structure(&pool, std::path::Path::new(&path)).await
+}
+
+#[tauri::command]
+pub async fn sqlite_restore(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    path: String,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_dump::restore(&pool, std::path::Path::new(&path)).await
 }

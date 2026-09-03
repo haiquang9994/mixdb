@@ -883,6 +883,8 @@ const dbEn = {
     /* MixDB never creates a database file: a path that is not there is a typo, not an empty
        database to start filling. */
     sqliteFileNotFound: "There is no file at {{path}}.",
+    sqliteNoDatabases:
+      "A SQLite database is a file. Creating or deleting one is done in the file manager, not here.",
     /* A `mixdb://connect?…` URL another program started MixDB with — see `handoff.ts`. The first
        is only ever printed to stderr; the second is answered with an empty form. Both exist so a
        code that does reach the screen one day is a sentence rather than its own key. */
@@ -989,6 +991,9 @@ const dbEn = {
     // Files and the app's own directory
     cannotReadFile: "Cannot read {{path}}: {{message}}",
     cannotWriteFile: "Cannot write {{path}}: {{message}}",
+    sqliteRestoreFailed: "The restore stopped at {{statement}} — {{message}}",
+    sqliteDataDumpUnsupported:
+      "MixDB dumps a SQLite schema, not its rows. Choose Structure, or copy the file itself.",
     cannotRemoveDirectory: "Cannot remove {{path}}: {{message}}",
     noAppDataDir: "There is nowhere for MixDB to keep its own files: {{message}}",
   },

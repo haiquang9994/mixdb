@@ -867,6 +867,8 @@ const dbVi: DbDict = {
     mongoUriRequired: "Cần có chuỗi kết nối MongoDB.",
     sqlitePathRequired: "Hãy chọn file database SQLite cần mở.",
     sqliteFileNotFound: "Không có file nào ở {{path}}.",
+    sqliteNoDatabases:
+      "Một database SQLite là một file. Tạo hay xóa nó là việc của trình quản lý file, không phải ở đây.",
     handoffInvalid: "Không đọc được kết nối MixDB được mở cùng: {{message}}",
     handoffExpired: "Kết nối được chuyển sang này đã được mở rồi.",
     mongoNoTcpHost: "Chuỗi kết nối không chỉ ra host TCP nào để mở tunnel.",
@@ -968,6 +970,9 @@ const dbVi: DbDict = {
     // File và thư mục riêng của ứng dụng
     cannotReadFile: "Không đọc được {{path}}: {{message}}",
     cannotWriteFile: "Không ghi được {{path}}: {{message}}",
+    sqliteRestoreFailed: "Khôi phục dừng lại ở {{statement}} — {{message}}",
+    sqliteDataDumpUnsupported:
+      "MixDB chỉ dump cấu trúc SQLite, không dump dữ liệu. Hãy chọn Structure, hoặc sao chép chính file đó.",
     cannotRemoveDirectory: "Không xóa được {{path}}: {{message}}",
     noAppDataDir: "MixDB không có chỗ nào để lưu file riêng của nó: {{message}}",
   },
