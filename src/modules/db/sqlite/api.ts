@@ -51,23 +51,30 @@ export const sqliteApi: SqlApi = {
     return invoke<SqlCollation[]>("sqlite_collations", { id });
   },
 
+  updateRow(id, database, table, updates, key) {
+    return invoke<void>("sqlite_update_row", { id, database, table, updates, key });
+  },
+
+  insertRows(id, database, table, rows) {
+    return invoke<void>("sqlite_insert_rows", { id, database, table, rows });
+  },
+
+  deleteRows(id, database, table, keys, all, resetAutoIncrement) {
+    return invoke<void>("sqlite_delete_rows", {
+      id,
+      database,
+      table,
+      keys,
+      all,
+      resetAutoIncrement,
+    });
+  },
+
   /* Everything below is a command that does not exist yet. Each throws rather than invoking a name
      nothing answers to, so that a control reached before its task lands says one sentence instead
      of failing as "command not found" — and so that this list is the checklist of what is left.
-     They go in the order of the tasks that remove them: writing rows, then DDL, then the Query
-     tab, then dump and restore. */
-
-  updateRow() {
-    return notYet();
-  },
-
-  insertRows() {
-    return notYet();
-  },
-
-  deleteRows() {
-    return notYet();
-  },
+     They go in the order of the tasks that remove them: DDL, then the Query tab, then dump and
+     restore. */
 
   createTable() {
     return notYet();

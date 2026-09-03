@@ -44,6 +44,12 @@ CREATE TABLE tag (
   PRIMARY KEY (id, label)
 );
 
+-- No primary key at all, which is what makes two identical rows indistinguishable by their
+-- columns. The write path has to reach one of them by rowid — see `delete_rows`.
+CREATE TABLE loose (
+  label TEXT
+);
+
 CREATE INDEX post_author ON post (author_id);
 CREATE UNIQUE INDEX post_title ON post (title);
 

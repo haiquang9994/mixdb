@@ -11,6 +11,7 @@
 use crate::error::AppError;
 use crate::modules::db::drivers::{sqlite, sqlite_structure};
 use crate::modules::db::models::ServerInfo;
+use serde_json::{Map, Value};
 use crate::modules::db::state::DbState;
 use tauri::State;
 
@@ -97,4 +98,43 @@ pub async fn sqlite_collations(
 ) -> Result<Vec<sqlite_structure::Collation>, AppError> {
     let pool = sqlite_pool(&state, &id).await?;
     sqlite_structure::collations(&pool).await
+}
+
+#[tauri::command]
+pub async fn sqlite_update_row(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    updates: Map<String, Value>,
+    key: Map<String, Value>,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite::update_row(&pool, &table, &updates, &key).await
+}
+
+#[tauri::command]
+pub async fn sqlite_insert_rows(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    rows: Vec<Map<String, Value>>,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite::insert_rows(&pool, &table, &rows).await
+}
+
+#[tauri::command]
+pub async fn sqlite_delete_rows(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    keys: Vec<Map<String, Value>>,
+    all: bool,
+    reset_auto_increment: bool,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite::delete_rows(&pool, &table, &keys, all, reset_auto_increment).await
 }

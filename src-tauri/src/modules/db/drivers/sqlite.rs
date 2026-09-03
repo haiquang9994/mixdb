@@ -551,6 +551,243 @@ fn build_where(filters: &[Filter], columns: &[String]) -> Result<(String, Vec<St
     Ok((format!(" WHERE {}", clauses.join(" AND ")), binds))
 }
 
+/// Binds one edited value.
+///
+/// Always as text or null — the grid only ever sends the text someone typed, or an explicit null.
+/// Unlike PostgreSQL, no cast is needed to get it into the column's type: SQLite applies the
+/// column's *affinity* on the way in, so `'7'` written to an INTEGER column is stored as the
+/// integer 7 and `'abc'` written to the same column is stored as the text it is.
+///
+/// The one place that falls short is a column holding bytes. Its values reach the grid base64
+/// encoded, and an edited one goes back as that text rather than as the bytes it stands for. That
+/// is what the other two drivers do as well — none of them decodes an edited binary cell — so it is
+/// a limit of the grid rather than of this engine.
+fn bind_value<'q>(
+    query: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments>,
+    value: &'q Value,
+) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments> {
+    match value {
+        Value::String(s) => query.bind(Some(s.as_str())),
+        _ => query.bind(None::<&str>),
+    }
+}
+
+/// The `WHERE` that names one row: every key column matched, nulls included.
+///
+/// `IS` rather than `=` because a null key column has to match a null — SQLite's `IS` is the
+/// null-safe comparison, where `=` on a null is itself null and matches nothing. It is what
+/// PostgreSQL spells `IS NOT DISTINCT FROM`.
+fn key_predicate(key: &Map<String, Value>) -> String {
+    key.keys()
+        .map(|column| format!("{} IS ?", quote_ident(column)))
+        .collect::<Vec<_>>()
+        .join(" AND ")
+}
+
+/// Whether the table identifies its own rows — that is, whether it has a primary key.
+///
+/// Without one, a row's "key" is every column it has, and two identical rows are indistinguishable
+/// by it. See [`delete_rows`] for what that costs.
+async fn has_primary_key(pool: &SqlitePool, table: &str) -> Result<bool, AppError> {
+    let count: i64 = sqlx::query_scalar("select count(*) from pragma_table_xinfo(?) where pk > 0")
+        .bind(table)
+        .fetch_one(pool)
+        .await
+        .map_err(map_error)?;
+    Ok(count > 0)
+}
+
+/// Writes `updates` into the single row `key` names.
+///
+/// The row is counted first, inside the same transaction as the write: a key that matches two rows
+/// — which only a table with no primary key can produce — would otherwise update both, and the
+/// grid would show one row changing while another silently changed with it.
+pub async fn update_row(
+    pool: &SqlitePool,
+    table: &str,
+    updates: &Map<String, Value>,
+    key: &Map<String, Value>,
+) -> Result<(), AppError> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+    if key.is_empty() {
+        return Err(err!("error.updateWithoutKey"));
+    }
+
+    let quoted = quote_ident(table);
+    let set_clause = updates
+        .keys()
+        .map(|column| format!("{} = ?", quote_ident(column)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let predicate = key_predicate(key);
+
+    let mut tx = pool.begin().await.map_err(map_error)?;
+
+    let count_sql = format!("SELECT COUNT(*) FROM {quoted} WHERE {predicate}");
+    let mut count_query = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql));
+    for value in key.values() {
+        count_query = match value {
+            Value::String(s) => count_query.bind(Some(s.as_str())),
+            _ => count_query.bind(None::<&str>),
+        };
+    }
+    let matched: i64 = count_query.fetch_one(&mut *tx).await.map_err(map_error)?;
+    if matched != 1 {
+        tx.rollback().await.map_err(map_error)?;
+        return Err(err!("error.rowsMatched", matched = matched));
+    }
+
+    let update_sql = format!("UPDATE {quoted} SET {set_clause} WHERE {predicate}");
+    let mut update_query = sqlx::query(sqlx::AssertSqlSafe(update_sql));
+    for value in updates.values() {
+        update_query = bind_value(update_query, value);
+    }
+    for value in key.values() {
+        update_query = bind_value(update_query, value);
+    }
+    if let Err(e) = update_query.execute(&mut *tx).await {
+        tx.rollback().await.map_err(map_error)?;
+        return Err(map_error(e));
+    }
+
+    tx.commit().await.map_err(map_error)?;
+    Ok(())
+}
+
+/// Inserts rows, all in one transaction: one rejected row means none of them land.
+///
+/// A column left out of a row's map is left out of its INSERT, so the table's own default fills it.
+/// A row that names nothing at all is `DEFAULT VALUES`, SQLite's way of spelling a row that is
+/// nothing but defaults.
+pub async fn insert_rows(
+    pool: &SqlitePool,
+    table: &str,
+    rows: &[Map<String, Value>],
+) -> Result<(), AppError> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let quoted = quote_ident(table);
+    let mut tx = pool.begin().await.map_err(map_error)?;
+
+    for (i, row) in rows.iter().enumerate() {
+        let sql = if row.is_empty() {
+            format!("INSERT INTO {quoted} DEFAULT VALUES")
+        } else {
+            let columns = row
+                .keys()
+                .map(|c| quote_ident(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let values = vec!["?"; row.len()].join(", ");
+            format!("INSERT INTO {quoted} ({columns}) VALUES ({values})")
+        };
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+        for value in row.values() {
+            query = bind_value(query, value);
+        }
+        if let Err(e) = query.execute(&mut *tx).await {
+            tx.rollback().await.map_err(map_error)?;
+            return Err(err!("error.rowFailed", index = i + 1).caused_by(map_error(e)));
+        }
+    }
+
+    tx.commit().await.map_err(map_error)?;
+    Ok(())
+}
+
+/// Deletes the rows `keys` names — each map is one row's primary key columns, or every column when
+/// the table has no primary key — or every row when `all` is set. One transaction: if any of them
+/// fails, none of them land.
+///
+/// On a table with no primary key, one row's predicate can match that row's duplicate as well. The
+/// delete is aimed at `rowid` for those, which is the number SQLite gives every row of an ordinary
+/// table whether or not the schema mentions it — so exactly one row goes, and the identical row
+/// beside it stays. (The tables that have no rowid are the `WITHOUT ROWID` ones, and those are
+/// required to declare a primary key, so they never reach this branch.)
+pub async fn delete_rows(
+    pool: &SqlitePool,
+    table: &str,
+    keys: &[Map<String, Value>],
+    all: bool,
+    reset_auto_increment: bool,
+) -> Result<(), AppError> {
+    if !all && keys.is_empty() && !reset_auto_increment {
+        return Ok(());
+    }
+
+    let quoted = quote_ident(table);
+    let keyed = has_primary_key(pool, table).await?;
+    let mut tx = pool.begin().await.map_err(map_error)?;
+
+    if all {
+        let sql = format!("DELETE FROM {quoted}");
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .execute(&mut *tx)
+            .await
+            .map_err(map_error)?;
+    } else {
+        for key in keys {
+            if key.is_empty() {
+                tx.rollback().await.map_err(map_error)?;
+                return Err(err!("error.deleteWithoutKey"));
+            }
+            let predicate = key_predicate(key);
+            let sql = if keyed {
+                format!("DELETE FROM {quoted} WHERE {predicate}")
+            } else {
+                format!(
+                    "DELETE FROM {quoted} WHERE rowid = \
+                     (SELECT rowid FROM {quoted} WHERE {predicate} LIMIT 1)"
+                )
+            };
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+            for value in key.values() {
+                query = bind_value(query, value);
+            }
+            query.execute(&mut *tx).await.map_err(map_error)?;
+        }
+    }
+
+    tx.commit().await.map_err(map_error)?;
+
+    if reset_auto_increment {
+        reset_sequence(pool, table).await?;
+    }
+    Ok(())
+}
+
+/// Puts the table's `AUTOINCREMENT` counter back to 1.
+///
+/// Only a table declared `AUTOINCREMENT` has one — SQLite keeps those in `sqlite_sequence`, a table
+/// that does not exist at all until the first such table is created. So both "this database has no
+/// counters" and "this table has none" are ordinary outcomes rather than errors: the caller offers
+/// the reset alongside the delete, and most tables have nothing to put back.
+///
+/// A plain `INTEGER PRIMARY KEY` needs nothing done to it. Its next value is one above the largest
+/// rowid in the table, so deleting the rows resets it by itself.
+async fn reset_sequence(pool: &SqlitePool, table: &str) -> Result<(), AppError> {
+    let exists: i64 = sqlx::query_scalar(
+        "select count(*) from sqlite_master where type = 'table' and name = 'sqlite_sequence'",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(map_error)?;
+    if exists == 0 {
+        return Ok(());
+    }
+
+    sqlx::query("delete from sqlite_sequence where name = ?")
+        .bind(table)
+        .execute(pool)
+        .await
+        .map_err(map_error)?;
+    Ok(())
+}
+
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
@@ -623,6 +860,219 @@ pub(super) mod tests {
         }
     }
 
+
+    fn map(pairs: &[(&str, Option<&str>)]) -> Map<String, Value> {
+        pairs
+            .iter()
+            .map(|(k, v)| {
+                (
+                    (*k).to_string(),
+                    v.map(|s| Value::String(s.to_string())).unwrap_or(Value::Null),
+                )
+            })
+            .collect()
+    }
+
+    /// One column of one row, read straight back out of the file rather than through `table_data` —
+    /// so a test that asserts a write is not also asserting the read path.
+    async fn cell(pool: &SqlitePool, sql: &str) -> Value {
+        let row = sqlx::query(sqlx::AssertSqlSafe(sql.to_string()))
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        column_value(&row, 0)
+    }
+
+    #[tokio::test]
+    async fn an_edited_value_lands_in_the_column_type_rather_than_as_text() {
+        let (_fixture, pool) = Fixture::open().await;
+        update_row(
+            &pool,
+            "post",
+            &map(&[("views", Some("42"))]),
+            &map(&[("id", Some("1"))]),
+        )
+        .await
+        .unwrap();
+
+        /* Bound as the text the grid sent, and stored as an integer: SQLite applies the column's
+           affinity on the way in, which is why nothing here needs the casts PostgreSQL's binds
+           carry. A stored `"42"` would come back as a JSON string. */
+        assert_eq!(cell(&pool, "select views from post where id = 1").await, Value::from(42));
+    }
+
+    #[tokio::test]
+    async fn an_explicit_null_is_written_as_one() {
+        let (_fixture, pool) = Fixture::open().await;
+        update_row(&pool, "post", &map(&[("views", None)]), &map(&[("id", Some("1"))]))
+            .await
+            .unwrap();
+        assert_eq!(cell(&pool, "select views from post where id = 1").await, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn a_null_key_column_matches_the_null_it_names() {
+        let (_fixture, pool) = Fixture::open().await;
+        // `=` on a null is null and matches nothing, so a row keyed on one would be unreachable.
+        // The predicate uses `IS`, which is the null-safe comparison.
+        update_row(
+            &pool,
+            "post",
+            &map(&[("title", Some("Renamed"))]),
+            &map(&[("id", Some("3")), ("views", None)]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            cell(&pool, "select title from post where id = 3").await,
+            Value::String("Renamed".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_key_matching_two_rows_changes_neither() {
+        let (_fixture, pool) = Fixture::open().await;
+        sqlx::raw_sql("insert into loose (label) values ('twin'), ('twin')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let error = update_row(
+            &pool,
+            "loose",
+            &map(&[("label", Some("changed"))]),
+            &map(&[("label", Some("twin"))]),
+        )
+        .await
+        .expect_err("should refuse");
+        assert_eq!(error.code, "error.rowsMatched");
+
+        // The count and the write share a transaction, so the refusal leaves both rows as they
+        // were rather than changing one of them on the way to finding out.
+        let still: i64 = sqlx::query_scalar("select count(*) from loose where label = 'twin'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(still, 2);
+    }
+
+    #[tokio::test]
+    async fn an_update_without_a_key_is_refused() {
+        let (_fixture, pool) = Fixture::open().await;
+        let error = update_row(&pool, "post", &map(&[("title", Some("x"))]), &Map::new())
+            .await
+            .expect_err("should refuse");
+        assert_eq!(error.code, "error.updateWithoutKey");
+    }
+
+    #[tokio::test]
+    async fn a_column_left_out_of_an_insert_gets_the_tables_default() {
+        let (_fixture, pool) = Fixture::open().await;
+        insert_rows(
+            &pool,
+            "post",
+            &[map(&[("author_id", Some("2")), ("title", Some("Fresh"))])],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            cell(&pool, "select views from post where title = 'Fresh'").await,
+            Value::from(0)
+        );
+        // The generated column was never named and is computed anyway.
+        assert_eq!(
+            cell(&pool, "select slug from post where title = 'Fresh'").await,
+            Value::String("fresh".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_row_that_names_nothing_is_all_defaults() {
+        let (_fixture, pool) = Fixture::open().await;
+        insert_rows(&pool, "loose", &[Map::new()]).await.unwrap();
+        let rows: i64 = sqlx::query_scalar("select count(*) from loose")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 1);
+    }
+
+    #[tokio::test]
+    async fn one_rejected_row_means_none_of_them_land() {
+        let (_fixture, pool) = Fixture::open().await;
+        let error = insert_rows(
+            &pool,
+            "post",
+            &[
+                map(&[("author_id", Some("1")), ("title", Some("First of two"))]),
+                // No author 9: the foreign key is enforced, which is what `connect` leaves on.
+                map(&[("author_id", Some("9")), ("title", Some("Second of two"))]),
+            ],
+        )
+        .await
+        .expect_err("should refuse");
+        assert_eq!(error.code, "error.rowFailed");
+
+        let landed: i64 = sqlx::query_scalar("select count(*) from post where title like '% of two'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(landed, 0);
+    }
+
+    #[tokio::test]
+    async fn a_delete_on_a_table_with_no_key_takes_one_row_not_its_twin() {
+        let (_fixture, pool) = Fixture::open().await;
+        sqlx::raw_sql("insert into loose (label) values ('twin'), ('twin')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        delete_rows(&pool, "loose", &[map(&[("label", Some("twin"))])], false, false)
+            .await
+            .unwrap();
+
+        /* Aimed at the rowid of one matching row rather than at the predicate, which matches both.
+           Deleting "the rows that look like this one" would have taken a row the user did not
+           select. */
+        let left: i64 = sqlx::query_scalar("select count(*) from loose where label = 'twin'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(left, 1);
+    }
+
+    #[tokio::test]
+    async fn deleting_everything_empties_the_table() {
+        let (_fixture, pool) = Fixture::open().await;
+        delete_rows(&pool, "post", &[], true, false).await.unwrap();
+        let left: i64 = sqlx::query_scalar("select count(*) from post")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(left, 0);
+    }
+
+    #[tokio::test]
+    async fn resetting_the_counter_numbers_the_next_row_from_one() {
+        let (_fixture, pool) = Fixture::open().await;
+        delete_rows(&pool, "post", &[], true, true).await.unwrap();
+        insert_rows(&pool, "post", &[map(&[("author_id", Some("1")), ("title", Some("Again"))])])
+            .await
+            .unwrap();
+        // `post` is AUTOINCREMENT, so without clearing sqlite_sequence this would be 4.
+        assert_eq!(cell(&pool, "select id from post").await, Value::from(1));
+    }
+
+    #[tokio::test]
+    async fn a_table_with_no_counter_is_not_an_error_to_reset() {
+        let (_fixture, pool) = Fixture::open().await;
+        // `tag` has no AUTOINCREMENT, so there is no row in sqlite_sequence naming it — and the
+        // reset offered beside the delete has to be a no-op rather than a failure.
+        delete_rows(&pool, "tag", &[], true, true).await.unwrap();
+    }
+
     #[tokio::test]
     async fn a_missing_file_is_an_error_and_stays_missing() {
         let path = std::env::temp_dir().join(format!("mixdb-absent-{}.db", uuid::Uuid::new_v4()));
@@ -660,7 +1110,7 @@ pub(super) mod tests {
         let tables = list_tables(&pool).await.unwrap();
         // `recent` is a view and is in; `sqlite_sequence` exists because `post` is AUTOINCREMENT,
         // and is out.
-        assert_eq!(tables, vec!["author", "post", "recent", "tag"]);
+        assert_eq!(tables, vec!["author", "loose", "post", "recent", "tag"]);
     }
 
     #[tokio::test]

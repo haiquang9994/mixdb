@@ -581,7 +581,7 @@ mod tests {
         let stats = table_stats(&pool).await.unwrap();
         let names: Vec<&str> = stats.iter().map(|s| s.name.as_str()).collect();
         // `recent` is a view — it stores nothing of its own — and `sqlite_sequence` is SQLite's.
-        assert_eq!(names, vec!["author", "post", "tag"]);
+        assert_eq!(names, vec!["author", "loose", "post", "tag"]);
         assert_eq!(stats.iter().find(|s| s.name == "post").unwrap().rows, 3);
     }
 
@@ -606,7 +606,7 @@ mod tests {
 
         let names: Vec<&str> = outline.tables.iter().map(|t| t.name.as_str()).collect();
         // Views complete like tables do.
-        assert_eq!(names, vec!["author", "post", "recent", "tag"]);
+        assert_eq!(names, vec!["author", "loose", "post", "recent", "tag"]);
 
         let post = outline.tables.iter().find(|t| t.name == "post").unwrap();
         let author_id = post.columns.iter().find(|c| c.name == "author_id").unwrap();
