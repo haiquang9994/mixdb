@@ -37,10 +37,14 @@ interface Secrets extends SshSecrets {
  * The whole Mongo connection string counts as one: it carries the password inside it, and taking
  * that out would mean rewriting a URI whose shape (a replica-set seed list, `+srv`, options) this
  * app deliberately doesn't parse for anything but cosmetics.
+ *
+ * `keyringRef` set means `config.password` is only ever a copy resolved from MixEngine's own
+ * keyring entry for display — it must not be written here too, or every Save would leave behind
+ * exactly the duplicate the reference exists to avoid.
  */
-function readSecrets(config: ConnectionConfig): Secrets {
+export function readSecrets(config: ConnectionConfig, keyringRef?: string): Secrets {
   const secrets: Secrets = { ...(config.ssh ? splitSshSecrets(config.ssh).secrets : {}) };
-  if (config.password) secrets.password = config.password;
+  if (!keyringRef && config.password) secrets.password = config.password;
   if (config.uri) secrets.uri = config.uri;
   return secrets;
 }
@@ -69,6 +73,14 @@ function saveSecrets(id: string, secrets: Secrets): Promise<void> {
 
 function loadSecrets(id: string): Promise<Secrets> {
   return invoke<Secrets>("secrets_load", { id });
+}
+
+/** The password `keyringRef` names, or `undefined` when MixEngine no longer has that entry — a
+ *  normal end, not an error: the connection reads as one with no password saved. */
+function resolveKeyringRef(keyringRef: string): Promise<string | undefined> {
+  return invoke<string | null>("secrets_resolve_mixengine", { key: keyringRef }).then(
+    (password) => password ?? undefined,
+  );
 }
 
 /** What is actually on disk, credentials already removed. */
@@ -104,7 +116,12 @@ export async function loadSavedConnections(): Promise<SavedConnection[]> {
         needsRewrite = true;
         await saveSecrets(entry.id, { ...kept, ...inFile });
       }
-      return { ...entry, config: withSecrets(entry.config, { ...kept, ...inFile }) };
+      const config = withSecrets(entry.config, { ...kept, ...inFile });
+      // A reference wins over anything above: this entry was never meant to keep its own copy, so
+      // the password shown is always resolved fresh from MixEngine's keyring rather than read
+      // back from this app's own store.
+      if (entry.keyringRef) config.password = await resolveKeyringRef(entry.keyringRef);
+      return { ...entry, config };
     }),
   );
 
@@ -120,7 +137,7 @@ function stripEntry(entry: SavedConnection): SavedConnection {
 /** Writes `entry`'s credentials to the OS store and the whole list — credentials removed — to
  *  disk. The other entries are stripped too: they were handed out with theirs filled in. */
 async function persistEntry(list: SavedConnection[], entry: SavedConnection): Promise<void> {
-  await saveSecrets(entry.id, readSecrets(entry.config));
+  await saveSecrets(entry.id, readSecrets(entry.config, entry.keyringRef));
   await persist(list.map(stripEntry));
 }
 
