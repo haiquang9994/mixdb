@@ -22,7 +22,8 @@
 CREATE TABLE author (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
-  bio TEXT
+  -- A literal default, which SQLite reports still quoted — see `split_default`.
+  bio TEXT DEFAULT 'anonymous'
 );
 
 CREATE TABLE post (

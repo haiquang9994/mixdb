@@ -35,27 +35,27 @@ export const sqliteApi: SqlApi = {
     return invoke<SqlTablePage>("sqlite_table_data", { id, database, table, query });
   },
 
+  tableStats(id, database) {
+    return invoke<TableStats[]>("sqlite_table_stats", { id, database });
+  },
+
+  tableStructure(id, database, table) {
+    return invoke<SqlTableStructure>("sqlite_table_structure", { id, database, table });
+  },
+
+  schemaOutline(id, database) {
+    return invoke<SqlSchemaOutline>("sqlite_schema_outline", { id, database });
+  },
+
+  collations(id) {
+    return invoke<SqlCollation[]>("sqlite_collations", { id });
+  },
+
   /* Everything below is a command that does not exist yet. Each throws rather than invoking a name
      nothing answers to, so that a control reached before its task lands says one sentence instead
      of failing as "command not found" — and so that this list is the checklist of what is left.
-     They go in the order of the tasks that remove them: structure and stats, then writing rows,
-     then DDL, then the Query tab, then dump and restore. */
-
-  tableStats(): Promise<TableStats[]> {
-    return notYet();
-  },
-
-  tableStructure(): Promise<SqlTableStructure> {
-    return notYet();
-  },
-
-  schemaOutline(): Promise<SqlSchemaOutline> {
-    return notYet();
-  },
-
-  collations(): Promise<SqlCollation[]> {
-    return notYet();
-  },
+     They go in the order of the tasks that remove them: writing rows, then DDL, then the Query
+     tab, then dump and restore. */
 
   updateRow() {
     return notYet();

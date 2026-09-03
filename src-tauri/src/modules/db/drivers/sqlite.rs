@@ -270,6 +270,30 @@ async fn foreign_keys(
         .collect())
 }
 
+/// A column's DEFAULT as it should be shown, and whether it is an expression rather than a literal.
+///
+/// SQLite reports a default exactly as the DDL wrote it, quotes and all: `DEFAULT 'new'` comes back
+/// as `'new'`, `DEFAULT 0` as `0`, and `DEFAULT CURRENT_TIMESTAMP` as `CURRENT_TIMESTAMP`. The
+/// quotes are what tells the three apart, and they are stripped here so that what the grid shows is
+/// the value rather than its spelling — the same thing MySQL's `SHOW COLUMNS` reports.
+///
+/// Anything left that is not a number is an expression: `CURRENT_TIMESTAMP`, `(unixepoch())`,
+/// `NULL`. That is what `markExpressionDefaults` draws the mark from — without it, the text
+/// `CURRENT_TIMESTAMP` and the function of that name would read alike in the column grid.
+pub(super) fn split_default(raw: Option<String>) -> (Option<String>, bool) {
+    let Some(raw) = raw else {
+        return (None, false);
+    };
+    let trimmed = raw.trim();
+    if trimmed.len() >= 2 && trimmed.starts_with('\'') && trimmed.ends_with('\'') {
+        // A doubled quote inside a SQL string literal is one quote.
+        let inner = &trimmed[1..trimmed.len() - 1];
+        return (Some(inner.replace("''", "'")), false);
+    }
+    let is_number = trimmed.parse::<f64>().is_ok();
+    (Some(trimmed.to_string()), !is_number)
+}
+
 /// The tokens `src/modules/db/sqlite/columns.ts` reads. The two files are the only ones that need
 /// to agree on them.
 fn extra_tokens(column: &ColumnRow, single_column_key: bool) -> String {
@@ -325,7 +349,7 @@ pub async fn table_data(
                 ColumnMeta {
                     data_type: c.declared_type.clone(),
                     nullable: !c.notnull,
-                    default_value: c.default_value.clone(),
+                    default_value: split_default(c.default_value.clone()).0,
                     extra: extra_tokens(c, single_column_key),
                     foreign_key: foreign_keys.remove(&c.name),
                 },
@@ -528,7 +552,7 @@ fn build_where(filters: &[Filter], columns: &[String]) -> Result<(String, Vec<St
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
 
     /// A real database file, built from `sqlite_fixture.sql` and deleted when the test ends.
@@ -536,12 +560,12 @@ mod tests {
     /// The file is real rather than `:memory:` because that is the thing under test: `connect`
     /// refuses to create one, checks the path first, and reads its own name back out for the
     /// header. None of that has a meaning for an in-memory database.
-    struct Fixture {
-        path: std::path::PathBuf,
+    pub struct Fixture {
+        pub path: std::path::PathBuf,
     }
 
     impl Fixture {
-        async fn open() -> (Self, SqlitePool) {
+        pub async fn open() -> (Self, SqlitePool) {
             let path = std::env::temp_dir()
                 .join(format!("mixdb-sqlite-{}.db", uuid::Uuid::new_v4()));
             // The one place in the app that creates a database file, and it is a test: `connect`

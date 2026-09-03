@@ -9,7 +9,7 @@
 //! statements; a file that has gone away is not something a second attempt fixes.
 
 use crate::error::AppError;
-use crate::modules::db::drivers::sqlite;
+use crate::modules::db::drivers::{sqlite, sqlite_structure};
 use crate::modules::db::models::ServerInfo;
 use crate::modules::db::state::DbState;
 use tauri::State;
@@ -57,4 +57,44 @@ pub async fn sqlite_table_data(
 ) -> Result<sqlite::TablePage, AppError> {
     let pool = sqlite_pool(&state, &id).await?;
     sqlite::table_data(&pool, &table, &query).await
+}
+
+#[tauri::command]
+pub async fn sqlite_table_structure(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+) -> Result<sqlite_structure::TableStructure, AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_structure::table_structure(&pool, &table).await
+}
+
+#[tauri::command]
+pub async fn sqlite_schema_outline(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+) -> Result<sqlite_structure::SchemaOutline, AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_structure::schema_outline(&pool, &database).await
+}
+
+#[tauri::command]
+pub async fn sqlite_table_stats(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+) -> Result<Vec<sqlite_structure::TableStats>, AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_structure::table_stats(&pool).await
+}
+
+#[tauri::command]
+pub async fn sqlite_collations(
+    state: State<'_, DbState>,
+    id: String,
+) -> Result<Vec<sqlite_structure::Collation>, AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_structure::collations(&pool).await
 }
