@@ -19,10 +19,14 @@
 --     table list has to leave out.
 --   * `recent` is a view: listed like a table, with no primary key of its own.
 
+-- `bio` carries a literal default, which SQLite reports back still quoted — see `split_default`.
+--
+-- No `--` comment inside the parentheses of any table here, deliberately. DROP COLUMN rewrites the
+-- stored CREATE TABLE text, and a line comment left in it swallows whatever the rewrite puts after
+-- it: the drop then fails with "incomplete input".
 CREATE TABLE author (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
-  -- A literal default, which SQLite reports still quoted — see `split_default`.
   bio TEXT DEFAULT 'anonymous'
 );
 

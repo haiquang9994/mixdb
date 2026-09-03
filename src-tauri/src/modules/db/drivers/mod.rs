@@ -10,5 +10,6 @@ pub mod postgres_script;
 pub mod postgres_structure;
 pub mod redis;
 pub mod sqlite;
+pub mod sqlite_ddl;
 pub mod sqlite_structure;
 pub mod tools;

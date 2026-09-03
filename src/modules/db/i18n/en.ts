@@ -914,6 +914,18 @@ const dbEn = {
     indexColumnNameRequired: "Every column of an index has to be named.",
     invalidCollation: "{{collation}} is not a collation this server has.",
     unknownIndexKind: "Unknown index kind {{kind}}.",
+    /* SQLite's ALTER TABLE renames a column and nothing else. Everything below is a change that
+       would need the whole table rebuilt around the new definition, which MixDB does not do. */
+    sqliteColumnTypeUnchangeable:
+      "SQLite cannot change the type of {{column}} — only its name. Add a new column and copy the values across.",
+    sqliteColumnNullUnchangeable:
+      "SQLite cannot add or remove NOT NULL on {{column}} — only rename it.",
+    sqliteColumnDefaultUnchangeable:
+      "SQLite cannot change the default of {{column}} — only rename it.",
+    sqliteNoPrimaryKeyAfterwards:
+      "A SQLite primary key is part of the table itself and cannot be added to a table that has none.",
+    sqliteIndexBelongsToConstraint:
+      "{{index}} belongs to a PRIMARY KEY or UNIQUE constraint and cannot be dropped on its own.",
     unknownIndexType: "Unknown index type {{type}}.",
     noVisibleColumns:
       "No columns of {{database}}.{{table}} are visible \u2014 the table may not exist, or your user may have no privileges on it.",

@@ -70,47 +70,46 @@ export const sqliteApi: SqlApi = {
     });
   },
 
+  createTable(id, database, table, collation) {
+    return invoke<void>("sqlite_create_table", { id, database, table, collation });
+  },
+
+  renameTable(id, database, table, newName) {
+    return invoke<void>("sqlite_rename_table", { id, database, table, newName });
+  },
+
+  dropTable(id, database, table) {
+    return invoke<void>("sqlite_drop_table", { id, database, table });
+  },
+
+  addColumn(id, database, table, spec) {
+    return invoke<void>("sqlite_add_column", { id, database, table, spec });
+  },
+
+  modifyColumn(id, database, table, name, spec) {
+    return invoke<void>("sqlite_modify_column", { id, database, table, name, spec });
+  },
+
+  dropColumn(id, database, table, name) {
+    return invoke<void>("sqlite_drop_column", { id, database, table, name });
+  },
+
+  addIndex(id, database, table, spec) {
+    return invoke<void>("sqlite_add_index", { id, database, table, spec });
+  },
+
+  modifyIndex(id, database, table, name, spec) {
+    return invoke<void>("sqlite_modify_index", { id, database, table, name, spec });
+  },
+
+  dropIndex(id, database, table, name) {
+    return invoke<void>("sqlite_drop_index", { id, database, table, name });
+  },
+
   /* Everything below is a command that does not exist yet. Each throws rather than invoking a name
      nothing answers to, so that a control reached before its task lands says one sentence instead
      of failing as "command not found" — and so that this list is the checklist of what is left.
-     They go in the order of the tasks that remove them: DDL, then the Query tab, then dump and
-     restore. */
-
-  createTable() {
-    return notYet();
-  },
-
-  renameTable() {
-    return notYet();
-  },
-
-  dropTable() {
-    return notYet();
-  },
-
-  addColumn() {
-    return notYet();
-  },
-
-  modifyColumn() {
-    return notYet();
-  },
-
-  dropColumn() {
-    return notYet();
-  },
-
-  addIndex() {
-    return notYet();
-  },
-
-  modifyIndex() {
-    return notYet();
-  },
-
-  dropIndex() {
-    return notYet();
-  },
+     They go in the order of the tasks that remove them: the Query tab, then dump and restore. */
 
   runScript(): Promise<SqlStatementResult[]> {
     return notYet();

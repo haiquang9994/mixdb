@@ -9,7 +9,7 @@
 //! statements; a file that has gone away is not something a second attempt fixes.
 
 use crate::error::AppError;
-use crate::modules::db::drivers::{sqlite, sqlite_structure};
+use crate::modules::db::drivers::{sqlite, sqlite_ddl, sqlite_structure};
 use crate::modules::db::models::ServerInfo;
 use serde_json::{Map, Value};
 use crate::modules::db::state::DbState;
@@ -137,4 +137,115 @@ pub async fn sqlite_delete_rows(
 ) -> Result<(), AppError> {
     let pool = sqlite_pool(&state, &id).await?;
     sqlite::delete_rows(&pool, &table, &keys, all, reset_auto_increment).await
+}
+
+/// `collation` is accepted and ignored: a SQLite table carries none of its own — see
+/// `sqlite_ddl::create_table`.
+#[tauri::command]
+pub async fn sqlite_create_table(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    _collation: Option<String>,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_ddl::create_table(&pool, &table).await
+}
+
+#[tauri::command]
+pub async fn sqlite_rename_table(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    new_name: String,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_ddl::rename_table(&pool, &table, &new_name).await
+}
+
+#[tauri::command]
+pub async fn sqlite_drop_table(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_ddl::drop_table(&pool, &table).await
+}
+
+#[tauri::command]
+pub async fn sqlite_add_column(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    spec: sqlite_ddl::ColumnSpec,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_ddl::add_column(&pool, &table, &spec).await
+}
+
+#[tauri::command]
+pub async fn sqlite_modify_column(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    name: String,
+    spec: sqlite_ddl::ColumnSpec,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_ddl::modify_column(&pool, &table, &name, &spec).await
+}
+
+#[tauri::command]
+pub async fn sqlite_drop_column(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    name: String,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_ddl::drop_column(&pool, &table, &name).await
+}
+
+#[tauri::command]
+pub async fn sqlite_add_index(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    spec: sqlite_ddl::IndexSpec,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_ddl::add_index(&pool, &table, &spec).await
+}
+
+#[tauri::command]
+pub async fn sqlite_modify_index(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    name: String,
+    spec: sqlite_ddl::IndexSpec,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_ddl::modify_index(&pool, &table, &name, &spec).await
+}
+
+#[tauri::command]
+pub async fn sqlite_drop_index(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    name: String,
+) -> Result<(), AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite_ddl::drop_index(&pool, &table, &name).await
 }
