@@ -289,6 +289,38 @@ pub async fn secrets_delete(id: String) -> Result<(), AppError> {
     in_background(move || delete(&id)).await
 }
 
+/// The service MixEngine's own keyring entries are filed under — a compile-time constant on this
+/// side too, and never taken from a caller: see the module doc of `modules/db/handoff.rs` for why
+/// it must not travel on the wire. `SavedConnection.keyringRef` on the frontend is only ever the
+/// key half of the address.
+const MIXENGINE_SERVICE: &str = "mixengine";
+
+/// Reads one of MixEngine's own keyring entries by the key half of its address. Bypasses
+/// `Keeper` entirely on purpose: there is no vault, no cache and no migration for an entry that
+/// is not this app's own, and the vault would not save a single dialog for a namespace MixEngine's
+/// own process created — see the module doc's macOS paragraph, which is about entries of ours.
+///
+/// `Ok(None)` for an entry that is not there. MixEngine removes an entry when whatever owned it
+/// is gone, and a reference outliving its credential is that account's normal end, not a failure —
+/// the caller shows the same empty-password form a connection that was never saved would.
+fn read_mixengine_entry(key: &str) -> Result<Option<String>, AppError> {
+    match Entry::new(MIXENGINE_SERVICE, key)
+        .map_err(|e| err!("error.credentialStoreUnreachable", message = e))?
+        .get_password()
+    {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(err!("error.cannotReadPassword", message = e)),
+    }
+}
+
+/// The password a `SavedConnection.keyringRef` points at, or `None` when MixEngine no longer has
+/// that entry.
+#[tauri::command]
+pub async fn secrets_resolve_mixengine(key: String) -> Result<Option<String>, AppError> {
+    in_background(move || read_mixengine_entry(&key)).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Keeper, Secrets, Store, VAULT};
@@ -565,5 +597,24 @@ mod tests {
         assert!(super::load(&id).unwrap().is_empty());
 
         super::delete(&id).unwrap();
+    }
+
+    /// Ignored for the same reason as the round-trip above: it reaches the machine's real
+    /// credential store. Run by hand with `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn a_mixengine_entry_round_trips_and_a_missing_one_is_none() {
+        let key = format!("mixdb-test-{}", uuid::Uuid::new_v4());
+        assert_eq!(super::read_mixengine_entry(&key).unwrap(), None);
+
+        let entry = keyring::Entry::new(super::MIXENGINE_SERVICE, &key).unwrap();
+        entry.set_password("hunter2").unwrap();
+        assert_eq!(
+            super::read_mixengine_entry(&key).unwrap(),
+            Some("hunter2".to_string())
+        );
+
+        entry.delete_credential().unwrap();
+        assert_eq!(super::read_mixengine_entry(&key).unwrap(), None);
     }
 }

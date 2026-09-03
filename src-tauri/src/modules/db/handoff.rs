@@ -23,6 +23,13 @@ pub struct Handoff {
     pub config: ConnectionConfig,
     /// The tab's name and the name pre-filled for saving — MixEngine's service id, `mariadb@main`.
     pub label: String,
+    /// The key half of this account's address in MixEngine's keyring entry — `service="mixengine"`
+    /// is a compile-time constant on the side that reads it and never travels on the wire (T84's
+    /// D5). `Some` only when `secret` proved this process was actually started by MixEngine: a
+    /// `mixdb://` link can name any `secret_key` it likes, but it cannot set an environment
+    /// variable for the process it starts, so a value here without that proof would let a forged
+    /// link get a saved connection pointed at an arbitrary MixEngine account.
+    pub keyring_ref: Option<String>,
 }
 
 /// The environment variable `password_env` points at, when its name is one a launcher would use.
@@ -93,6 +100,9 @@ pub fn parse(url: &str, secret: Option<String>) -> Result<Handoff, AppError> {
         .filter(|port| *port != 0)
         .ok_or_else(|| invalid(format!("port `{port}` is not a TCP port")))?;
     let label = present(&parsed, "label").unwrap_or_else(|| format!("{host}:{port}"));
+    // Only trusted alongside a `secret` that came from this process's own environment — see
+    // `Handoff::keyring_ref`. Read before `secret` is moved into the config below.
+    let keyring_ref = secret.is_some().then(|| present(&parsed, "secret_key")).flatten();
 
     Ok(Handoff {
         config: ConnectionConfig {
@@ -109,6 +119,7 @@ pub fn parse(url: &str, secret: Option<String>) -> Result<Handoff, AppError> {
             use_ssl: None,
         },
         label,
+        keyring_ref,
     })
 }
 
@@ -185,9 +196,11 @@ mod tests {
     use super::*;
 
     const FULL: &str = "mixdb://connect?kind=mysql&host=127.0.0.1&port=3306&user=blog&database=blog\
-                        &label=mariadb%40main&password_env=MIXENGINE_DB_PASSWORD";
+                        &label=mariadb%40main&password_env=MIXENGINE_DB_PASSWORD\
+                        &secret_key=mariadb%40main%2Fblog";
 
-    /// The whole shape, every optional part present, the label decoded.
+    /// The whole shape, every optional part present, the label decoded, and — because `secret`
+    /// proves this process was started by MixEngine — the keyring reference carried too.
     #[test]
     fn a_full_url_reads_as_a_connection() {
         let handoff = parse(FULL, Some("s3cret".to_string())).unwrap();
@@ -201,6 +214,17 @@ mod tests {
         assert!(handoff.config.ssh.is_none());
         assert_eq!(handoff.config.use_ssl, None);
         assert_eq!(handoff.label, "mariadb@main");
+        assert_eq!(handoff.keyring_ref.as_deref(), Some("mariadb@main/blog"));
+    }
+
+    /// A `secret_key` with no `secret` behind it names nothing: this is what a `mixdb://` link
+    /// clicked from a browser looks like, and it must not be able to point a saved connection at
+    /// an arbitrary MixEngine account just by naming one in the URL.
+    #[test]
+    fn a_secret_key_without_a_proven_secret_is_not_a_keyring_ref() {
+        let handoff = parse(FULL, None).unwrap();
+        assert_eq!(handoff.config.password, None);
+        assert_eq!(handoff.keyring_ref, None);
     }
 
     /// A server with no accounts hands over an address and a label and nothing else.

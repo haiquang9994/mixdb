@@ -88,9 +88,17 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
      connection. The rest of the eighteen belongs to the form and stays there. */
   const { kind, uri, database, tunnelType } = form;
 
-  /** One field of the form, changed. What the form component reports back through. */
+  /** One field of the form, changed. What the form component reports back through.
+   *
+   *  Editing `password` by hand clears `keyringRef`: what is now in the box is no longer what the
+   *  reference points at, so Save must go back to writing a plain copy rather than the old
+   *  address. */
   function set<K extends keyof FormState>(field: K, value: FormState[K]) {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+      ...(field === "password" ? { keyringRef: null } : {}),
+    }));
   }
 
   const savedConnections = useSavedConnections();
@@ -220,7 +228,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
   }
 
   function applySavedConnection(entry: SavedConnection) {
-    setForm(formFrom(entry.config));
+    setForm(formFrom(entry.config, entry.keyringRef ?? null));
     setEditingId(entry.id);
     setSaveAsName(entry.name);
     setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
@@ -259,6 +267,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
         id: editingId,
         name,
         config,
+        keyringRef: form.keyringRef ?? undefined,
       };
       await updateConnection(entry);
       setSavedSnapshot(stableStringify({ name: entry.name, config: entry.config }));
@@ -267,6 +276,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
         id: crypto.randomUUID(),
         name,
         config: configFrom(form),
+        keyringRef: form.keyringRef ?? undefined,
       };
       await addConnection(entry);
       setEditingId(entry.id);
@@ -281,6 +291,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
       id: crypto.randomUUID(),
       name,
       config: configFrom(form),
+      keyringRef: form.keyringRef ?? undefined,
     };
     await addConnection(entry);
     setEditingId(entry.id);
@@ -305,6 +316,9 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
       // server, so the mark that says not to write to it has to come along. Losing it would
       // turn "duplicate" into the one click that makes a read-only connection writable.
       readOnly: source.readOnly,
+      // Carried over too: the copy is still the same MixEngine account, so it should still save
+      // as a reference rather than as a plaintext copy of the password.
+      keyringRef: source.keyringRef,
     };
     await addConnection(entry);
   }
@@ -477,7 +491,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     takeHandoff(restoredState.handoffId).then(
       (handoff) => {
         if (closedRef.current) return;
-        setForm(formFrom(handoff.config));
+        setForm(formFrom(handoff.config, handoff.keyring_ref ?? null));
         setSaveAsName(handoff.label);
         onTitleChange(handoff.label);
         if (arrivesConnected(handoff.config)) {
