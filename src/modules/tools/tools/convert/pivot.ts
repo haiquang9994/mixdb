@@ -1,4 +1,4 @@
-import { parseCsvRows, rowsToObjects, toCsv } from "./csv";
+import { parseCsvRows, rowsToObjects, toCsv } from "../shared/csv";
 import { toInsert, type SqlDialect } from "./insert";
 
 /**

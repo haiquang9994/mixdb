@@ -48,6 +48,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   side by side (Split) as well as the usual single-column view (Unified).
 - The Tools sidebar has a search box, with a × to clear it, that filters tools without hiding
   their category headings.
+- A Fake data generator tool seeds test rows from manually defined fields or a pasted JSON sample.
+- A Radix converter tool reads a number in any base and shows it in binary, octal, decimal and hex.
+- A Data masking tool blurs emails, phone numbers, names and other likely-sensitive columns in a
+  pasted JSON or CSV sample before it gets shared.
 - The Tools sidebar shows a "Frequently used" group, with whichever tools were opened most in the
   last 30 days, and a × on each entry to drop it back out of the group.
 

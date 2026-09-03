@@ -3,6 +3,9 @@
  *
  * Phần khó nằm đúng ở dấu ngoặc kép: một trường có ngoặc thì dấu phân cách, xuống dòng và cả ngoặc
  * kép đôi `""` đều nằm được bên trong nó. Đó là lý do không có `split(",")` ở đây.
+ *
+ * Dùng chung giữa `convert` và `mask` — cả hai đều cần đọc/ghi CSV, và RFC 4180 đủ rắc rối để không
+ * đáng chép lại lần thứ hai.
  */
 
 /** Đọc CSV ra lưới chuỗi. **Không đoán kiểu** — `007` là `"007"`, không phải `7`. */
