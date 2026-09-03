@@ -29,8 +29,17 @@ pub struct Endpoint {
 impl Endpoint {
     /// The app's own endpoint, named after its bundle identifier — one per user, the same for
     /// every copy of this version.
+    ///
+    /// A debug build gets its own suffix. Without it, `tauri dev` shares the release build's
+    /// identifier, so starting it while an installed release copy is running — its terminal tab
+    /// counts, since a shell spawned there is still that process — reads as a second copy of the
+    /// *same* endpoint: `launch::forward` hands it off and the dev process exits with no window.
     pub fn for_app(identifier: &str) -> Self {
-        Self::named(identifier)
+        if cfg!(debug_assertions) {
+            Self::named(&format!("{identifier}.dev"))
+        } else {
+            Self::named(identifier)
+        }
     }
 
     /// An endpoint under any name; tests use one per test.
