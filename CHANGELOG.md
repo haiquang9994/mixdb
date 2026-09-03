@@ -46,7 +46,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 - A `mixdb://` link opened from a browser no longer tries to connect without a password: the form
   opens filled in, with the caret in the password field.
-- The app window opens smaller by default (1000x750).
+- The app window opens smaller by default (1200x720).
 
 ## [0.0.28] - 2026-09-03
 

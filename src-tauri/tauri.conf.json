@@ -13,9 +13,9 @@
     "windows": [
       {
         "title": "MixDB",
-        "width": 1000,
-        "height": 750,
-        "minWidth": 800,
+        "width": 1200,
+        "height": 720,
+        "minWidth": 1000,
         "minHeight": 600,
         "center": true,
         "resizable": true
