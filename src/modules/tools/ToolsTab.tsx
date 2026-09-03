@@ -5,6 +5,7 @@ import Input from "../../components/Input";
 import ToolList from "./components/ToolList";
 import { TOOLS } from "./registry";
 import { parseToolsTabState } from "./tabState";
+import { recordToolUse } from "./usageStore";
 import "./tools.css";
 
 function ToolsTab({ onTitleChange, onStateChange, restored }: ModuleTabProps) {
@@ -13,10 +14,12 @@ function ToolsTab({ onTitleChange, onStateChange, restored }: ModuleTabProps) {
 
   // Đọc `restored` đúng một lần, ở đây. Đọc nó reactively thì module ghi đè chính mình ngay lần
   // ghi đầu tiên — luật nằm trong `shell/module.ts`.
+  // No tool by default — only a saved pick from a previous run reopens one. A fresh tab lands on
+  // the empty prompt instead of steering everyone toward whichever tool sits first in the registry.
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     const saved = parseToolsTabState(restored);
     if (saved && TOOLS.some((tool) => tool.id === saved.toolId)) return saved.toolId;
-    return TOOLS[0]?.id ?? null;
+    return null;
   });
 
   const selected = TOOLS.find((tool) => tool.id === selectedId) ?? null;
@@ -34,6 +37,7 @@ function ToolsTab({ onTitleChange, onStateChange, restored }: ModuleTabProps) {
   const pick = (id: string) => {
     setSelectedId(id);
     onStateChange({ toolId: id });
+    recordToolUse(id);
   };
 
   return (
@@ -51,7 +55,9 @@ function ToolsTab({ onTitleChange, onStateChange, restored }: ModuleTabProps) {
           <ToolList tools={TOOLS} selectedId={selectedId} onSelect={pick} query={query} />
         </div>
       </aside>
-      <div className="tools-pane">{selected ? <selected.Panel /> : null}</div>
+      <div className="tools-pane">
+        {selected ? <selected.Panel /> : <p className="muted">{t("toolbox.selectPrompt")}</p>}
+      </div>
     </div>
   );
 }

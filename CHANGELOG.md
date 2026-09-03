@@ -48,12 +48,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   side by side (Split) as well as the usual single-column view (Unified).
 - The Tools sidebar has a search box, with a × to clear it, that filters tools without hiding
   their category headings.
+- The Tools sidebar shows a "Frequently used" group, with whichever tools were opened most in the
+  last 30 days, and a × on each entry to drop it back out of the group.
 
 ### Changed
 
 - A `mixdb://` link opened from a browser no longer tries to connect without a password: the form
   opens filled in, with the caret in the password field.
 - The app window opens smaller by default (1200x720).
+- A new Tools tab opens with no tool selected, instead of jumping straight to the first one.
 
 ### Fixed
 

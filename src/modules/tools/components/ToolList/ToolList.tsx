@@ -1,6 +1,11 @@
 import { useTranslation, type TranslationKey } from "../../../../i18n";
+import { CloseIcon } from "../../../../icons";
 import { TOOL_GROUPS, type ToolDefinition, type ToolGroup } from "../../tool";
+import { clearToolUse, useFrequentTools } from "../../usageStore";
 import styles from "./ToolList.module.css";
+
+/** How many tools the "Frequently used" group holds at most. */
+const FREQUENT_LIMIT = 5;
 
 const GROUP_LABEL: Record<ToolGroup, TranslationKey> = {
   data: "toolbox.groupData",
@@ -29,6 +34,7 @@ interface ToolListProps {
  */
 function ToolList({ tools, selectedId, onSelect, query = "" }: ToolListProps) {
   const { t } = useTranslation();
+  const frequentIds = useFrequentTools(FREQUENT_LIMIT);
   if (tools.length === 0) return <p className={styles.empty}>{t("toolbox.empty")}</p>;
 
   const needle = query.trim().toLowerCase();
@@ -37,8 +43,40 @@ function ToolList({ tools, selectedId, onSelect, query = "" }: ToolListProps) {
     : tools;
   if (matches.length === 0) return <p className={styles.empty}>{t("toolbox.noMatch")}</p>;
 
+  // Ranked by recent-use, not by registry order — and filtered through `matches` so a search that
+  // excludes a frequent tool excludes it here too, same as everywhere else in this list.
+  const frequentTools = frequentIds
+    .map((id) => matches.find((tool) => tool.id === id))
+    .filter((tool): tool is ToolDefinition => tool !== undefined);
+
   return (
     <nav className={styles.list} aria-label={t("toolbox.list")}>
+      {frequentTools.length > 0 && (
+        <section className={styles.group}>
+          <h2 className={styles.groupTitle}>{t("toolbox.groupFrequent")}</h2>
+          {frequentTools.map((tool) => (
+            <div key={`frequent-${tool.id}`} className={styles.frequentRow}>
+              <button
+                type="button"
+                className={tool.id === selectedId ? `${styles.item} ${styles.selected}` : styles.item}
+                aria-current={tool.id === selectedId ? "true" : undefined}
+                onClick={() => onSelect(tool.id)}
+              >
+                {t(tool.labelKey)}
+              </button>
+              <button
+                type="button"
+                className={styles.frequentRemove}
+                title={t("toolbox.removeFrequent")}
+                aria-label={t("toolbox.removeFrequent")}
+                onClick={() => clearToolUse(tool.id)}
+              >
+                <CloseIcon size="0.85em" />
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
       {TOOL_GROUPS.map((group) => {
         const inGroup = matches.filter((tool) => tool.group === group);
         if (inGroup.length === 0) return null;

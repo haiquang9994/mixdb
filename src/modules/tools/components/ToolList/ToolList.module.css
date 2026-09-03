@@ -50,6 +50,62 @@
   color: var(--accent-text);
 }
 
+.frequentRow {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-sm);
+}
+
+/* The highlight lives on the row, not the button — `.item` only reaches partway across (the ×
+   sits after it), so hovering it alone would leave a gap the width of the remove button. */
+.frequentRow:hover {
+  background: var(--hover-bg);
+}
+
+.frequentRow .item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Left to `.item:hover`, this would stack its own `--hover-bg` on top of the row's, going visibly
+   darker under the label than under the × — `:not(.selected)` so a selected row keeps its accent
+   untouched, same as every other group. */
+.frequentRow .item:not(.selected):hover {
+  background: transparent;
+}
+
+/* Dim until the row is worth looking at — hovered, or the button itself has the keyboard — so the
+   sidebar is not five faint × marks wide at rest. */
+.frequentRemove {
+  appearance: none;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.frequentRow:hover .frequentRemove,
+.frequentRemove:focus-visible {
+  opacity: 0.6;
+}
+
+.frequentRemove:hover,
+.frequentRemove:focus-visible {
+  opacity: 1;
+  background: var(--hover-bg);
+}
+
+.frequentRemove:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .empty {
   margin: 0;
   padding: 1rem 0.75rem;
