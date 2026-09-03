@@ -70,3 +70,48 @@
   font-size: 1em;
   line-height: 1.5;
 }
+
+/* Only present when `allowClear` is on — takes the caller's `className` (width, margin, flex) in
+   the bare `<input>`'s place, so those rules keep landing on whichever element actually sizes the
+   field. */
+.clearWrap {
+  position: relative;
+  display: block;
+}
+
+.clearWrap .input {
+  width: 100%;
+}
+
+.clearable {
+  box-sizing: border-box;
+  padding-right: 1.9em;
+}
+
+.clearButton {
+  position: absolute;
+  top: 50%;
+  right: 0.35em;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+  padding: 0.2em;
+  border-radius: var(--radius-sm);
+}
+
+.clearButton:hover {
+  opacity: 0.9;
+  background: var(--hover-bg);
+}
+
+.clearButton:focus-visible {
+  outline: none;
+  opacity: 0.9;
+  box-shadow: var(--focus-ring);
+}

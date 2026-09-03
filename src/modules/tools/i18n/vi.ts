@@ -9,6 +9,8 @@ const toolsVi = {
     newTabTitle: "Công cụ",
     list: "Công cụ",
     empty: "Chưa có công cụ nào.",
+    searchPlaceholder: "Tìm công cụ…",
+    noMatch: "Không có gì khớp tìm kiếm.",
     groupData: "Dữ liệu",
     groupEncode: "Mã hoá & ID",
     groupTime: "Thời gian",

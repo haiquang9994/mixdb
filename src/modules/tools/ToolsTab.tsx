@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ModuleTabProps } from "../../shell/module";
 import { useTranslation } from "../../i18n";
+import Input from "../../components/Input";
 import ToolList from "./components/ToolList";
 import { TOOLS } from "./registry";
 import { parseToolsTabState } from "./tabState";
@@ -8,6 +9,7 @@ import "./tools.css";
 
 function ToolsTab({ onTitleChange, onStateChange, restored }: ModuleTabProps) {
   const { t, lang } = useTranslation();
+  const [query, setQuery] = useState("");
 
   // Đọc `restored` đúng một lần, ở đây. Đọc nó reactively thì module ghi đè chính mình ngay lần
   // ghi đầu tiên — luật nằm trong `shell/module.ts`.
@@ -37,7 +39,17 @@ function ToolsTab({ onTitleChange, onStateChange, restored }: ModuleTabProps) {
   return (
     <div className="tools-tab">
       <aside className="tools-sidebar">
-        <ToolList tools={TOOLS} selectedId={selectedId} onSelect={pick} />
+        <Input
+          size="normal"
+          allowClear
+          className="tools-sidebar-search"
+          placeholder={t("toolbox.searchPlaceholder")}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="tools-sidebar-list">
+          <ToolList tools={TOOLS} selectedId={selectedId} onSelect={pick} query={query} />
+        </div>
       </aside>
       <div className="tools-pane">{selected ? <selected.Panel /> : null}</div>
     </div>

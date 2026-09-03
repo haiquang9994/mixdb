@@ -45,6 +45,9 @@ const vi: SharedDict = {
     noMatches: "Không tìm thấy",
     searchPlaceholder: "Tìm...",
   },
+  input: {
+    clear: "Xoá",
+  },
   errorBanner: {
     dismiss: "Đóng thông báo lỗi",
   },

@@ -16,9 +16,22 @@
    rộng 194px. Trừ hai lớp padding 0.5rem của `.list` và `.item` là 32px, cộng chỗ cho thanh cuộn
    ~15px, thì 250px mới vừa đủ một hàng — 260px để nhãn dài thêm chút nữa vẫn không xuống dòng. */
 .tools-sidebar {
+  display: flex;
+  flex-direction: column;
   width: 260px;
   flex: none;
   border-right: 1px solid var(--border-soft);
+  min-height: 0;
+}
+
+.tools-sidebar-search {
+  flex: none;
+  margin: 0.5rem 0.5rem 0;
+}
+
+.tools-sidebar-list {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 

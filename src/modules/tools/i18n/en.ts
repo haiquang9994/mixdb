@@ -9,6 +9,8 @@ const toolsEn = {
     newTabTitle: "Tools",
     list: "Tools",
     empty: "No tool is available yet.",
+    searchPlaceholder: "Search tools…",
+    noMatch: "Nothing matches that search.",
     groupData: "Data",
     groupEncode: "Encoding & IDs",
     groupTime: "Time",

@@ -14,6 +14,9 @@ interface ToolListProps {
   tools: ToolDefinition[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** What the search box above holds — filters tools by their (translated) label. Empty means
+   *  every tool, same as before this existed. */
+  query?: string;
 }
 
 /**
@@ -21,16 +24,23 @@ interface ToolListProps {
  *
  * Riêng của module thay vì `components/ItemList`: cái kia nhận một mảng chuỗi phẳng và gánh cả
  * tìm kiếm, ghim và menu chuột phải — thứ một danh sách cố định gồm mười mấy nhãn ta tự viết
- * không cần, và nống nó ra cho đúng một người dùng thì hại nhiều hơn lợi.
+ * không cần, và nống nó ra cho đúng một người dùng thì hại nhiều hơn lợi. Việc lọc theo `query` thì
+ * vẫn cần — chỉ là nhỏ đến mức viết thẳng ở đây rẻ hơn kéo `ItemList` vào.
  */
-function ToolList({ tools, selectedId, onSelect }: ToolListProps) {
+function ToolList({ tools, selectedId, onSelect, query = "" }: ToolListProps) {
   const { t } = useTranslation();
   if (tools.length === 0) return <p className={styles.empty}>{t("toolbox.empty")}</p>;
+
+  const needle = query.trim().toLowerCase();
+  const matches = needle
+    ? tools.filter((tool) => t(tool.labelKey).toLowerCase().includes(needle))
+    : tools;
+  if (matches.length === 0) return <p className={styles.empty}>{t("toolbox.noMatch")}</p>;
 
   return (
     <nav className={styles.list} aria-label={t("toolbox.list")}>
       {TOOL_GROUPS.map((group) => {
-        const inGroup = tools.filter((tool) => tool.group === group);
+        const inGroup = matches.filter((tool) => tool.group === group);
         if (inGroup.length === 0) return null;
         return (
           <section key={group} className={styles.group}>

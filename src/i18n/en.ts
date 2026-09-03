@@ -50,6 +50,9 @@ const en = {
     noMatches: "No matches",
     searchPlaceholder: "Search...",
   },
+  input: {
+    clear: "Clear",
+  },
   errorBanner: {
     dismiss: "Dismiss error",
   },

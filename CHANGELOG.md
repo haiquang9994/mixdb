@@ -46,6 +46,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 - The Diff tool highlights the exact part that changed within a line, and can show the two sides
   side by side (Split) as well as the usual single-column view (Unified).
+- The Tools sidebar has a search box, with a × to clear it, that filters tools without hiding
+  their category headings.
 
 ### Changed
 
