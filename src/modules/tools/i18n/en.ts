@@ -113,6 +113,8 @@ const toolsEn = {
       identical: "The two sides are identical.",
       tooLarge: "Too much differs to compare — trim it down to about 2000 lines.",
       notJson: "One of the two sides did not parse as JSON.",
+      viewUnified: "Unified",
+      viewSplit: "Split",
     },
 
     regex: {

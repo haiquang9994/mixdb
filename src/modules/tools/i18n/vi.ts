@@ -113,6 +113,8 @@ const toolsVi = {
       identical: "Hai bên giống hệt nhau.",
       tooLarge: "Khác nhau quá nhiều để so — rút lại còn khoảng 2000 dòng.",
       notJson: "Một trong hai bên không phải JSON đọc được.",
+      viewUnified: "Gộp",
+      viewSplit: "Song song",
     },
 
     regex: {

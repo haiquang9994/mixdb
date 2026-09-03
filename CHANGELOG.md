@@ -42,6 +42,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- The Diff tool highlights the exact part that changed within a line, and can show the two sides
+  side by side (Split) as well as the usual single-column view (Unified).
+
 ### Changed
 
 - A `mixdb://` link opened from a browser no longer tries to connect without a password: the form
