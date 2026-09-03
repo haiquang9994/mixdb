@@ -54,6 +54,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   pasted JSON or CSV sample before it gets shared.
 - The Tools sidebar shows a "Frequently used" group, with whichever tools were opened most in the
   last 30 days, and a × on each entry to drop it back out of the group.
+- A QR code tool turns pasted text into a QR code, with a choice of module style, colors and error
+  correction, and a button to copy it as an image.
 
 ### Changed
 

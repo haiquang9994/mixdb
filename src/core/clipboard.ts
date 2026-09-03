@@ -55,3 +55,15 @@ export async function copyText(text: string): Promise<void> {
     throw error;
   }
 }
+
+/** Puts `blob` on the clipboard as an image, rejecting with an `error.clipboard` {@link AppError}
+ *  when the webview refuses it. No `execCommand`-style fallback exists for images the way it does
+ *  for text — that route only ever copied text. */
+export async function copyImage(blob: Blob): Promise<void> {
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+  } catch (e) {
+    const error: AppError = { code: "error.clipboard", params: { message: String(e) } };
+    throw error;
+  }
+}

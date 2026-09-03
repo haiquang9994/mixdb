@@ -12,6 +12,7 @@ import IdsPanel from "./tools/ids/Panel";
 import JwtPanel from "./tools/jwt/Panel";
 import MaskPanel from "./tools/mask/Panel";
 import PortsPanel from "./tools/ports/Panel";
+import QrcodePanel from "./tools/qrcode/Panel";
 import RadixPanel from "./tools/radix/Panel";
 import RegexPanel from "./tools/regex/Panel";
 import SchemaPanel from "./tools/schema/Panel";
@@ -42,6 +43,7 @@ export const TOOLS: ToolDefinition[] = [
   { id: "regex", labelKey: "toolbox.regex.label", group: "text", Panel: RegexPanel },
   { id: "ports", labelKey: "toolbox.ports.label", group: "infra", Panel: PortsPanel },
   { id: "radix", labelKey: "toolbox.radix.label", group: "encode", Panel: RadixPanel },
+  { id: "qrcode", labelKey: "toolbox.qrcode.label", group: "encode", Panel: QrcodePanel },
   {
     id: "cheatsheet",
     labelKey: "toolbox.cheatsheet.label",

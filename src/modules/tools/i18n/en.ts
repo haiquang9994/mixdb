@@ -278,6 +278,28 @@ const toolsEn = {
       unreadable: "Not a valid number in the chosen base.",
     },
 
+    qrcode: {
+      label: "QR code",
+      placeholder: "Paste a URL, connection string or any text",
+      style: "Module style",
+      styleSquare: "Square",
+      styleRounded: "Rounded",
+      styleDots: "Dots",
+      styleConnected: "Connected",
+      styleClassy: "Classy",
+      level: "Error correction",
+      levelL: "Low (L)",
+      levelM: "Medium (M)",
+      levelQ: "Quartile (Q)",
+      levelH: "High (H)",
+      fgColor: "Module color",
+      bgColor: "Background",
+      cellSize: "Cell size",
+      margin: "Margin",
+      copyImage: "Copy image",
+      tooLong: "This text is too long to fit even the largest QR code.",
+    },
+
     encode: {
       label: "Encode & hash",
       tabBase64: "Base64",

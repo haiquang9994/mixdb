@@ -278,6 +278,28 @@ const toolsVi = {
       unreadable: "Không phải số hợp lệ ở hệ đã chọn.",
     },
 
+    qrcode: {
+      label: "Mã QR",
+      placeholder: "Dán URL, chuỗi kết nối hoặc bất kỳ văn bản nào vào đây",
+      style: "Kiểu module",
+      styleSquare: "Vuông",
+      styleRounded: "Bo góc",
+      styleDots: "Chấm tròn",
+      styleConnected: "Nối liền",
+      styleClassy: "Bo chéo",
+      level: "Mức sửa lỗi",
+      levelL: "Thấp (L)",
+      levelM: "Vừa (M)",
+      levelQ: "Cao (Q)",
+      levelH: "Rất cao (H)",
+      fgColor: "Màu module",
+      bgColor: "Màu nền",
+      cellSize: "Kích thước ô",
+      margin: "Viền",
+      copyImage: "Chép ảnh",
+      tooLong: "Nội dung quá dài để mã hoá thành QR, kể cả ở mức lớn nhất.",
+    },
+
     encode: {
       label: "Mã hoá & băm",
       tabBase64: "Base64",
