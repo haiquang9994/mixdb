@@ -42,6 +42,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+## [0.0.29] - 2026-09-04
+
 ### Added
 
 - The Diff tool highlights the exact part that changed within a line, and can show the two sides
@@ -551,7 +553,8 @@ installs it and restarts. Every update is checked against MixDB's signing key fi
      links rather than decoration. `set-version.mjs` adds a line here as it cuts a section,
      so this stays in step without anyone remembering it. -->
 
-[Unreleased]: https://github.com/mixnz/mixdb/compare/v0.0.28...HEAD
+[Unreleased]: https://github.com/mixnz/mixdb/compare/v0.0.29...HEAD
+[0.0.29]: https://github.com/mixnz/mixdb/compare/v0.0.28...v0.0.29
 [0.0.28]: https://github.com/mixnz/mixdb/compare/v0.0.27...v0.0.28
 [0.0.27]: https://github.com/mixnz/mixdb/compare/v0.0.26...v0.0.27
 [0.0.26]: https://github.com/mixnz/mixdb/compare/v0.0.25...v0.0.26
