@@ -66,7 +66,7 @@ export interface SqlEditing {
  */
 export interface SqlDialect {
   /** Which engine this is, for the few places that have to name it — a label, an icon, a wording. */
-  kind: "mysql" | "postgres";
+  kind: "mysql" | "postgres" | "sqlite";
 
   /** How SQL text is read: which quotes, comments and escapes this engine has. What the statement
    *  splitter and the editor's tokenizer work from — see {@link SqlSyntax}. */
@@ -107,4 +107,23 @@ export interface SqlDialect {
    * arrive as.
    */
   isBinary(meta: SqlColumnMeta): boolean;
+
+  /**
+   * A running statement can be stopped from another connection.
+   *
+   * True on both servers, which have a session to reach in and kill. False on SQLite, where the
+   * statement runs inside this process against a file and there is nothing to send a signal to —
+   * so the Query tab's Cancel button is closed rather than left to be pressed and do nothing,
+   * which is the worse of the two.
+   */
+  cancellable: boolean;
+
+  /**
+   * The filter bar may offer `REGEXP` / `NOT REGEXP`.
+   *
+   * False on SQLite: it parses the word but ships no implementation, so the operator would always
+   * come back as "no such function: regexp". An operator that cannot succeed does not belong in
+   * the dropdown — see `build_where` in `drivers/sqlite.rs`, which has no arm for it either.
+   */
+  regexpFilter: boolean;
 }

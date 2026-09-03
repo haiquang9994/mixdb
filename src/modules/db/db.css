@@ -211,8 +211,8 @@
 }
 
 /* Each engine's brand colour, handed over as custom properties rather than set as `background` and
-   `color` here: the same four classes dress a tinted tile in the saved list and a bare logo on a
-   form tab, which want that one colour in different places. */
+   `color` here: the same classes dress a tinted tile in the saved list and a bare logo on a form
+   tab, which want that one colour in different places. */
 .kind-mysql {
   --kind: #00758f;
   --kind-rgb: 0 117 143;
@@ -231,6 +231,12 @@
 .kind-redis {
   --kind: #c6302b;
   --kind-rgb: 198 48 43;
+}
+
+/* SQLite's own blue. */
+.kind-sqlite {
+  --kind: #0f80cc;
+  --kind-rgb: 15 128 204;
 }
 
 /* The brand hues are set for a white page and go muddy on a dark one, so the dark theme carries
@@ -255,6 +261,11 @@
   --kind-rgb: 240 102 94;
 }
 
+:root[data-theme="dark"] .kind-sqlite {
+  --kind: #58b4ea;
+  --kind-rgb: 88 180 234;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .kind-mysql {
     --kind: #5bbfd6;
@@ -275,10 +286,15 @@
     --kind: #f0665e;
     --kind-rgb: 240 102 94;
   }
+
+  :root:not([data-theme]) .kind-sqlite {
+    --kind: #58b4ea;
+    --kind-rgb: 88 180 234;
+  }
 }
 
 /* The one entry in the list that isn't an engine, so it borrows the accent through the same two
-   properties the four brand colours are handed over in. */
+   properties the brand colours are handed over in. */
 .kind-new {
   --kind: var(--accent-text);
   --kind-rgb: var(--accent-rgb);

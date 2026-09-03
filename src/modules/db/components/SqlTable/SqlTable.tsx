@@ -214,6 +214,16 @@ function SqlTable({
   const { t } = useTranslation();
   const api = useSqlApi();
   const dialect = useSqlDialect();
+  /* SQLite parses `REGEXP` but ships no implementation of it, so the two rows would always come
+     back as "no such function". Dropped from the dropdown rather than left to fail — see
+     `regexpFilter` on the dialect. */
+  const filterOperators = useMemo(
+    () =>
+      dialect.regexpFilter
+        ? FILTER_OPERATORS
+        : FILTER_OPERATORS.filter((op) => op.id !== "regexp" && op.id !== "notRegexp"),
+    [dialect.regexpFilter]
+  );
   const tableKey = tableCacheKey(selectedDb, selectedTable);
   // Everything below opens on what this table was last left showing, when it has been here before.
   // A grid mounted afresh — the connection reopened, another database picked and this one come back
@@ -1335,7 +1345,7 @@ function SqlTable({
         <FilterBar
           ref={filterBarRef}
           fields={columns}
-          operators={FILTER_OPERATORS}
+          operators={filterOperators}
           defaultOperator="eq"
           operatorLabel={(op) => t(`sqlTable.op.${op}`)}
           rows={filterRows}

@@ -9,7 +9,6 @@ import { DatabaseIcon } from "../../icons";
 import { PRIVATE_KEY_PLACEHOLDER } from "../../../../core/ssh";
 import { useTranslation } from "../../../../i18n";
 import { KIND_LABEL, type ConnectionForm as FormState } from "../../connectionForm";
-import { isSqlKind } from "../../engines";
 import type { DbKind } from "../../types";
 
 /**
@@ -112,7 +111,7 @@ function ConnectionForm({
     if (focusPassword > 0) passwordRef.current?.focus();
   }, [focusPassword]);
   const {
-    kind, host, port, username, password, database, uri, uriRevealed, confirmingReveal, useSsl,
+    kind, host, port, username, password, database, uri, path, uriRevealed, confirmingReveal, useSsl,
     tunnelType, sshHost, sshPort, sshUser, sshAuthType, sshPassword, sshKeyPath, sshPassphrase,
   } = form;
 
@@ -127,7 +126,26 @@ function ConnectionForm({
     }
   }
 
+  async function browseForDatabaseFile() {
+    const chosen = await open({
+      title: t("connection.selectSqliteFileDialogTitle"),
+      multiple: false,
+      directory: false,
+      /* Every extension anyone puts on a SQLite file, and an "any file" entry after them: the
+         extension is a convention, not a format — plenty of applications keep theirs with no
+         suffix at all, or with one of their own. */
+      filters: [
+        { name: "SQLite", extensions: ["db", "sqlite", "sqlite3", "db3"] },
+        { name: t("connection.allFilesFilter"), extensions: ["*"] },
+      ],
+    });
+    if (typeof chosen === "string") {
+      set("path", chosen);
+    }
+  }
+
   const isMongo = kind === "mongo";
+  const isSqlite = kind === "sqlite";
 
   /* A Redis server whose default user has no password runs in protected mode unless it was told
      otherwise, and protected mode answers anything that isn't loopback with `-DENIED` and hangs
@@ -168,7 +186,7 @@ function ConnectionForm({
       <fieldset>
         <legend>{t("connection.databaseLegend")}</legend>
         <div className="choice-row" role="tablist">
-          {(["mysql", "postgres", "mongo", "redis"] as DbKind[]).map((k) => (
+          {(["mysql", "postgres", "sqlite", "mongo", "redis"] as DbKind[]).map((k) => (
             <button
               key={k}
               type="button"
@@ -184,7 +202,21 @@ function ConnectionForm({
             </button>
           ))}
         </div>
-        {isMongo ? (
+        {isSqlite ? (
+          /* A path and nothing else. There is no host to reach, no account to be on and no
+             database to pick inside the file — the file is the database. */
+          <div className="row">
+            <label className="field-file-path">
+              {t("connection.sqlitePathLabel")}{" "}
+              <Input
+                value={path}
+                onChange={(e) => set("path", e.target.value)}
+                placeholder={t("connection.sqlitePathPlaceholder")}
+              />
+              <Button onClick={browseForDatabaseFile}>{t("common.browse")}</Button>
+            </label>
+          </div>
+        ) : isMongo ? (
           <div className="row">
             <label className="field-connection-string">
               {t("connection.connectionStringLabel")}{" "}
@@ -250,7 +282,8 @@ function ConnectionForm({
           </p>
         )}
 
-        {isSqlKind(kind) && (
+        {/* Not `isSqlKind`: SQLite is one, and has no transport to secure. */}
+        {(kind === "mysql" || kind === "postgres") && (
           <div className="row">
             <label>
               <input type="checkbox" checked={useSsl} onChange={(e) => set("useSsl", e.target.checked)} />{" "}
@@ -260,6 +293,9 @@ function ConnectionForm({
         )}
       </fieldset>
 
+      {/* There is nothing to tunnel to: the file is on this machine. Hidden rather than disabled,
+          because a disabled control still says the choice exists. */}
+      {!isSqlite && (
       <fieldset>
         <legend>{t("connection.connectionMethodLegend")}</legend>
         <div className="choice-row" role="tablist">
@@ -362,6 +398,7 @@ function ConnectionForm({
           </>
         )}
       </fieldset>
+      )}
 
       <div className="row row-actions">
         <div className="row-actions-left">

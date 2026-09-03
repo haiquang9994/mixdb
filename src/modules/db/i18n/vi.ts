@@ -3,6 +3,8 @@ import type { DbDict } from "./en";
 const dbVi: DbDict = {
   connection: {
     selectPrivateKeyDialogTitle: "Chọn private key",
+    selectSqliteFileDialogTitle: "Chọn file database SQLite",
+    allFilesFilter: "Tất cả file",
     testingTunnel: "Đang kiểm tra...",
     tunnelOk: "\u2713 Tunnel OK \u2014 Xác thực SSH thành công",
     tunnelFailed: "\u2717 {{error}}",
@@ -20,6 +22,9 @@ const dbVi: DbDict = {
     kindPostgres: "PostgreSQL",
     kindMongo: "MongoDB",
     kindRedis: "Redis",
+    kindSqlite: "SQLite",
+    sqlitePathLabel: "File database",
+    sqlitePathPlaceholder: "Đường dẫn tới file .db hoặc .sqlite",
     dbIndexLabel: "Chỉ mục DB",
     connectionStringLabel: "Chuỗi kết nối",
     connectionStringPlaceholder: "mongodb://user:password@host:27017/?authSource=admin&replicaSet=rs0",

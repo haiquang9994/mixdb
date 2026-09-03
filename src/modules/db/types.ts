@@ -1,4 +1,4 @@
-export type DbKind = "mysql" | "postgres" | "mongo" | "redis";
+export type DbKind = "mysql" | "postgres" | "mongo" | "redis" | "sqlite";
 
 /* The SSH server is `core/ssh.ts`'s, not this module's: the backend has one `SshConfig` for both
    a tunnelled connection and a terminal session, and this was one of two mirrors of it. Re-exported
@@ -16,6 +16,10 @@ export interface ConnectionConfig {
   /** MongoDB only: a full `mongodb://` / `mongodb+srv://` connection string. It carries host,
    *  port, credentials and options in one value, so those fields are ignored for that kind. */
   uri?: string;
+  /** SQLite only, and its whole address: the path of the database file on this machine. There is
+   *  no server, so `host`, `port`, `username`, `password`, `ssh` and `use_ssl` are ignored for that
+   *  kind — the same way `uri` above replaces them for MongoDB. */
+  path?: string;
   ssh?: SshConfig;
   use_ssl?: boolean;
 }
@@ -61,6 +65,10 @@ export const DEFAULT_PORTS: Record<DbKind, number> = {
   postgres: 5432,
   mongo: 27017,
   redis: 6379,
+  /* SQLite has no port, and no server to have one. Zero rather than a number that looks plausible:
+     the form hides the field for this kind, and a value that ever reaches the backend is ignored
+     there. */
+  sqlite: 0,
 };
 
 /** The row a foreign key column points at: what it references, not what it is declared as. */

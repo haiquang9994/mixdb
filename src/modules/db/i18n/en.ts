@@ -8,6 +8,8 @@
 const dbEn = {
   connection: {
     selectPrivateKeyDialogTitle: "Select private key",
+    selectSqliteFileDialogTitle: "Select SQLite database file",
+    allFilesFilter: "All files",
     testingTunnel: "Testing...",
     tunnelOk: "\u2713 Tunnel OK \u2014 SSH auth succeeded",
     tunnelFailed: "\u2717 {{error}}",
@@ -29,6 +31,9 @@ const dbEn = {
     kindPostgres: "PostgreSQL",
     kindMongo: "MongoDB",
     kindRedis: "Redis",
+    kindSqlite: "SQLite",
+    sqlitePathLabel: "Database file",
+    sqlitePathPlaceholder: "Path to a .db or .sqlite file",
     dbIndexLabel: "DB index",
     connectionStringLabel: "Connection string",
     connectionStringPlaceholder: "mongodb://user:password@host:27017/?authSource=admin&replicaSet=rs0",

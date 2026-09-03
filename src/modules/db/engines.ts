@@ -4,6 +4,8 @@ import { mysqlApi } from "./mysql/api";
 import { mysqlDialect } from "./mysql/dialect";
 import { postgresApi } from "./postgres/api";
 import { postgresDialect } from "./postgres/dialect";
+import { sqliteApi } from "./sqlite/api";
+import { sqliteDialect } from "./sqlite/dialect";
 import type { DbKind } from "./types";
 
 /**
@@ -20,6 +22,7 @@ import type { DbKind } from "./types";
 export const SQL_ENGINES = {
   mysql: { api: mysqlApi, dialect: mysqlDialect },
   postgres: { api: postgresApi, dialect: postgresDialect },
+  sqlite: { api: sqliteApi, dialect: sqliteDialect },
 } as const satisfies Partial<Record<DbKind, { api: SqlApi; dialect: SqlDialect }>>;
 
 export type SqlKind = keyof typeof SQL_ENGINES;

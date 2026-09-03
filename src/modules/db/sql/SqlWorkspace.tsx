@@ -37,6 +37,7 @@ import { useSidebarKeyboard } from "../../../core/sidebarKeyboard";
 import { useTranslation } from "../../../i18n";
 import { errorMessage } from "../../../core/errors";
 import type { SqlCollation } from "../types";
+import { KIND_LABEL } from "../connectionForm";
 
 interface Props {
   /** Whether this connection's tab is the one on show. Passed straight through to the content
@@ -515,8 +516,9 @@ function SqlWorkspace({
               {t("sql.serverInfo", {
                 os: serverInfo.os,
                 // Named rather than assumed: the header used to read "MySQL" whatever it was
-                // connected to.
-                engine: t(dialect.kind === "postgres" ? "connection.kindPostgres" : "connection.kindMysql"),
+                // connected to. Looked up rather than branched on, so an engine added later is
+                // named here without anyone having to remember this line exists.
+                engine: t(KIND_LABEL[dialect.kind]),
                 version: serverInfo.version,
               })}
             </span>
@@ -543,14 +545,23 @@ function SqlWorkspace({
             searchable
             searchPlaceholder={t("sql.searchDatabasesPlaceholder")}
             options={[
-              {
-                value: NEW_DATABASE,
-                label: t("sql.createDatabase"),
-                // Shown rather than hidden, so the picker offers the same thing wherever it is
-                // opened and the missing entry is not read as a bug.
-                disabled: readOnly,
-                optionLabel: <span className="select-new-option">+ {t("sql.createDatabase")}</span>,
-              },
+              /* Left out entirely on an engine where a database is a file rather than an object on
+                 a server — there, creating one is creating a file, and the entry would not be
+                 "disabled for now" but an offer this tool does not make. Everywhere else it is
+                 shown even when it cannot be used, so the picker offers the same thing wherever it
+                 is opened and the missing entry is not read as a bug. */
+              ...(dialect.kind === "sqlite"
+                ? []
+                : [
+                    {
+                      value: NEW_DATABASE,
+                      label: t("sql.createDatabase"),
+                      disabled: readOnly,
+                      optionLabel: (
+                        <span className="select-new-option">+ {t("sql.createDatabase")}</span>
+                      ),
+                    },
+                  ]),
               ...databases.map((db) => ({ value: db, label: db })),
               {
                 value: RELOAD_DATABASES,

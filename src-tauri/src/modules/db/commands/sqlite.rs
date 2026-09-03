@@ -24,3 +24,37 @@ pub async fn sqlite_server_info(
     let pool = sqlite_pool(&state, &id).await?;
     sqlite::server_info(&pool).await
 }
+
+/// The one database a file holds. Answered without touching it — see `sqlite::list_databases`.
+#[tauri::command]
+pub async fn sqlite_list_databases(
+    state: State<'_, DbState>,
+    id: String,
+) -> Result<Vec<String>, AppError> {
+    // Still asks for the pool, so that a connection that has been closed reports itself here the
+    // way it would for any other read rather than answering with a list.
+    sqlite_pool(&state, &id).await?;
+    Ok(sqlite::list_databases())
+}
+
+#[tauri::command]
+pub async fn sqlite_list_tables(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+) -> Result<Vec<String>, AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite::list_tables(&pool).await
+}
+
+#[tauri::command]
+pub async fn sqlite_table_data(
+    state: State<'_, DbState>,
+    id: String,
+    _database: String,
+    table: String,
+    query: sqlite::PageQuery,
+) -> Result<sqlite::TablePage, AppError> {
+    let pool = sqlite_pool(&state, &id).await?;
+    sqlite::table_data(&pool, &table, &query).await
+}

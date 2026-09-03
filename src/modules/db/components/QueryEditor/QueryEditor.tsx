@@ -10,6 +10,7 @@ import {
 } from "../../sql/guard";
 import { lintScript, problemRange } from "../../sql/lint";
 import { useSqlDialect } from "../../sql/context";
+import { KIND_LABEL } from "../../connectionForm";
 import { referenceAt, type SqlReference } from "../../mysql/reference";
 import { invalidateSchemaOutline, useSchemaOutline } from "../../sql/schemaCache";
 import { useSqlApi } from "../../sql/context";
@@ -304,9 +305,9 @@ function QueryEditor({
             message: problem.message,
             // Named, so it reads as the server's opinion rather than as MixDB's — which matters
             // most for the warnings, where the server may simply be looking somewhere else.
-            // The engine that actually answered: this pane opens on either, and PostgreSQL's
-            // complaint attributed to MySQL is a worse label than none.
-            source: dialect.kind === "postgres" ? "PostgreSQL" : "MySQL",
+            // The engine that actually answered: PostgreSQL's complaint attributed to MySQL is a
+            // worse label than none, and the same goes for a third engine attributed to either.
+            source: t(KIND_LABEL[dialect.kind]),
           },
         ];
       },
@@ -624,7 +625,10 @@ function QueryEditor({
             {t("query.history")}
           </Button>
         )}
-        {running && (
+        {/* Absent, not disabled, on an engine with nothing to cancel through: SQLite runs the
+            statement in this process against a file, so there is no session to reach in and stop.
+            A button that could never do anything is worse than no button. */}
+        {running && dialect.cancellable && (
           <Button size="small" onClick={() => void cancel()} disabled={cancelling}>
             {cancelling ? t("query.cancelling") : t("query.cancel")}
           </Button>
