@@ -9,7 +9,9 @@ Shared by every module:
 | File | Role |
 | --- | --- |
 | `main.rs` | Six lines: calls `tauri_app_lib::run()`. |
-| `lib.rs` | The Tauri builder: plugins, one `register` call per module, `invoke_handler(modules::handler())`. Around 35 lines, and it names no module's types. |
+| `lib.rs` | The Tauri builder: plugins, one `register` call per module, `invoke_handler(modules::handler())`. Around 60 lines: before the builder exists it also reads the opening and forwards to a running copy. It names no module's types. |
+| `launch.rs` | What the process was started with (`Opening`: the `mixdb://` URL and the credential taken out of the environment), the queue of tabs the backend asks the shell to open, and the one place a URL is matched to a module. |
+| `instance.rs` | The pipe/socket between two copies of the app: a second start hands its line to the first and exits. |
 | `error.rs` | `AppError` and the `err!` macro. Declared first and with `#[macro_use]`, so everything below it has the macro. |
 | `secrets.rs` | The OS credential store, and the three `secrets_*` commands. Keyed by an arbitrary id, so any module can keep something in it. |
 | `ssh/mod.rs` | russh-based local port forward (`open_tunnel`), `open_shell`, `test_connection`, and the `SshConfig`/`SshAuth` those take. Shared by db and terminal, and `known_hosts.json` is the app's, not either module's. |
@@ -19,11 +21,13 @@ The database module, under `modules/db/`:
 
 | File | Role |
 | --- | --- |
-| `mod.rs` | `register(builder)`: puts `DbState` in the app. |
+| `mod.rs` | `register(builder)`: puts `DbState` and `HandoffState` in the app. |
 | `commands/mod.rs` | Connecting, disconnecting, and the private helpers the rest are built on: `handle`, `mysql_pool`, `postgres_pool`, `mongo_client`, `redis_connection`, `sql_endpoint`, `in_background`, `app_data_dir`. |
 | `commands/{mysql,postgres,mongo,redis,tools}.rs` | The `#[tauri::command]` functions. Thin: look the handle up, delegate to `drivers/`. |
+| `commands/handoff.rs` | `handoff_take`: the tab opened for a handed-over connection takes it, once. |
 | `models.rs` | `DbKind`, `ConnectionConfig` — the serde types crossing the boundary. |
 | `state.rs` | `DbState { connections: Mutex<HashMap<String, ActiveConnection>> }`, `DbHandle`. |
+| `handoff.rs` | A `mixdb://connect?…` URL as a `ConnectionConfig`, the rule for which environment variable may hold its password, and `HandoffState`, where it waits for its tab. |
 | `drivers/mysql.rs` | Connect, query, row/value conversion, table data, CRUD. |
 | `drivers/mysql_structure.rs` | Columns and indexes: read, ADD/CHANGE/DROP. |
 | `drivers/mysql_script.rs` | Splits user SQL into statements and runs them one by one. |

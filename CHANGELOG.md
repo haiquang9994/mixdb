@@ -42,6 +42,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- MixEngine can open one of its databases in MixDB: `mix database open` starts MixDB, or reaches
+  the window already open, with the connection made and the password never on the command line
+  or on disk.
+- Only one MixDB window runs: starting it again brings the open one to the front.
+- `mixdb://` links open MixDB with the connection filled in.
+
 ## [0.0.27] - 2026-09-03
 
 ### Changed

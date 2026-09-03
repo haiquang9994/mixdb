@@ -97,6 +97,32 @@ a desktop client idles long enough for a server's `timeout` to close the socket 
 selected database is therefore part of the connection info rather than a `SELECT` sent by hand —
 `redis::select_db` reopens the connection so that a later reconnect still lands in the right one.
 
+## A connection handed over by another program
+
+MixEngine's `mix database open` starts MixDB as
+`mixdb "mixdb://connect?kind=…&host=…&port=…&user=…&label=…&password_env=MIXENGINE_DB_PASSWORD"`
+with the password in that one variable. Three files carry it, none of them a module's except the
+last:
+
+- `launch.rs` reads `argv[1]` and takes the variable out of the environment **on the first line of
+  `run()`**, before the builder spawns a thread or the webview forks a helper. It only trusts a
+  variable named `MIX…_…PASSWORD` — once `mixdb://` is registered with the OS, a web page can name
+  any variable in a link. It then either forwards `{url, secret}` to a copy already running or
+  queues a `TabRequest` the shell drains (`launch_take_requests`, `launch://request`).
+- `instance.rs` is that channel: a named pipe on Windows, a Unix socket under
+  `$XDG_RUNTIME_DIR`/`$TMPDIR` elsewhere, one JSON line each way. It replaces
+  `tauri-plugin-single-instance`, which forwards `argv` only. A second start with no URL just
+  brings the window up.
+- `modules/db/handoff.rs` turns the URL into a `ConnectionConfig` kept in `HandoffState` until the
+  tab opened for it calls `handoff_take` once; `DbTab` then fills the form and goes through the
+  ordinary `connect_db`. Nothing is saved unless the user presses Save.
+
+`tauri-plugin-deep-link` registers the scheme through the installers. Only macOS listens to its
+events (the Apple Event is the only way a URL reaches a macOS process); on Windows and Linux the
+plugin re-emits `argv`, which `launch.rs` has already handled, and later URLs arrive over the
+channel. The whole design, with the threat model for the variable name, is
+[the spec](../../docs/superpowers/specs/2026-09-03-mixengine-connection-handoff-design.md).
+
 ## MongoDB is the odd one
 
 Mongo is configured as a single connection string, not host/port/user/password — a seed list like

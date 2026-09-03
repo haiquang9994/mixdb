@@ -55,6 +55,7 @@ src/                 React frontend
   shell/             Tab bar, [+] menu, shortcuts, Settings — knows no module
     module.ts        ModuleDefinition, ModuleTabProps, TabBadge — what a module is
     registry.ts      MODULES, DEFAULT_MODULE_ID — the only file outside modules/ that names one
+    launch.ts        Tabs the backend asks for — the only other way a tab opens
     App.css          Tokens + chrome + the classes any module may use
   core/              Helpers no module owns and any module may use
   components/        Shared primitives only, one folder each
@@ -77,11 +78,12 @@ src/                 React frontend
     api.ts           terminal_open/write/resize/close, the shell list, and the events Channel
     components/  i18n/  terminal.css
 src-tauri/src/       Rust backend
-  lib.rs             Tauri builder; each module registers its own state
+  lib.rs             Tauri builder; reads the opening URL first; each module registers its own state
   error.rs  secrets.rs  ssh/    Shared by every module (the tunnel and open_shell both live in ssh/)
+  launch.rs  instance.rs  A connection handed over on the command line, and the channel to a running copy
   modules/
     mod.rs           handler() — every command of every module, one block each
-    db/              commands/, drivers/, models.rs, state.rs
+    db/              commands/, drivers/, handoff.rs, models.rs, state.rs
     rest/            commands.rs, models.rs, state.rs
     terminal/        commands.rs, local.rs, remote.rs, stream.rs, models.rs, state.rs
 ```
