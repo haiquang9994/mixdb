@@ -7,7 +7,7 @@ import { parseToolsTabState } from "./tabState";
 import "./tools.css";
 
 function ToolsTab({ onTitleChange, onStateChange, restored }: ModuleTabProps) {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
 
   // Đọc `restored` đúng một lần, ở đây. Đọc nó reactively thì module ghi đè chính mình ngay lần
   // ghi đầu tiên — luật nằm trong `shell/module.ts`.
@@ -22,10 +22,12 @@ function ToolsTab({ onTitleChange, onStateChange, restored }: ModuleTabProps) {
   // Tiêu đề tab là tên tool, không phải "Tools": ba tab Tools mở cùng lúc thì phân biệt được.
   // `onTitleChange` không nằm trong deps — shell trả về một closure mới mỗi lần render, và
   // `shell/tabs.ts` gọi tên vòng lặp mà việc liệt kê nó tạo ra.
+  // `lang` bên cạnh `t`: `t` là một hàm duy nhất suốt vòng đời app, nên `lang` mới là thứ báo
+  // hiệu chữ đã đổi và title cần dựng lại. Xem `i18n/index.tsx`.
   useEffect(() => {
     onTitleChange(selected ? t(selected.labelKey) : t("toolbox.newTabTitle"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, t]);
+  }, [selected, t, lang]);
 
   const pick = (id: string) => {
     setSelectedId(id);

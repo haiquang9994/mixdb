@@ -53,6 +53,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   opens filled in, with the caret in the password field.
 - The app window opens smaller by default (1200x720).
 
+### Fixed
+
+- A Tools tab's title now updates when the language is switched, instead of staying in the
+  language it was opened in.
+
 ## [0.0.28] - 2026-09-03
 
 ### Added
