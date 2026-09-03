@@ -13,12 +13,27 @@
  * A connection typed into the form and never saved has no id to point at, so it is not restored.
  * That is the line holding, not a gap in it.
  */
-export interface DbTabState {
+/** A tab pointing at a saved connection, connected or back at the form. */
+export interface SavedTabState {
   savedId: string;
   /** Whether the tab was in the workspace, rather than back at the form, when it was last written.
    *  Deciding what restoring does, not whether it happens. */
   connected: boolean;
 }
+
+/**
+ * A tab opened for a connection another program handed over, before it has taken it.
+ *
+ * The backend keeps the connection — password included — under this id until the tab asks for it
+ * once (`handoff.ts`); the tab forgets the id the moment it does. Still an id and nothing else, and
+ * one that stops meaning anything within a second of being written: a session that somehow keeps
+ * it comes back to an empty form.
+ */
+export interface HandoffTabState {
+  handoffId: string;
+}
+
+export type DbTabState = SavedTabState | HandoffTabState;
 
 /**
  * The stored value, if it is one, or `null`.
@@ -33,6 +48,11 @@ export interface DbTabState {
 export function parseDbTabState(value: unknown): DbTabState | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const state = value as Record<string, unknown>;
-  if (typeof state.savedId !== "string" || state.savedId === "") return null;
-  return { savedId: state.savedId, connected: state.connected !== false };
+  if (typeof state.savedId === "string" && state.savedId !== "") {
+    return { savedId: state.savedId, connected: state.connected !== false };
+  }
+  if (typeof state.handoffId === "string" && state.handoffId !== "") {
+    return { handoffId: state.handoffId };
+  }
+  return null;
 }

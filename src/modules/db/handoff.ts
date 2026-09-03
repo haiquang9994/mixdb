@@ -1,0 +1,23 @@
+import { invoke } from "@tauri-apps/api/core";
+import type { ConnectionConfig } from "./types";
+
+/**
+ * A connection another program handed to MixDB — MixEngine's `mix database open` — as it is
+ * taken by the tab opened for it.
+ *
+ * The backend read it off a `mixdb://connect?…` URL and the password off one environment
+ * variable, and keeps it until this call; see
+ * `docs/superpowers/specs/2026-09-03-mixengine-connection-handoff-design.md`. From here it is a
+ * config in the form like any typed by hand: `connect_db`, the workspace, Save if the user wants.
+ */
+export interface Handoff {
+  config: ConnectionConfig;
+  /** The tab's name and the name pre-filled for saving — the launcher's own id for the server. */
+  label: string;
+}
+
+/** Takes the handoff under `id`. Rejects with `error.handoffExpired` when it was already taken,
+ *  or when the id is from a session an earlier run wrote — in which case the tab is simply empty. */
+export function takeHandoff(id: string): Promise<Handoff> {
+  return invoke("handoff_take", { id });
+}

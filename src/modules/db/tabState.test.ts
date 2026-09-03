@@ -36,6 +36,20 @@ describe("parseDbTabState", () => {
     });
   });
 
+  /* A tab opened for a connection another program handed over — see `handoff.ts`. Still an id:
+     the uuid of an entry the backend keeps until the tab takes it, and forgets afterwards. */
+  it("reads a handoff the backend asked a tab to open", () => {
+    expect(parseDbTabState({ handoffId: "h-1" })).toEqual({ handoffId: "h-1" });
+    expect(parseDbTabState({ handoffId: "" })).toBeNull();
+    expect(parseDbTabState({ handoffId: 7 })).toBeNull();
+  });
+
+  /* Never written by this version, but a stored slot is a stored slot: the saved connection is
+     the meaning every earlier version gave it, so it wins. */
+  it("prefers the saved connection when both are there", () => {
+    expect(parseDbTabState({ savedId: "c-1", handoffId: "h-1" })).toEqual({ savedId: "c-1", connected: true });
+  });
+
   it("has nothing to say about a tab that never wrote any", () => {
     expect(parseDbTabState(undefined)).toBeNull();
   });

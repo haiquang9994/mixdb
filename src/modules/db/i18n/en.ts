@@ -871,6 +871,11 @@ const dbEn = {
       "The connection to the server was lost. If it goes through an SSH tunnel, MixDB is opening it again \u2014 try once more in a moment.",
     noTunnel: "This connection does not go through an SSH tunnel.",
     mongoUriRequired: "A MongoDB connection string is required.",
+    /* A `mixdb://connect?…` URL another program started MixDB with — see `handoff.ts`. The first
+       is only ever printed to stderr; the second is answered with an empty form. Both exist so a
+       code that does reach the screen one day is a sentence rather than its own key. */
+    handoffInvalid: "The connection MixDB was started with cannot be read: {{message}}",
+    handoffExpired: "This handed-over connection has already been opened.",
     mongoNoTcpHost: "The connection string names no TCP host to tunnel to.",
     emptyRedisCommand: "There is no command to run.",
     // Writing rows and documents
