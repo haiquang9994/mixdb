@@ -14,6 +14,10 @@ export interface Handoff {
   config: ConnectionConfig;
   /** The tab's name and the name pre-filled for saving — the launcher's own id for the server. */
   label: string;
+  /** The address to save instead of a copy of the password — see `SavedConnection.keyringRef`.
+   *  `null`/absent for a `mixdb://` link that arrived without proof MixEngine started this
+   *  process, even when the URL itself named one. */
+  keyring_ref?: string | null;
 }
 
 /** Takes the handoff under `id`. Rejects with `error.handoffExpired` when it was already taken,

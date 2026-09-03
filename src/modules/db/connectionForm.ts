@@ -37,6 +37,12 @@ export interface ConnectionForm {
   sshPassword: string;
   sshKeyPath: string;
   sshPassphrase: string;
+  /** The reference `password` was resolved from, when it was — see `SavedConnection.keyringRef`.
+   *  Carried on the form rather than in `ConnectionConfig` because it is a fact about *saving*,
+   *  not about the connection itself. Cleared the moment `password` is edited by hand: at that
+   *  point what is in the box is no longer MixEngine's, and Save must not go on writing the old
+   *  address over it. */
+  keyringRef: string | null;
 }
 
 /** The SSH half at rest. Written once and spread into both directions below, so that a field added
@@ -57,8 +63,11 @@ const NO_TUNNEL = {
  *
  * One function for both because they are the same question: everything not carried by the config
  * has to come back to its default, and a `null` config carries nothing.
+ *
+ * `keyringRef` is not part of `config` — it comes from wherever `config` itself came from (a
+ * handoff, a saved connection) and is passed in separately.
  */
-export function formFrom(config: ConnectionConfig | null): ConnectionForm {
+export function formFrom(config: ConnectionConfig | null, keyringRef: string | null = null): ConnectionForm {
   if (config === null) {
     return {
       kind: "mysql",
@@ -74,6 +83,7 @@ export function formFrom(config: ConnectionConfig | null): ConnectionForm {
       // SSL buys nothing and an old server's TLS config is one more thing to fail on.
       useSsl: false,
       ...NO_TUNNEL,
+      keyringRef: null,
     };
   }
 
@@ -88,6 +98,7 @@ export function formFrom(config: ConnectionConfig | null): ConnectionForm {
     uri: config.uri ?? "",
     uriRevealed: !config.uri,
     confirmingReveal: false,
+    keyringRef,
     /* Absent means "prefer TLS" to the backend (`use_ssl == Some(false)` is the only thing that
        turns it off), which is why an entry from before this box existed reads as on. But only for
        a kind that has the box at all: `configFrom` writes `undefined` for Mongo and Redis, so
