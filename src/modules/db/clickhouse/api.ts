@@ -7,19 +7,18 @@ import type {
   SqlTableStructure,
   TableStats,
 } from "../types";
-import type { SqlApi, SqlPageQuery, SqlServerInfo } from "../sql/api";
+import type { SqlApi, SqlDumpMode, SqlPageQuery, SqlServerInfo } from "../sql/api";
 
 /**
  * ClickHouse's side of {@link SqlApi}. Row writes and DDL both call real commands — see
  * `docs/superpowers/specs/2026-09-04-clickhouse-row-writes-design.md` and
  * `docs/superpowers/specs/2026-09-04-clickhouse-ddl-design.md`.
  *
- * What is left as `notSupported()` is dump, restore and the three index methods: no Tauri command
- * exists for any of them, and none is ever registered — a call here fails as a rejected promise
- * carrying `error.clickhouseReadOnly` rather than as "command not found". `writable: false` on
- * {@link clickhouseDialect} keeps `DatabaseActions`' dump and restore buttons and the Query tab
- * from offering a path to the first two, and `editing.indexKinds` being empty does the same for
- * the index dialog.
+ * What is left as `notSupported()` is the three index methods: no Tauri command exists for any of
+ * them, and none is ever registered — a call here fails as a rejected promise carrying
+ * `error.clickhouseReadOnly` rather than as "command not found". `editing.indexKinds` being empty
+ * keeps the index dialog from offering a path to them. Dump and restore are real commands now — see
+ * `docs/superpowers/specs/2026-09-04-clickhouse-dump-restore-design.md`.
  */
 export const clickhouseApi: SqlApi = {
   listDatabases(id) {
@@ -144,8 +143,14 @@ export const clickhouseApi: SqlApi = {
     return invoke<number>("clickhouse_row_count", { id, database, table });
   },
 
-  dump: () => notSupported(),
-  restore: () => notSupported(),
+  dump(id, database, mode: SqlDumpMode, path) {
+    return invoke<void>("clickhouse_dump", { id, database, mode, path });
+  },
+
+  restore(id, database, path) {
+    return invoke<void>("clickhouse_restore", { id, database, path });
+  },
+
   addIndex: () => notSupported(),
   modifyIndex: () => notSupported(),
   dropIndex: () => notSupported(),
