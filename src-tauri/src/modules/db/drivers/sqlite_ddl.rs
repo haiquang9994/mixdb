@@ -195,6 +195,93 @@ fn skip_bracket(chars: &[char], i: usize) -> usize {
     (j + 1).min(chars.len())
 }
 
+/// Whether a clause is a table-level constraint (`PRIMARY KEY`, `UNIQUE`, `CHECK`, `FOREIGN KEY`,
+/// `CONSTRAINT ...`) rather than a column definition — checked by a whole-keyword match so a
+/// column merely *named* `primary_email` is not mistaken for one (B3 of the design spec).
+fn is_table_constraint(clause: &str) -> bool {
+    let upper = clause.trim_start().to_ascii_uppercase();
+    ["PRIMARY", "UNIQUE", "CHECK", "FOREIGN", "CONSTRAINT"].iter().any(|kw| {
+        upper == *kw
+            || upper
+                .strip_prefix(kw)
+                .is_some_and(|rest| rest.starts_with(|c: char| c.is_whitespace() || c == '('))
+    })
+}
+
+/// The column name a column-definition clause declares — its first token, unquoted. `None` for a
+/// table-constraint clause (it has no column name of its own — check with [`is_table_constraint`]
+/// first) or one this cannot make sense of.
+fn clause_column_name(clause: &str) -> Option<String> {
+    if is_table_constraint(clause) {
+        return None;
+    }
+    let trimmed = clause.trim_start();
+    let first = trimmed.chars().next()?;
+    match first {
+        '"' | '`' => {
+            let body = &trimmed[1..];
+            let end = body.find(first)?;
+            Some(body[..end].to_string())
+        }
+        '[' => {
+            let body = &trimmed[1..];
+            let end = body.find(']')?;
+            Some(body[..end].to_string())
+        }
+        c if c.is_alphabetic() || c == '_' => {
+            let name: String =
+                trimmed.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+            if name.is_empty() { None } else { Some(name) }
+        }
+        _ => None,
+    }
+}
+
+/// Whether `column` appears as a whole identifier — bare or quoted — anywhere in `clause`. Used to
+/// check a table-constraint clause (`PRIMARY KEY (...)`, `FOREIGN KEY (...)`, ...) for the column
+/// a rebuild is about to touch (B3 of the design spec). A word-boundary scan, not a SQL parser — a
+/// false positive only means an over-cautious refusal, never a silently wrong rebuild.
+fn clause_mentions_column(clause: &str, column: &str) -> bool {
+    for quote in ['"', '`'] {
+        if clause.contains(&format!("{quote}{column}{quote}")) {
+            return true;
+        }
+    }
+    if clause.contains(&format!("[{column}]")) {
+        return true;
+    }
+    let chars: Vec<char> = clause.chars().collect();
+    let target: Vec<char> = column.chars().collect();
+    if target.is_empty() || target.len() > chars.len() {
+        return false;
+    }
+    for i in 0..=(chars.len() - target.len()) {
+        if chars[i..i + target.len()] != target[..] {
+            continue;
+        }
+        let before_ok = i == 0 || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '_');
+        let after = i + target.len();
+        let after_ok = after == chars.len() || !(chars[after].is_alphanumeric() || chars[after] == '_');
+        if before_ok && after_ok {
+            return true;
+        }
+    }
+    false
+}
+
+/// The identifier after a trailing `COLLATE` in a column clause, or `None` when there is none.
+/// SQLite only allows `COLLATE name` as a bare keyword-and-identifier pair at the clause's own
+/// level — never nested inside a `DEFAULT (...)` expression — so a plain case-insensitive search
+/// for the word is enough here, unlike [`is_table_constraint`]'s leading-keyword check.
+fn clause_collation(clause: &str) -> Option<String> {
+    let upper = clause.to_ascii_uppercase();
+    let at = upper.rfind("COLLATE")?;
+    let after = clause[at + "COLLATE".len()..].trim_start();
+    // Reads the same shape `clause_column_name` reads a leading identifier in — bare or quoted —
+    // which is exactly what a collation name is.
+    clause_column_name(after)
+}
+
 /// Runs statements one after another in a transaction, so a change made of several either lands
 /// whole or not at all.
 async fn execute_all(pool: &SqlitePool, statements: Vec<String>) -> Result<(), AppError> {
@@ -799,5 +886,56 @@ mod tests {
     #[test]
     fn an_unbalanced_statement_is_a_parse_failure() {
         assert!(split_column_clauses("CREATE TABLE t (a INTEGER").is_err());
+    }
+
+    #[test]
+    fn recognises_every_table_constraint_keyword() {
+        assert!(is_table_constraint("PRIMARY KEY (id)"));
+        assert!(is_table_constraint("UNIQUE (a, b)"));
+        assert!(is_table_constraint("CHECK(x > 0)"));
+        assert!(is_table_constraint("FOREIGN KEY (a) REFERENCES t (id)"));
+        assert!(is_table_constraint("CONSTRAINT fk FOREIGN KEY (a) REFERENCES t (id)"));
+    }
+
+    #[test]
+    fn a_column_whose_name_starts_with_a_keyword_is_not_a_table_constraint() {
+        assert!(!is_table_constraint("primary_email TEXT"));
+        assert!(!is_table_constraint("checked_out INTEGER"));
+    }
+
+    #[test]
+    fn reads_the_bare_and_quoted_column_name() {
+        assert_eq!(clause_column_name("id INTEGER PRIMARY KEY"), Some("id".to_string()));
+        assert_eq!(clause_column_name("\"full name\" TEXT"), Some("full name".to_string()));
+        assert_eq!(clause_column_name("`weird` TEXT"), Some("weird".to_string()));
+        assert_eq!(clause_column_name("[bracketed] TEXT"), Some("bracketed".to_string()));
+    }
+
+    #[test]
+    fn a_table_constraint_clause_has_no_column_name_of_its_own() {
+        assert_eq!(clause_column_name("PRIMARY KEY (id, label)"), None);
+    }
+
+    #[test]
+    fn finds_a_column_named_in_a_constraint_clause() {
+        assert!(clause_mentions_column("PRIMARY KEY (id, label)", "label"));
+        assert!(clause_mentions_column("FOREIGN KEY (\"author_id\") REFERENCES author (id)", "author_id"));
+    }
+
+    #[test]
+    fn does_not_match_a_column_name_that_is_only_a_substring() {
+        assert!(!clause_mentions_column("PRIMARY KEY (id)", "i"));
+        assert!(!clause_mentions_column("UNIQUE (author_id)", "author"));
+    }
+
+    #[test]
+    fn reads_a_trailing_collate() {
+        assert_eq!(clause_collation("bio TEXT COLLATE NOCASE"), Some("NOCASE".to_string()));
+        assert_eq!(clause_collation("bio TEXT DEFAULT 'x' COLLATE NOCASE"), Some("NOCASE".to_string()));
+    }
+
+    #[test]
+    fn no_collate_is_none() {
+        assert_eq!(clause_collation("bio TEXT"), None);
     }
 }
