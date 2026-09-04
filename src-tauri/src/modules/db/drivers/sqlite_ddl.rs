@@ -1,20 +1,19 @@
 //! The statements that change a SQLite schema — the write half of the Structure tab.
 //!
-//! Much shorter than `postgres_ddl.rs`, and not because SQLite is simpler: it is because `ALTER
-//! TABLE` here does four things and nothing else. It can rename the table, rename a column, add a
-//! column and drop a column. There is no statement that changes a column's type, its nullability,
-//! its default or its collation, and none that adds a primary key to a table that has none.
+//! Shorter than `postgres_ddl.rs` for most of it, and not because SQLite is simpler: `ALTER TABLE`
+//! here does four things and nothing else — rename the table, rename a column, add a column, drop
+//! a column. There is no statement that changes a column's type, its nullability, its default or
+//! its collation, and none that adds a primary key to a table that has none.
 //!
-//! The way round that is the twelve-step rebuild the SQLite documentation describes: create a new
-//! table with the schema you wanted, copy the rows across, drop the old one, rename the new one and
-//! put the indexes and triggers back. It is deliberately not here. It is the one operation in this
-//! module that can lose data outright if it is interrupted or gets a detail wrong, and it belongs
-//! in a change of its own rather than in the one that first makes the engine work — see D4 of the
-//! plan this was built from.
-//!
-//! So a column edit that only renames goes through, and anything else is refused by name, saying
-//! what it was that cannot be done. That is worse than the other two engines and better than the
-//! alternative, which is a rebuild written in a hurry.
+//! `rebuild_column` is the way round the first four of those: the twelve-step procedure SQLite's
+//! own documentation describes — create a new table with the schema wanted, copy the rows across,
+//! drop the old one, rename the new one in its place, and put the indexes, triggers and any
+//! dependent views back. `modify_column` reaches it only when a rename is not the whole story (a
+//! type, a default or a collation actually differs) and only when the column is not part of a
+//! table-level constraint, generated, or the table's own rowid alias — those stay refused by name,
+//! same as adding a primary key to a table that never had one. See
+//! `docs/superpowers/specs/2026-09-04-sqlite-completion-design.md` (B1-B8) for the decisions this
+//! implements.
 
 use super::sqlite::{map_error, quote_ident};
 use crate::error::AppError;
@@ -467,12 +466,10 @@ async fn current_column(
     })
 }
 
-/// Renames a column — and refuses anything else, saying so.
-///
-/// This is the one place SQLite is meaningfully behind the other two engines. `ALTER TABLE` can
-/// rename a column and nothing more: a type, a `NOT NULL`, a default or a collation can only be
-/// changed by rebuilding the whole table around the new definition. Rather than do that quietly,
-/// the change is refused and named — see the note at the top of this file.
+/// Renames a column outright (`ALTER TABLE ... RENAME COLUMN`), or hands off to
+/// [`rebuild_column`] when the type, `NOT NULL`, default or collation actually differs. Refuses a
+/// rename combined with any of those in one call — see B1 of the design spec — and refuses
+/// outright a column [`rebuild_blockers`]/`generated_or_rowid_alias` say cannot be rebuilt at all.
 pub async fn modify_column(
     pool: &SqlitePool,
     table: &str,
@@ -662,16 +659,208 @@ async fn generated_or_rowid_alias(
     Ok((generated, rowid_alias))
 }
 
-/// Placeholder for the 12-step rebuild — replaced with the real implementation in Task 11 of the
-/// implementation plan. Kept here only so `modify_column`'s new branch compiles and this task's
-/// own tests can run in isolation.
+/// Rebuilds `table` around a new definition of `column` — the 12-step procedure SQLite's own docs
+/// describe for changing anything `ALTER TABLE` cannot (B2/B7 of the design spec). Refuses up
+/// front, before touching anything, when the column cannot be rebuilt this way (B6).
 async fn rebuild_column(
-    _pool: &SqlitePool,
-    _table: &str,
-    _name: &str,
-    _spec: &ColumnSpec,
+    pool: &SqlitePool,
+    table: &str,
+    name: &str,
+    spec: &ColumnSpec,
 ) -> Result<(), AppError> {
-    Err(err!("error.sqliteRebuildParseFailed", table = ""))
+    let create_sql = table_create_sql(pool, table).await?;
+    let (clauses, suffix) = split_column_clauses(&create_sql)
+        .map_err(|_| err!("error.sqliteRebuildParseFailed", table = table))?;
+    rebuild_blockers(&clauses, name)?;
+
+    let target_index = clauses
+        .iter()
+        .position(|c| !is_table_constraint(c) && clause_column_name(c).as_deref() == Some(name))
+        .ok_or_else(|| err!("error.sqliteRebuildParseFailed", table = table))?;
+
+    let (generated, rowid_alias) = generated_or_rowid_alias(pool, table, name).await?;
+    if generated {
+        return Err(err!("error.sqliteColumnGenerated", column = name));
+    }
+    if rowid_alias {
+        return Err(err!("error.sqliteColumnIsPrimaryKey", column = name));
+    }
+
+    let mut new_clauses = clauses.clone();
+    new_clauses[target_index] = column_definition(spec)?;
+    let suffix_sql = if suffix.is_empty() { String::new() } else { format!(" {suffix}") };
+
+    let temp_name = temp_table_name(pool, table).await?;
+    let create_new = format!(
+        "CREATE TABLE {} ({}){}",
+        quote_ident(&temp_name),
+        new_clauses.join(", "),
+        suffix_sql
+    );
+
+    let columns = super::sqlite_dump::data_columns(pool, table).await?;
+    let column_list = columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+    let insert_select = format!(
+        "INSERT INTO {} ({column_list}) SELECT {column_list} FROM {}",
+        quote_ident(&temp_name),
+        quote_ident(table)
+    );
+
+    let dependent: Vec<String> = sqlx::query_scalar(
+        "select sql from sqlite_master where tbl_name = ? and type in ('index', 'trigger') and sql is not null order by rowid",
+    )
+    .bind(table)
+    .fetch_all(pool)
+    .await
+    .map_err(map_error)?;
+
+    /* A view that mentions `table` has to be gone for the moment `table` itself is — SQLite's own
+       `ALTER TABLE ... RENAME TO` re-validates every view in the schema as part of the rename, and
+       fails on one whose base table does not exist in the instant between the old table's `DROP`
+       and the new one's `RENAME`. Not in the original design spec's B7 — found while running this
+       task's own tests against the fixture's `recent` view. Dropped before that window opens,
+       recreated verbatim (same SQL text, so the exact same view) once it closes. */
+    let views: Vec<(String, String)> = sqlx::query(
+        "select name, sql from sqlite_master where type = 'view' and sql is not null order by rowid",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(map_error)?
+    .into_iter()
+    .map(|row| (row.get::<String, _>("name"), row.get::<String, _>("sql")))
+    .filter(|(_, sql)| clause_mentions_column(sql, table))
+    .collect();
+
+    let mut conn = pool.acquire().await.map_err(map_error)?;
+    let fk_pragma: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(map_error)?;
+    let fk_was_on = fk_pragma != 0;
+    if fk_was_on {
+        sqlx::query("PRAGMA foreign_keys = OFF").execute(&mut *conn).await.map_err(map_error)?;
+    }
+
+    let plan = RebuildPlan {
+        create_new: &create_new,
+        insert_select: &insert_select,
+        table,
+        temp_name: &temp_name,
+        dependent: &dependent,
+        views: &views,
+        check_foreign_keys: fk_was_on,
+    };
+    let result = run_rebuild_transaction(&mut conn, &plan).await;
+
+    if fk_was_on {
+        let _ = sqlx::query("PRAGMA foreign_keys = ON").execute(&mut *conn).await;
+    }
+    result
+}
+
+/// Everything [`run_rebuild_transaction`] needs, gathered into one value rather than passed as
+/// separate arguments — purely to keep the function's own signature short; each field is read
+/// exactly where [`rebuild_column`] built it.
+struct RebuildPlan<'a> {
+    create_new: &'a str,
+    insert_select: &'a str,
+    table: &'a str,
+    temp_name: &'a str,
+    dependent: &'a [String],
+    views: &'a [(String, String)],
+    check_foreign_keys: bool,
+}
+
+/// Steps 4-11 of the rebuild — everything inside the one transaction. Split out from
+/// [`rebuild_column`] so the `PRAGMA foreign_keys` restore (step 12) always runs after this
+/// returns, whether `Ok` or `Err`.
+async fn run_rebuild_transaction(
+    conn: &mut sqlx::sqlite::SqliteConnection,
+    plan: &RebuildPlan<'_>,
+) -> Result<(), AppError> {
+    use sqlx::Connection;
+
+    let mut tx = conn.begin().await.map_err(map_error)?;
+
+    sqlx::query(sqlx::AssertSqlSafe(plan.create_new.to_string()))
+        .execute(&mut *tx)
+        .await
+        .map_err(map_error)?;
+    sqlx::query(sqlx::AssertSqlSafe(plan.insert_select.to_string()))
+        .execute(&mut *tx)
+        .await
+        .map_err(map_error)?;
+
+    // Gone before `table` itself is, so SQLite's rename validation never sees one referencing a
+    // table that momentarily does not exist — see the note where `views` is read.
+    for (name, _) in plan.views {
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP VIEW {}", quote_ident(name))))
+            .execute(&mut *tx)
+            .await
+            .map_err(map_error)?;
+    }
+
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE {}", quote_ident(plan.table))))
+        .execute(&mut *tx)
+        .await
+        .map_err(map_error)?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "ALTER TABLE {} RENAME TO {}",
+        quote_ident(plan.temp_name),
+        quote_ident(plan.table)
+    )))
+    .execute(&mut *tx)
+    .await
+    .map_err(map_error)?;
+
+    for statement in plan.dependent {
+        sqlx::query(sqlx::AssertSqlSafe(statement.clone()))
+            .execute(&mut *tx)
+            .await
+            .map_err(map_error)?;
+    }
+
+    // Recreated verbatim, same SQL text as before — the table they select from exists again by now.
+    for (_, sql) in plan.views {
+        sqlx::query(sqlx::AssertSqlSafe(sql.clone()))
+            .execute(&mut *tx)
+            .await
+            .map_err(map_error)?;
+    }
+
+    if plan.check_foreign_keys {
+        let violations = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(map_error)?;
+        if !violations.is_empty() {
+            return Err(err!("error.sqliteRebuildForeignKeyViolation", table = plan.table));
+        }
+    }
+
+    tx.commit().await.map_err(map_error)?;
+    Ok(())
+}
+
+/// A table name for the rebuild's temporary stand-in that does not collide with anything already
+/// in the schema (step 5 of B7 in the design spec).
+async fn temp_table_name(pool: &SqlitePool, table: &str) -> Result<String, AppError> {
+    let base = format!("__mixdb_rebuild_{table}");
+    let mut candidate = base.clone();
+    let mut suffix = 0u32;
+    loop {
+        let exists: Option<String> =
+            sqlx::query_scalar("select name from sqlite_master where name = ?")
+                .bind(&candidate)
+                .fetch_optional(pool)
+                .await
+                .map_err(map_error)?;
+        if exists.is_none() {
+            return Ok(candidate);
+        }
+        suffix += 1;
+        candidate = format!("{base}_{suffix}");
+    }
 }
 
 #[cfg(test)]
@@ -1053,5 +1242,117 @@ mod tests {
         let (generated, rowid) = generated_or_rowid_alias(&pool, "author", "name").await.unwrap();
         assert!(!generated);
         assert!(!rowid);
+    }
+
+    #[tokio::test]
+    async fn rebuild_changes_a_columns_type_and_keeps_its_data() {
+        let (_fixture, pool) = Fixture::open().await;
+        // `views` holds numbers stored as INTEGER already — retype to TEXT is round-trippable
+        // without loss, and lets the test assert on the affinity actually applied.
+        let spec = column("views", "TEXT");
+        modify_column(&pool, "post", "views", &spec).await.unwrap();
+        let structure = table_structure(&pool, "post").await.unwrap();
+        let views = structure.columns.iter().find(|c| c.name == "views").unwrap();
+        assert_eq!(views.data_type, "TEXT");
+
+        let value: String = sqlx::query_scalar("select views from post where title = 'Hello world'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(value, "7");
+    }
+
+    #[tokio::test]
+    async fn rebuild_adds_not_null_when_no_row_violates_it() {
+        let (_fixture, pool) = Fixture::open().await;
+        // `post.created_at` is nullable in the fixture but every row's value came from its own
+        // `DEFAULT CURRENT_TIMESTAMP` — no row is actually NULL, so NOT NULL is safe to add.
+        // `author.name` was not picked here: it is already `NOT NULL` in the fixture, so setting
+        // `nullable = false` on it would not change anything and would not exercise rebuild at all.
+        let mut spec = column("created_at", "TEXT");
+        spec.nullable = false;
+        spec.default_value = Some("CURRENT_TIMESTAMP".to_string());
+        spec.default_is_expression = true;
+        modify_column(&pool, "post", "created_at", &spec).await.unwrap();
+        let structure = table_structure(&pool, "post").await.unwrap();
+        assert!(!structure.columns.iter().find(|c| c.name == "created_at").unwrap().nullable);
+    }
+
+    #[tokio::test]
+    async fn rebuild_refuses_not_null_when_a_row_would_violate_it_and_leaves_the_table_untouched() {
+        let (_fixture, pool) = Fixture::open().await;
+        // `author.bio` has a NULL row (Grace) in the fixture.
+        let mut spec = column("bio", "TEXT");
+        spec.nullable = false;
+        spec.default_value = Some("anonymous".to_string());
+        let error = modify_column(&pool, "author", "bio", &spec).await.expect_err("should refuse");
+        assert_eq!(error.code, "error.sqlite");
+        assert!(
+            error.params["message"].to_ascii_uppercase().contains("NOT NULL"),
+            "unexpected message: {}",
+            error.params["message"]
+        );
+
+        // Rolled back cleanly: the table is exactly as it was.
+        let structure = table_structure(&pool, "author").await.unwrap();
+        assert!(structure.columns.iter().find(|c| c.name == "bio").unwrap().nullable);
+        let count: i64 = sqlx::query_scalar("select count(*) from author").fetch_one(&pool).await.unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn rebuild_changes_a_default() {
+        let (_fixture, pool) = Fixture::open().await;
+        let mut spec = column("bio", "TEXT");
+        spec.default_value = Some("unknown".to_string());
+        modify_column(&pool, "author", "bio", &spec).await.unwrap();
+        let structure = table_structure(&pool, "author").await.unwrap();
+        assert_eq!(
+            structure.columns.iter().find(|c| c.name == "bio").unwrap().default_value.as_deref(),
+            Some("unknown")
+        );
+    }
+
+    #[tokio::test]
+    async fn rebuild_adds_a_collation() {
+        let (_fixture, pool) = Fixture::open().await;
+        let mut spec = column("bio", "TEXT");
+        spec.default_value = Some("anonymous".to_string());
+        spec.collation = Some("NOCASE".to_string());
+        modify_column(&pool, "author", "bio", &spec).await.unwrap();
+
+        let current = current_column(&pool, "author", "bio").await.unwrap();
+        assert_eq!(current.collation.as_deref(), Some("NOCASE"));
+    }
+
+    #[tokio::test]
+    async fn rebuild_keeps_the_tables_indexes() {
+        let (_fixture, pool) = Fixture::open().await;
+        let spec = column("views", "TEXT");
+        modify_column(&pool, "post", "views", &spec).await.unwrap();
+        let structure = table_structure(&pool, "post").await.unwrap();
+        let names: Vec<&str> = structure.indexes.iter().map(|i| i.name.as_str()).collect();
+        assert!(names.contains(&"post_author"));
+        assert!(names.contains(&"post_title"));
+    }
+
+    #[tokio::test]
+    async fn rebuild_keeps_without_rowid() {
+        let (_fixture, pool) = Fixture::open().await;
+        sqlx::raw_sql("CREATE TABLE settings (name TEXT PRIMARY KEY, value TEXT) WITHOUT ROWID")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mut spec = column("value", "TEXT");
+        spec.nullable = false;
+        spec.default_value = Some("".to_string());
+        modify_column(&pool, "settings", "value", &spec).await.unwrap();
+
+        let create_sql: String =
+            sqlx::query_scalar("select sql from sqlite_master where name = 'settings'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(create_sql.to_ascii_uppercase().contains("WITHOUT ROWID"));
     }
 }

@@ -987,6 +987,8 @@ const dbVi: DbDict = {
       "{{column}} là cột generated — giá trị của nó đến từ biểu thức, không phải từ việc sửa.",
     sqliteColumnIsPrimaryKey:
       "{{column}} chính là rowid của bảng, được đặt bí danh INTEGER PRIMARY KEY, không đổi được.",
+    sqliteRebuildForeignKeyViolation:
+      "Dựng lại {{table}} sẽ để lại một khoá ngoại trỏ vào một dòng không còn khớp — chưa có gì bị đổi.",
     unknownIndexType: "Kiểu index {{type}} không hợp lệ.",
     noVisibleColumns:
       "Không thấy cột nào của {{database}}.{{table}} — có thể bảng không tồn tại, hoặc tài khoản của bạn không có quyền trên bảng đó.",

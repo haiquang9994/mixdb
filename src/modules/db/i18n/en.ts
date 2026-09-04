@@ -1011,6 +1011,8 @@ const dbEn = {
       "{{column}} is a generated column — its value comes from its expression, not from an edit.",
     sqliteColumnIsPrimaryKey:
       "{{column}} is the table's own rowid, aliased as an INTEGER PRIMARY KEY, and cannot be changed.",
+    sqliteRebuildForeignKeyViolation:
+      "Rebuilding {{table}} would leave a foreign key pointing at a row that no longer matches — nothing was changed.",
     unknownIndexType: "Unknown index type {{type}}.",
     noVisibleColumns:
       "No columns of {{database}}.{{table}} are visible \u2014 the table may not exist, or your user may have no privileges on it.",
