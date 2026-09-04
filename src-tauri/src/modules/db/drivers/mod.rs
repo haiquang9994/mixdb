@@ -1,4 +1,5 @@
 pub mod clickhouse;
+pub mod clickhouse_ddl;
 pub mod clickhouse_script;
 pub mod dump;
 pub mod filters;
