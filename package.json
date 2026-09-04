@@ -2,7 +2,7 @@
   "name": "mixdb",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "version": "0.0.29",
+  "version": "0.0.30",
   "engines": {
     "node": ">=20"
   },
