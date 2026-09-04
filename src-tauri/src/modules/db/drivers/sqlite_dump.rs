@@ -85,6 +85,36 @@ pub async fn restore(pool: &SqlitePool, path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Every table that can hold rows — `sqlite_master`'s tables, views and the engine's own
+/// bookkeeping (`sqlite_sequence`) left out — in creation order (A2/A6 of the design spec).
+pub(super) async fn data_tables(pool: &SqlitePool) -> Result<Vec<String>, AppError> {
+    sqlx::query_scalar(
+        r"select name from sqlite_master
+          where type = 'table' and name not like 'sqlite\_%' escape '\'
+          order by rowid",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(map_error)
+}
+
+/// A table's columns that a plain `INSERT`/`SELECT` can carry — every `hidden = 0` column of
+/// `pragma_table_xinfo`, in table order. Leaves out both the virtual-table-only hidden columns
+/// (`hidden = 1`) and generated ones (`hidden` 2/3, `VIRTUAL`/`STORED`) — SQLite recomputes those
+/// on its own once the table (with its generated expression) exists (A2 of the design spec).
+pub(super) async fn data_columns(pool: &SqlitePool, table: &str) -> Result<Vec<String>, AppError> {
+    let rows = sqlx::query("select name, hidden from pragma_table_xinfo(?)")
+        .bind(table)
+        .fetch_all(pool)
+        .await
+        .map_err(map_error)?;
+    Ok(rows
+        .into_iter()
+        .filter(|r| r.get::<i64, _>("hidden") == 0)
+        .map(|r| r.get::<String, _>("name"))
+        .collect())
+}
+
 /// One value read off its real storage class (`NULL`/`INTEGER`/`REAL`/`TEXT`/`BLOB`, from
 /// `raw.type_info().name()` — never the column's declared type, which SQLite does not enforce),
 /// as the SQL literal `dump_data` writes into an `INSERT` — see A1 of the design spec.
@@ -241,5 +271,28 @@ mod tests {
         let (_fixture, pool) = Fixture::open().await;
         let row = sqlx::query("select 'O''Brien' as name").fetch_one(&pool).await.unwrap();
         assert_eq!(sql_literal(&row, 0), "'O''Brien'");
+    }
+
+    #[tokio::test]
+    async fn data_tables_lists_tables_only_no_views_no_system_tables() {
+        let (_fixture, pool) = Fixture::open().await;
+        let tables = data_tables(&pool).await.unwrap();
+        // `recent` is a view and `sqlite_sequence` is AUTOINCREMENT's own bookkeeping — neither belongs here.
+        assert_eq!(tables, vec!["author", "post", "tag", "loose"]);
+    }
+
+    #[tokio::test]
+    async fn data_columns_leaves_out_the_generated_column() {
+        let (_fixture, pool) = Fixture::open().await;
+        let columns = data_columns(&pool, "post").await.unwrap();
+        assert_eq!(columns, vec!["id", "author_id", "title", "body", "views", "created_at"]);
+        assert!(!columns.contains(&"slug".to_string()));
+    }
+
+    #[tokio::test]
+    async fn data_columns_keeps_every_column_when_none_is_generated() {
+        let (_fixture, pool) = Fixture::open().await;
+        let columns = data_columns(&pool, "author").await.unwrap();
+        assert_eq!(columns, vec!["id", "name", "bio"]);
     }
 }

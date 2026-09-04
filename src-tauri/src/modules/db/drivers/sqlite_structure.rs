@@ -355,7 +355,7 @@ pub async fn table_stats(pool: &SqlitePool) -> Result<Vec<TableStats>, AppError>
 /// `dbstat` walks the whole file, so this is one read for every table rather than one per table.
 /// A failure is the caller's to swallow: it means this SQLite was built without the virtual table,
 /// and sizes are the one part of the tab that can be missing without the rest being wrong.
-async fn page_sizes(pool: &SqlitePool) -> Result<HashMap<String, u64>, AppError> {
+pub(super) async fn page_sizes(pool: &SqlitePool) -> Result<HashMap<String, u64>, AppError> {
     let rows = sqlx::query("select name, sum(pgsize) as bytes from dbstat group by name")
         .fetch_all(pool)
         .await
