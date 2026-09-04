@@ -1049,6 +1049,8 @@ const dbVi: DbDict = {
     cannotReadFile: "Không đọc được {{path}}: {{message}}",
     cannotWriteFile: "Không ghi được {{path}}: {{message}}",
     sqliteRestoreFailed: "Khôi phục dừng lại ở {{statement}} — {{message}}",
+    sqliteRebuildParseFailed:
+      "MixDB không đọc được cấu trúc CREATE TABLE của {{table}} đủ rõ để dựng lại — đây là một cú pháp app chưa nhận ra.",
     sqliteDataDumpUnsupported:
       "MixDB chỉ dump cấu trúc SQLite, không dump dữ liệu. Hãy chọn Structure, hoặc sao chép chính file đó.",
     cannotRemoveDirectory: "Không xóa được {{path}}: {{message}}",

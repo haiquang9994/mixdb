@@ -78,6 +78,123 @@ pub(super) fn quote_string(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
+/// Splits the column/constraint list of a `CREATE TABLE` statement into its clauses (split at
+/// top-level commas — depth 0 inside the outermost parens), and returns whatever table-option
+/// text follows the closing paren (`WITHOUT ROWID`, `STRICT`, both, or `""`). Not a SQL parser: it
+/// tracks quotes (`'`, `"`, `` ` ``, `[...]`), comments (`--`, `/* */`) and paren depth only — see
+/// B3 of the design spec.
+fn split_column_clauses(create_sql: &str) -> Result<(Vec<String>, String), AppError> {
+    let chars: Vec<char> = create_sql.chars().collect();
+    let mut i = 0;
+
+    // The table name and any quoting around it — skipped to reach the column list's own `(`. The
+    // first unquoted `(` in a `CREATE TABLE` is always this one.
+    while i < chars.len() && chars[i] != '(' {
+        i = match chars[i] {
+            '\'' | '"' | '`' => skip_quoted(&chars, i),
+            '[' => skip_bracket(&chars, i),
+            _ => i + 1,
+        };
+    }
+    if i >= chars.len() {
+        return Err(err!("error.sqliteRebuildParseFailed", table = ""));
+    }
+    i += 1;
+    let mut depth = 1u32;
+    // Built up character by character rather than sliced from `chars` between two indices: a
+    // comment inside a clause must be gone from its text entirely, not merely skipped over while
+    // deciding where the clause boundaries are.
+    let mut current = String::new();
+    let mut clauses: Vec<String> = Vec::new();
+    let mut body_end: Option<usize> = None;
+
+    while i < chars.len() {
+        match chars[i] {
+            '\'' | '"' | '`' => {
+                let start = i;
+                i = skip_quoted(&chars, i);
+                current.extend(chars[start..i].iter().copied());
+            }
+            '[' => {
+                let start = i;
+                i = skip_bracket(&chars, i);
+                current.extend(chars[start..i].iter().copied());
+            }
+            '-' if chars.get(i + 1) == Some(&'-') => {
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+            }
+            '/' if chars.get(i + 1) == Some(&'*') => {
+                i += 2;
+                while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                    i += 1;
+                }
+                i = (i + 2).min(chars.len());
+            }
+            '(' => {
+                depth += 1;
+                current.push('(');
+                i += 1;
+            }
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    clauses.push(current.trim().to_string());
+                    body_end = Some(i);
+                    i += 1;
+                    break;
+                }
+                current.push(')');
+                i += 1;
+            }
+            ',' if depth == 1 => {
+                clauses.push(current.trim().to_string());
+                current = String::new();
+                i += 1;
+            }
+            c => {
+                current.push(c);
+                i += 1;
+            }
+        }
+    }
+
+    if body_end.is_none() {
+        return Err(err!("error.sqliteRebuildParseFailed", table = ""));
+    }
+    let suffix: String = chars[i..].iter().collect::<String>().trim().to_string();
+    Ok((clauses, suffix))
+}
+
+/// Skips one quoted run starting at `i` (`'`, `"` or `` ` ``), doubling the quote character to
+/// escape it — the rule `quote_string` writes going out, mirrored coming in. Returns the index
+/// just past the closing quote (or the end of input, for an unterminated one).
+fn skip_quoted(chars: &[char], i: usize) -> usize {
+    let quote = chars[i];
+    let mut j = i + 1;
+    while j < chars.len() {
+        if chars[j] == quote {
+            if chars.get(j + 1) == Some(&quote) {
+                j += 2;
+                continue;
+            }
+            return j + 1;
+        }
+        j += 1;
+    }
+    j
+}
+
+/// Skips a `[bracketed identifier]` starting at the `[`. SQLite has no escape for `]` inside one.
+fn skip_bracket(chars: &[char], i: usize) -> usize {
+    let mut j = i + 1;
+    while j < chars.len() && chars[j] != ']' {
+        j += 1;
+    }
+    (j + 1).min(chars.len())
+}
+
 /// Runs statements one after another in a transaction, so a change made of several either lands
 /// whole or not at all.
 async fn execute_all(pool: &SqlitePool, statements: Vec<String>) -> Result<(), AppError> {
@@ -608,5 +725,79 @@ mod tests {
         drop_column(&pool, "author", "bio").await.unwrap();
         let structure = table_structure(&pool, "author").await.unwrap();
         assert!(!structure.columns.iter().any(|c| c.name == "bio"));
+    }
+
+    #[test]
+    fn splits_simple_columns() {
+        let (clauses, suffix) =
+            split_column_clauses("CREATE TABLE t (a INTEGER, b TEXT)").unwrap();
+        assert_eq!(clauses, vec!["a INTEGER", "b TEXT"]);
+        assert_eq!(suffix, "");
+    }
+
+    #[test]
+    fn does_not_split_a_comma_inside_a_type_arg() {
+        let (clauses, _) =
+            split_column_clauses("CREATE TABLE t (price DECIMAL(10,2), b TEXT)").unwrap();
+        assert_eq!(clauses, vec!["price DECIMAL(10,2)", "b TEXT"]);
+    }
+
+    #[test]
+    fn does_not_split_a_comma_inside_a_default_expression() {
+        let (clauses, _) =
+            split_column_clauses("CREATE TABLE t (a INTEGER DEFAULT (max(0, 1)))").unwrap();
+        assert_eq!(clauses, vec!["a INTEGER DEFAULT (max(0, 1))"]);
+    }
+
+    #[test]
+    fn does_not_split_a_comma_inside_a_line_comment() {
+        let (clauses, _) = split_column_clauses(
+            "CREATE TABLE t (a INTEGER, -- note, with a comma\n  b TEXT)",
+        )
+        .unwrap();
+        assert_eq!(clauses.len(), 2);
+        assert!(clauses[0].starts_with("a INTEGER"));
+        assert_eq!(clauses[1], "b TEXT");
+    }
+
+    #[test]
+    fn does_not_split_a_comma_inside_a_block_comment() {
+        let (clauses, _) =
+            split_column_clauses("CREATE TABLE t (a INTEGER /* x, y */, b TEXT)").unwrap();
+        assert_eq!(clauses.len(), 2);
+    }
+
+    #[test]
+    fn reads_a_quoted_column_name_with_a_space_in_it() {
+        let (clauses, _) =
+            split_column_clauses("CREATE TABLE t (\"full name\" TEXT, b TEXT)").unwrap();
+        assert_eq!(clauses[0], "\"full name\" TEXT");
+    }
+
+    #[test]
+    fn captures_the_table_constraint_clause() {
+        let (clauses, _) = split_column_clauses(
+            "CREATE TABLE t (id INTEGER, label TEXT, PRIMARY KEY (id, label))",
+        )
+        .unwrap();
+        assert_eq!(clauses[2], "PRIMARY KEY (id, label)");
+    }
+
+    #[test]
+    fn captures_the_table_options_suffix() {
+        let (_, suffix) =
+            split_column_clauses("CREATE TABLE t (a INTEGER PRIMARY KEY) WITHOUT ROWID").unwrap();
+        assert_eq!(suffix, "WITHOUT ROWID");
+    }
+
+    #[test]
+    fn no_suffix_is_an_empty_string() {
+        let (_, suffix) = split_column_clauses("CREATE TABLE t (a INTEGER)").unwrap();
+        assert_eq!(suffix, "");
+    }
+
+    #[test]
+    fn an_unbalanced_statement_is_a_parse_failure() {
+        assert!(split_column_clauses("CREATE TABLE t (a INTEGER").is_err());
     }
 }
