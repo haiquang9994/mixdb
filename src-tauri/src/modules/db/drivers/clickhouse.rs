@@ -20,7 +20,7 @@ use crate::modules::db::models::ServerInfo;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One live ClickHouse connection: the server's base URL and the credentials sent with every
 /// request. Cheap to clone — `reqwest::Client` is an `Arc` inside, and the rest is two short
@@ -280,6 +280,17 @@ fn combined_key_where(
     Ok(groups.join(" OR "))
 }
 
+/// Whether every row names the same set of columns — order does not matter, only which names are
+/// present. `INSERT INTO t (a, b) VALUES (...), (...)` needs one column list for the whole
+/// statement, so rows that disagree on which columns they fill in cannot go into the same one.
+fn same_columns(rows: &[Map<String, Value>]) -> bool {
+    let Some(first) = rows.first() else { return true };
+    let expected: BTreeSet<&str> = first.keys().map(String::as_str).collect();
+    rows[1..]
+        .iter()
+        .all(|row| row.keys().map(String::as_str).collect::<BTreeSet<&str>>() == expected)
+}
+
 /// Whether `row`'s `is_done` reads as ClickHouse's true — `1` as either the JSON number or the
 /// string `FORMAT JSON` may write a `UInt8` as.
 fn mutation_is_done(row: &Map<String, Value>) -> bool {
@@ -495,6 +506,52 @@ pub async fn delete_rows(
 
     let sql = format!("ALTER TABLE {table_ref} DELETE WHERE {where_clause}");
     run_mutation_and_wait(conn, database, table, &sql).await
+}
+
+/// Inserts `rows` as one `INSERT` statement — which ClickHouse commits as a single atomic block,
+/// the closest thing to the "all or nothing" `SqlApi.insertRows` documents (MySQL and PostgreSQL
+/// get that guarantee from a real transaction; ClickHouse has none, so one statement is what stands
+/// in for it). That only works when every row fills in the same columns (`same_columns`) — rows
+/// that disagree are refused outright rather than split into several statements that would each
+/// commit or fail on their own, silently breaking the "all or nothing" promise (the design's D7).
+///
+/// Values are spliced in as literal text without inspecting the column's type (D8), the same as
+/// `update_row`.
+pub async fn insert_rows(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    rows: &[Map<String, Value>],
+) -> Result<(), AppError> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    if !same_columns(rows) {
+        return Err(err!("error.clickhouseHeterogeneousInsert"));
+    }
+
+    let columns: BTreeSet<&str> = rows[0].keys().map(String::as_str).collect();
+    let columns: Vec<&str> = columns.into_iter().collect();
+    let table_ref = qualified(database, table);
+    let column_list = columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+    let values_list = rows
+        .iter()
+        .map(|row| {
+            let values = columns
+                .iter()
+                .map(|c| match row.get(*c) {
+                    Some(Value::String(s)) => quote_literal(s),
+                    _ => "NULL".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("({values})")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let sql = format!("INSERT INTO {table_ref} ({column_list}) VALUES {values_list}");
+    execute_check(conn, &sql, None).await
 }
 
 /// What the header shows about the server: its version, and the machine it runs on.
@@ -1319,6 +1376,33 @@ mod tests {
         key1.insert("id".to_string(), str_val("1"));
         let empty = Map::new();
         assert!(combined_key_where(&columns(), &[key1, empty]).is_err());
+    }
+
+    use super::same_columns;
+
+    fn row_with(pairs: &[(&str, &str)]) -> Map<String, Value> {
+        pairs.iter().map(|(k, v)| (k.to_string(), str_val(v))).collect()
+    }
+
+    #[test]
+    fn accepts_rows_that_all_fill_in_the_same_columns() {
+        let rows = vec![
+            row_with(&[("id", "1"), ("name", "a")]),
+            row_with(&[("name", "b"), ("id", "2")]), // different order, same set
+        ];
+        assert!(same_columns(&rows));
+    }
+
+    #[test]
+    fn rejects_rows_that_fill_in_different_columns() {
+        let rows = vec![row_with(&[("id", "1"), ("name", "a")]), row_with(&[("id", "2")])];
+        assert!(!same_columns(&rows));
+    }
+
+    #[test]
+    fn a_single_row_or_no_rows_always_passes() {
+        assert!(same_columns(&[]));
+        assert!(same_columns(&[row_with(&[("id", "1")])]));
     }
 
     use super::{find_new_mutation, mutation_fail_reason, mutation_is_done};

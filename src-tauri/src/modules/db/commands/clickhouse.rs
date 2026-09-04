@@ -131,3 +131,15 @@ pub async fn clickhouse_delete_rows(
     let conn = clickhouse_connection(&state, &id).await?;
     clickhouse::delete_rows(&conn, &database, &table, &keys, all, reset_auto_increment).await
 }
+
+#[tauri::command]
+pub async fn clickhouse_insert_rows(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    rows: Vec<Map<String, Value>>,
+) -> Result<(), AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse::insert_rows(&conn, &database, &table, &rows).await
+}
