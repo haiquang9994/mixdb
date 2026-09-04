@@ -239,6 +239,15 @@
   --kind-rgb: 15 128 204;
 }
 
+/* ClickHouse's brand yellow (#ffcc01) is unreadable as text on the pale tint this colour is also
+   used as a background for — the opposite problem the other four have, whose muted hues go the
+   other way on a dark page. Darkened here for contrast on a light one; the dark theme block below
+   uses the true brand yellow, which is exactly what a dark background wants of it. */
+.kind-clickhouse {
+  --kind: #a8790a;
+  --kind-rgb: 168 121 10;
+}
+
 /* The brand hues are set for a white page and go muddy on a dark one, so the dark theme carries
    its own cast of all four — the same lift the accent palette takes further down this file. */
 :root[data-theme="dark"] .kind-mysql {
@@ -266,6 +275,11 @@
   --kind-rgb: 88 180 234;
 }
 
+:root[data-theme="dark"] .kind-clickhouse {
+  --kind: #ffcc01;
+  --kind-rgb: 255 204 1;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .kind-mysql {
     --kind: #5bbfd6;
@@ -290,6 +304,11 @@
   :root:not([data-theme]) .kind-sqlite {
     --kind: #58b4ea;
     --kind-rgb: 88 180 234;
+  }
+
+  :root:not([data-theme]) .kind-clickhouse {
+    --kind: #ffcc01;
+    --kind-rgb: 255 204 1;
   }
 }
 

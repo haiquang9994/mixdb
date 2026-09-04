@@ -23,7 +23,7 @@ The database module, under `modules/db/`:
 | --- | --- |
 | `mod.rs` | `register(builder)`: puts `DbState` and `HandoffState` in the app. |
 | `commands/mod.rs` | Connecting, disconnecting, and the private helpers the rest are built on: `handle`, `mysql_pool`, `postgres_pool`, `mongo_client`, `redis_connection`, `sql_endpoint`, `in_background`, `app_data_dir`. |
-| `commands/{mysql,postgres,sqlite,mongo,redis,tools}.rs` | The `#[tauri::command]` functions. Thin: look the handle up, delegate to `drivers/`. |
+| `commands/{mysql,postgres,sqlite,mongo,redis,clickhouse,tools}.rs` | The `#[tauri::command]` functions. Thin: look the handle up, delegate to `drivers/`. |
 | `commands/handoff.rs` | `handoff_take`: the tab opened for a handed-over connection takes it, once. |
 | `models.rs` | `DbKind`, `ConnectionConfig` — the serde types crossing the boundary. |
 | `state.rs` | `DbState { connections: Mutex<HashMap<String, ActiveConnection>> }`, `DbHandle`. |
@@ -42,6 +42,8 @@ The database module, under `modules/db/`:
 | `drivers/sqlite_dump.rs` | Structure out of `sqlite_master` and back in. The one dump that is not a child process. |
 | `drivers/mongo.rs` | Connect, list, find, paging, document CRUD. |
 | `drivers/redis.rs` | Connect, SCAN paging, typed value reads, delete. |
+| `drivers/clickhouse.rs` | HTTP interface, no `sqlx` driver exists for it. Read-only in v1: list, table data, structure, stats, schema outline — no write commands are registered at all. |
+| `drivers/clickhouse_script.rs` | Split and run, one request per statement — the HTTP interface refuses a body holding more than one. `validate` runs `EXPLAIN AST`, which parses without executing. |
 | `drivers/dump.rs` | Backup and restore by driving the vendors' own tools — `mysqldump`, `pg_dump`, `mongodump` and their restores. |
 | `drivers/tools.rs` | Where those tools come from: the pinned downloads, and `PG_VERSION`. |
 | `drivers/filters.rs` | Shared filter-value parsing (`split_list` etc.). |

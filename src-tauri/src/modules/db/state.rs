@@ -32,6 +32,9 @@ pub enum DbHandle {
     /// workspace reads a page of a table while the Query tab runs a script, and SQLite serialises
     /// those itself.
     Sqlite(sqlx::SqlitePool),
+    /// A base URL and a set of credentials, not a socket — every call is its own HTTP request, so
+    /// there is nothing here for `disconnect_db` to close.
+    Clickhouse(crate::modules::db::drivers::clickhouse::Connection),
 }
 
 pub struct ActiveConnection {

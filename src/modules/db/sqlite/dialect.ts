@@ -21,5 +21,6 @@ export const sqliteDialect: SqlDialect = {
   isBinary,
   // No session to reach in and kill, and no `REGEXP` in the engine — see the two fields' own docs.
   cancellable: false,
+  writable: true,
   regexpFilter: false,
 };

@@ -24,6 +24,7 @@ const dbVi: DbDict = {
     kindMongo: "MongoDB",
     kindRedis: "Redis",
     kindSqlite: "SQLite",
+    kindClickhouse: "ClickHouse",
     sqlitePathLabel: "File database",
     sqlitePathPlaceholder: "Đường dẫn tới file .db hoặc .sqlite",
     newSqliteFile: "Tạo mới...",
@@ -852,12 +853,13 @@ const dbVi: DbDict = {
   },
   // máy chủ đang nói, và cũng là phần đáng tra cứu nhất.
   error: {
-    // Bốn loại driver, khi lỗi đến từ chính máy chủ.
+    // Sáu loại driver, khi lỗi đến từ chính máy chủ.
     mysql: "MySQL: {{message}}",
     postgres: "PostgreSQL: {{message}}",
     mongo: "MongoDB: {{message}}",
     redis: "Redis: {{message}}",
     sqlite: "SQLite: {{message}}",
+    clickhouse: "ClickHouse: {{message}}",
     // Kết nối
     unknownConnection: "Kết nối này không còn mở — hãy kết nối lại.",
     wrongConnectionKind: "Đây không phải kết nối {{kind}}.",
@@ -872,6 +874,7 @@ const dbVi: DbDict = {
     sqliteFileExists: "Đã có file ở {{path}}. Hãy dùng Duyệt để mở nó, hoặc chọn tên khác.",
     sqliteNoDatabases:
       "Một database SQLite là một file. Tạo hay xóa nó là việc của trình quản lý file, không phải ở đây.",
+    clickhouseReadOnly: "MixDB hiện chỉ đọc ClickHouse — chưa có gì ở đây ghi vào nó.",
     handoffInvalid: "Không đọc được kết nối MixDB được mở cùng: {{message}}",
     handoffExpired: "Kết nối được chuyển sang này đã được mở rồi.",
     mongoNoTcpHost: "Chuỗi kết nối không chỉ ra host TCP nào để mở tunnel.",

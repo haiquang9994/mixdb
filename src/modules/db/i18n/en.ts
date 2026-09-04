@@ -33,6 +33,7 @@ const dbEn = {
     kindMongo: "MongoDB",
     kindRedis: "Redis",
     kindSqlite: "SQLite",
+    kindClickhouse: "ClickHouse",
     sqlitePathLabel: "Database file",
     sqlitePathPlaceholder: "Path to a .db or .sqlite file",
     newSqliteFile: "New...",
@@ -866,12 +867,13 @@ const dbEn = {
   // src-tauri/src/error.rs \u2014 and `{{message}}` is where a driver's own words go, untranslated
   // because they are the server talking and the part worth searching for.
   error: {
-    // The four drivers, when what went wrong is what the server said.
+    // The six drivers, when what went wrong is what the server said.
     mysql: "MySQL: {{message}}",
     postgres: "PostgreSQL: {{message}}",
     mongo: "MongoDB: {{message}}",
     redis: "Redis: {{message}}",
     sqlite: "SQLite: {{message}}",
+    clickhouse: "ClickHouse: {{message}}",
     // Connections
     unknownConnection: "This connection is no longer open \u2014 connect again.",
     wrongConnectionKind: "This is not a {{kind}} connection.",
@@ -890,6 +892,7 @@ const dbEn = {
     sqliteFileExists: "There is already a file at {{path}}. Open it with Browse, or pick another name.",
     sqliteNoDatabases:
       "A SQLite database is a file. Creating or deleting one is done in the file manager, not here.",
+    clickhouseReadOnly: "MixDB only reads from ClickHouse for now — nothing here writes to it.",
     /* A `mixdb://connect?…` URL another program started MixDB with — see `handoff.ts`. The first
        is only ever printed to stderr; the second is answered with an empty form. Both exist so a
        code that does reach the screen one day is a sentence rather than its own key. */

@@ -17,7 +17,7 @@ import type { SqlDumpMode } from "../../sql/api";
 export type DatabaseChange = "restored" | "dropped";
 
 interface Props {
-  kind: "mysql" | "postgres" | "mongo" | "sqlite";
+  kind: "mysql" | "postgres" | "mongo" | "sqlite" | "clickhouse";
   connectionId: string;
   /** The database the three actions act on; empty when none is selected, which disables them. */
   database: string;
@@ -61,8 +61,13 @@ function DatabaseActions({
    *
    *  SQLite is the `null`: there is no `sqlitedump` to go and fetch, and the format is simple
    *  enough that MixDB writes the SQL itself. Everything below that would install or check for
-   *  tools is skipped for it rather than asking about a download that does not exist. */
-  const suite: ToolSuite | null = kind === "sqlite" ? null : kind;
+   *  tools is skipped for it rather than asking about a download that does not exist.
+   *
+   *  ClickHouse is `null` too, for a different reason: v1 has no dump or restore for it at all —
+   *  `clickhouseApi.dump`/`restore` reject before reaching the backend — so there is no tool suite
+   *  to name. The button stays disabled through `readOnly` regardless (see `dialect.writable`);
+   *  this only keeps the type honest for the branch that never runs. */
+  const suite: ToolSuite | null = kind === "sqlite" || kind === "clickhouse" ? null : kind;
 
   /** Whether databases are objects on a server that can be created and dropped.
    *

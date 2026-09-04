@@ -11,6 +11,7 @@ pub enum DbKind {
     Mongo,
     Redis,
     Sqlite,
+    Clickhouse,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
