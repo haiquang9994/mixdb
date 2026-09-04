@@ -48,6 +48,7 @@ base64 = "0.23.1"
 sha2 = "0.10"
 chrono = "0.4.45"
 tauri-plugin-dialog = "2.7.2"
+tauri-plugin-log = "2"
 # Đọc clipboard ở phía Rust. `navigator.clipboard.readText()` làm WebView2 bật hộp xin quyền
 # `clipboard-read` của Chromium — một dải hệ thống app không tô vẽ được, hiện đúng một lần rồi nhớ
 # lựa chọn theo origin. Ở đây thì không có webview nào phải xin ai cả.
