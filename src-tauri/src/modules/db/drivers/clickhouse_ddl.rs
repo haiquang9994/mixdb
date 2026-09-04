@@ -8,8 +8,8 @@
 //! ClickHouse has none — so a run of statements that fails partway leaves exactly what already ran.
 
 use super::clickhouse::{
-    execute_check, qualified, quote_ident, quote_literal, structure_columns, Connection,
-    StructureColumn,
+    as_u64, execute_check, qualified, query, quote_ident, quote_literal, structure_columns,
+    Connection, StructureColumn,
 };
 use serde::Deserialize;
 use crate::error::AppError;
@@ -357,6 +357,88 @@ pub async fn modify_skip_index(
         execute_check(conn, &statement, None).await?;
     }
     Ok(())
+}
+
+/// A cheap `count()`, read both before a rebuild (so its warning can say how much it is about to
+/// copy) and twice during one (so a mismatch after the copy can abort it — see `rebuild_order_by`).
+pub async fn row_count(conn: &Connection, database: &str, table: &str) -> Result<u64, AppError> {
+    let result = query(
+        conn,
+        &format!("SELECT count() AS n FROM {}", qualified(database, table)),
+    )
+    .await?;
+    as_u64(result.data.first().and_then(|row| row.get("n")))
+        .ok_or_else(|| err!("error.clickhouseRebuildParse"))
+}
+
+/// Rebuilds the whole table with a new sorting key: `ALTER TABLE ... MODIFY ORDER BY` cannot do this
+/// for columns that already exist (checked against the test server — it refuses with
+/// `Existing column X is used in the expression that was added to the sorting key`), so this copies
+/// the table into a new one built with the key already right, then swaps names.
+///
+/// No transaction holds the steps together — ClickHouse has none. Every step before `EXCHANGE
+/// TABLES` leaves the original table untouched on failure; the two after it either both succeed
+/// (`Ok(None)`) or the swap succeeds and only the temp table's own cleanup fails (`Ok(Some(name))`,
+/// not an error — the sorting key change itself has already landed). See the design doc's D7/D8.
+pub async fn rebuild_order_by(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    columns: &[String],
+) -> Result<Option<String>, AppError> {
+    if columns.is_empty() {
+        return Err(err!("error.clickhouseOrderByColumnsRequired"));
+    }
+
+    let show_create = query(conn, &format!("SHOW CREATE TABLE {}", qualified(database, table)))
+        .await?
+        .data
+        .first()
+        .and_then(|row| row.get("statement")?.as_str().map(str::to_string))
+        .ok_or_else(|| err!("error.clickhouseRebuildParse"))?;
+
+    let temp_name = temp_table_name(table);
+    let create_sql = rebuild_ddl(&show_create, database, &temp_name, &order_by_clause(columns))?;
+    execute_check(conn, &create_sql, None).await?;
+
+    let insert_sql = format!(
+        "INSERT INTO {} SELECT * FROM {}",
+        qualified(database, &temp_name),
+        qualified(database, table)
+    );
+    if let Err(cause) = execute_check(conn, &insert_sql, None).await {
+        let _ =
+            execute_check(conn, &format!("DROP TABLE {}", qualified(database, &temp_name)), None)
+                .await;
+        return Err(cause);
+    }
+
+    let old_count = row_count(conn, database, table).await?;
+    let new_count = row_count(conn, database, &temp_name).await?;
+    if old_count != new_count {
+        let _ =
+            execute_check(conn, &format!("DROP TABLE {}", qualified(database, &temp_name)), None)
+                .await;
+        return Err(err!("error.clickhouseRebuildCountMismatch", table = table));
+    }
+
+    execute_check(
+        conn,
+        &format!(
+            "EXCHANGE TABLES {} AND {}",
+            qualified(database, table),
+            qualified(database, &temp_name)
+        ),
+        None,
+    )
+    .await?;
+
+    match execute_check(conn, &format!("DROP TABLE {}", qualified(database, &temp_name)), None)
+        .await
+    {
+        Ok(()) => Ok(None),
+        Err(_) => Ok(Some(temp_name)),
+    }
 }
 
 /// The statements that bring column `current` to what `spec` describes - none at all when nothing
