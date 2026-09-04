@@ -21,7 +21,11 @@ function readStoredLanguage(): Language {
   return stored === "en" || stored === "vi" ? stored : "en";
 }
 
-function resolve(dict: TranslationDict, key: TranslationKey): string {
+export function resolve(dict: TranslationDict, key: TranslationKey): string {
+  // key luôn là string lúc biên dịch, nhưng một Record<SomeUnion, TranslationKey> tra bằng một
+  // giá trị đọc từ đĩa (không phải literal) có thể trả undefined lúc chạy — xem
+  // docs/superpowers/specs/2026-09-05-unknown-db-kind-crash-and-error-logging-design.md.
+  if (typeof key !== "string") return String(key);
   const value = key.split(".").reduce<unknown>((acc, part) => {
     if (acc && typeof acc === "object" && part in acc) return (acc as Record<string, unknown>)[part];
     return undefined;
