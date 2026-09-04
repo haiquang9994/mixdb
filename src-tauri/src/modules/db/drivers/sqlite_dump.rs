@@ -1,4 +1,4 @@
-//! Writing a SQLite schema out as SQL, and replaying one back in.
+//! Writing a SQLite schema and its rows out as SQL, and replaying one back in.
 //!
 //! The only dump here that is not a child process. `dump.rs` runs `mysqldump`, `pg_dump` or
 //! `mongodump` — tools MixDB has to find on the machine and offer to download when they are not
@@ -6,20 +6,22 @@
 //! dumps one, it is not shipped on Windows, and what it writes for the schema is already sitting in
 //! `sqlite_master` as text.
 //!
-//! **Structure only.** A data dump is a SQL generator rather than a query: every value has to come
-//! back out as a literal, which means quoting text, writing blobs as `x'…'` hex, keeping NULL apart
-//! from the empty string, and skipping the generated columns that must not be inserted. That is its
-//! own change — see D3 of the plan this was built from — so `SqlDumpMode::Data` and `All` are
-//! refused here by name rather than silently writing a structure-only file under a name that
-//! promised rows.
+//! `dump_structure` copies each `CREATE` out of `sqlite_master` verbatim — nothing is regenerated.
+//! `dump_data` cannot do the same trick: every row's value has to come back out as a SQL literal,
+//! quoting text, writing blobs as `x'…'` hex, keeping NULL apart from the empty string, and
+//! skipping the generated columns that must not be inserted — see A1/A2 of
+//! `docs/superpowers/specs/2026-09-04-sqlite-completion-design.md` for the decisions this
+//! implements.
 //!
-//! Restore, by contrast, is complete: the file is replayed statement by statement, so a dump
-//! written elsewhere — by `sqlite3 .dump`, rows and all — restores in full.
+//! Restore is complete for either kind of dump: the file is replayed statement by statement, so a
+//! dump written elsewhere — by `sqlite3 .dump`, rows and all — restores in full.
 
-use super::sqlite::map_error;
+use super::dump;
+use super::sqlite::{map_error, quote_ident};
 use super::sqlite_ddl::quote_string;
 use super::sqlite_script;
 use crate::error::AppError;
+use futures_util::TryStreamExt;
 use sqlx::{Row, SqlitePool, TypeInfo, ValueRef};
 use std::path::Path;
 
@@ -149,6 +151,67 @@ fn sql_literal(row: &sqlx::sqlite::SqliteRow, i: usize) -> String {
             .map(|s| quote_string(&s))
             .unwrap_or_else(|_| "NULL".to_string()),
     }
+}
+
+/// Streams every table's rows into `path` as `INSERT` statements, one row per statement (A3 of the
+/// design spec) — never holding more than one row in memory (A4). `append`: `true` continues an
+/// `all`-mode dump onto the structure `dump_structure` already wrote; `false` owns the file from
+/// scratch (a `data`-only dump).
+pub async fn dump_data(
+    pool: &SqlitePool,
+    path: &Path,
+    append: bool,
+    watch: &dump::Watch<'_>,
+) -> Result<(), AppError> {
+    use tokio::io::AsyncWriteExt;
+
+    let tables = data_tables(pool).await?;
+    let sizes = super::sqlite_structure::page_sizes(pool).await.unwrap_or_default();
+    let weights: Vec<(String, u64)> = tables
+        .iter()
+        .map(|t| (t.clone(), sizes.get(t).copied().unwrap_or(0).max(1)))
+        .collect();
+    let mut tracker = dump::Tracker::new(&weights, path.to_str().unwrap_or_default(), true);
+
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(append)
+        .truncate(!append)
+        .open(path)
+        .await
+        .map_err(|e| err!("error.cannotWriteFile", path = path.display(), message = e))?;
+
+    for table in &tables {
+        if (watch.cancel)() {
+            return Err(err!("error.transferCancelled", tool = "SQLite dump"));
+        }
+        tracker.reached(table);
+
+        let columns = data_columns(pool, table).await?;
+        if !columns.is_empty() {
+            let column_list = columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+            let select_sql = format!("SELECT {column_list} FROM {}", quote_ident(table));
+            let mut rows = sqlx::query(sqlx::AssertSqlSafe(select_sql)).fetch(pool);
+
+            while let Some(row) = rows.try_next().await.map_err(map_error)? {
+                if (watch.cancel)() {
+                    return Err(err!("error.transferCancelled", tool = "SQLite dump"));
+                }
+                let values: Vec<String> = (0..columns.len()).map(|i| sql_literal(&row, i)).collect();
+                let line = format!(
+                    "INSERT INTO {} ({column_list}) VALUES ({});\n",
+                    quote_ident(table),
+                    values.join(", ")
+                );
+                file.write_all(line.as_bytes())
+                    .await
+                    .map_err(|e| err!("error.cannotWriteFile", path = path.display(), message = e))?;
+            }
+        }
+        (watch.report)(tracker.progress());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -294,5 +357,47 @@ mod tests {
         let (_fixture, pool) = Fixture::open().await;
         let columns = data_columns(&pool, "author").await.unwrap();
         assert_eq!(columns, vec!["id", "name", "bio"]);
+    }
+
+    fn no_op_watch() -> dump::Watch<'static> {
+        dump::Watch { report: &|_| {}, cancel: &|| false }
+    }
+
+    #[tokio::test]
+    async fn dump_data_writes_one_insert_per_row_and_skips_the_generated_column() {
+        let (_fixture, pool) = Fixture::open().await;
+        let out = Scratch::new();
+        dump_data(&pool, &out.path, false, &no_op_watch()).await.unwrap();
+        let sql = std::fs::read_to_string(&out.path).unwrap();
+
+        assert!(sql.contains(
+            "INSERT INTO \"tag\" (\"id\", \"label\") VALUES (1, 'draft');\n"
+        ));
+        // `post` has three rows and `slug` is generated — must not appear as a column here.
+        assert_eq!(sql.matches("INSERT INTO \"post\"").count(), 3);
+        assert!(!sql.contains("\"slug\""));
+    }
+
+    #[tokio::test]
+    async fn dump_data_writes_nothing_for_an_empty_table() {
+        let (_fixture, pool) = Fixture::open().await;
+        let out = Scratch::new();
+        dump_data(&pool, &out.path, false, &no_op_watch()).await.unwrap();
+        let sql = std::fs::read_to_string(&out.path).unwrap();
+        // `loose` has no rows in the fixture.
+        assert!(!sql.contains("INSERT INTO \"loose\""));
+    }
+
+    #[tokio::test]
+    async fn dump_data_appends_when_told_to_and_overwrites_otherwise() {
+        let (_fixture, pool) = Fixture::open().await;
+        let out = Scratch::new();
+        std::fs::write(&out.path, "-- already here\n").unwrap();
+
+        dump_data(&pool, &out.path, true, &no_op_watch()).await.unwrap();
+        assert!(std::fs::read_to_string(&out.path).unwrap().starts_with("-- already here\n"));
+
+        dump_data(&pool, &out.path, false, &no_op_watch()).await.unwrap();
+        assert!(!std::fs::read_to_string(&out.path).unwrap().starts_with("-- already here\n"));
     }
 }
