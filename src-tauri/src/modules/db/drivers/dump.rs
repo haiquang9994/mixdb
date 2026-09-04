@@ -413,14 +413,21 @@ pub struct Progress {
 
 /// Where a transfer says how far it has got, four times a second.
 pub struct Watch<'a> {
-    pub report: &'a dyn Fn(Progress),
+    /// `Send + Sync` even though the three child-process-driven dumps below never need it — their
+    /// own `Watch` never crosses an `.await`, confined to a `spawn_blocking` closure instead. The
+    /// ClickHouse dump/restore in `clickhouse_dump.rs` runs as a plain `async fn` with no child
+    /// process to block on, so it holds a `&Watch` across real `.await` points — which tauri only
+    /// accepts from a command whose whole future is `Send`. Every closure passed in today already
+    /// satisfies this (an `AppHandle`-capturing reporter, an `Arc<AtomicBool>`-capturing cancel
+    /// flag are both `Send + Sync` on their own), so this costs the other three nothing.
+    pub report: &'a (dyn Fn(Progress) + Send + Sync),
     /// Asked four times a second, and again after every line the tool writes: has the transfer
     /// been called off?
     ///
     /// A poll rather than a signal because the work is a blocking loop around a child process,
     /// and the only thing that reliably stops one of those is killing it. What sets it is the tab
     /// closing, `disconnect_db`, or the Cancel button — see `DbState::transfers`.
-    pub cancel: &'a dyn Fn() -> bool,
+    pub cancel: &'a (dyn Fn() -> bool + Send + Sync),
 }
 
 /// The line `mysqldump --verbose` writes as it reaches each table, and the whole of the signal the
