@@ -62,6 +62,14 @@ describe("formFrom", () => {
     expect(formFrom(withoutSsl).useSsl).toBe(true);
   });
 
+  it("gives ClickHouse the TLS box back, unlike SQLite", () => {
+    // ClickHouse is a server again, not a file — `use_ssl` there picks https:// over http://, and
+    // an entry saved before the box existed still has to read as on, the same as MySQL/Postgres.
+    expect(
+      formFrom({ kind: "clickhouse", host: "127.0.0.1", port: 8123 }).useSsl
+    ).toBe(true);
+  });
+
   it("reads it as off for a kind that has no box at all", () => {
     // Otherwise loading a Mongo connection and switching the form to MySQL arrives with TLS
     // silently ticked — a form the user never set that way.

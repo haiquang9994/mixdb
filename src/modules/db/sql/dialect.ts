@@ -66,7 +66,7 @@ export interface SqlEditing {
  */
 export interface SqlDialect {
   /** Which engine this is, for the few places that have to name it — a label, an icon, a wording. */
-  kind: "mysql" | "postgres" | "sqlite";
+  kind: "mysql" | "postgres" | "sqlite" | "clickhouse";
 
   /** How SQL text is read: which quotes, comments and escapes this engine has. What the statement
    *  splitter and the editor's tokenizer work from — see {@link SqlSyntax}. */
@@ -114,9 +114,21 @@ export interface SqlDialect {
    * True on both servers, which have a session to reach in and kill. False on SQLite, where the
    * statement runs inside this process against a file and there is nothing to send a signal to —
    * so the Query tab's Cancel button is closed rather than left to be pressed and do nothing,
-   * which is the worse of the two.
+   * which is the worse of the two. Also false on ClickHouse in v1: it does have a session to kill
+   * (`KILL QUERY`), but reaching it needs a `query_id` tracked per request, which nothing here does
+   * yet — see the plan this kind was built from.
    */
   cancellable: boolean;
+
+  /**
+   * Every button and every path that would write something is open.
+   *
+   * True on every engine but ClickHouse, whose v1 in this app is read-only throughout — no insert,
+   * update, delete, DDL, dump or restore, and the Query tab itself refuses to send anything but a
+   * read. `DbTab` folds this into the same `readOnly` a connection can be marked with by hand, so
+   * the workspace has one flag to check rather than two: see `SqlWorkspace`'s `noWrites`.
+   */
+  writable: boolean;
 
   /**
    * The filter bar may offer `REGEXP` / `NOT REGEXP`.

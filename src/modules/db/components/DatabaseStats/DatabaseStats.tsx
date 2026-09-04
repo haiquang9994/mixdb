@@ -108,7 +108,7 @@ const STATS_CACHE_LIMIT = 20;
 const DEFAULT_SORT: Sort = { column: "dataSize", desc: true };
 
 interface Props {
-  kind: "mysql" | "postgres" | "mongo" | "sqlite";
+  kind: "mysql" | "postgres" | "mongo" | "sqlite" | "clickhouse";
   connectionId: string;
   /** The database being measured. Never empty: the workspace shows a prompt instead of mounting
    *  this until one is selected. */

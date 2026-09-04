@@ -220,7 +220,7 @@ function ConnectionForm({
       <fieldset>
         <legend>{t("connection.databaseLegend")}</legend>
         <div className="choice-row" role="tablist">
-          {(["mysql", "postgres", "sqlite", "mongo", "redis"] as DbKind[]).map((k) => (
+          {(["mysql", "postgres", "sqlite", "mongo", "redis", "clickhouse"] as DbKind[]).map((k) => (
             <button
               key={k}
               type="button"
@@ -332,7 +332,7 @@ function ConnectionForm({
         )}
 
         {/* Not `isSqlKind`: SQLite is one, and has no transport to secure. */}
-        {(kind === "mysql" || kind === "postgres") && (
+        {(kind === "mysql" || kind === "postgres" || kind === "clickhouse") && (
           <div className="row">
             <label>
               <input type="checkbox" checked={useSsl} onChange={(e) => set("useSsl", e.target.checked)} />{" "}

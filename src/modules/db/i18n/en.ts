@@ -33,6 +33,7 @@ const dbEn = {
     kindMongo: "MongoDB",
     kindRedis: "Redis",
     kindSqlite: "SQLite",
+    kindClickhouse: "ClickHouse",
     sqlitePathLabel: "Database file",
     sqlitePathPlaceholder: "Path to a .db or .sqlite file",
     newSqliteFile: "New...",
@@ -891,6 +892,7 @@ const dbEn = {
     sqliteFileExists: "There is already a file at {{path}}. Open it with Browse, or pick another name.",
     sqliteNoDatabases:
       "A SQLite database is a file. Creating or deleting one is done in the file manager, not here.",
+    clickhouseReadOnly: "MixDB only reads from ClickHouse for now — nothing here writes to it.",
     /* A `mixdb://connect?…` URL another program started MixDB with — see `handoff.ts`. The first
        is only ever printed to stderr; the second is answered with an empty form. Both exist so a
        code that does reach the screen one day is a sentence rather than its own key. */

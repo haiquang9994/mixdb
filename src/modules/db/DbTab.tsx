@@ -764,7 +764,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
           onDisconnect={disconnect}
           sidebarWidth={activeSavedConnection?.sidebarWidth}
           onSidebarWidthChange={updateSidebarWidth}
-          readOnly={activeSavedConnection?.readOnly ?? false}
+          readOnly={(activeSavedConnection?.readOnly ?? false) || !engine.dialect.writable}
           profileId={activeSavedConnection?.id ?? ""}
         />
       </SqlProvider>

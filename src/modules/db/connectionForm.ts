@@ -180,6 +180,7 @@ export const KIND_LABEL: Record<DbKind, TranslationKey> = {
   mongo: "connection.kindMongo",
   redis: "connection.kindRedis",
   sqlite: "connection.kindSqlite",
+  clickhouse: "connection.kindClickhouse",
 };
 
 /**
@@ -187,8 +188,11 @@ export const KIND_LABEL: Record<DbKind, TranslationKey> = {
  *
  * Not `isSqlKind`, which this used to borrow. The two agreed while every SQL engine was a server,
  * and stopped agreeing the moment SQLite became one: a file has no transport to secure, so the box
- * would be a control that changes nothing.
+ * would be a control that changes nothing. ClickHouse is back to being a server — `use_ssl` there
+ * picks `https://` over `http://` outright rather than negotiating TLS inside one connection the
+ * way MySQL and PostgreSQL do, but the box asks the same question a user has an answer to either
+ * way: does reaching this server need encryption.
  */
 function hasTls(kind: DbKind): boolean {
-  return kind === "mysql" || kind === "postgres";
+  return kind === "mysql" || kind === "postgres" || kind === "clickhouse";
 }

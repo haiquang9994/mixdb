@@ -93,6 +93,24 @@ export const SQLITE_SYNTAX: SqlSyntax = {
   dollarQuoting: false,
 };
 
+/**
+ * ClickHouse, documented rather than checked against a running parser the way the other three
+ * were: this app has no equivalent of `mysql_script.rs`/`postgres_script.rs` for it to be ported
+ * from, so these are ClickHouse's own lexical rules as its manual states them, not a fact proven
+ * against a server. Both identifier quotes are accepted at once — backtick and double quote — the
+ * one point where this matches {@link SQLITE_SYNTAX} exactly rather than either of the other two.
+ */
+export const CLICKHOUSE_SYNTAX: SqlSyntax = {
+  hashComments: true,
+  dashCommentNeedsSpace: false,
+  nestedBlockComments: true,
+  identifierQuote: "`",
+  doubleQuoteIsIdentifier: true,
+  backslashEscapes: true,
+  escapeStringPrefix: false,
+  dollarQuoting: false,
+};
+
 /** What may sit inside a PostgreSQL identifier after its first character — `$` included. */
 const IDENT_CHAR = /[\p{L}\p{N}_$]/u;
 
