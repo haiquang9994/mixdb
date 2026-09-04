@@ -114,7 +114,6 @@ export const sqliteApi: SqlApi = {
     return invoke<SqlProblem | null>("sqlite_validate_sql", { id, sql, database });
   },
 
-  /** Structure only — a data dump is refused by the backend rather than written short. */
   dump(id, database, mode, path) {
     return invoke<void>("sqlite_dump", { id, database, mode, path });
   },

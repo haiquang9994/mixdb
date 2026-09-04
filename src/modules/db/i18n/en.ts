@@ -1077,8 +1077,6 @@ const dbEn = {
     sqliteRestoreFailed: "The restore stopped at {{statement}} — {{message}}",
     sqliteRebuildParseFailed:
       "MixDB could not read {{table}}'s own CREATE TABLE text well enough to rebuild it — this is a syntax it does not recognise yet.",
-    sqliteDataDumpUnsupported:
-      "MixDB dumps a SQLite schema, not its rows. Choose Structure, or copy the file itself.",
     cannotRemoveDirectory: "Cannot remove {{path}}: {{message}}",
     noAppDataDir: "There is nowhere for MixDB to keep its own files: {{message}}",
   },

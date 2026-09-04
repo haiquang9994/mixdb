@@ -19,9 +19,10 @@ use crate::modules::db::drivers::{dump, sqlite, sqlite_ddl, sqlite_dump, sqlite_
 use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use serde_json::{Map, Value};
 use crate::modules::db::state::DbState;
-use tauri::State;
+use std::sync::atomic::Ordering;
+use tauri::{AppHandle, State};
 
-use super::sqlite_pool;
+use super::{reporter, sqlite_pool, Transfer};
 
 /// Creates an empty database file, for the New button on the connection form.
 ///
@@ -312,37 +313,50 @@ pub async fn sqlite_validate_sql(
     sqlite_script::validate(&pool, &sql).await
 }
 
-/// Writes the schema to `path`.
-///
-/// `mode` is checked rather than ignored: MixDB does not write a SQLite data dump yet, and a file
-/// asked for as `all` that arrived holding only `CREATE` statements would be a backup someone
-/// found out about at restore time.
+/// Writes the schema and/or the rows to `path`, depending on `mode`.
 #[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_dump(
+    app: AppHandle,
     state: State<'_, DbState>,
     id: String,
     database: String,
     mode: String,
     path: String,
 ) -> Result<(), AppError> {
-    // TODO(Task 6): wire mode dispatch, Transfer/reporter — see the design spec's A-decisions.
-    if mode != "structure" {
-        return Err(err!("error.sqliteDataDumpUnsupported"));
-    }
+    let mode = dump::DumpMode::parse(&mode)?;
     let pool = sqlite_pool(&state, &id).await?;
-    let watch = dump::Watch { report: &|_| {}, cancel: &|| false };
-    sqlite_dump::dump_structure(&pool, std::path::Path::new(&path), &watch).await
+    let report = reporter(&app, &id);
+    let transfer = Transfer::start(&state, &id);
+    let cancelled = transfer.flag();
+    let watch = dump::Watch { report: &report, cancel: &|| cancelled.load(Ordering::Relaxed) };
+    let path = std::path::Path::new(&path);
+
+    if mode != dump::DumpMode::Data {
+        sqlite_dump::dump_structure(&pool, path, &watch).await?;
+    }
+    if mode != dump::DumpMode::Structure {
+        let append = mode == dump::DumpMode::All;
+        sqlite_dump::dump_data(&pool, path, append, &watch).await?;
+    }
+    Ok(())
 }
 
+/// Replays a dump file into the open database. No progress in between — see A5 of the design
+/// spec — only one reading before `sqlite_script::run` starts, so the overlay shows movement
+/// rather than sitting frozen on an empty bar.
 #[allow(unused_variables)]
 #[tauri::command]
 pub async fn sqlite_restore(
+    app: AppHandle,
     state: State<'_, DbState>,
     id: String,
     database: String,
     path: String,
 ) -> Result<(), AppError> {
     let pool = sqlite_pool(&state, &id).await?;
+    let report = reporter(&app, &id);
+    let _transfer = Transfer::start(&state, &id);
+    report(dump::Progress::default());
     sqlite_dump::restore(&pool, std::path::Path::new(&path)).await
 }
