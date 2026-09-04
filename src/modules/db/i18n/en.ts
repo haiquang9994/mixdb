@@ -163,6 +163,18 @@ const dbEn = {
       "This index is on an expression, which is not read here — it can only be dropped",
     dropIndexTitle: "Drop index?",
     dropIndexMessage: "Drop the index {{index}}? The rows themselves are untouched.",
+    skipIndexesTitle: "Skip indexes",
+    addSkipIndex: "Add a skip index",
+    noSkipIndexes: "No skip indexes.",
+    skipIndexName: "Name",
+    skipIndexExpr: "Expression",
+    skipIndexType: "Type",
+    skipIndexGranularity: "Granularity",
+    dropSkipIndexTitle: "Drop this skip index?",
+    dropSkipIndexMessage:
+      'This drops the skip index "{{index}}". It only speeds up scanning — no data is lost.',
+    rebuildEngineNotAllowed:
+      "MixDB has only verified the sorting-key rebuild against MergeTree, ReplacingMergeTree, SummingMergeTree and AggregatingMergeTree — this table's engine is {{engine}}.",
   },
   // The Statistics tab, shared by both workspaces: what every table or collection of the selected
   // database weighs. MySQL counts rows in tables, MongoDB documents in collections, so the three
@@ -300,6 +312,40 @@ const dbEn = {
     submitAdd: "Add index",
     submitEdit: "Save changes",
     saving: "Applying...",
+  },
+  skipIndexDialog: {
+    addTitle: "Add a skip index to {{table}}",
+    editTitle: "Edit skip index {{index}}",
+    name: "Name",
+    expr: "Expression",
+    exprPlaceholder: "a column, or an expression like lower(note)",
+    type: "Type",
+    granularity: "Granularity",
+    granularityHint:
+      "Granularity counts granules (blocks of the table's own index_granularity rows each — usually 8192), not rows directly.",
+    errorName: "The index has to be named.",
+    errorExpr: "The index needs an expression to cover.",
+    saving: "Saving…",
+    submitAdd: "Add",
+    submitEdit: "Save",
+  },
+  orderByDialog: {
+    title: 'Change the sorting key of "{{table}}"',
+    warning:
+      "This copies the whole table into a temporary one built with the new key, then swaps names. It cannot be cancelled once started, and cannot be undone by this dialog.",
+    warningWithCount:
+      "This copies all {{count}} rows into a temporary table built with the new key, then swaps names. It cannot be cancelled once started, and cannot be undone by this dialog.",
+    columns: "Sorting key columns",
+    column: "Column",
+    addColumn: "Add a column",
+    removeColumn: "Remove this column",
+    confirmLabel: 'Type "{{table}}" to confirm',
+    errorColumns: "The sorting key needs at least one column.",
+    errorDuplicateColumn: 'Column "{{column}}" is already in the sorting key.',
+    saving: "Rebuilding…",
+    submit: "Rebuild",
+    leftoverWarning:
+      'The sorting key was changed. Cleaning up the temporary table "{{table}}" failed — it holds the old data and is safe to drop by hand.',
   },
   // The Query tab. A script is run statement by statement, and each statement is reported as what
   // it is — a result set, a count of rows changed, or plain confirmation that it ran.
@@ -906,6 +952,12 @@ const dbEn = {
       "MixDB does not create tables with the {{engine}} engine — pick one of the MergeTree family.",
     clickhouseTypeChangeFailed:
       "Changing the type of {{column}} failed, and {{table}} cannot be read until it is put back: set the column's type to what it was before. The server said: {{cause}}",
+    clickhouseSkipIndexExprRequired: "The skip index needs an expression to cover.",
+    clickhouseOrderByColumnsRequired: "The sorting key needs at least one column.",
+    clickhouseRebuildParse:
+      "MixDB could not read this table's own definition back from the server — the rebuild was not attempted.",
+    clickhouseRebuildCountMismatch:
+      "The row count changed while {{table}} was being copied (a write landed at the same time?). The rebuild was cancelled and the original table was not touched — try again.",
     /* A `mixdb://connect?…` URL another program started MixDB with — see `handoff.ts`. The first
        is only ever printed to stderr; the second is answered with an empty form. Both exist so a
        code that does reach the screen one day is a sentence rather than its own key. */

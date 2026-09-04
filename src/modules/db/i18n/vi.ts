@@ -151,6 +151,18 @@ const dbVi: DbDict = {
     functionalIndexTooltip: "Index này dựa trên biểu thức, không được đọc ở đây — chỉ có thể xóa",
     dropIndexTitle: "Xóa index?",
     dropIndexMessage: "Xóa index {{index}}? Dữ liệu trong bảng không bị ảnh hưởng.",
+    skipIndexesTitle: "Skip index",
+    addSkipIndex: "Thêm skip index",
+    noSkipIndexes: "Không có skip index nào.",
+    skipIndexName: "Tên",
+    skipIndexExpr: "Biểu thức",
+    skipIndexType: "Loại",
+    skipIndexGranularity: "Granularity",
+    dropSkipIndexTitle: "Xóa skip index này?",
+    dropSkipIndexMessage:
+      'Thao tác này xóa skip index "{{index}}". Nó chỉ giúp scan nhanh hơn — không mất dữ liệu nào.',
+    rebuildEngineNotAllowed:
+      "MixDB mới verify việc đổi sorting key trên MergeTree, ReplacingMergeTree, SummingMergeTree và AggregatingMergeTree — engine của bảng này là {{engine}}.",
   },
   // Tab Thống kê, dùng chung cho cả hai workspace: mỗi bảng/collection của database đang chọn
   // chiếm bao nhiêu dung lượng. MySQL đếm dòng trong bảng, MongoDB đếm document trong collection,
@@ -288,6 +300,40 @@ const dbVi: DbDict = {
     submitAdd: "Thêm index",
     submitEdit: "Lưu thay đổi",
     saving: "Đang áp dụng...",
+  },
+  skipIndexDialog: {
+    addTitle: "Thêm skip index vào {{table}}",
+    editTitle: "Sửa skip index {{index}}",
+    name: "Tên",
+    expr: "Biểu thức",
+    exprPlaceholder: "một cột, hoặc biểu thức như lower(note)",
+    type: "Loại",
+    granularity: "Granularity",
+    granularityHint:
+      "Granularity đếm theo granule (khối dữ liệu, mỗi khối bằng index_granularity của bảng — thường là 8192 dòng), không phải theo số dòng trực tiếp.",
+    errorName: "Index phải có tên.",
+    errorExpr: "Index cần một biểu thức để lọc theo.",
+    saving: "Đang lưu…",
+    submitAdd: "Thêm",
+    submitEdit: "Lưu",
+  },
+  orderByDialog: {
+    title: 'Đổi sorting key của "{{table}}"',
+    warning:
+      "Thao tác này copy toàn bộ bảng vào một bảng tạm dựng với key mới, rồi tráo tên. Không huỷ được giữa chừng, và dialog này không hoàn tác lại được.",
+    warningWithCount:
+      "Thao tác này copy toàn bộ {{count}} dòng vào một bảng tạm dựng với key mới, rồi tráo tên. Không huỷ được giữa chừng, và dialog này không hoàn tác lại được.",
+    columns: "Các cột trong sorting key",
+    column: "Cột",
+    addColumn: "Thêm cột",
+    removeColumn: "Bỏ cột này",
+    confirmLabel: 'Gõ lại "{{table}}" để xác nhận',
+    errorColumns: "Sorting key cần ít nhất một cột.",
+    errorDuplicateColumn: 'Cột "{{column}}" đã có trong sorting key rồi.',
+    saving: "Đang rebuild…",
+    submit: "Rebuild",
+    leftoverWarning:
+      'Đã đổi xong sorting key. Dọn bảng tạm "{{table}}" thất bại — bảng đó giữ dữ liệu cũ, tự xoá tay là an toàn.',
   },
   // Tab Truy vấn. Script được chạy lần lượt từng câu lệnh, và mỗi câu lệnh được báo đúng theo bản
   // chất của nó — một bảng kết quả, số dòng đã thay đổi, hoặc chỉ là đã chạy xong.
@@ -888,6 +934,12 @@ const dbVi: DbDict = {
       "MixDB không tạo bảng với engine {{engine}} — hãy chọn một engine thuộc họ MergeTree.",
     clickhouseTypeChangeFailed:
       "Đổi kiểu cột {{column}} thất bại, và bảng {{table}} không đọc được cho tới khi kiểu cũ được đặt lại: hãy sửa kiểu của cột về như trước. Server báo: {{cause}}",
+    clickhouseSkipIndexExprRequired: "Skip index cần một biểu thức để lọc theo.",
+    clickhouseOrderByColumnsRequired: "Sorting key cần ít nhất một cột.",
+    clickhouseRebuildParse:
+      "MixDB không đọc lại được định nghĩa của bảng này từ server — chưa thử rebuild.",
+    clickhouseRebuildCountMismatch:
+      "Số dòng bị lệch trong lúc copy bảng {{table}} (có ghi đồng thời?). Đã huỷ rebuild, bảng gốc không hề bị đụng — thử lại.",
     handoffInvalid: "Không đọc được kết nối MixDB được mở cùng: {{message}}",
     handoffExpired: "Kết nối được chuyển sang này đã được mở rồi.",
     mongoNoTcpHost: "Chuỗi kết nối không chỉ ra host TCP nào để mở tunnel.",
