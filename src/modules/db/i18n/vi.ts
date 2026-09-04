@@ -879,6 +879,7 @@ const dbVi: DbDict = {
     sqliteNoDatabases:
       "Một database SQLite là một file. Tạo hay xóa nó là việc của trình quản lý file, không phải ở đây.",
     clickhouseReadOnly: "MixDB hiện chỉ đọc ClickHouse — chưa có gì ở đây ghi vào nó.",
+    clickhouseOnlyFeature: "Cái này chỉ áp dụng cho kết nối ClickHouse.",
     clickhouseMutationTimeout:
       "Thao tác vẫn đang chạy trên server sau 30 giây — tải lại bảng để xem đã xong chưa.",
     clickhouseHeterogeneousInsert:

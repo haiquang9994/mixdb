@@ -897,6 +897,7 @@ const dbEn = {
     sqliteNoDatabases:
       "A SQLite database is a file. Creating or deleting one is done in the file manager, not here.",
     clickhouseReadOnly: "MixDB only reads from ClickHouse for now — nothing here writes to it.",
+    clickhouseOnlyFeature: "This only applies to a ClickHouse connection.",
     clickhouseMutationTimeout:
       "The mutation is still running on the server after 30 seconds — reload the table to check whether it finished.",
     clickhouseHeterogeneousInsert:

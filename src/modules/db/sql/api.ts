@@ -4,6 +4,7 @@ import type {
   SqlIndexSpec,
   SqlProblem,
   SqlSchemaOutline,
+  SqlSkipIndexSpec,
   SqlStatementResult,
   SqlTablePage,
   SqlTableStructure,
@@ -184,6 +185,35 @@ export interface SqlApi {
   ): Promise<void>;
 
   dropIndex(id: string, database: string, table: string, name: string): Promise<void>;
+
+  addSkipIndex(id: string, database: string, table: string, spec: SqlSkipIndexSpec): Promise<void>;
+
+  /** Replaces the skip index called `name` — ClickHouse has no `MODIFY INDEX`, so this is a drop
+   *  and a re-add on the backend. */
+  modifySkipIndex(
+    id: string,
+    database: string,
+    table: string,
+    name: string,
+    spec: SqlSkipIndexSpec
+  ): Promise<void>;
+
+  dropSkipIndex(id: string, database: string, table: string, name: string): Promise<void>;
+
+  /** Rebuilds the whole table with a new sorting key — see
+   *  `docs/superpowers/specs/2026-09-04-clickhouse-index-ddl-design.md`. Resolves to the name of a
+   *  leftover temporary table when the swap itself succeeded but its own cleanup did not — not a
+   *  failure of the rebuild, which has already landed — and to `null` when nothing was left behind. */
+  rebuildOrderBy(
+    id: string,
+    database: string,
+    table: string,
+    columns: string[]
+  ): Promise<string | null>;
+
+  /** A cheap `count()`-equivalent, read before a rebuild so its warning can say how much data it is
+   *  about to copy. */
+  rowCount(id: string, database: string, table: string): Promise<number>;
 
   /**
    * Runs user-authored SQL, statement by statement, and reports each statement's outcome.

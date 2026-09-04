@@ -134,7 +134,20 @@ export const mysqlApi: SqlApi = {
   validateSql(id, sql, database) {
     return invoke<SqlProblem | null>("mysql_validate_sql", { id, sql, database });
   },
+
+  addSkipIndex: () => notSupported(),
+  modifySkipIndex: () => notSupported(),
+  dropSkipIndex: () => notSupported(),
+  rebuildOrderBy: () => notSupported(),
+  rowCount: () => notSupported(),
 };
+
+/** These five only mean anything on ClickHouse — see `clickhouseApi`. Reaching one here would be a
+ *  bug in the caller: every dialog and panel that calls them is gated on
+ *  `dialect.kind === "clickhouse"`. */
+function notSupported(): Promise<never> {
+  return Promise.reject(new Error("error.clickhouseOnlyFeature"));
+}
 
 /**
  * Runs one statement and hands back its rows, keyed by column name.
