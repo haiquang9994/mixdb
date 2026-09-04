@@ -44,6 +44,7 @@ macro_rules! retry_read {
     }};
 }
 
+pub mod clickhouse;
 pub mod handoff;
 pub mod mongo;
 pub mod mysql;
@@ -260,6 +261,18 @@ pub async fn connect_db(
                 tunnel,
             )
         }
+        DbKind::Clickhouse => {
+            let (host, port, tunnel) =
+                resolve_endpoint(&config, &app_data, Arc::clone(&notify)).await?;
+            let username = config.username.clone().unwrap_or_default();
+            let password = config.password.clone().unwrap_or_default();
+            let conn = with_timeout(
+                drivers::clickhouse::connect(&host, port, &username, &password, config.use_ssl),
+                "ClickHouse",
+            )
+            .await?;
+            (DbHandle::Clickhouse(conn), Some((host, port)), tunnel)
+        }
     };
 
     state.connections.lock().await.insert(
@@ -297,7 +310,9 @@ pub async fn disconnect_db(state: State<'_, DbState>, id: String) -> Result<(), 
         DbHandle::Postgres(pools) => pools.close_all().await,
         DbHandle::Sqlite(pool) => pool.close().await,
         // Mongo tự gom lại khi tay cầm cuối cùng đi, và Redis là một kết nối chứ không phải pool.
-        DbHandle::Mongo(_) | DbHandle::Redis(_) => {}
+        // ClickHouse không giữ socket nào cả — mỗi lệnh là một HTTP request riêng, nên không có gì
+        // để đóng ở đây.
+        DbHandle::Mongo(_) | DbHandle::Redis(_) | DbHandle::Clickhouse(_) => {}
     }
     drop(connection);
     Ok(())
@@ -398,6 +413,16 @@ async fn mongo_client(state: &State<'_, DbState>, id: &str) -> Result<mongodb::C
     }
 }
 
+async fn clickhouse_connection(
+    state: &State<'_, DbState>,
+    id: &str,
+) -> Result<drivers::clickhouse::Connection, AppError> {
+    match handle(state, id).await? {
+        DbHandle::Clickhouse(conn) => Ok(conn),
+        _ => Err(err!("error.wrongConnectionKind", kind = "ClickHouse")),
+    }
+}
+
 /// The Redis connection `id` names. Locked by the caller for the length of one command, which is
 /// as long as anything needs it: the lock is this connection's own, so two tabs no longer wait on
 /// each other.
@@ -440,7 +465,7 @@ async fn sql_endpoint(
     let matches = match kind {
         DbKind::Mysql => matches!(connection.handle, DbHandle::Mysql { .. }),
         DbKind::Postgres => matches!(connection.handle, DbHandle::Postgres(_)),
-        DbKind::Mongo | DbKind::Redis | DbKind::Sqlite => false,
+        DbKind::Mongo | DbKind::Redis | DbKind::Sqlite | DbKind::Clickhouse => false,
     };
     if !matches {
         let name = if kind == DbKind::Postgres { "PostgreSQL" } else { "MySQL" };

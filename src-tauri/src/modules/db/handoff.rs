@@ -85,6 +85,9 @@ pub fn parse(url: &str, secret: Option<String>) -> Result<Handoff, AppError> {
         Some("mysql") => DbKind::Mysql,
         Some("postgres") => DbKind::Postgres,
         Some("redis") => DbKind::Redis,
+        // Same shape as the three above — host/port/user/database, no `uri` of its own — unlike
+        // Mongo, which is why that kind is refused below rather than accepted here.
+        Some("clickhouse") => DbKind::Clickhouse,
         /* Refused by name rather than by falling through, because the reason is not "not supported
            yet". `mixdb://` is registered with the operating system, so any web page can hand this
            process a URL; a `kind=sqlite&path=…` would be that page choosing which file on the
@@ -251,6 +254,23 @@ mod tests {
         assert_eq!(handoff.config.password, None);
         assert_eq!(handoff.config.database, None);
         assert_eq!(handoff.label, "redis@main");
+    }
+
+    /// ClickHouse is a server with an account, same as MySQL and PostgreSQL — unlike Redis, which
+    /// carries no username at all.
+    #[test]
+    fn a_clickhouse_url_reads_as_a_connection() {
+        let handoff = parse(
+            "mixdb://connect?kind=clickhouse&host=127.0.0.1&port=8123&user=admin&database=analytics\
+             &label=clickhouse%40main",
+            Some("s3cret".to_string()),
+        )
+        .unwrap();
+        assert_eq!(handoff.config.kind, DbKind::Clickhouse);
+        assert_eq!(handoff.config.username.as_deref(), Some("admin"));
+        assert_eq!(handoff.config.password.as_deref(), Some("s3cret"));
+        assert_eq!(handoff.config.database.as_deref(), Some("analytics"));
+        assert_eq!(handoff.label, "clickhouse@main");
     }
 
     #[test]

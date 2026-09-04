@@ -1,3 +1,4 @@
+pub mod clickhouse;
 pub mod dump;
 pub mod filters;
 pub mod mongo;

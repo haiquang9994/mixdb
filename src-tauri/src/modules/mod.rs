@@ -132,6 +132,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         db::commands::sqlite::sqlite_validate_sql,
         db::commands::sqlite::sqlite_dump,
         db::commands::sqlite::sqlite_restore,
+        db::commands::clickhouse::clickhouse_server_info,
         db::commands::tools::dumptools_status,
         db::commands::tools::dumptools_ready,
         db::commands::tools::dumptools_downloadable,

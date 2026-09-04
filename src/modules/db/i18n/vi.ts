@@ -852,12 +852,13 @@ const dbVi: DbDict = {
   },
   // máy chủ đang nói, và cũng là phần đáng tra cứu nhất.
   error: {
-    // Bốn loại driver, khi lỗi đến từ chính máy chủ.
+    // Sáu loại driver, khi lỗi đến từ chính máy chủ.
     mysql: "MySQL: {{message}}",
     postgres: "PostgreSQL: {{message}}",
     mongo: "MongoDB: {{message}}",
     redis: "Redis: {{message}}",
     sqlite: "SQLite: {{message}}",
+    clickhouse: "ClickHouse: {{message}}",
     // Kết nối
     unknownConnection: "Kết nối này không còn mở — hãy kết nối lại.",
     wrongConnectionKind: "Đây không phải kết nối {{kind}}.",
