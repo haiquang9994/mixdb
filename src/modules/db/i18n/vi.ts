@@ -975,12 +975,8 @@ const dbVi: DbDict = {
     indexColumnNameRequired: "Mọi cột trong index đều phải có tên.",
     invalidCollation: "Máy chủ này không có collation {{collation}}.",
     unknownIndexKind: "Loại index {{kind}} không hợp lệ.",
-    sqliteColumnTypeUnchangeable:
-      "SQLite không đổi được kiểu của {{column}} — chỉ đổi được tên. Hãy thêm cột mới rồi chép dữ liệu sang.",
-    sqliteColumnNullUnchangeable:
-      "SQLite không thêm hay bỏ được NOT NULL trên {{column}} — chỉ đổi được tên.",
-    sqliteColumnDefaultUnchangeable:
-      "SQLite không đổi được giá trị mặc định của {{column}} — chỉ đổi được tên.",
+    sqliteRenameWithOtherChanges:
+      "Đổi tên {{column}} riêng một lần, rồi sửa kiểu/default/collation ở một lần khác.",
     sqliteNoPrimaryKeyAfterwards:
       "Primary key của SQLite là một phần của chính bảng, không thêm được vào bảng đã tạo mà chưa có.",
     sqliteIndexBelongsToConstraint:

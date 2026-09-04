@@ -419,8 +419,23 @@ struct CurrentColumn {
     data_type: String,
     nullable: bool,
     default_value: Option<String>,
+    collation: Option<String>,
 }
 
+/// The table's own `CREATE TABLE` text, as `sqlite_master` holds it.
+async fn table_create_sql(pool: &SqlitePool, table: &str) -> Result<String, AppError> {
+    sqlx::query_scalar("select sql from sqlite_master where type = 'table' and name = ?")
+        .bind(table)
+        .fetch_optional(pool)
+        .await
+        .map_err(map_error)?
+        .ok_or_else(|| err!("error.sqliteRebuildParseFailed", table = table))
+}
+
+/// Reads a table's own `CREATE TABLE` text and finds the column's own collation via
+/// [`split_column_clauses`] — `pragma_table_xinfo` has no such field (see B5 of the design spec).
+/// A parse failure here refuses the whole `modify_column` call, including a plain rename: silently
+/// treating an unreadable collation as "unchanged" risks a rebuild that drops a real one.
 async fn current_column(
     pool: &SqlitePool,
     table: &str,
@@ -436,10 +451,19 @@ async fn current_column(
     .map_err(map_error)?
     .ok_or_else(|| err!("error.unknownColumn", table = table, name = column))?;
 
+    let create_sql = table_create_sql(pool, table).await?;
+    let (clauses, _) = split_column_clauses(&create_sql)
+        .map_err(|_| err!("error.sqliteRebuildParseFailed", table = table))?;
+    let clause = clauses
+        .into_iter()
+        .find(|c| !is_table_constraint(c) && clause_column_name(c).as_deref() == Some(column))
+        .ok_or_else(|| err!("error.sqliteRebuildParseFailed", table = table))?;
+
     Ok(CurrentColumn {
         data_type: row.get::<String, _>("type"),
         nullable: row.get::<i64, _>("notnull") == 0,
         default_value: super::sqlite::split_default(row.get::<Option<String>, _>("dflt_value")).0,
+        collation: clause_collation(&clause),
     })
 }
 
@@ -466,17 +490,20 @@ pub async fn modify_column(
        values, not about which fields arrived. The type is compared case-insensitively — SQLite
        stores the declaration verbatim, so `text` and `TEXT` come back different and mean the
        same. */
-    if !current.data_type.eq_ignore_ascii_case(spec.data_type.trim()) {
-        return Err(err!("error.sqliteColumnTypeUnchangeable", column = name));
-    }
-    if current.nullable != spec.nullable {
-        return Err(err!("error.sqliteColumnNullUnchangeable", column = name));
-    }
-    if current.default_value.as_deref() != spec.default_value.as_deref() {
-        return Err(err!("error.sqliteColumnDefaultUnchangeable", column = name));
-    }
+    let spec_collation = spec.collation.as_deref().map(str::trim).filter(|c| !c.is_empty());
+    let anything_else_changed = !current.data_type.eq_ignore_ascii_case(spec.data_type.trim())
+        || current.nullable != spec.nullable
+        || current.default_value.as_deref() != spec.default_value.as_deref()
+        || current.collation.as_deref() != spec_collation;
+    let renamed = new_name != name;
 
-    if new_name == name {
+    if renamed && anything_else_changed {
+        return Err(err!("error.sqliteRenameWithOtherChanges", column = name));
+    }
+    if anything_else_changed {
+        return rebuild_column(pool, table, name, spec).await;
+    }
+    if !renamed {
         return Ok(());
     }
     execute_all(
@@ -598,6 +625,18 @@ async fn drop_index_sql(pool: &SqlitePool, name: &str) -> Result<String, AppErro
     Ok(format!("DROP INDEX {}", quote_ident(name)))
 }
 
+/// Placeholder for the 12-step rebuild — replaced with the real implementation in Task 11 of the
+/// implementation plan. Kept here only so `modify_column`'s new branch compiles and this task's
+/// own tests can run in isolation.
+async fn rebuild_column(
+    _pool: &SqlitePool,
+    _table: &str,
+    _name: &str,
+    _spec: &ColumnSpec,
+) -> Result<(), AppError> {
+    Err(err!("error.sqliteRebuildParseFailed", table = ""))
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::sqlite::tests::Fixture;
@@ -682,36 +721,6 @@ mod tests {
         let structure = table_structure(&pool, "author").await.unwrap();
         assert!(structure.columns.iter().any(|c| c.name == "biography"));
         assert!(!structure.columns.iter().any(|c| c.name == "bio"));
-    }
-
-    #[tokio::test]
-    async fn every_other_column_edit_is_refused_by_name() {
-        let (_fixture, pool) = Fixture::open().await;
-
-        /* SQLite has no statement for any of these — they need the whole table rebuilt around the
-           new definition, which is deliberately not in this module. Each says which one it is,
-           rather than all three saying "cannot alter column". */
-        let mut retyped = column("bio", "INTEGER");
-        retyped.default_value = Some("anonymous".to_string());
-        assert_eq!(
-            modify_column(&pool, "author", "bio", &retyped).await.expect_err("type").code,
-            "error.sqliteColumnTypeUnchangeable"
-        );
-
-        let mut required = column("bio", "TEXT");
-        required.default_value = Some("anonymous".to_string());
-        required.nullable = false;
-        assert_eq!(
-            modify_column(&pool, "author", "bio", &required).await.expect_err("null").code,
-            "error.sqliteColumnNullUnchangeable"
-        );
-
-        let mut redefaulted = column("bio", "TEXT");
-        redefaulted.default_value = Some("someone".to_string());
-        assert_eq!(
-            modify_column(&pool, "author", "bio", &redefaulted).await.expect_err("default").code,
-            "error.sqliteColumnDefaultUnchangeable"
-        );
     }
 
     #[tokio::test]
@@ -937,5 +946,23 @@ mod tests {
     #[test]
     fn no_collate_is_none() {
         assert_eq!(clause_collation("bio TEXT"), None);
+    }
+
+    #[tokio::test]
+    async fn current_column_reads_a_real_collation() {
+        let (_fixture, pool) = Fixture::open().await;
+        sqlx::raw_sql("ALTER TABLE author ADD COLUMN nickname TEXT COLLATE NOCASE")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let current = current_column(&pool, "author", "nickname").await.unwrap();
+        assert_eq!(current.collation.as_deref(), Some("NOCASE"));
+    }
+
+    #[tokio::test]
+    async fn current_column_reports_no_collation_when_there_is_none() {
+        let (_fixture, pool) = Fixture::open().await;
+        let current = current_column(&pool, "author", "bio").await.unwrap();
+        assert_eq!(current.collation, None);
     }
 }
