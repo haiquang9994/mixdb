@@ -21,5 +21,6 @@ export const mysqlDialect: SqlDialect = {
   isBinary,
   cancellable: true,
   writable: true,
+  rowsWritable: true,
   regexpFilter: true,
 };

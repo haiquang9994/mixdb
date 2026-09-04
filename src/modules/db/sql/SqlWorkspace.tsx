@@ -58,16 +58,22 @@ interface Props {
   sidebarWidth?: number;
   onSidebarWidthChange?: (width: number) => void;
   /**
-   * The saved connection is marked as one nothing is written to.
+   * The saved connection is marked as one nothing structural is written to.
    *
-   * Everything that would change the server is turned off, not merely the Query tab: the tables in
-   * the sidebar cannot be created, renamed or dropped, the database tools are closed, rows in the
-   * Data tab do not open for editing, and the Structure tab sends no `ALTER`. A flag that guarded
-   * only one of the four would be worse than none — it reads as a promise about the connection.
+   * Everything that would change the server's schema or the database as a whole is turned off: the
+   * tables in the sidebar cannot be created, renamed or dropped, the database tools are closed, and
+   * the Structure tab sends no `ALTER`. The Query tab is closed too, since a script it runs could be
+   * anything up to and including that same `ALTER`.
    *
-   * What still works is everything that reads. That is the point of the flag.
+   * Row-level writes are `dataReadOnly` instead — see that prop's own doc.
    */
   readOnly?: boolean;
+  /**
+   * The Data tab's grid specifically: rows do not open for editing, and "Add row"/"Delete" are
+   * closed. Independent of `readOnly` — an engine can have this open while `readOnly` stays true
+   * (ClickHouse: row writes shipped before its DDL did).
+   */
+  dataReadOnly?: boolean;
   /** The saved connection's own id, as opposed to the session's. What the Query tab files its
    *  draft and its history under, so both survive the app closing. */
   profileId?: string;
@@ -111,6 +117,7 @@ function SqlWorkspace({
   sidebarWidth,
   onSidebarWidthChange,
   readOnly = false,
+  dataReadOnly = false,
   profileId = "",
 }: Props) {
   const { t } = useTranslation();
@@ -700,7 +707,7 @@ function SqlWorkspace({
                 schemaToken={schemaToken}
                 onRowsChanged={rowsChanged}
                 onOpenRelated={openRelated}
-                readOnly={readOnly}
+                readOnly={dataReadOnly}
               />
             </div>
           )}
