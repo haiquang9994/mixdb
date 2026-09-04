@@ -27,7 +27,17 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_clipboard_manager::init());
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::LogDir { file_name: None },
+                ))
+                // The plugin's default is 40_000 bytes — too small to hold a session with a real
+                // bug in it. 5MB holds a lot of lines before it ever needs to rotate.
+                .max_file_size(5_000_000)
+                .build(),
+        );
 
     // Self-update: fetching the release, checking its minisign signature and running the installer
     // all happen here, in Rust, which is why the front end needs no network permission for it.

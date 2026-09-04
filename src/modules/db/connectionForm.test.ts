@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { configFrom, formFrom, withKind } from "./connectionForm";
+import { configFrom, formFrom, kindLabel, withKind } from "./connectionForm";
 import { DEFAULT_PORTS, type ConnectionConfig } from "./types";
 
 /* These two functions replaced two lists of seventeen setters that had to be kept in step by hand.
@@ -171,5 +171,18 @@ describe("withKind", () => {
     const next = withKind(form, "postgres");
     expect(next.username).toBe("root");
     expect(next.sshHost).toBe("bastion");
+  });
+});
+
+describe("kindLabel", () => {
+  it("reads the label of a kind this build knows", () => {
+    expect(kindLabel("mysql")).toBe("connection.kindMysql");
+  });
+
+  it("falls back instead of crashing for a kind this build's DbKind union does not actually cover", () => {
+    // The real data this meets: a `SavedConnection.config.kind` saved by a newer version, read
+    // back by this one, whose `DbKind` union doesn't list that value — cast, since TypeScript
+    // won't otherwise let an arbitrary string reach a `DbKind`-typed parameter.
+    expect(kindLabel("totally-unknown-kind" as ConnectionConfig["kind"])).toBe("connection.kindUnknown");
   });
 });

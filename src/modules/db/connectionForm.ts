@@ -184,6 +184,18 @@ export const KIND_LABEL: Record<DbKind, TranslationKey> = {
 };
 
 /**
+ * `KIND_LABEL[kind]`, but doesn't crash when `kind` is a value *this build's* `DbKind` doesn't
+ * actually list. `SavedConnection.config.kind` is only *typed* as `DbKind` when read from
+ * `connections.json` — nothing verifies it at runtime — so a connection saved by a newer version,
+ * read back by this one, can carry a kind that isn't in the table.
+ *
+ * See docs/superpowers/specs/2026-09-05-unknown-db-kind-crash-and-error-logging-design.md.
+ */
+export function kindLabel(kind: DbKind): TranslationKey {
+  return (KIND_LABEL as Partial<Record<string, TranslationKey>>)[kind] ?? "connection.kindUnknown";
+}
+
+/**
  * Whether this kind has a TLS box on the form at all.
  *
  * Not `isSqlKind`, which this used to borrow. The two agreed while every SQL engine was a server,

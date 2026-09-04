@@ -10,7 +10,7 @@ import { PRIVATE_KEY_PLACEHOLDER } from "../../../../core/ssh";
 import { useTranslation } from "../../../../i18n";
 import { errorMessage } from "../../../../core/errors";
 import { createSqliteFile } from "../../sqlite/api";
-import { KIND_LABEL, type ConnectionForm as FormState } from "../../connectionForm";
+import { kindLabel, type ConnectionForm as FormState } from "../../connectionForm";
 import type { DbKind } from "../../types";
 
 /**
@@ -232,7 +232,7 @@ function ConnectionForm({
               {/* Logo before the name, not instead of it: this row is the one place the kinds are
                   read side by side, so the word stays and the mark only makes it quicker to find. */}
               <DatabaseIcon kind={k} className="choice-icon" size="1.05em" />
-              {t(KIND_LABEL[k])}
+              {t(kindLabel(k))}
             </button>
           ))}
         </div>

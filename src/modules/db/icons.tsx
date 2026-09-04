@@ -1,5 +1,6 @@
 import type { SVGProps } from "react";
 import type { DbKind } from "./types";
+import { DatabaseGenericIcon } from "../../icons";
 import styles from "../../icons/Icon.module.css";
 
 /* The logo of each database engine, kept apart from the line icons in `icons.tsx` on purpose.
@@ -78,6 +79,13 @@ export interface DatabaseIconProps extends Omit<SVGProps<SVGSVGElement>, "viewBo
  * the engine's name in text. */
 export function DatabaseIcon({ kind, size = "1em", className, ...rest }: DatabaseIconProps) {
   const mark = BRAND_MARKS[kind];
+  if (!mark) {
+    // A kind this build's BRAND_MARKS doesn't list — a connection saved by a newer version, read
+    // back by this one. No brand to draw, so the module's own "no engine" mark stands in rather
+    // than reading mark.viewBox on undefined. See
+    // docs/superpowers/specs/2026-09-05-unknown-db-kind-crash-and-error-logging-design.md.
+    return <DatabaseGenericIcon size={size} className={className} {...rest} />;
+  }
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

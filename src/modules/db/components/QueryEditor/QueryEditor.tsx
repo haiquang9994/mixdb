@@ -11,7 +11,7 @@ import {
 } from "../../sql/guard";
 import { lintScript, problemRange } from "../../sql/lint";
 import { useSqlDialect } from "../../sql/context";
-import { KIND_LABEL } from "../../connectionForm";
+import { kindLabel } from "../../connectionForm";
 import { referenceAt, type SqlReference } from "../../mysql/reference";
 import { invalidateSchemaOutline, useSchemaOutline } from "../../sql/schemaCache";
 import { useSqlApi } from "../../sql/context";
@@ -311,7 +311,7 @@ function QueryEditor({
             // most for the warnings, where the server may simply be looking somewhere else.
             // The engine that actually answered: PostgreSQL's complaint attributed to MySQL is a
             // worse label than none, and the same goes for a third engine attributed to either.
-            source: t(KIND_LABEL[dialect.kind]),
+            source: t(kindLabel(dialect.kind)),
           },
         ];
       },

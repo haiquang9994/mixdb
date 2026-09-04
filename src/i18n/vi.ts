@@ -84,6 +84,8 @@ const vi: SharedDict = {
     privacyPolicy: "Chính sách quyền riêng tư",
     privacyHint:
       "MixDB không thu thập bất cứ thông tin nào về bạn và không có máy chủ nào của riêng nó. Những gì app ghi nhớ đều nằm lại trên máy này.",
+    logHint: "Một file trên máy ghi lại các lỗi và crash, phòng khi cần xem kỹ hơn.",
+    openLogFolder: "Mở thư mục log",
   },
   // Các tổ hợp Ctrl/Cmd ứng dụng nhận, đúng như Settings liệt kê. Phím riêng của một module được
   // đặt tên trong từ điển của module đó.
@@ -164,6 +166,10 @@ const vi: SharedDict = {
     clipboard: "Chưa sao chép được — clipboard từ chối: {{message}}",
     /** Dạng lỗi MixDB không nhận ra — hiển thị nguyên trạng thay vì nuốt mất. */
     unknown: "{{message}}",
+    crashedTab: "Tab này gặp lỗi và không thể tiếp tục. Phần còn lại của MixDB không bị ảnh hưởng.",
+    crashedApp: "MixDB gặp lỗi không thể tự phục hồi.",
+    tryAgain: "Thử lại",
+    restartApp: "Khởi động lại MixDB",
   },
 };
 

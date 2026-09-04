@@ -7,10 +7,12 @@
     "core:default",
     "opener:allow-open-url",
     "opener:allow-default-urls",
+    "opener:allow-reveal-item-in-dir",
     "dialog:default",
     "store:default",
     "clipboard-manager:allow-read-text",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "log:default"
   ]
 }

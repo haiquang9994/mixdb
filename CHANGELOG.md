@@ -51,11 +51,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   rename and drop tables, databases and columns and manage data skipping indexes and the sorting
   key, the Query tab now takes `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` by hand, and Dump/Restore works
   like the other engines.
+- MixDB now keeps a local error log and shows a recovery screen instead of a blank window when
+  something goes wrong; open the log folder from Settings → Updates.
 
 ### Fixed
 
 - File properties of the Windows app now show the publisher and copyright instead of blanks.
 - The active tool's highlight in the Frequently used list now reaches the remove button instead of stopping short.
+- A saved connection of a kind this version doesn't recognise (created by a newer version) no longer blanks the app on launch.
 
 ## [0.0.29] - 2026-09-04
 

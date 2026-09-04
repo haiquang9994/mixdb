@@ -37,7 +37,7 @@ import { useSidebarKeyboard } from "../../../core/sidebarKeyboard";
 import { useTranslation } from "../../../i18n";
 import { errorMessage } from "../../../core/errors";
 import type { SqlCollation } from "../types";
-import { KIND_LABEL } from "../connectionForm";
+import { kindLabel } from "../connectionForm";
 
 interface Props {
   /** Whether this connection's tab is the one on show. Passed straight through to the content
@@ -553,7 +553,7 @@ function SqlWorkspace({
                 // Named rather than assumed: the header used to read "MySQL" whatever it was
                 // connected to. Looked up rather than branched on, so an engine added later is
                 // named here without anyone having to remember this line exists.
-                engine: t(KIND_LABEL[dialect.kind]),
+                engine: t(kindLabel(dialect.kind)),
                 version: serverInfo.version,
               })}
             </span>

@@ -17,9 +17,9 @@ import { SqlProvider } from "./sql/context";
 import { SQL_ENGINES, isSqlKind } from "./engines";
 import ConnectionForm from "./components/ConnectionForm";
 import {
-  KIND_LABEL,
   configFrom,
   formFrom,
+  kindLabel,
   withKind,
   type ConnectionForm as FormState,
 } from "./connectionForm";
@@ -200,7 +200,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
               // The same logo the sidebar row carries, without the tinted tile around it: a tab has
               // no room for a badge, and the mark alone is what has to be recognised.
               icon: <DatabaseIcon kind={mark.kind} size={14} />,
-              label: t(KIND_LABEL[mark.kind]),
+              label: t(kindLabel(mark.kind)),
               className: `tab-kind kind-${mark.kind}`,
             }
           : {
@@ -445,7 +445,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
             // The engine as it is named everywhere else in the app, not the wire value: a tab
             // called "postgres · db" beside a sidebar row marked PostgreSQL is the app
             // disagreeing with itself.
-            t("connection.fallbackTitle", { kind: t(KIND_LABEL[config.kind]), host: titleHost })),
+            t("connection.fallbackTitle", { kind: t(kindLabel(config.kind)), host: titleHost })),
       );
     } catch (e) {
       /* The state is left alone. A server that is off, or a VPN that is not up, is not the user
@@ -642,7 +642,7 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
                       anyone the shape says nothing to. */}
                   <span className={`saved-item-icon kind-${c.config.kind}`}>
                     <DatabaseIcon kind={c.config.kind} size="1.05rem" />
-                    <span className="visually-hidden">{t(KIND_LABEL[c.config.kind])}</span>
+                    <span className="visually-hidden">{t(kindLabel(c.config.kind))}</span>
                   </span>
                   <strong>{c.name}</strong>
                   {/* Read-only is about what the row will let you do, so it says the word rather
