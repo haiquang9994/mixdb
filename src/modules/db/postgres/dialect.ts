@@ -20,6 +20,7 @@ export const postgresDialect: SqlDialect = {
   isBinary,
   cancellable: true,
   writable: true,
+  dumpRestoreWritable: true,
   ddlWritable: true,
   rowsWritable: true,
   regexpFilter: true,
