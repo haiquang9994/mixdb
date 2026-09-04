@@ -82,9 +82,12 @@ TABLE` chạy chỉ có đúng cột đó, một ô ORDER BY tự do sẽ chỉ 
 luôn tạo `ENGINE = <đã chọn> ORDER BY tuple()`. Đặt `ORDER BY` thật là việc của spec index (D2 ở
 đó, sau khi bảng đã có cột thật).
 
-Engine dropdown: `MergeTree`, `ReplacingMergeTree`, `SummingMergeTree`, `AggregatingMergeTree`,
-`CollapsingMergeTree`, `VersionedCollapsingMergeTree` — MergeTree family, đúng phạm vi D "Không sửa
-engine không phải MergeTree family" của spec row-writes áp dụng ngược lại cho *tạo mới*: không tạo
+Engine dropdown: `MergeTree`, `ReplacingMergeTree`, `SummingMergeTree`, `AggregatingMergeTree` —
+**bốn**, không phải sáu. `CollapsingMergeTree` và `VersionedCollapsingMergeTree` cùng họ MergeTree
+nhưng **bắt buộc có tham số** trỏ tới một cột `sign` (và `version`) chưa tồn tại lúc bảng
+placeholder ra đời; server từ chối thẳng `Code: 42 ... requires 1 parameter` — xác minh trên
+`clickhouse-test-server` 2026-09-04. Vẫn đúng phạm vi D "Không sửa engine không phải MergeTree
+family" của spec row-writes áp dụng ngược lại cho *tạo mới*: không tạo
 `Distributed`/`Kafka`/`View`/... qua dialog này. Dialog có dòng cảnh báo "không đổi được sau khi
 tạo" — cùng cách `TableDialog.tsx` đã cảnh báo về collation.
 
@@ -133,14 +136,38 @@ câu lệnh nào cả (giữ đúng lý do Postgres diff: một lần lưu comme
 đổi tên, thuộc tính khác chưa đổi, không rollback. Cùng bản chất rủi ro đã chấp nhận ở D4 của spec
 row-writes.
 
-**Chưa xác minh — có thể `MODIFY COLUMN` đổi kiểu là mutation bất đồng bộ giống
-`UPDATE`/`DELETE`.** D4 của spec row-writes đã xác nhận `ALTER TABLE ... UPDATE/DELETE` là mutation
-nền (`system.mutations`, cần poll). Chưa kiểm tra `MODIFY COLUMN` với đổi kiểu có đi qua cùng cơ
-chế đó hay không. Nếu có: `modify_column` khi đổi kiểu phải tái dùng `run_mutation_and_wait` đã có
-sẵn từ D4, không thể coi là DDL đồng bộ "gửi xong là xong". Nếu chỉ đổi comment/default (không đổi
-kiểu) gần như chắc chắn là thay đổi metadata thuần, đồng bộ. **Bắt buộc kiểm tay trên
-`clickhouse-test-server` trước khi chốt code** (xem Kiểm thử) — không đoán trước bằng cách đọc
-tài liệu.
+**Hai câu lệnh tách rời là bắt buộc, không phải lựa chọn.** Gộp `RENAME COLUMN x TO y, MODIFY
+COLUMN y ...` vào một `ALTER` bị server từ chối thẳng: `Code: 48 ... Cannot rename and modify the
+same column 'y' in a single ALTER query (NOT_IMPLEMENTED)`. Vì vậy rủi ro không-rollback ở trên
+không có cách nào né.
+
+**Đã xác minh (2026-09-04, `clickhouse-test-server` 26.8.2.7, bảng MergeTree 43 triệu dòng):
+`MODIFY COLUMN` đổi kiểu *có* tạo mutation, nhưng lệnh `ALTER` tự chờ mutation xong rồi mới trả
+lời — `modify_column` KHÔNG cần `run_mutation_and_wait`, chạy như `execute_check` thường.**
+
+- Đổi kiểu (`UInt32`→`UInt64`→`String`→`UInt64`→`Int128`) tạo dòng mới trong `system.mutations`,
+  nhưng ngay khi HTTP request trả về thì `is_done = 1`, `parts_to_do = 0` và dữ liệu đã chuyển
+  xong. Lệnh chặn 2.7–3.4 s cho 43 triệu dòng (so với 0.16 s của thay đổi metadata thuần).
+- Stack trace của một lần đổi kiểu lỗi cho thấy đúng đường đi đồng bộ:
+  `StorageMergeTree::alter` → `StorageMergeTree::waitForMutation` → `checkMutationStatus`.
+- `mutations_sync` (mặc định `0` = không chờ) **không** áp cho `MODIFY COLUMN`: mô tả của chính
+  setting đó chỉ liệt kê `UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE
+  COLUMN|MATERIALIZE STATISTICS`. `alter_sync` (mặc định `1` = chờ) chỉ áp cho bảng
+  `Replicated`/`Shared`.
+- Chỉ đổi comment/default (không đổi kiểu): 0.16 s, **không** sinh mutation nào — metadata thuần,
+  đúng như dự đoán. `RENAME COLUMN` cũng vậy (0.25 s, không mutation).
+
+**Rủi ro mới phát hiện trong lúc xác minh — đổi kiểu thất bại vì dữ liệu làm bảng KHÔNG ĐỌC ĐƯỢC.**
+Đổi một cột `String` chứa `'a'` sang `UInt64`: lệnh trả về lỗi ngay (0.2 s, `Code: 341 ...
+UNFINISHED`, kèm lý do `CANNOT_PARSE_TEXT`) — nhưng **metadata đã đổi rồi**: `system.columns` báo
+`note UInt64`, mutation nằm lại `is_done = 0, parts_to_do = 2`, và mọi `SELECT` trên bảng từ đó
+đều lỗi `Cannot parse string 'a' as UInt64`. Bảng hỏng cho tới khi người dùng đổi kiểu ngược lại
+(`MODIFY COLUMN note String` — 9.1 s, mutation hỏng biến mất, bảng đọc lại được) hoặc
+`KILL MUTATION`.
+
+Hệ quả cho thiết kế: khi `modify_column` trả lỗi, **không được để người dùng nghĩ là "không có gì
+xảy ra"**. Thông báo lỗi phải nói rõ bảng đang ở trạng thái hỏng và cách thoát (đổi kiểu về lại
+kiểu cũ). Cần một khoá i18n riêng cho trường hợp này — đây là khoá mới duy nhất spec cần thêm.
 
 **D6 — `dropColumn`: `ALTER TABLE t DROP COLUMN name`, không gì đặc biệt.**
 
@@ -163,6 +190,16 @@ mỏng, chỉ chạy khi `kind === "clickhouse"`, ở đúng hai chỗ chuyển 
   `SqlStructureColumn.nullable`, không cần suy lại).
 - Dựng `SqlColumnSpec.dataType` từ `Draft` (sau `composeType`): nếu `draft.nullable`, bọc
   `Nullable(...)` quanh kết quả trước khi gửi đi.
+
+**Bổ sung sau khi triển khai — `parseType`/`composeType` vẫn phải sửa, vì một lý do khác:** tên kiểu
+của ClickHouse **phân biệt hoa/thường** (`uint64` bị từ chối `Code: 50 ... Unknown data type family`,
+xác minh 2026-09-04), trong khi `parseType` hạ chữ thường `typeName` vô điều kiện và `typeSpec` so
+`type.name === name.toLowerCase()`. Hai điều đó cộng lại làm whitelist ClickHouse **không bao giờ
+khớp** và mọi cột tạo/sửa qua dialog đều sinh SQL server không nhận. Sửa ở hai chỗ dùng chung, an
+toàn cho ba engine kia (danh sách của chúng vốn toàn chữ thường):
+- `typeSpec` so không phân biệt hoa/thường cả hai vế.
+- `parseType` trả về tên đúng như danh sách của engine viết (`typeSpec(types, raw)?.name ?? raw`),
+  thay vì hạ chữ thường — một kiểu không có trong danh sách giữ nguyên cách viết nó đến.
 
 **D8 — `SqlEditing` thêm `autoIncrement: boolean` — checkbox "Auto increment" hiện không bị gate
 bởi cờ nào, luôn hiện cho mọi dialect.**
@@ -191,7 +228,11 @@ kiểu đó, không cho phép chọn khi tạo mới).
 ## Backend — file đổi
 
 ```
+src-tauri/src/modules/db/drivers/clickhouse_ddl.rs   (module mới, theo khuôn postgres_ddl.rs —
+  clickhouse.rs đã 1463 dòng và chỉ lo phần đọc)
 src-tauri/src/modules/db/drivers/clickhouse.rs
+  qualified/quote_literal/structure_columns nới lên pub(super); structure_columns đọc default
+  phân biệt literal với expression (read_default)
   + pub async fn create_table(conn, database, table, engine: &str) -> Result<(), AppError>   (D2)
   + pub async fn rename_table(conn, database, table, new_name) -> Result<(), AppError>        (D3)
   + pub async fn drop_table(conn, database, table) -> Result<(), AppError>                    (D3)
@@ -199,8 +240,8 @@ src-tauri/src/modules/db/drivers/clickhouse.rs
   + pub async fn drop_database(conn, name) -> Result<(), AppError>                             (D3)
   + pub async fn add_column(conn, database, table, spec: &ColumnSpec) -> Result<(), AppError> (D4)
   + pub async fn modify_column(conn, database, table, name, spec: &ColumnSpec)                (D5)
-      -- có thể gọi run_mutation_and_wait (đã có, D4 row-writes) nếu xác minh tay cho thấy
-         MODIFY COLUMN đổi kiểu là mutation; nếu không, chạy như execute_check thường
+      -- chạy như execute_check thường: ALTER tự chờ mutation xong (đã xác minh 2026-09-04),
+         KHÔNG dùng run_mutation_and_wait
   + pub async fn drop_column(conn, database, table, name) -> Result<(), AppError>              (D6)
 
 src-tauri/src/modules/db/commands/clickhouse.rs
@@ -275,17 +316,22 @@ src/modules/db/components/ColumnDialog/ColumnDialog.tsx
 - Tạo database mới, tạo bảng với từng engine trong danh sách — xác nhận `ORDER BY tuple()` mặc
   định, cột `id` xuất hiện đúng.
 - Thêm cột nullable và non-nullable của vài kiểu trong whitelist.
-- **Xác minh D5's rủi ro chưa giải:** sửa kiểu một cột đã có dữ liệu → kiểm `system.mutations` có
-  dòng mới xuất hiện hay không (mutation bất đồng bộ) hay lệnh trả lời ngay (đồng bộ). Nếu là
-  mutation: sửa `modify_column` dùng `run_mutation_and_wait`, lặp lại phép thử để xác nhận.
+- ~~**Xác minh D5's rủi ro chưa giải:** sửa kiểu một cột đã có dữ liệu → kiểm `system.mutations`
+  có dòng mới xuất hiện hay không (mutation bất đồng bộ) hay lệnh trả lời ngay (đồng bộ).~~
+  **Đã làm 2026-09-04, kết quả trong D5: đồng bộ, không cần `run_mutation_and_wait`.**
+- **Còn phải kiểm tay:** đổi kiểu thất bại vì dữ liệu (`String` chứa chữ → `UInt64`) trên một bảng
+  thật qua UI — xác nhận thông báo lỗi của MixDB nói được cho người dùng biết bảng đang hỏng và
+  cách thoát (xem rủi ro mới ở D5).
 - Sửa comment-only, default-only, đổi tên-only trên cùng một cột — xác nhận đúng câu lệnh tối
   thiểu được gửi (đối chiếu `system.query_log` nếu cần).
 - Mở dialog sửa một cột `Nullable(UInt64)` đã có sẵn dữ liệu — xác nhận dropdown hiện đúng
   `UInt64` đã chọn, checkbox Nullable bật, không hiện "unknown type" (xác nhận D7).
 - Xoá cột, đổi tên bảng, xoá bảng, xoá database.
-- **Xác minh D9:** tạo cột `DEFAULT 'active'` (literal) và `DEFAULT now()` (expression) — đọc lại
-  `default_expression`, xác nhận lưới có phân biệt được hai trường hợp qua `markExpressionDefaults`
-  hay không.
+- ~~**Xác minh D9:** tạo cột `DEFAULT 'active'` (literal) và `DEFAULT now()` (expression) — đọc lại
+  `default_expression`.~~ **Đã làm 2026-09-04:** `system.columns` trả `default_kind = 'DEFAULT'`
+  cho cả hai, `default_expression` là `'active'` (có nháy đơn) và `now()` (không nháy) — phân biệt
+  được đúng bằng cùng heuristic MySQL đang dùng, `markExpressionDefaults: true` giữ nguyên. Còn
+  phải xác nhận phần hiển thị trong lưới qua UI.
 - Query tab: gõ tay `CREATE`/`INSERT`/`UPDATE` trên kết nối ClickHouse → vẫn bị `guard.ts` chặn như
   trước (xác nhận D1 không vô tình mở Query tab).
 - Sidebar: nút Dump/Restore vẫn xám dù Structure tab đã mở; nút Drop database thì bấm được (xác
@@ -293,17 +339,22 @@ src/modules/db/components/ColumnDialog/ColumnDialog.tsx
 
 ## Rủi ro
 
-- **`MODIFY COLUMN` có thể là mutation bất đồng bộ, chưa xác minh (D5).** Rủi ro lớn nhất của spec
-  này — nếu đúng, phần lớn thời gian triển khai `modify_column` sẽ nằm ở việc nối đúng
-  `run_mutation_and_wait`, không phải ở việc dựng câu SQL. Nếu ước lượng ban đầu sai, đây là tín
-  hiệu bàn lại trước khi viết nhiều code hơn — không phải lý do bỏ qua bước kiểm tay.
+- ~~**`MODIFY COLUMN` có thể là mutation bất đồng bộ, chưa xác minh (D5).**~~ **Đã loại bỏ
+  2026-09-04:** lệnh `ALTER` tự chờ mutation xong (`StorageMergeTree::waitForMutation`), không cần
+  `run_mutation_and_wait`. Chi tiết ở D5.
+- **Đổi kiểu thất bại vì dữ liệu làm bảng không đọc được cho tới khi đổi kiểu ngược lại (D5).**
+  Rủi ro lớn nhất còn lại của spec này, phát hiện lúc xác minh: metadata đổi trước, mutation hỏng
+  nằm lại, `SELECT` lỗi. Lớp phòng thủ duy nhất là thông báo lỗi nói rõ cách thoát — cần khoá i18n
+  riêng.
 - **`RENAME COLUMN` thành công rồi `MODIFY COLUMN` thất bại giữa chừng, không rollback (D5).** Cùng
-  bản chất đã chấp nhận ở D4 của spec row-writes — không transaction, không cách nào khác.
+  bản chất đã chấp nhận ở D4 của spec row-writes — không transaction, và ClickHouse cấm hẳn việc
+  gộp hai thao tác đó vào một `ALTER` (`Code: 48 NOT_IMPLEMENTED`, xác minh 2026-09-04), nên không
+  có cách nào khác.
 - **Engine chọn sai lúc tạo bảng không sửa được, phải tạo lại (D2).** Cảnh báo trong dialog là lớp
   phòng thủ duy nhất; chấp nhận được vì đúng bản chất ClickHouse.
-- **`markExpressionDefaults: true` (D9) chưa kiểm tay** — nếu ClickHouse không phân biệt rõ
-  literal/expression trong `default_expression` như MySQL, mark có thể sai (hiện `uuid()` như văn
-  bản thường hoặc ngược lại) — không mất dữ liệu, chỉ sai hiển thị trong lưới cột.
+- ~~**`markExpressionDefaults: true` (D9) chưa kiểm tay**~~ — **đã kiểm 2026-09-04:**
+  `default_expression` phân biệt `'active'` với `now()` đúng như MySQL, rủi ro này khép lại (phần
+  hiển thị trong lưới vẫn còn phải xem qua UI).
 - **`Nullable(Decimal(10,2))` hay các type lồng khác** — D7 giải quyết đúng một lớp bọc ngoài cùng;
   nếu ClickHouse cho phép lồng sâu hơn (không phổ biến), bóc/bọc có thể sai — whitelist D7 plan v1
   vốn chỉ gồm scalar, rủi ro này thấp nhưng chưa loại trừ hoàn toàn.
