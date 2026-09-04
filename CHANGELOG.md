@@ -48,8 +48,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   connection.
 - ClickHouse: the Data tab's grid can insert, update and delete rows, the Structure tab can create,
   rename and drop tables, databases and columns and manage data skipping indexes and the sorting
-  key, and the Query tab now takes `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` by hand. Still no
-  dump/restore.
+  key, the Query tab now takes `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` by hand, and Dump/Restore works
+  like the other engines.
 
 ### Fixed
 
