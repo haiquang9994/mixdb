@@ -187,6 +187,205 @@ fn row_to_columns(row: &serde_json::Map<String, Value>, columns: &[String]) -> V
     columns.iter().map(|c| row.get(c).cloned().unwrap_or(Value::Null)).collect()
 }
 
+/// One token of a statement's own text that D3/D4 of
+/// `docs/superpowers/specs/2026-09-04-clickhouse-query-dml-design.md` need — nothing more. Walked
+/// fresh here rather than reusing `split_statements`'s loop: that function only tracks a
+/// statement's own boundaries and its opening verb, never what comes after, and its quoting rules
+/// (backtick/double-quote identifiers, both escape styles, nesting block comments, `#`/`--` line
+/// comments) are exactly what this needs too — see that function's own doc for where each rule was
+/// checked against the test server.
+enum Word {
+    /// An unquoted run of letters/digits/underscore — a keyword or a bare identifier. Original
+    /// case kept: SQL keywords compare case-insensitively, but a bare table name's case is part of
+    /// its name.
+    Bare(String),
+    /// Backtick- or double-quoted, quoting undone (backslash-escaped, the same convention
+    /// `quote_ident` writes one in).
+    Quoted(String),
+    Comma,
+    Dot,
+}
+
+impl Word {
+    fn is_keyword(&self, kw: &str) -> bool {
+        matches!(self, Word::Bare(s) if s.eq_ignore_ascii_case(kw))
+    }
+
+    fn name(&self) -> Option<&str> {
+        match self {
+            Word::Bare(s) | Word::Quoted(s) => Some(s),
+            _ => None,
+        }
+    }
+}
+
+/// Splits `sql` into the [`Word`]s above, dropping whitespace, comments and string literals, and
+/// everything inside a bracketed group — `ALTER TABLE <name> UPDATE`/`DELETE FROM <name> WHERE`
+/// never need to look inside one, the name always sits at the top level.
+fn dml_words(sql: &str) -> Vec<Word> {
+    let chars: Vec<char> = sql.chars().collect();
+    let mut words = Vec::new();
+    let mut depth = 0i32;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_whitespace() {
+            i += 1;
+            continue;
+        }
+        if c == '#' || (c == '-' && chars.get(i + 1) == Some(&'-')) {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if c == '/' && chars.get(i + 1) == Some(&'*') {
+            i += 2;
+            let mut nesting = 1u32;
+            while i < chars.len() && nesting > 0 {
+                if chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
+                    i += 2;
+                    nesting += 1;
+                    continue;
+                }
+                if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
+                    i += 2;
+                    nesting -= 1;
+                    continue;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        if c == '`' || c == '"' {
+            let quote = c;
+            i += 1;
+            let mut value = String::new();
+            while i < chars.len() {
+                let ch = chars[i];
+                if ch == '\\' && i + 1 < chars.len() {
+                    value.push(chars[i + 1]);
+                    i += 2;
+                    continue;
+                }
+                i += 1;
+                if ch == quote {
+                    break;
+                }
+                value.push(ch);
+            }
+            if depth == 0 {
+                words.push(Word::Quoted(value));
+            }
+            continue;
+        }
+        if c == '\'' {
+            i += 1;
+            while i < chars.len() {
+                let ch = chars[i];
+                if ch == '\\' && i + 1 < chars.len() {
+                    i += 2;
+                    continue;
+                }
+                i += 1;
+                if ch == '\'' {
+                    if chars.get(i) == Some(&'\'') {
+                        i += 1;
+                        continue;
+                    }
+                    break;
+                }
+            }
+            continue;
+        }
+        if c == '(' {
+            depth += 1;
+            i += 1;
+            continue;
+        }
+        if c == ')' {
+            depth -= 1;
+            i += 1;
+            continue;
+        }
+        if depth == 0 && c == ',' {
+            words.push(Word::Comma);
+            i += 1;
+            continue;
+        }
+        if depth == 0 && c == '.' {
+            words.push(Word::Dot);
+            i += 1;
+            continue;
+        }
+        if c.is_alphanumeric() || c == '_' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            if depth == 0 {
+                words.push(Word::Bare(chars[start..i].iter().collect()));
+            }
+            continue;
+        }
+        i += 1;
+    }
+    words
+}
+
+/// The `[database.]table` reference starting at `words[at]` — a bare/quoted name, optionally
+/// followed by `.` and a second bare/quoted name. `None` when `words[at]` is not a name.
+fn read_table_ref(words: &[Word], at: usize) -> Option<(Option<String>, String, usize)> {
+    let first = words.get(at)?.name()?.to_string();
+    if matches!(words.get(at + 1), Some(Word::Dot)) {
+        let second = words.get(at + 2)?.name()?.to_string();
+        Some((Some(first), second, at + 3))
+    } else {
+        Some((None, first, at + 1))
+    }
+}
+
+/// `Some((database, table))` when `sql` is `ALTER TABLE [db.]name UPDATE ...` and nothing else —
+/// one `AlterCommand`, no comma anywhere at the top level. A comma means more than one command is
+/// packed into the `ALTER` (ClickHouse allows `ALTER TABLE t DROP COLUMN x, UPDATE y = 1 WHERE
+/// ...`) — left unrecognised on purpose (D3 of the design doc): the safe default is to fall through
+/// to the existing, still-blocked DDL path rather than guess.
+///
+/// `sql` is one statement's own text; the caller already knows its opening verb is `ALTER` from
+/// `Statement::verb` before calling this.
+fn alter_table_update_target(sql: &str) -> Option<(Option<String>, String)> {
+    let words = dml_words(sql);
+    if words.iter().any(|w| matches!(w, Word::Comma)) {
+        return None;
+    }
+    if !words.first()?.is_keyword("ALTER") {
+        return None;
+    }
+    if !words.get(1)?.is_keyword("TABLE") {
+        return None;
+    }
+    let (database, table, next) = read_table_ref(&words, 2)?;
+    if !words.get(next)?.is_keyword("UPDATE") {
+        return None;
+    }
+    Some((database, table))
+}
+
+/// `Some((database, table))` when `sql` is `DELETE FROM [db.]name ...` — ClickHouse's lightweight
+/// delete. `sql` is one statement's own text; the caller already knows its opening verb is
+/// `DELETE`.
+fn delete_from_target(sql: &str) -> Option<(Option<String>, String)> {
+    let words = dml_words(sql);
+    if !words.first()?.is_keyword("DELETE") {
+        return None;
+    }
+    if !words.get(1)?.is_keyword("FROM") {
+        return None;
+    }
+    let (database, table, _next) = read_table_ref(&words, 2)?;
+    Some((database, table))
+}
+
 /// Runs a script, statement by statement, each on its own request — see the module doc for why.
 ///
 /// v1 never writes, so every statement's `kind` is `"rows"` or `"ok"`: there is no `"affected"`
@@ -293,6 +492,72 @@ mod tests {
 
     fn split(sql: &str) -> Vec<(String, String)> {
         split_statements(sql).into_iter().map(|s| (s.verb, s.text)).collect()
+    }
+
+    #[test]
+    fn alter_table_update_target_reads_an_unqualified_table() {
+        assert_eq!(
+            alter_table_update_target("ALTER TABLE t UPDATE x = 1 WHERE id = 2"),
+            Some((None, "t".to_string()))
+        );
+    }
+
+    #[test]
+    fn alter_table_update_target_reads_a_qualified_table() {
+        assert_eq!(
+            alter_table_update_target("ALTER TABLE mydb.t UPDATE x = 1"),
+            Some((Some("mydb".to_string()), "t".to_string()))
+        );
+    }
+
+    #[test]
+    fn alter_table_update_target_understands_backtick_and_double_quote() {
+        assert_eq!(
+            alter_table_update_target("ALTER TABLE `my db`.`my table` UPDATE x = 1"),
+            Some((Some("my db".to_string()), "my table".to_string()))
+        );
+        assert_eq!(
+            alter_table_update_target(r#"ALTER TABLE "t" UPDATE x = 1"#),
+            Some((None, "t".to_string()))
+        );
+    }
+
+    #[test]
+    fn alter_table_update_target_refuses_more_than_one_command() {
+        assert_eq!(alter_table_update_target("ALTER TABLE t DROP COLUMN x, UPDATE y = 1 WHERE z = 2"), None);
+    }
+
+    #[test]
+    fn alter_table_update_target_refuses_a_plain_drop_column() {
+        assert_eq!(alter_table_update_target("ALTER TABLE t DROP COLUMN x"), None);
+    }
+
+    #[test]
+    fn alter_table_update_target_refuses_alter_delete() {
+        // D2 of the design: only DELETE FROM...WHERE is supported, not this older mutation spelling.
+        assert_eq!(alter_table_update_target("ALTER TABLE t DELETE WHERE id = 1"), None);
+    }
+
+    #[test]
+    fn alter_table_update_target_skips_comments() {
+        assert_eq!(
+            alter_table_update_target("ALTER TABLE /* c */ t UPDATE x = 1 -- trailing\nWHERE id = 1"),
+            Some((None, "t".to_string()))
+        );
+    }
+
+    #[test]
+    fn delete_from_target_reads_the_table() {
+        assert_eq!(delete_from_target("DELETE FROM t WHERE id = 1"), Some((None, "t".to_string())));
+        assert_eq!(
+            delete_from_target("DELETE FROM mydb.t WHERE id = 1"),
+            Some((Some("mydb".to_string()), "t".to_string()))
+        );
+    }
+
+    #[test]
+    fn delete_from_target_refuses_a_shape_with_no_from() {
+        assert_eq!(delete_from_target("DELETE"), None);
     }
 
     #[test]
