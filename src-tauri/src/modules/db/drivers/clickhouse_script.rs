@@ -35,6 +35,175 @@ struct Statement {
     verb: String,
 }
 
+/// Where the scanner is inside a statement, resumable across calls to [`Scanner::feed`] so that a
+/// chunk boundary landing mid-comment or mid-string does not read as the end of one — the property
+/// the streaming restore reader in `clickhouse_dump.rs` needs (see that module's doc).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Region {
+    /// Not inside a comment or a quoted string. `pending` is the previous character when it might
+    /// be the first half of `--` or `/*` and the next character decides which.
+    Body { pending: Option<char> },
+    LineComment,
+    /// `pending` is `Some('*')` right after a `*` that a following `/` would close, or `Some('/')`
+    /// right after a `/` that a following `*` would open one level deeper.
+    BlockComment { depth: u32, pending: Option<char> },
+    /// Inside `` ` ``, `"` or `'` — `quote` says which. `escaped` when the previous character was
+    /// an unconsumed `\`.
+    Quoted { quote: char, escaped: bool },
+    /// Just closed a `'`; one more `'` reopens the string (SQL's doubled-quote escape) rather than
+    /// ending it for good.
+    MaybeDoubledSingleQuote,
+}
+
+pub(super) enum Fed {
+    More,
+    /// This `;` ends the statement — the caller's own buffer, not including this character, is the
+    /// whole statement text; [`Scanner::verb`] is its opening keyword.
+    End,
+}
+
+/// A statement-boundary scanner, fed one character at a time and resumable across calls — the core
+/// both `split_statements` below (the whole script at once) and `clickhouse_dump.rs`'s restore
+/// reader (a file read in chunks) drive, so the two can never disagree about where a statement ends.
+/// Encodes the same rules `split_statements`' own doc lists (checked against the test server): `#`
+/// and `--` open a line comment, `/* */` nests, backtick/double-quote identifiers are backslash-
+/// escaped, single-quoted strings take both a doubled quote and a backslash as an escape.
+pub(super) struct Scanner {
+    region: Region,
+    verb: String,
+    verb_done: bool,
+}
+
+impl Scanner {
+    pub(super) fn new() -> Self {
+        Self { region: Region::Body { pending: None }, verb: String::new(), verb_done: false }
+    }
+
+    /// The statement's opening keyword, upper-cased — empty for a run of nothing but comments.
+    pub(super) fn verb(&self) -> &str {
+        &self.verb
+    }
+
+    /// Starts the next statement. Only ever called right after [`Fed::End`], where `region` is
+    /// already back to `Body { pending: None }` — nothing there needs resetting, only the verb.
+    pub(super) fn reset(&mut self) {
+        self.verb.clear();
+        self.verb_done = false;
+    }
+
+    pub(super) fn feed(&mut self, c: char) -> Fed {
+        match self.region {
+            Region::LineComment => {
+                if c == '\n' {
+                    self.region = Region::Body { pending: None };
+                    return self.body_from(None, c);
+                }
+                Fed::More
+            }
+            Region::BlockComment { depth, pending } => {
+                match (pending, c) {
+                    (Some('/'), '*') => {
+                        self.region = Region::BlockComment { depth: depth + 1, pending: None };
+                    }
+                    (Some('*'), '/') => {
+                        self.region = if depth <= 1 {
+                            Region::Body { pending: None }
+                        } else {
+                            Region::BlockComment { depth: depth - 1, pending: None }
+                        };
+                    }
+                    _ => {
+                        self.region = Region::BlockComment {
+                            depth,
+                            pending: (c == '/' || c == '*').then_some(c),
+                        };
+                    }
+                }
+                Fed::More
+            }
+            Region::Quoted { quote, escaped } => {
+                if escaped {
+                    self.region = Region::Quoted { quote, escaped: false };
+                } else if c == '\\' {
+                    self.region = Region::Quoted { quote, escaped: true };
+                } else if c == quote {
+                    self.region = if quote == '\'' {
+                        Region::MaybeDoubledSingleQuote
+                    } else {
+                        Region::Body { pending: None }
+                    };
+                }
+                Fed::More
+            }
+            Region::MaybeDoubledSingleQuote => {
+                if c == '\'' {
+                    self.region = Region::Quoted { quote: '\'', escaped: false };
+                    Fed::More
+                } else {
+                    self.region = Region::Body { pending: None };
+                    self.body_from(None, c)
+                }
+            }
+            Region::Body { pending } => self.body_from(pending, c),
+        }
+    }
+
+    fn body_from(&mut self, pending: Option<char>, c: char) -> Fed {
+        match (pending, c) {
+            (Some('-'), '-') => {
+                self.region = Region::LineComment;
+                Fed::More
+            }
+            (Some('/'), '*') => {
+                self.region = Region::BlockComment { depth: 1, pending: None };
+                Fed::More
+            }
+            // The pending character was not the first half of anything — resolve it as an
+            // ordinary character (verb tracking included) before handling `c` fresh.
+            (Some(prev), _) => {
+                self.plain(prev);
+                self.body_from(None, c)
+            }
+            (None, '#') => {
+                self.region = Region::LineComment;
+                Fed::More
+            }
+            (None, '-') | (None, '/') => {
+                self.region = Region::Body { pending: Some(c) };
+                Fed::More
+            }
+            (None, '`') | (None, '"') => {
+                self.region = Region::Quoted { quote: c, escaped: false };
+                Fed::More
+            }
+            (None, '\'') => {
+                self.region = Region::Quoted { quote: '\'', escaped: false };
+                Fed::More
+            }
+            (None, ';') => {
+                self.region = Region::Body { pending: None };
+                Fed::End
+            }
+            (None, _) => {
+                self.plain(c);
+                Fed::More
+            }
+        }
+    }
+
+    /// Verb tracking for one character known to be ordinary body text — the counterpart of the
+    /// original splitter's bottom `if !verb_done { ... }` branch.
+    fn plain(&mut self, c: char) {
+        if !self.verb_done {
+            if c.is_alphanumeric() || c == '_' {
+                self.verb.push(c.to_ascii_uppercase());
+            } else if !self.verb.is_empty() {
+                self.verb_done = true;
+            }
+        }
+    }
+}
+
 /// Splits a script into the statements that are to be sent one at a time.
 ///
 /// Ported from `src/modules/db/sql/statements.ts`, which the editor splits with so that the
@@ -42,137 +211,29 @@ struct Statement {
 /// belongs in the same commit as the other**, and in both sets of tests. Comments are kept in the
 /// text: they may carry a hint (`SETTINGS`, say), and dropping them would change what is run.
 fn split_statements(sql: &str) -> Vec<Statement> {
-    let chars: Vec<char> = sql.chars().collect();
     let mut statements: Vec<Statement> = Vec::new();
     let mut current = String::new();
-    let mut verb = String::new();
-    let mut verb_done = false;
-    let mut i = 0;
+    let mut scanner = Scanner::new();
 
-    fn push(statements: &mut Vec<Statement>, current: &mut String, verb: &mut String) {
-        let text = current.trim().to_string();
-        let opening = std::mem::take(verb);
-        current.clear();
-        if opening.is_empty() {
-            return;
+    for c in sql.chars() {
+        match scanner.feed(c) {
+            Fed::More => current.push(c),
+            Fed::End => {
+                let text = current.trim().to_string();
+                let verb = scanner.verb().to_string();
+                current.clear();
+                if !verb.is_empty() {
+                    statements.push(Statement { text, verb });
+                }
+                scanner.reset();
+            }
         }
-        statements.push(Statement { text, verb: opening });
     }
-
-    while i < chars.len() {
-        let c = chars[i];
-
-        // `#` to the end of the line.
-        if c == '#' {
-            while i < chars.len() && chars[i] != '\n' {
-                current.push(chars[i]);
-                i += 1;
-            }
-            continue;
-        }
-
-        // `--` to the end of the line, needing no whitespace after it.
-        if c == '-' && chars.get(i + 1) == Some(&'-') {
-            while i < chars.len() && chars[i] != '\n' {
-                current.push(chars[i]);
-                i += 1;
-            }
-            continue;
-        }
-
-        // `/* ... */`, which nests.
-        if c == '/' && chars.get(i + 1) == Some(&'*') {
-            current.push('/');
-            current.push('*');
-            i += 2;
-            let mut depth = 1u32;
-            while i < chars.len() && depth > 0 {
-                if chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
-                    current.push('/');
-                    current.push('*');
-                    i += 2;
-                    depth += 1;
-                    continue;
-                }
-                if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
-                    current.push('*');
-                    current.push('/');
-                    i += 2;
-                    depth -= 1;
-                    continue;
-                }
-                current.push(chars[i]);
-                i += 1;
-            }
-            continue;
-        }
-
-        // Backtick or double-quoted identifiers: backslash-escaped, same as `quote_ident` writes.
-        if c == '`' || c == '"' {
-            current.push(c);
-            i += 1;
-            while i < chars.len() {
-                let ch = chars[i];
-                if ch == '\\' && i + 1 < chars.len() {
-                    current.push(ch);
-                    current.push(chars[i + 1]);
-                    i += 2;
-                    continue;
-                }
-                current.push(ch);
-                i += 1;
-                if ch == c {
-                    break;
-                }
-            }
-            continue;
-        }
-
-        // Single-quoted strings: both a doubled quote and a backslash escape one.
-        if c == '\'' {
-            current.push(c);
-            i += 1;
-            while i < chars.len() {
-                let ch = chars[i];
-                if ch == '\\' && i + 1 < chars.len() {
-                    current.push(ch);
-                    current.push(chars[i + 1]);
-                    i += 2;
-                    continue;
-                }
-                current.push(ch);
-                i += 1;
-                if ch == '\'' {
-                    if chars.get(i) == Some(&'\'') {
-                        current.push('\'');
-                        i += 1;
-                        continue;
-                    }
-                    break;
-                }
-            }
-            continue;
-        }
-
-        if c == ';' {
-            push(&mut statements, &mut current, &mut verb);
-            verb_done = false;
-            i += 1;
-            continue;
-        }
-
-        if !verb_done {
-            if c.is_alphanumeric() || c == '_' {
-                verb.push(c.to_ascii_uppercase());
-            } else if !verb.is_empty() {
-                verb_done = true;
-            }
-        }
-        current.push(c);
-        i += 1;
+    let text = current.trim().to_string();
+    let verb = scanner.verb().to_string();
+    if !verb.is_empty() {
+        statements.push(Statement { text, verb });
     }
-
-    push(&mut statements, &mut current, &mut verb);
     statements
 }
 
