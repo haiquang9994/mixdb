@@ -316,6 +316,94 @@ pub async fn dump_data(
     Ok(())
 }
 
+/// Replays a dump file into `database`, one statement at a time, without holding more of the file
+/// in memory than the largest single statement (D7) — typically one `FORMAT SQLInsert` batch, a few
+/// MB at most, not the whole file. Reads the file in 64KB chunks, decodes as much valid UTF-8 as
+/// each growing buffer holds (keeping only a genuinely incomplete multi-byte tail for the next
+/// read), and feeds the decoded characters to a [`Scanner`] — the same one `split_statements`
+/// drives, so a chunk boundary landing inside a quote or a comment cannot be mistaken for the end of
+/// a statement.
+///
+/// Every statement runs through `execute_check`, scoped to `database` via the same `?database=`
+/// mechanism the dump's stripped-qualifier statements rely on (D4) — stops at the first one that
+/// fails, reporting that statement and the server's own words, like `sqlite_dump::restore`.
+pub async fn restore(
+    conn: &Connection,
+    database: &str,
+    path: &str,
+    watch: &dump::Watch<'_>,
+) -> Result<(), AppError> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(path)
+        .map_err(|e| err!("error.cannotReadFile", path = path, message = e))?;
+    let total = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut reader = std::io::BufReader::new(file);
+
+    let mut buf: Vec<u8> = Vec::new();
+    let mut read_buf = [0u8; 64 * 1024];
+    let mut scanner = Scanner::new();
+    let mut current = String::new();
+    let mut sent: u64 = 0;
+    let mut eof = false;
+
+    loop {
+        if (watch.cancel)() {
+            return Err(err!("error.transferCancelled", tool = "ClickHouse restore"));
+        }
+
+        let valid_up_to = match std::str::from_utf8(&buf) {
+            Ok(s) => s.len(),
+            Err(e) => e.valid_up_to(),
+        };
+        let text = std::str::from_utf8(&buf[..valid_up_to])
+            .expect("valid_up_to always points at a char boundary")
+            .to_string();
+        for c in text.chars() {
+            sent += c.len_utf8() as u64;
+            match scanner.feed(c) {
+                Fed::More => current.push(c),
+                Fed::End => {
+                    let statement = current.trim().to_string();
+                    current.clear();
+                    scanner.reset();
+                    if !statement.is_empty() {
+                        clickhouse::execute_check(conn, &statement, Some(database)).await?;
+                    }
+                    (watch.report)(dump::Progress {
+                        percent: (total > 0)
+                            .then(|| ((sent as f64 / total as f64) * 100.0).min(99.0) as u8),
+                        ..dump::Progress::default()
+                    });
+                }
+            }
+        }
+        buf.drain(..valid_up_to);
+
+        if eof && buf.is_empty() {
+            break;
+        }
+        if eof {
+            return Err(err!("error.cannotReadFile", path = path, message = "invalid UTF-8"));
+        }
+
+        let read = reader
+            .read(&mut read_buf)
+            .map_err(|e| err!("error.cannotReadFile", path = path, message = e))?;
+        if read == 0 {
+            eof = true;
+        } else {
+            buf.extend_from_slice(&read_buf[..read]);
+        }
+    }
+
+    let tail = current.trim().to_string();
+    if !tail.is_empty() {
+        clickhouse::execute_check(conn, &tail, Some(database)).await?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
