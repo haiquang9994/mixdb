@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mysqlEditing } from "../mysql/editing";
 import { postgresEditing } from "../postgres/editing";
+import { clickhouseEditing } from "../clickhouse/editing";
 import type { SqlEditing } from "./dialect";
 
 /**
@@ -13,6 +14,7 @@ import type { SqlEditing } from "./dialect";
 const DIALECTS: [name: string, editing: SqlEditing][] = [
   ["mysql", mysqlEditing],
   ["postgres", postgresEditing],
+  ["clickhouse", clickhouseEditing],
 ];
 
 describe.each(DIALECTS)("%s column types", (name, editing) => {
@@ -44,7 +46,12 @@ describe.each(DIALECTS)("%s column types", (name, editing) => {
   });
 });
 
-describe.each(DIALECTS)("%s indexes", (name, editing) => {
+/** The two that build indexes. ClickHouse is left out on purpose: its only index-like object is
+ *  the sorting key, and data skipping indexes are a design of their own that is not built yet, so
+ *  `indexKinds` there is deliberately empty. */
+const INDEXING = DIALECTS.filter(([name]) => name !== "clickhouse");
+
+describe.each(INDEXING)("%s indexes", (name, editing) => {
   it("offers a primary key, which every table dialog needs", () => {
     expect(editing.indexKinds, name).toContain("primary");
   });
@@ -111,3 +118,32 @@ describe("postgres column types", () => {
     }
   });
 });
+
+describe("auto increment", () => {
+  it("is offered where the engine numbers a column itself", () => {
+    expect(mysqlEditing.autoIncrement).toBe(true);
+    expect(postgresEditing.autoIncrement).toBe(true);
+  });
+
+  it("is not offered on ClickHouse, which has nothing equivalent", () => {
+    expect(clickhouseEditing.autoIncrement).toBe(false);
+  });
+});
+
+describe("ClickHouse column types", () => {
+  it("offers no type already wrapped in Nullable", () => {
+    // Nullable is a checkbox, and it wraps around the chosen type on the way out — an entry that
+    // came wrapped already would end up as `Nullable(Nullable(T))`.
+    for (const type of clickhouseEditing.columnTypes) {
+      expect(type.name.startsWith("Nullable"), type.name).toBe(false);
+    }
+  });
+
+  it("marks no type numeric, UNSIGNED being a MySQL clause", () => {
+    expect(clickhouseEditing.unsigned).toBe(false);
+    for (const type of clickhouseEditing.columnTypes) {
+      expect(type.numeric, type.name).not.toBe(true);
+    }
+  });
+});
+

@@ -44,6 +44,7 @@ export const sqliteEditing: SqlEditing = {
   unsigned: false,
   columnPosition: false,
   onUpdateCurrentTimestamp: false,
+  autoIncrement: true,
   objectCollation: false,
   /* SQLite reports a default exactly as it was written in the DDL, so `CURRENT_TIMESTAMP` and the
      string `'CURRENT_TIMESTAMP'` arrive different — quoted and unquoted — and the mark tells them

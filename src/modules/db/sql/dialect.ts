@@ -37,6 +37,10 @@ export interface SqlEditing {
   /** `ON UPDATE CURRENT_TIMESTAMP` exists — MySQL only. The same effect on PostgreSQL is a
    *  trigger, which is not a property of the column. */
   onUpdateCurrentTimestamp: boolean;
+  /** The engine numbers a column itself — `AUTO_INCREMENT`, `GENERATED ... AS IDENTITY`,
+   *  `AUTOINCREMENT`. False on ClickHouse, which has no counterpart at all, so the checkbox is
+   *  absent there rather than disabled — the same way `onUpdateCurrentTimestamp` is elsewhere. */
+  autoIncrement: boolean;
   /** A database or a table carries a collation of its own. On PostgreSQL only a column does: a
    *  database's is a locale of the host rather than a name off a list, and a table has none. */
   objectCollation: boolean;

@@ -413,15 +413,19 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
                 {t("columnDialog.unsigned")}
               </label>
             )}
-            <label className={styles.toggle}>
-              <input
-                type="checkbox"
-                checked={draft.autoIncrement}
-                disabled={saving}
-                onChange={(e) => patch({ autoIncrement: e.target.checked })}
-              />
-              {t("columnDialog.autoIncrement")}
-            </label>
+            {/* ClickHouse is the first engine with no counterpart at all — hidden rather than
+                disabled, the same way the clause below is. */}
+            {offers.autoIncrement && (
+              <label className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  checked={draft.autoIncrement}
+                  disabled={saving}
+                  onChange={(e) => patch({ autoIncrement: e.target.checked })}
+                />
+                {t("columnDialog.autoIncrement")}
+              </label>
+            )}
             {/* A MySQL clause. The same effect on PostgreSQL is a trigger, which is not a property of
                 the column and so not this dialog's to offer. */}
             {offers.onUpdateCurrentTimestamp && (
