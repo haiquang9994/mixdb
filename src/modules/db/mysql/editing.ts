@@ -49,6 +49,7 @@ export const mysqlEditing: SqlEditing = {
   unsigned: true,
   columnPosition: true,
   onUpdateCurrentTimestamp: true,
+  autoIncrement: true,
   objectCollation: true,
   markExpressionDefaults: true,
   indexKinds: ["index", "unique", "primary", "fulltext", "spatial"],

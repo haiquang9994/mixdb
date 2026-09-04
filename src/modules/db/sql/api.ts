@@ -140,8 +140,17 @@ export interface SqlApi {
    * column is added from the Structure tab afterwards.
    *
    * `collation` names the table's default collation, or null to inherit the database's.
+   * `engine` is the ClickHouse table engine, and null everywhere else: the other three have one
+   * storage engine's worth of choice at table level and take no such argument. It is the one
+   * property of a ClickHouse table that cannot be changed afterwards.
    */
-  createTable(id: string, database: string, table: string, collation: string | null): Promise<void>;
+  createTable(
+    id: string,
+    database: string,
+    table: string,
+    collation: string | null,
+    engine: string | null
+  ): Promise<void>;
 
   /** Renames a table within its database. Atomic: nothing ever sees both names, or neither. */
   renameTable(id: string, database: string, table: string, newName: string): Promise<void>;

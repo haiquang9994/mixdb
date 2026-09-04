@@ -22,6 +22,9 @@ interface Props {
   /** The database the three actions act on; empty when none is selected, which disables them. */
   database: string;
   disabled?: boolean;
+  /** Drop specifically. Dump and restore keep `disabled`: an engine can have its schema open while
+   *  it still has no dump tool at all (ClickHouse). */
+  schemaDisabled?: boolean;
   onError: (message: string) => void;
   onChanged: (change: DatabaseChange) => void;
   /** What is running, for the workspace's overlay — the empty string when nothing is. */
@@ -44,6 +47,7 @@ function DatabaseActions({
   connectionId,
   database,
   disabled,
+  schemaDisabled,
   onError,
   onChanged,
   onBusyChange,
@@ -90,6 +94,8 @@ function DatabaseActions({
       ? isMongoSystemDatabase(database)
       : (optionalSql?.dialect.isSystemDatabase(database) ?? false));
   const busy = disabled || running || database === "" || system;
+  /** The same for the Drop button, which is gated on the schema rather than on dump/restore. */
+  const dropBusy = schemaDisabled || running || database === "" || system;
 
   /** The button's tooltip, replaced over a system database by what is stopping it. */
   function label(key: "dump.dump" | "dump.restore" | "dump.drop") {
@@ -243,7 +249,7 @@ function DatabaseActions({
                   icon: TrashIcon,
                   label: label("dump.drop"),
                   danger: true,
-                  disabled: busy,
+                  disabled: dropBusy,
                   onClick: () => setDropping(true),
                 },
               ]

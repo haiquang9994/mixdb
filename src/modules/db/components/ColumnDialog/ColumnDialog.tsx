@@ -7,7 +7,7 @@ import type { SelectOption } from "../../../../components/Select";
 import { useTranslation } from "../../../../i18n";
 import { errorMessage } from "../../../../core/errors";
 import type { SqlCollation, SqlColumnSpec, SqlStructureColumn } from "../../types";
-import type { SqlTypeSpec } from "../../sql/dialect";
+import type { SqlDialect, SqlTypeSpec } from "../../sql/dialect";
 import { useSqlDialect } from "../../sql/context";
 import styles from "./ColumnDialog.module.css";
 import Modal from "../../../../components/Modal";
@@ -15,7 +15,8 @@ import Modal from "../../../../components/Modal";
 /** What is known about a type name, or undefined for one the engine's list doesn't carry — a column
  * declared as something older, newer or more exotic than the app knows still has to be editable. */
 function typeSpec(types: readonly SqlTypeSpec[], name: string): SqlTypeSpec | undefined {
-  return types.find((type) => type.name === name.toLowerCase());
+  const wanted = name.trim().toLowerCase();
+  return types.find((type) => type.name.toLowerCase() === wanted);
 }
 
 /** Only a number, or a number and a scale: what every type but `enum`/`set` takes. */
@@ -69,8 +70,14 @@ export function parseType(
     ...(parenthesised ? text.slice(close + 1) : "").split(/\s+/),
   ].filter((word) => word !== "");
 
+  // Spelled the way the engine's own list spells it, so the picker can match it and so the
+  // declaration that goes back out is the one the engine accepts. Lower-casing it unconditionally
+  // was safe only while every list held lower-case names: ClickHouse's are mixed case and its type
+  // names are case-sensitive — `uint64` is refused outright, `Code: 50 UNKNOWN_TYPE`. A type the
+  // list has no entry for keeps whatever spelling it arrived with, for the same reason.
+  const rawName = headWords.slice(0, taken).join(" ");
   return {
-    typeName: headWords.slice(0, taken).join(" ").toLowerCase(),
+    typeName: typeSpec(types, rawName)?.name ?? rawName,
     typeArg: parenthesised ? text.slice(open + 1, close).trim() : "",
     unsigned: words.some((word) => word.toLowerCase() === "unsigned"),
     typeTail: words.filter((word) => word.toLowerCase() !== "unsigned").join(" "),
@@ -105,6 +112,44 @@ export function composeType(types: readonly SqlTypeSpec[], draft: Draft): string
   return parts.join(" ");
 }
 
+/**
+ * The outermost `Nullable(...)` wrapper, taken off.
+ *
+ * ClickHouse has no nullability separate from the type the way MySQL and PostgreSQL do (`int NULL`
+ * vs `int NOT NULL`) — it is part of how the type is spelled. `parseType` splits at the first `(`
+ * and assumes one pair of parentheses, so `Nullable(UInt64)` (or worse, `Nullable(Decimal(10, 2))`)
+ * parses as a type the list has no entry for and the dropdown shows the raw string. Unwrap before,
+ * wrap after; `parseType`/`composeType` are shared by four engines and are left alone.
+ *
+ * Only a whole wrapper is taken off: the parenthesis opened by `Nullable` has to close at the very
+ * last character, not merely somewhere, or `Nullable(a), Nullable(b)` would lose its first layer
+ * and mean something else entirely.
+ */
+export function unwrapNullable(dataType: string): string {
+  const text = dataType.trim();
+  const prefix = "Nullable(";
+  if (!text.startsWith(prefix) || !text.endsWith(")")) return text;
+  let depth = 0;
+  for (let i = prefix.length - 1; i < text.length; i += 1) {
+    if (text[i] === "(") depth += 1;
+    else if (text[i] === ")") {
+      depth -= 1;
+      // The wrapper's own parenthesis closed before the end of the string: something follows it, so
+      // this was never one wrapper around the whole type.
+      if (depth === 0) return i === text.length - 1 ? text.slice(prefix.length, i).trim() : text;
+    }
+  }
+  return text;
+}
+
+/** The inverse of {@link unwrapNullable}: put the wrapper back on the way out, and never twice.
+ *  An empty type stays empty — the dialog refuses it before it reaches here anyway. */
+export function wrapNullable(dataType: string, nullable: boolean): string {
+  const text = dataType.trim();
+  if (!nullable || text === "") return text;
+  return unwrapNullable(text) === text ? `Nullable(${text})` : text;
+}
+
 /** Where the column is to sit. The two fixed choices carry no colon, so they can never collide
  * with the `AFTER:` of a column that is named after one of them. */
 const KEEP = "KEEP";
@@ -134,6 +179,7 @@ interface Draft {
 
 function draftFromColumn(
   types: readonly SqlTypeSpec[],
+  kind: SqlDialect["kind"],
   column: SqlStructureColumn | undefined,
 ): Draft {
   if (!column) {
@@ -156,7 +202,7 @@ function draftFromColumn(
   }
   return {
     name: column.name,
-    ...parseType(types, column.dataType),
+    ...parseType(types, kind === "clickhouse" ? unwrapNullable(column.dataType) : column.dataType),
     nullable: column.nullable,
     hasDefault: column.defaultValue !== null,
     defaultValue: column.defaultValue ?? "",
@@ -191,9 +237,11 @@ interface Props {
  */
 function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }: Props) {
   const { t } = useTranslation();
-  const { editing: offers } = useSqlDialect();
+  const { kind, editing: offers } = useSqlDialect();
   const editing = column !== undefined;
-  const [draft, setDraft] = useState<Draft>(() => draftFromColumn(offers.columnTypes, column));
+  const [draft, setDraft] = useState<Draft>(() =>
+    draftFromColumn(offers.columnTypes, kind, column),
+  );
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -245,7 +293,10 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
     const position = draft.position;
     return {
       name: draft.name.trim(),
-      dataType: composeType(offers.columnTypes, draft),
+      dataType:
+        kind === "clickhouse"
+          ? wrapNullable(composeType(offers.columnTypes, draft), draft.nullable)
+          : composeType(offers.columnTypes, draft),
       nullable: draft.nullable,
       defaultValue: draft.hasDefault ? draft.defaultValue : null,
       defaultIsExpression: draft.hasDefault && draft.defaultIsExpression,
@@ -413,15 +464,19 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
                 {t("columnDialog.unsigned")}
               </label>
             )}
-            <label className={styles.toggle}>
-              <input
-                type="checkbox"
-                checked={draft.autoIncrement}
-                disabled={saving}
-                onChange={(e) => patch({ autoIncrement: e.target.checked })}
-              />
-              {t("columnDialog.autoIncrement")}
-            </label>
+            {/* ClickHouse is the first engine with no counterpart at all — hidden rather than
+                disabled, the same way the clause below is. */}
+            {offers.autoIncrement && (
+              <label className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  checked={draft.autoIncrement}
+                  disabled={saving}
+                  onChange={(e) => patch({ autoIncrement: e.target.checked })}
+                />
+                {t("columnDialog.autoIncrement")}
+              </label>
+            )}
             {/* A MySQL clause. The same effect on PostgreSQL is a trigger, which is not a property of
                 the column and so not this dialog's to offer. */}
             {offers.onUpdateCurrentTimestamp && (

@@ -70,6 +70,7 @@ export const postgresEditing: SqlEditing = {
   unsigned: false,
   columnPosition: false,
   onUpdateCurrentTimestamp: false,
+  autoIncrement: true,
   objectCollation: false,
   markExpressionDefaults: false,
   indexKinds: ["index", "unique", "primary"],

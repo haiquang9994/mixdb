@@ -9,9 +9,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { composeType, parseType } from "./ColumnDialog";
+import { composeType, parseType, unwrapNullable, wrapNullable } from "./ColumnDialog";
 import { mysqlEditing } from "../../mysql/editing";
 import { postgresEditing } from "../../postgres/editing";
+import { clickhouseEditing } from "../../clickhouse/editing";
 import type { SqlTypeSpec } from "../../sql/dialect";
 
 /** Opens a declared type in the dialog and saves it again without touching anything. */
@@ -113,5 +114,56 @@ describe("a type that cannot be written without a length takes the one it sugges
   /** PostgreSQL's `character varying` is valid with no length at all, so nothing is added. */
   it("leaves a type that is valid without one alone", () => {
     expect(blank(postgresEditing.columnTypes, "character varying")).toBe("character varying");
+  });
+});
+
+describe("ClickHouse nullability travels inside the type", () => {
+  /** Opens a declared column in the dialog and saves it again without touching anything. */
+  function roundTrip(dataType: string, nullable: boolean): string {
+    const parts = parseType(clickhouseEditing.columnTypes, unwrapNullable(dataType));
+    const composed = composeType(clickhouseEditing.columnTypes, {
+      ...parts,
+    } as Parameters<typeof composeType>[1]);
+    return wrapNullable(composed, nullable);
+  }
+
+  it("keeps the engine's own spelling of a type name", () => {
+    // ClickHouse type names are case-sensitive: `uint64` is refused outright, `Code: 50
+    // UNKNOWN_TYPE`. Lower-casing the parsed name was safe only while every engine's list held
+    // lower-case names.
+    expect(parseType(clickhouseEditing.columnTypes, "UInt64").typeName).toBe("UInt64");
+    // Whatever case it arrives in, it comes back spelled the way the list spells it.
+    expect(parseType(clickhouseEditing.columnTypes, "uint64").typeName).toBe("UInt64");
+    // A type the list has no entry for keeps the spelling it arrived with.
+    expect(parseType(clickhouseEditing.columnTypes, "Array(String)").typeName).toBe("Array");
+  });
+
+  it("unwraps a nullable column into a type the dropdown knows", () => {
+    expect(unwrapNullable("Nullable(UInt64)")).toBe("UInt64");
+  });
+
+  it("leaves a type that is not one whole wrapper alone", () => {
+    expect(unwrapNullable("UInt64")).toBe("UInt64");
+    expect(unwrapNullable("Nullable(UInt64), Nullable(String)")).toBe(
+      "Nullable(UInt64), Nullable(String)",
+    );
+  });
+
+  it("unwraps only the outer layer of a nested type", () => {
+    expect(unwrapNullable("Nullable(Decimal(10, 2))")).toBe("Decimal(10, 2)");
+  });
+
+  it("puts the wrapper back on the way out", () => {
+    expect(roundTrip("Nullable(UInt64)", true)).toBe("Nullable(UInt64)");
+    expect(roundTrip("UInt64", false)).toBe("UInt64");
+    expect(roundTrip("Nullable(Decimal(10, 2))", true)).toBe("Nullable(Decimal(10, 2))");
+  });
+
+  it("never wraps twice", () => {
+    expect(wrapNullable("Nullable(UInt64)", true)).toBe("Nullable(UInt64)");
+  });
+
+  it("wraps nothing when there is no type yet", () => {
+    expect(wrapNullable("", true)).toBe("");
   });
 });

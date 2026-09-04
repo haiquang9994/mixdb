@@ -210,7 +210,7 @@ pub(super) fn quote_ident(ident: &str) -> String {
 }
 
 /// A database and table addressed together, both quoted — how a table is written into SQL text.
-fn qualified(database: &str, table: &str) -> String {
+pub(super) fn qualified(database: &str, table: &str) -> String {
     format!("{}.{}", quote_ident(database), quote_ident(table))
 }
 
@@ -223,7 +223,7 @@ fn qualified(database: &str, table: &str) -> String {
 /// `run_mutation_and_wait`), so it is spliced in literally rather than sent as a `{name:Type}`
 /// bound parameter — a resolved literal round-trips there, a parameter placeholder's resolved form
 /// is not something to rely on.
-fn quote_literal(value: &str) -> String {
+pub(super) fn quote_literal(value: &str) -> String {
     format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
 }
 
@@ -1009,7 +1009,7 @@ pub async fn table_structure(
     Ok(TableStructure { columns, indexes })
 }
 
-async fn structure_columns(
+pub(super) async fn structure_columns(
     conn: &Connection,
     database: &str,
     table: &str,
@@ -1035,7 +1035,12 @@ async fn structure_columns(
             let data_type = row.get("type")?.as_str()?.to_string();
             let default_kind = row.get("default_kind").and_then(Value::as_str).unwrap_or("");
             let default_expression =
-                row.get("default_expression").and_then(Value::as_str).filter(|s| !s.is_empty());
+                row.get("default_expression").and_then(Value::as_str).unwrap_or("");
+            // `'active'` and `now()` are different things, and `system.columns` tells them apart
+            // by the quotes — see `clickhouse_ddl::read_default`. Without splitting them here every
+            // default would be marked an expression, and a literal would be quoted a second time on
+            // its way back out.
+            let default = super::clickhouse_ddl::read_default(default_expression);
             let is_primary = row
                 .get("is_in_primary_key")
                 .and_then(truthy)
@@ -1043,8 +1048,8 @@ async fn structure_columns(
             Some(StructureColumn {
                 nullable: data_type.starts_with("Nullable("),
                 data_type,
-                default_value: default_expression.map(str::to_string),
-                default_is_expression: default_expression.is_some(),
+                default_value: default.as_ref().map(|(value, _)| value.clone()),
+                default_is_expression: default.as_ref().is_some_and(|(_, expr)| *expr),
                 auto_increment: false,
                 on_update_current_timestamp: false,
                 // MATERIALIZED and ALIAS columns are computed from the others, the closest
