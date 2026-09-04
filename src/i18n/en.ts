@@ -89,6 +89,7 @@ const en = {
     privacyPolicy: "Privacy policy",
     privacyHint:
       "MixDB collects nothing about you and has no server of its own. What it keeps, it keeps on this machine.",
+    logHint: "A file on this machine records crashes and errors, in case something needs a closer look.",
     openLogFolder: "Open log folder",
   },
   // The Ctrl/Cmd chords the app answers, as Settings lists them. A module's own chords are named in

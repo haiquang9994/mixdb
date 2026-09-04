@@ -1,4 +1,5 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { appLogDir } from "@tauri-apps/api/path";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "../../../i18n";
 import { PRIVACY_POLICY_URL } from "../../links";
 import type { UpdateCheck } from "../../update";
@@ -112,6 +113,17 @@ function UpdateSection({ update }: Props) {
           onClick={() => void openUrl(PRIVACY_POLICY_URL)}
         >
           {t("settings.privacyPolicy")}
+        </button>
+      </div>
+
+      <div className={styles.updateRow}>
+        <span className={styles.hint}>{t("settings.logHint")}</span>
+        <button
+          type="button"
+          className={styles.toolButton}
+          onClick={() => void appLogDir().then(revealItemInDir)}
+        >
+          {t("settings.openLogFolder")}
         </button>
       </div>
     </div>
