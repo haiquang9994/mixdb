@@ -262,6 +262,24 @@ fn build_key_where(
     Ok(clauses.join(" AND "))
 }
 
+/// The `WHERE` clause for a multi-row delete: every key's own clause, parenthesised, joined by
+/// `OR` — one mutation for the whole batch (the design's D3) rather than one per key, since
+/// ClickHouse's mutation has no `LIMIT` to make looping any safer than a single combined statement
+/// whose match count is checked once, for the whole batch, before anything runs.
+fn combined_key_where(
+    columns: &BTreeMap<String, String>,
+    keys: &[Map<String, Value>],
+) -> Result<String, AppError> {
+    let mut groups = Vec::new();
+    for key in keys {
+        if key.is_empty() {
+            return Err(err!("error.deleteWithoutKey"));
+        }
+        groups.push(format!("({})", build_key_where(columns, key)?));
+    }
+    Ok(groups.join(" OR "))
+}
+
 /// Whether `row`'s `is_done` reads as ClickHouse's true — `1` as either the JSON number or the
 /// string `FORMAT JSON` may write a `UInt8` as.
 fn mutation_is_done(row: &Map<String, Value>) -> bool {
@@ -433,6 +451,49 @@ pub async fn update_row(
         "ALTER TABLE {table_ref} UPDATE {} WHERE {where_clause}",
         set_parts.join(", ")
     );
+    run_mutation_and_wait(conn, database, table, &sql).await
+}
+
+/// Deletes rows on a ClickHouse table. `all` truncates — synchronous, and sidesteps the mutation
+/// wait entirely (the design's D5) — the common case of clearing a table. Otherwise every key in
+/// `keys` must match, combined into one mutation (`combined_key_where`) whose match count is
+/// checked against `keys.len()` before it runs (D3): fewer matches means a row already moved out
+/// from under the selection, more means duplicates on every column are about to lose more rows than
+/// were selected — either way, refuse rather than guess.
+///
+/// `reset_auto_increment` is accepted and ignored: ClickHouse has no such column to reset.
+pub async fn delete_rows(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    keys: &[Map<String, Value>],
+    all: bool,
+    reset_auto_increment: bool,
+) -> Result<(), AppError> {
+    let _ = reset_auto_increment;
+    let table_ref = qualified(database, table);
+
+    if all {
+        let sql = format!("TRUNCATE TABLE {table_ref}");
+        return execute_check(conn, &sql, None).await;
+    }
+    if keys.is_empty() {
+        return Ok(());
+    }
+
+    let column_rows = table_columns(conn, database, table).await?;
+    let types: BTreeMap<String, String> = column_rows
+        .iter()
+        .map(|c| (c.name.clone(), c.type_name.clone()))
+        .collect();
+    let where_clause = combined_key_where(&types, keys)?;
+
+    let matched = matched_count(conn, &table_ref, &where_clause).await?;
+    if matched != keys.len() as i64 {
+        return Err(err!("error.rowsMatched", matched = matched));
+    }
+
+    let sql = format!("ALTER TABLE {table_ref} DELETE WHERE {where_clause}");
     run_mutation_and_wait(conn, database, table, &sql).await
 }
 
@@ -1238,6 +1299,26 @@ mod tests {
         let mut key = Map::new();
         key.insert("nope".to_string(), str_val("1"));
         assert!(build_key_where(&columns(), &key).is_err());
+    }
+
+    use super::combined_key_where;
+
+    #[test]
+    fn combines_several_keys_with_or_between_them() {
+        let mut key1 = Map::new();
+        key1.insert("id".to_string(), str_val("1"));
+        let mut key2 = Map::new();
+        key2.insert("id".to_string(), str_val("2"));
+        let where_clause = combined_key_where(&columns(), &[key1, key2]).unwrap();
+        assert_eq!(where_clause, "(`id` = '1') OR (`id` = '2')");
+    }
+
+    #[test]
+    fn refuses_an_empty_key_in_a_multi_row_delete() {
+        let mut key1 = Map::new();
+        key1.insert("id".to_string(), str_val("1"));
+        let empty = Map::new();
+        assert!(combined_key_where(&columns(), &[key1, empty]).is_err());
     }
 
     use super::{find_new_mutation, mutation_fail_reason, mutation_is_done};
