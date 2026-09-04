@@ -229,3 +229,16 @@ pub async fn clickhouse_drop_column(
     let conn = clickhouse_connection(&state, &id).await?;
     clickhouse_ddl::drop_column(&conn, &database, &table, &name).await
 }
+
+#[tauri::command]
+pub async fn clickhouse_modify_column(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+    spec: clickhouse_ddl::ColumnSpec,
+) -> Result<(), AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse_ddl::modify_column(&conn, &database, &table, &name, &spec).await
+}

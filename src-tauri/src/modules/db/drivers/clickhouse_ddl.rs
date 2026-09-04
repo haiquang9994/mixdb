@@ -7,7 +7,10 @@
 //! where a test can read it and sending is left as `execute_check`. There is no transaction here —
 //! ClickHouse has none — so a run of statements that fails partway leaves exactly what already ran.
 
-use super::clickhouse::{execute_check, qualified, quote_ident, quote_literal, Connection};
+use super::clickhouse::{
+    execute_check, qualified, quote_ident, quote_literal, structure_columns, Connection,
+    StructureColumn,
+};
 use serde::Deserialize;
 use crate::error::AppError;
 
@@ -240,6 +243,102 @@ pub async fn drop_column(
     execute_check(conn, &sql, None).await
 }
 
+/// The statements that bring column `current` to what `spec` describes - none at all when nothing
+/// differs.
+///
+/// The shape of `postgres_ddl::modify_column`: read what the column is now, write only what really
+/// changed. The reason is stronger here - a `MODIFY COLUMN` that changes the type is a mutation
+/// rewriting every part of the table, and the `ALTER` waits for it (2.7 s over 43 million rows,
+/// measured against the test server) - so emitting one to save a comment charges the user for
+/// something they did not ask for.
+///
+/// A rename and a redefinition go out as two statements, rename first. That is not a style:
+/// ClickHouse refuses to do both to one column in a single `ALTER`
+/// (`Code: 48 ... Cannot rename and modify the same column in a single ALTER query`). It follows
+/// that there is no way to avoid the risk of the rename landing and the redefinition failing -
+/// there is no transaction to hold them together.
+///
+/// `nullable` is not compared on its own: it lives inside `data_type` as `Nullable(T)`, so
+/// comparing the type catches it too.
+pub fn modify_column_statements(
+    qualified_table: &str,
+    current: &StructureColumn,
+    spec: &ColumnSpec,
+) -> Result<Vec<String>, AppError> {
+    let new_name = spec.name.trim();
+    if new_name.is_empty() {
+        return Err(err!("error.columnNameRequired"));
+    }
+    // Built before it is known to be needed, so that an empty type is refused even when the user
+    // only renamed the column: a column with no type is a broken draft whatever the operation is.
+    let definition = column_definition(spec)?;
+
+    let mut statements = Vec::new();
+    if new_name != current.name {
+        statements.push(format!(
+            "ALTER TABLE {qualified_table} RENAME COLUMN {} TO {}",
+            quote_ident(&current.name),
+            quote_ident(new_name)
+        ));
+    }
+
+    let same_default = spec.default_value.as_deref().map(str::trim)
+        == current.default_value.as_deref().map(str::trim)
+        && (spec.default_value.is_none()
+            || spec.default_is_expression == current.default_is_expression);
+    let unchanged = spec.data_type.trim() == current.data_type
+        && spec.comment == current.comment
+        && same_default;
+    if !unchanged {
+        statements.push(format!("ALTER TABLE {qualified_table} MODIFY COLUMN {definition}"));
+    }
+    Ok(statements)
+}
+
+/// Redefines the column currently called `name` - so this is also how a column is renamed.
+///
+/// Runs as ordinary synchronous DDL, **not** through `run_mutation_and_wait`: an
+/// `ALTER ... MODIFY COLUMN` that changes the type does create a mutation, but the `ALTER` itself
+/// waits for it before answering (`StorageMergeTree::alter` -> `waitForMutation`), checked against
+/// the test server.
+///
+/// A `MODIFY COLUMN` that fails because the data will not convert leaves the table unreadable: the
+/// metadata has already changed, the failed mutation stays behind, and every `SELECT` errors until
+/// the type is put back. That is why the failure is wrapped rather than passed through - the user
+/// needs to be told the way out, not only that something went wrong.
+pub async fn modify_column(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    name: &str,
+    spec: &ColumnSpec,
+) -> Result<(), AppError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(err!("error.columnNameRequired"));
+    }
+    let current = structure_columns(conn, database, table)
+        .await?
+        .into_iter()
+        .find(|column| column.name == name)
+        .ok_or_else(|| err!("error.columnNameRequired"))?;
+
+    let qualified_table = qualified(database, table);
+    let type_changes = spec.data_type.trim() != current.data_type;
+    for statement in modify_column_statements(&qualified_table, &current, spec)? {
+        let changing_type = type_changes && statement.contains(" MODIFY COLUMN ");
+        if let Err(cause) = execute_check(conn, &statement, None).await {
+            return Err(if changing_type {
+                err!("error.clickhouseTypeChangeFailed", column = name, table = table)
+                    .caused_by(cause)
+            } else {
+                cause
+            });
+        }
+    }
+    Ok(())
+}
+
 /// What is decided here, rather than by a server's answer.
 #[cfg(test)]
 mod tests {
@@ -371,6 +470,83 @@ mod tests {
         assert_eq!(
             column_definition(&spec("title", " ")).unwrap_err(),
             err!("error.columnTypeRequired")
+        );
+    }
+
+    fn current(name: &str, data_type: &str) -> StructureColumn {
+        StructureColumn {
+            name: name.to_string(),
+            data_type: data_type.to_string(),
+            nullable: data_type.starts_with("Nullable("),
+            default_value: None,
+            default_is_expression: false,
+            auto_increment: false,
+            on_update_current_timestamp: false,
+            generated: false,
+            collation: None,
+            comment: String::new(),
+            key: String::new(),
+            extra: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_column_saved_without_being_touched_sends_nothing_at_all() {
+        let statements = modify_column_statements(
+            "`s`.`t`",
+            &current("title", "String"),
+            &spec("title", "String"),
+        )
+        .unwrap();
+        assert!(statements.is_empty(), "{statements:?}");
+    }
+
+    #[test]
+    fn renaming_only_sends_only_a_rename() {
+        assert_eq!(
+            modify_column_statements(
+                "`s`.`t`",
+                &current("title", "String"),
+                &spec("heading", "String")
+            )
+            .unwrap(),
+            vec!["ALTER TABLE `s`.`t` RENAME COLUMN `title` TO `heading`"]
+        );
+    }
+
+    #[test]
+    fn changing_the_comment_only_leaves_the_type_alone() {
+        let mut wanted = spec("title", "String");
+        wanted.comment = "the heading".to_string();
+        assert_eq!(
+            modify_column_statements("`s`.`t`", &current("title", "String"), &wanted).unwrap(),
+            vec!["ALTER TABLE `s`.`t` MODIFY COLUMN `title` String COMMENT 'the heading'"]
+        );
+    }
+
+    #[test]
+    fn a_rename_and_a_redefinition_are_two_statements_with_the_rename_first() {
+        assert_eq!(
+            modify_column_statements(
+                "`s`.`t`",
+                &current("title", "String"),
+                &spec("heading", "Nullable(String)")
+            )
+            .unwrap(),
+            vec![
+                "ALTER TABLE `s`.`t` RENAME COLUMN `title` TO `heading`",
+                "ALTER TABLE `s`.`t` MODIFY COLUMN `heading` Nullable(String)",
+            ]
+        );
+    }
+
+    #[test]
+    fn dropping_a_default_is_a_change_like_any_other() {
+        let mut had_one = current("state", "String");
+        had_one.default_value = Some("active".to_string());
+        assert_eq!(
+            modify_column_statements("`s`.`t`", &had_one, &spec("state", "String")).unwrap(),
+            vec!["ALTER TABLE `s`.`t` MODIFY COLUMN `state` String"]
         );
     }
 }

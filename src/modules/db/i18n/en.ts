@@ -899,6 +899,8 @@ const dbEn = {
       "These rows don't all fill in the same columns, so ClickHouse cannot insert them as one atomic statement.",
     clickhouseUnknownEngine:
       "MixDB does not create tables with the {{engine}} engine — pick one of the MergeTree family.",
+    clickhouseTypeChangeFailed:
+      "Changing the type of {{column}} failed, and {{table}} cannot be read until it is put back: set the column's type to what it was before. The server said: {{cause}}",
     /* A `mixdb://connect?…` URL another program started MixDB with — see `handoff.ts`. The first
        is only ever printed to stderr; the second is answered with an empty form. Both exist so a
        code that does reach the screen one day is a sentence rather than its own key. */

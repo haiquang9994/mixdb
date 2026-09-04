@@ -881,6 +881,8 @@ const dbVi: DbDict = {
       "Các dòng này không khai báo cùng một tập cột, nên không thể chèn chung thành một câu lệnh nguyên tử trên ClickHouse.",
     clickhouseUnknownEngine:
       "MixDB không tạo bảng với engine {{engine}} — hãy chọn một engine thuộc họ MergeTree.",
+    clickhouseTypeChangeFailed:
+      "Đổi kiểu cột {{column}} thất bại, và bảng {{table}} không đọc được cho tới khi kiểu cũ được đặt lại: hãy sửa kiểu của cột về như trước. Server báo: {{cause}}",
     handoffInvalid: "Không đọc được kết nối MixDB được mở cùng: {{message}}",
     handoffExpired: "Kết nối được chuyển sang này đã được mở rồi.",
     mongoNoTcpHost: "Chuỗi kết nối không chỉ ra host TCP nào để mở tunnel.",
