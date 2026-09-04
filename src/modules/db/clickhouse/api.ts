@@ -10,14 +10,13 @@ import type {
 import type { SqlApi, SqlPageQuery, SqlServerInfo } from "../sql/api";
 
 /**
- * ClickHouse's side of {@link SqlApi} — read-only throughout in v1.
- *
- * Every write method below is `notSupported()`: no Tauri command exists for any of them, and none
- * is ever registered — a call here fails as a rejected promise carrying `error.clickhouseReadOnly`
- * rather than as "command not found". `writable: false` on {@link clickhouseDialect} is what keeps
- * the workspace from offering a path to any of them in the first place; these exist only to
- * satisfy {@link SqlApi}, the same way `sqliteApi`'s `createDatabase`/`dropDatabase` do for a kind
- * that has none.
+ * ClickHouse's side of {@link SqlApi}. Row writes (`updateRow`/`insertRows`/`deleteRows`) call real
+ * commands — see `docs/superpowers/specs/2026-09-04-clickhouse-row-writes-design.md`. Every other
+ * write method still is `notSupported()`: no Tauri command exists for any of them, and none is ever
+ * registered — a call here fails as a rejected promise carrying `error.clickhouseReadOnly` rather
+ * than as "command not found". `writable: false` on {@link clickhouseDialect} is what keeps the
+ * Structure tab, "Add table", `DatabaseActions` and the Query tab from ever offering a path to any
+ * of them.
  */
 export const clickhouseApi: SqlApi = {
   listDatabases(id) {
@@ -69,9 +68,25 @@ export const clickhouseApi: SqlApi = {
     return Promise.resolve();
   },
 
-  updateRow: () => notSupported(),
-  insertRows: () => notSupported(),
-  deleteRows: () => notSupported(),
+  updateRow(id, database, table, updates, key) {
+    return invoke<void>("clickhouse_update_row", { id, database, table, updates, key });
+  },
+
+  insertRows(id, database, table, rows) {
+    return invoke<void>("clickhouse_insert_rows", { id, database, table, rows });
+  },
+
+  deleteRows(id, database, table, keys, all, resetAutoIncrement) {
+    return invoke<void>("clickhouse_delete_rows", {
+      id,
+      database,
+      table,
+      keys,
+      all,
+      resetAutoIncrement,
+    });
+  },
+
   dump: () => notSupported(),
   restore: () => notSupported(),
   dropDatabase: () => notSupported(),

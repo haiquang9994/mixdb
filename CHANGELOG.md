@@ -46,8 +46,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 - SQLite: open a `.db` file — or make a new one — and browse, edit and query it like any other
   connection.
-- ClickHouse: connect and browse databases, tables and run queries. Read-only for now — no
-  editing, no DDL, no dump/restore yet.
+- ClickHouse: the Data tab's grid can insert, update and delete rows. Still no DDL, no dump/restore,
+  and the Query tab still only reads.
 
 ### Fixed
 

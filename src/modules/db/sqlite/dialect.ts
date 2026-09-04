@@ -22,5 +22,6 @@ export const sqliteDialect: SqlDialect = {
   // No session to reach in and kill, and no `REGEXP` in the engine — see the two fields' own docs.
   cancellable: false,
   writable: true,
+  rowsWritable: true,
   regexpFilter: false,
 };

@@ -875,6 +875,10 @@ const dbVi: DbDict = {
     sqliteNoDatabases:
       "Một database SQLite là một file. Tạo hay xóa nó là việc của trình quản lý file, không phải ở đây.",
     clickhouseReadOnly: "MixDB hiện chỉ đọc ClickHouse — chưa có gì ở đây ghi vào nó.",
+    clickhouseMutationTimeout:
+      "Thao tác vẫn đang chạy trên server sau 30 giây — tải lại bảng để xem đã xong chưa.",
+    clickhouseHeterogeneousInsert:
+      "Các dòng này không khai báo cùng một tập cột, nên không thể chèn chung thành một câu lệnh nguyên tử trên ClickHouse.",
     handoffInvalid: "Không đọc được kết nối MixDB được mở cùng: {{message}}",
     handoffExpired: "Kết nối được chuyển sang này đã được mở rồi.",
     mongoNoTcpHost: "Chuỗi kết nối không chỉ ra host TCP nào để mở tunnel.",

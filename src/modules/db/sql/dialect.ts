@@ -121,14 +121,28 @@ export interface SqlDialect {
   cancellable: boolean;
 
   /**
-   * Every button and every path that would write something is open.
+   * Every button and every path that would touch the *schema*, the database as a whole, or the
+   * Query tab is open: DDL (create/alter/drop table, column, index, database), dump, restore.
    *
-   * True on every engine but ClickHouse, whose v1 in this app is read-only throughout — no insert,
-   * update, delete, DDL, dump or restore, and the Query tab itself refuses to send anything but a
-   * read. `DbTab` folds this into the same `readOnly` a connection can be marked with by hand, so
-   * the workspace has one flag to check rather than two: see `SqlWorkspace`'s `noWrites`.
+   * Row-level writes — the Data tab's grid inserting, updating or deleting rows — are gated
+   * separately by `rowsWritable`, since an engine can have one open without the other: ClickHouse's
+   * row writes shipped before its DDL did, see
+   * `docs/superpowers/specs/2026-09-04-clickhouse-row-writes-design.md`.
+   *
+   * True on every engine but ClickHouse. `DbTab` folds this into the same `readOnly` a connection
+   * can be marked with by hand: see `SqlWorkspace`'s `readOnly` prop.
    */
   writable: boolean;
+
+  /**
+   * The Data tab's grid may insert, update and delete rows, and the Query tab may send `INSERT`/
+   * `UPDATE`/`DELETE`/`TRUNCATE` — independent of `writable`, which gates DDL/dump/restore instead.
+   *
+   * True on every engine. `DbTab` folds this into `SqlWorkspace`'s `dataReadOnly` prop, which only
+   * the Data tab's grid reads — the Query tab is not wired to this flag yet (ClickHouse's still
+   * closed there; see the design doc above's "Những gì để lại").
+   */
+  rowsWritable: boolean;
 
   /**
    * The filter bar may offer `REGEXP` / `NOT REGEXP`.

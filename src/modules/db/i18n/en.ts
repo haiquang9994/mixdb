@@ -893,6 +893,10 @@ const dbEn = {
     sqliteNoDatabases:
       "A SQLite database is a file. Creating or deleting one is done in the file manager, not here.",
     clickhouseReadOnly: "MixDB only reads from ClickHouse for now — nothing here writes to it.",
+    clickhouseMutationTimeout:
+      "The mutation is still running on the server after 30 seconds — reload the table to check whether it finished.",
+    clickhouseHeterogeneousInsert:
+      "These rows don't all fill in the same columns, so ClickHouse cannot insert them as one atomic statement.",
     /* A `mixdb://connect?…` URL another program started MixDB with — see `handoff.ts`. The first
        is only ever printed to stderr; the second is answered with an empty form. Both exist so a
        code that does reach the screen one day is a sentence rather than its own key. */
