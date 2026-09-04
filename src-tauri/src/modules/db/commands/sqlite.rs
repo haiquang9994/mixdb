@@ -15,7 +15,7 @@
 //! at all. The attribute keeps the name exactly as it is sent.
 
 use crate::error::AppError;
-use crate::modules::db::drivers::{sqlite, sqlite_ddl, sqlite_dump, sqlite_script, sqlite_structure};
+use crate::modules::db::drivers::{dump, sqlite, sqlite_ddl, sqlite_dump, sqlite_script, sqlite_structure};
 use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use serde_json::{Map, Value};
 use crate::modules::db::state::DbState;
@@ -326,11 +326,13 @@ pub async fn sqlite_dump(
     mode: String,
     path: String,
 ) -> Result<(), AppError> {
+    // TODO(Task 6): wire mode dispatch, Transfer/reporter — see the design spec's A-decisions.
     if mode != "structure" {
         return Err(err!("error.sqliteDataDumpUnsupported"));
     }
     let pool = sqlite_pool(&state, &id).await?;
-    sqlite_dump::dump_structure(&pool, std::path::Path::new(&path)).await
+    let watch = dump::Watch { report: &|_| {}, cancel: &|| false };
+    sqlite_dump::dump_structure(&pool, std::path::Path::new(&path), &watch).await
 }
 
 #[allow(unused_variables)]

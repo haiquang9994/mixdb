@@ -34,9 +34,13 @@ use std::path::Path;
 /// Tables first, then everything built on them: an index or a trigger replayed before its table
 /// fails. Within each of those, the order `sqlite_master` gives, which is the order they were
 /// created in — so a view over another view still comes after it.
-pub async fn dump_structure(pool: &SqlitePool, path: &Path) -> Result<(), AppError> {
-    let statements: Vec<String> = sqlx::query_scalar(
-        r"select sql from sqlite_master
+pub async fn dump_structure(
+    pool: &SqlitePool,
+    path: &Path,
+    watch: &dump::Watch<'_>,
+) -> Result<(), AppError> {
+    let rows = sqlx::query(
+        r"select name, sql from sqlite_master
           where sql is not null and name not like 'sqlite\_%' escape '\'
           order by case type when 'table' then 0 when 'view' then 1 else 2 end, rowid",
     )
@@ -44,14 +48,25 @@ pub async fn dump_structure(pool: &SqlitePool, path: &Path) -> Result<(), AppErr
     .await
     .map_err(map_error)?;
 
+    let weights: Vec<(String, u64)> =
+        rows.iter().map(|r| (r.get::<String, _>("name"), 1)).collect();
+    let mut tracker = dump::Tracker::new(&weights, path.to_str().unwrap_or_default(), false);
+
     let mut out = String::new();
     /* No `CREATE DATABASE` and no `USE`, matching what the other engines' dumps carry: the file
        restores into whichever database it is pointed at rather than insisting on the one it came
        from. For SQLite that is the file the connection is open on. */
     out.push_str("-- MixDB structure dump\n\n");
-    for sql in statements {
+    for row in &rows {
+        if (watch.cancel)() {
+            return Err(err!("error.transferCancelled", tool = "SQLite dump"));
+        }
+        let name: String = row.get("name");
+        let sql: String = row.get("sql");
         out.push_str(sql.trim());
         out.push_str(";\n\n");
+        tracker.reached(&name);
+        (watch.report)(tracker.progress());
     }
 
     std::fs::write(path, out).map_err(|e| {
@@ -132,7 +147,7 @@ fn sql_literal(row: &sqlx::sqlite::SqliteRow, i: usize) -> String {
             .try_get::<i64, _>(i)
             .map(|v| v.to_string())
             .unwrap_or_else(|_| "NULL".to_string()),
-        // Non-finite values (NaN/Infinity) have no SQL literal — dumped as NULL, see A1/Rủi ro.
+        // Non-finite values (NaN/Infinity) have no SQL literal — dumped as NULL, a known limit (A1).
         "REAL" => row
             .try_get::<f64, _>(i)
             .ok()
@@ -242,7 +257,7 @@ mod tests {
     async fn the_dump_carries_every_create_and_nothing_of_sqlites_own() {
         let (_fixture, pool) = Fixture::open().await;
         let out = Scratch::new();
-        dump_structure(&pool, &out.path).await.unwrap();
+        dump_structure(&pool, &out.path, &no_op_watch()).await.unwrap();
         let sql = std::fs::read_to_string(&out.path).unwrap();
 
         assert!(sql.contains("CREATE TABLE author"));
@@ -256,7 +271,7 @@ mod tests {
     async fn the_dump_puts_the_tables_before_what_is_built_on_them() {
         let (_fixture, pool) = Fixture::open().await;
         let out = Scratch::new();
-        dump_structure(&pool, &out.path).await.unwrap();
+        dump_structure(&pool, &out.path, &no_op_watch()).await.unwrap();
         let sql = std::fs::read_to_string(&out.path).unwrap();
 
         // An index or a view replayed before its table fails, so the order is the whole point.
@@ -269,7 +284,7 @@ mod tests {
     async fn what_is_dumped_restores_into_an_empty_database() {
         let (_source_fixture, source) = Fixture::open().await;
         let out = Scratch::new();
-        dump_structure(&source, &out.path).await.unwrap();
+        dump_structure(&source, &out.path, &no_op_watch()).await.unwrap();
 
         let (_target_fixture, target) = Fixture::open().await;
         // Emptied first: the fixture opens with the same schema, and a restore over it would
