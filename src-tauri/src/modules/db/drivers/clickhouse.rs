@@ -130,6 +130,73 @@ pub async fn query_with_params(
     serde_json::from_str(&text).map_err(map_error)
 }
 
+/// Sends one statement of user-authored text — the Query tab's, not this module's own generated
+/// SQL — scoped to `database` when one is given, so an unqualified table name in it resolves the
+/// way the sidebar's own choice of database means it to.
+///
+/// A separate function from [`query_with_params`] rather than that one widened with another
+/// parameter: every other caller in this module builds its own SQL text and already qualifies
+/// every table it names (see [`qualified`]), so none of them has a use for this — and `{name:Type}`
+/// parameters have no part to play in a script the user typed by hand.
+///
+/// Checked against the test server: `?database=x` on the URL scopes an unqualified table the same
+/// way `USE x` would, without a session to run `USE` inside — the HTTP interface has none.
+pub(super) async fn query_in_database(
+    conn: &Connection,
+    sql: &str,
+    database: Option<&str>,
+) -> Result<QueryResult, AppError> {
+    let mut url = url::Url::parse(&conn.base_url).map_err(map_error)?;
+    if let Some(database) = database.filter(|d| !d.is_empty()) {
+        url.query_pairs_mut().append_pair("database", database);
+    }
+    let body = format!("{sql}\nFORMAT JSON");
+    let mut request = conn.client.post(url).body(body);
+    if !conn.user.is_empty() {
+        request = request
+            .header("X-ClickHouse-User", &conn.user)
+            .header("X-ClickHouse-Key", &conn.password);
+    }
+    let response = request.send().await.map_err(map_error)?;
+    let status = response.status();
+    let text = response.text().await.map_err(map_error)?;
+    if !status.is_success() {
+        return Err(map_error(text.trim()));
+    }
+    serde_json::from_str(&text).map_err(map_error)
+}
+
+/// Sends one statement with no `FORMAT` appended, and reports only whether the server accepted it
+/// — for `EXPLAIN AST`, whose own output is a plain-text tree rather than anything `FORMAT JSON`
+/// would turn into rows. Checked against the test server: `EXPLAIN AST select 1\nFORMAT JSON`
+/// parses as `EXPLAIN AST` of the query `select 1 FORMAT JSON` — the appended format is read as
+/// part of what is *being explained*, not as a format for the explanation itself — so the two
+/// have to stay apart, unlike every other statement `query_in_database` runs.
+pub(super) async fn execute_check(
+    conn: &Connection,
+    sql: &str,
+    database: Option<&str>,
+) -> Result<(), AppError> {
+    let mut url = url::Url::parse(&conn.base_url).map_err(map_error)?;
+    if let Some(database) = database.filter(|d| !d.is_empty()) {
+        url.query_pairs_mut().append_pair("database", database);
+    }
+    let mut request = conn.client.post(url).body(sql.to_string());
+    if !conn.user.is_empty() {
+        request = request
+            .header("X-ClickHouse-User", &conn.user)
+            .header("X-ClickHouse-Key", &conn.password);
+    }
+    let response = request.send().await.map_err(map_error)?;
+    let status = response.status();
+    let text = response.text().await.map_err(map_error)?;
+    if status.is_success() {
+        Ok(())
+    } else {
+        Err(map_error(text.trim()))
+    }
+}
+
 /// Backtick-quotes an identifier for interpolation into SQL text, backslash-escaping an embedded
 /// backtick.
 ///

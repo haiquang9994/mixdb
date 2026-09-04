@@ -9,8 +9,8 @@ MixDB is a desktop app built with **Tauri 2 + React 19 + TypeScript** (frontend)
 (backend). It is a **shell** — a tab bar, keyboard shortcuts and a Settings dialog — plus one
 **module** per kind of thing a tab can hold. There are three:
 
-- **`db`** — MySQL, PostgreSQL, SQLite, MongoDB and Redis connections, optionally through an SSH
-  tunnel, with saved connections remembered.
+- **`db`** — MySQL, PostgreSQL, SQLite, MongoDB, Redis and ClickHouse (read-only) connections,
+  optionally through an SSH tunnel, with saved connections remembered.
 - **`rest`** — an HTTP client: saved requests, environments, history, and a response pane.
 - **`terminal`** — a shell on this machine or on a server over SSH, with saved hosts.
 

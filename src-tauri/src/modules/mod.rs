@@ -139,6 +139,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         db::commands::clickhouse::clickhouse_table_structure,
         db::commands::clickhouse::clickhouse_table_stats,
         db::commands::clickhouse::clickhouse_schema_outline,
+        db::commands::clickhouse::clickhouse_run_script,
+        db::commands::clickhouse::clickhouse_validate_sql,
         db::commands::tools::dumptools_status,
         db::commands::tools::dumptools_ready,
         db::commands::tools::dumptools_downloadable,

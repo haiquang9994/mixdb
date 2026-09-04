@@ -1,7 +1,7 @@
 use super::clickhouse_connection;
 use crate::error::AppError;
-use crate::modules::db::drivers::clickhouse;
-use crate::modules::db::models::ServerInfo;
+use crate::modules::db::drivers::{clickhouse, clickhouse_script};
+use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::modules::db::state::DbState;
 use tauri::State;
 
@@ -74,4 +74,32 @@ pub async fn clickhouse_schema_outline(
 ) -> Result<clickhouse::SchemaOutline, AppError> {
     let conn = clickhouse_connection(&state, &id).await?;
     clickhouse::schema_outline(&conn, &database).await
+}
+
+/// `run_id` is taken, like the other three engines', but never stored: there is no
+/// `clickhouse_cancel_query` to look it up for, since `cancellable: false` on the dialect closes
+/// the button that would call one. Kept in the signature so the frontend has one shape to call
+/// through whichever engine it is talking to.
+#[tauri::command]
+#[allow(unused_variables)]
+pub async fn clickhouse_run_script(
+    state: State<'_, DbState>,
+    id: String,
+    run_id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<Vec<StatementResult>, AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse_script::run(&conn, &sql, database.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn clickhouse_validate_sql(
+    state: State<'_, DbState>,
+    id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<Option<SqlProblem>, AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse_script::validate(&conn, &sql, database.as_deref()).await
 }
