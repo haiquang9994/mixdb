@@ -765,6 +765,9 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
           sidebarWidth={activeSavedConnection?.sidebarWidth}
           onSidebarWidthChange={updateSidebarWidth}
           readOnly={(activeSavedConnection?.readOnly ?? false) || !engine.dialect.writable}
+          schemaReadOnly={
+            (activeSavedConnection?.readOnly ?? false) || !engine.dialect.ddlWritable
+          }
           dataReadOnly={(activeSavedConnection?.readOnly ?? false) || !engine.dialect.rowsWritable}
           profileId={activeSavedConnection?.id ?? ""}
         />

@@ -69,6 +69,12 @@ interface Props {
    */
   readOnly?: boolean;
   /**
+   * The schema specifically: the Structure tab sends no `ALTER`, tables cannot be created, renamed
+   * or dropped, and neither can databases. Independent of `readOnly` — an engine can have this open
+   * while the Query tab and dump/restore stay closed (ClickHouse).
+   */
+  schemaReadOnly?: boolean;
+  /**
    * The Data tab's grid specifically: rows do not open for editing, and "Add row"/"Delete" are
    * closed. Independent of `readOnly` — an engine can have this open while `readOnly` stays true
    * (ClickHouse: row writes shipped before its DDL did).
@@ -117,6 +123,7 @@ function SqlWorkspace({
   sidebarWidth,
   onSidebarWidthChange,
   readOnly = false,
+  schemaReadOnly = false,
   dataReadOnly = false,
   profileId = "",
 }: Props) {
@@ -481,11 +488,15 @@ function SqlWorkspace({
    * in it may be created, renamed or dropped, nor anything done to it as a whole. */
   const systemDatabase = selectedDb !== "" && dialect.isSystemDatabase(selectedDb);
 
-  /** The two reasons this workspace refuses to change anything, and the one worth saying first.
-   * Read-only is a decision someone made about the connection; a system database is a fact about
-   * the server, and the one they are more likely to already know. */
-  const noWrites = readOnly || systemDatabase;
-  const noWritesHint = readOnly
+  /** The two reasons this workspace refuses to change the *schema*, and the one worth saying
+   * first. Read-only is a decision someone made about the connection; a system database is a fact
+   * about the server, and the one they are more likely to already know.
+   *
+   * Only the schema: every path this pair gates — renaming and dropping a table, creating a
+   * database, "Add table", the Structure tab — is DDL. The Query tab and dump/restore read
+   * `readOnly` straight, having no system-database case of their own to fold in. */
+  const noSchemaWrites = schemaReadOnly || systemDatabase;
+  const noSchemaWritesHint = schemaReadOnly
     ? t("common.readOnlyConnection")
     : t("sql.systemTable", { database: selectedDb });
 
@@ -493,16 +504,16 @@ function SqlWorkspace({
     {
       key: "rename",
       label: t("sql.renameTable"),
-      disabled: noWrites,
-      disabledHint: noWritesHint,
+      disabled: noSchemaWrites,
+      disabledHint: noSchemaWritesHint,
       onSelect: setRenamingTable,
     },
     {
       key: "drop",
       label: t("sql.dropTable"),
       danger: true,
-      disabled: noWrites,
-      disabledHint: noWritesHint,
+      disabled: noSchemaWrites,
+      disabledHint: noSchemaWritesHint,
       onSelect: setDroppingTable,
     },
   ];
@@ -563,7 +574,7 @@ function SqlWorkspace({
                     {
                       value: NEW_DATABASE,
                       label: t("sql.createDatabase"),
-                      disabled: readOnly,
+                      disabled: schemaReadOnly,
                       optionLabel: (
                         <span className="select-new-option">+ {t("sql.createDatabase")}</span>
                       ),
@@ -653,24 +664,26 @@ function SqlWorkspace({
                   label: systemDatabase
                     ? t("sql.addTableSystem", { database: selectedDb })
                     : t("sql.addTable"),
-                  disabled: !selectedDb || tablesLoading || noWrites,
+                  disabled: !selectedDb || tablesLoading || noSchemaWrites,
                   // Only for read-only: the system-database case already says so in its label.
-                  disabledHint: readOnly ? t("common.readOnlyConnection") : undefined,
+                  disabledHint: schemaReadOnly ? t("common.readOnlyConnection") : undefined,
                   onClick: () => setCreatingTable(true),
                 },
               ]}
             />
             {/* The database as a whole, kept at the far end: these act on everything the list
                 above is showing rather than on anything in it. */}
-            {/* Dump, restore and drop. A dump only reads, but restore and drop are here too and
-                the component takes one `disabled` for all three — closing the lot is the right way
-                round: a read-only connection losing its dump button is a nuisance, and keeping its
-                restore button is the thing the flag was set to prevent. */}
+            {/* Dump, restore and drop. Dump only reads, but restore is here too and both go
+                through `disabled` — closing the pair together is the right way round: a read-only
+                connection losing its dump button is a nuisance, and keeping its restore button is
+                the thing the flag was set to prevent. Drop takes `schemaDisabled` instead, since an
+                engine can have its schema open while having no dump tool at all (ClickHouse). */}
             <DatabaseActions
               kind={dialect.kind}
               connectionId={connectionId}
               database={selectedDb}
               disabled={tablesLoading || readOnly}
+              schemaDisabled={tablesLoading || schemaReadOnly}
               onError={setLocalError}
               onChanged={databaseChanged}
               onBusyChange={setTransferStatus}
@@ -727,7 +740,7 @@ function SqlWorkspace({
                 structureCache={structureCache}
                 schemaToken={schemaToken}
                 onSchemaChanged={() => forgetTable(selectedTable)}
-                readOnly={readOnly}
+                readOnly={schemaReadOnly}
               />
             </div>
           )}

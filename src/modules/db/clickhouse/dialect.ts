@@ -33,8 +33,11 @@ export const clickhouseDialect: SqlDialect = {
   // `query_id` tracked per request, which nothing here does yet — closed rather than wired to a
   // button that would do nothing.
   cancellable: false,
-  // DDL, dump/restore and the Query tab's own writes are still closed — see `SqlDialect.writable`.
+  // The Query tab's own writes and dump/restore are still closed — see `SqlDialect.writable`.
   writable: false,
+  // The Structure tab writes: create/rename/drop table, create/drop database, and columns — see
+  // `docs/superpowers/specs/2026-09-04-clickhouse-ddl-design.md`.
+  ddlWritable: true,
   // The Data tab's grid can insert, update and delete rows — see
   // `docs/superpowers/specs/2026-09-04-clickhouse-row-writes-design.md`.
   rowsWritable: true,

@@ -121,8 +121,13 @@ export interface SqlDialect {
   cancellable: boolean;
 
   /**
-   * Every button and every path that would touch the *schema*, the database as a whole, or the
-   * Query tab is open: DDL (create/alter/drop table, column, index, database), dump, restore.
+   * The Query tab may send writing statements, and the database as a whole may be dumped and
+   * restored.
+   *
+   * Narrower than it once was: DDL was gated here too until it got `ddlWritable` of its own,
+   * because ClickHouse can have the Structure tab open while the Query tab stays shut. The Query
+   * tab's guard does not tell DDL from DML, so opening this flag to reach `ALTER TABLE` would open
+   * hand-typed `INSERT` along with it.
    *
    * Row-level writes — the Data tab's grid inserting, updating or deleting rows — are gated
    * separately by `rowsWritable`, since an engine can have one open without the other: ClickHouse's
@@ -133,6 +138,17 @@ export interface SqlDialect {
    * can be marked with by hand: see `SqlWorkspace`'s `readOnly` prop.
    */
   writable: boolean;
+
+  /**
+   * The Structure tab may write, and tables and databases may be created, renamed and dropped.
+   *
+   * Independent of `writable` for the reason that flag's own doc gives. True on every engine,
+   * ClickHouse included — see
+   * `docs/superpowers/specs/2026-09-04-clickhouse-ddl-design.md`. `DbTab` folds this into
+   * `SqlWorkspace`'s `schemaReadOnly` prop, which the Structure tab, the sidebar's "Add table" and
+   * the Drop button read.
+   */
+  ddlWritable: boolean;
 
   /**
    * The Data tab's grid may insert, update and delete rows, and the Query tab may send `INSERT`/
