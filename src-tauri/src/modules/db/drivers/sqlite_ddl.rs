@@ -74,7 +74,7 @@ pub struct IndexSpec {
 ///
 /// A backslash is left alone: a SQLite string literal is not backslash-escaped, so doubling them
 /// would store two where the user typed one.
-fn quote_string(value: &str) -> String {
+pub(super) fn quote_string(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 

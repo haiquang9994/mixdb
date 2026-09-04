@@ -17,9 +17,10 @@
 //! written elsewhere — by `sqlite3 .dump`, rows and all — restores in full.
 
 use super::sqlite::map_error;
+use super::sqlite_ddl::quote_string;
 use super::sqlite_script;
 use crate::error::AppError;
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool, TypeInfo, ValueRef};
 use std::path::Path;
 
 /// Writes the schema of the database to `path` as SQL.
@@ -82,6 +83,42 @@ pub async fn restore(pool: &SqlitePool, path: &Path) -> Result<(), AppError> {
         ));
     }
     Ok(())
+}
+
+/// One value read off its real storage class (`NULL`/`INTEGER`/`REAL`/`TEXT`/`BLOB`, from
+/// `raw.type_info().name()` — never the column's declared type, which SQLite does not enforce),
+/// as the SQL literal `dump_data` writes into an `INSERT` — see A1 of the design spec.
+fn sql_literal(row: &sqlx::sqlite::SqliteRow, i: usize) -> String {
+    let Ok(raw) = row.try_get_raw(i) else {
+        return "NULL".to_string();
+    };
+    if raw.is_null() {
+        return "NULL".to_string();
+    }
+    match raw.type_info().name() {
+        "INTEGER" => row
+            .try_get::<i64, _>(i)
+            .map(|v| v.to_string())
+            .unwrap_or_else(|_| "NULL".to_string()),
+        // Non-finite values (NaN/Infinity) have no SQL literal — dumped as NULL, see A1/Rủi ro.
+        "REAL" => row
+            .try_get::<f64, _>(i)
+            .ok()
+            .filter(|v| v.is_finite())
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "NULL".to_string()),
+        "BLOB" => row
+            .try_get::<Vec<u8>, _>(i)
+            .map(|bytes| {
+                let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+                format!("x'{hex}'")
+            })
+            .unwrap_or_else(|_| "NULL".to_string()),
+        _ => row
+            .try_get::<String, _>(i)
+            .map(|s| quote_string(&s))
+            .unwrap_or_else(|_| "NULL".to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -180,5 +217,29 @@ mod tests {
             restore(&pool, &absent).await.expect_err("should fail").code,
             "error.cannotReadFile"
         );
+    }
+
+    #[tokio::test]
+    async fn sql_literal_covers_every_storage_class() {
+        let (_fixture, pool) = Fixture::open().await;
+        let row = sqlx::query(
+            "select 1 as a, 3.5 as b, 'it''s' as c, x'00ff10' as d, NULL as e",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(sql_literal(&row, 0), "1");
+        assert_eq!(sql_literal(&row, 1), "3.5");
+        assert_eq!(sql_literal(&row, 2), "'it''s'");
+        assert_eq!(sql_literal(&row, 3), "x'00ff10'");
+        assert_eq!(sql_literal(&row, 4), "NULL");
+    }
+
+    #[tokio::test]
+    async fn sql_literal_escapes_a_lone_single_quote() {
+        let (_fixture, pool) = Fixture::open().await;
+        let row = sqlx::query("select 'O''Brien' as name").fetch_one(&pool).await.unwrap();
+        assert_eq!(sql_literal(&row, 0), "'O''Brien'");
     }
 }
