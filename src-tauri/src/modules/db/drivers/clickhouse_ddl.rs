@@ -455,6 +455,62 @@ pub async fn modify_column(
     Ok(())
 }
 
+/// `ORDER BY (col1, col2)`, or `ORDER BY tuple()` for an empty key — the same spelling
+/// `create_table_statement` already writes for a brand new table.
+pub(super) fn order_by_clause(columns: &[String]) -> String {
+    if columns.is_empty() {
+        return "ORDER BY tuple()".to_string();
+    }
+    let quoted: Vec<String> = columns.iter().map(|c| quote_ident(c)).collect();
+    format!("ORDER BY ({})", quoted.join(", "))
+}
+
+/// A name for the table the rebuild copies into that never collides with one a previous, failed run
+/// left behind — the millisecond clock makes every call's name different from the last. See the
+/// ClickHouse index DDL design doc's D7/D8.
+pub(super) fn temp_table_name(table: &str) -> String {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("{table}__mixdb_rebuild_{millis}")
+}
+
+/// Turns `SHOW CREATE TABLE`'s own text into the `CREATE TABLE` for the rebuild copy: renamed to
+/// `temp_name`, its `ORDER BY` line replaced. Everything else — `PARTITION BY`, `TTL`, `SETTINGS`,
+/// `COMMENT`, any skip index inside the column list — is carried through untouched because it is
+/// never looked at.
+///
+/// The first line is discarded and rebuilt rather than searched-and-replaced: ClickHouse only wraps
+/// an identifier in backticks in its own output when the name actually needs it (a name with a space
+/// gets them, a plain one does not — checked against the test server), so there is no one spelling
+/// of the old `database.table` reference to search for. Rebuilding the line with `qualified`
+/// sidesteps the question entirely rather than guessing which quoting the server chose.
+pub(super) fn rebuild_ddl(
+    show_create: &str,
+    database: &str,
+    temp_name: &str,
+    order_by: &str,
+) -> Result<String, AppError> {
+    let mut lines = show_create.lines();
+    lines.next().ok_or_else(|| err!("error.clickhouseRebuildParse"))?;
+    let mut found = false;
+    let body: Vec<String> = lines
+        .map(|line| {
+            if line.starts_with("ORDER BY ") {
+                found = true;
+                order_by.to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    if !found {
+        return Err(err!("error.clickhouseRebuildParse"));
+    }
+    Ok(format!("CREATE TABLE {}\n{}", qualified(database, temp_name), body.join("\n")))
+}
+
 /// What is decided here, rather than by a server's answer.
 #[cfg(test)]
 mod tests {
@@ -513,6 +569,71 @@ mod tests {
             add_skip_index_statement("shop", "orders", &skip_spec("ix1", "  ", "minmax", &[], 1))
                 .unwrap_err(),
             err!("error.clickhouseSkipIndexExprRequired")
+        );
+    }
+
+    #[test]
+    fn an_empty_key_writes_tuple() {
+        assert_eq!(order_by_clause(&[]), "ORDER BY tuple()");
+    }
+
+    #[test]
+    fn columns_are_quoted_and_kept_in_order() {
+        assert_eq!(
+            order_by_clause(&["b".to_string(), "a".to_string()]),
+            "ORDER BY (`b`, `a`)"
+        );
+    }
+
+    #[test]
+    fn the_temp_name_carries_the_original_and_a_timestamp() {
+        let name = temp_table_name("orders");
+        let suffix = name.strip_prefix("orders__mixdb_rebuild_").expect(&name);
+        assert!(suffix.parse::<u128>().is_ok(), "{suffix}");
+    }
+
+    /// The exact text verified against the test server for a table with every optional clause at
+    /// once — `PARTITION BY`, `TTL`, `SETTINGS`, `COMMENT`, and a skip index sitting inside the
+    /// column list.
+    const SHOW_CREATE_WITH_EVERY_CLAUSE: &str = "CREATE TABLE shop.orders\n(\n    `a` UInt64,\n    `b` UInt64,\n    `c` String,\n    INDEX ix1 c TYPE minmax GRANULARITY 1\n)\nENGINE = MergeTree\nPARTITION BY toYYYYMM(ts)\nORDER BY (a, b)\nTTL ts + toIntervalDay(30)\nSETTINGS index_granularity = 4096\nCOMMENT 'test comment'";
+
+    #[test]
+    fn rebuild_renames_the_table_and_replaces_only_the_order_by_line() {
+        let rebuilt = rebuild_ddl(
+            SHOW_CREATE_WITH_EVERY_CLAUSE,
+            "shop",
+            "orders__mixdb_rebuild_1",
+            "ORDER BY (c)",
+        )
+        .unwrap();
+        assert_eq!(
+            rebuilt,
+            "CREATE TABLE `shop`.`orders__mixdb_rebuild_1`\n(\n    `a` UInt64,\n    `b` UInt64,\n    `c` String,\n    INDEX ix1 c TYPE minmax GRANULARITY 1\n)\nENGINE = MergeTree\nPARTITION BY toYYYYMM(ts)\nORDER BY (c)\nTTL ts + toIntervalDay(30)\nSETTINGS index_granularity = 4096\nCOMMENT 'test comment'"
+        );
+    }
+
+    #[test]
+    fn rebuild_handles_an_empty_sorting_key() {
+        let show_create = "CREATE TABLE shop.orders\n(\n    `id` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192";
+        let rebuilt =
+            rebuild_ddl(show_create, "shop", "orders__mixdb_rebuild_2", "ORDER BY (id)").unwrap();
+        assert_eq!(
+            rebuilt,
+            "CREATE TABLE `shop`.`orders__mixdb_rebuild_2`\n(\n    `id` UInt64\n)\nENGINE = MergeTree\nORDER BY (id)\nSETTINGS index_granularity = 8192"
+        );
+    }
+
+    #[test]
+    fn rebuild_refuses_text_with_no_order_by_line_to_replace() {
+        assert_eq!(
+            rebuild_ddl(
+                "CREATE TABLE shop.orders\n(\n    `id` UInt64\n)\nENGINE = Memory",
+                "shop",
+                "t",
+                "ORDER BY (id)"
+            )
+            .unwrap_err(),
+            err!("error.clickhouseRebuildParse")
         );
     }
 
