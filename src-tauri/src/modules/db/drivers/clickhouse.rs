@@ -310,26 +310,25 @@ fn mutation_fail_reason(row: &Map<String, Value>) -> String {
 }
 
 /// Among mutation rows just read from `system.mutations`, the one this call itself submitted: its
-/// `mutation_id` was not in `baseline_ids` (read before submitting), and its `command` is the exact
-/// text sent. `None` when zero or more than one such row exists — see `run_mutation_and_wait`'s use
-/// of this, which keeps polling rather than guess in that case.
+/// `mutation_id` was not in `baseline_ids`, read before submitting. `None` when zero or more than
+/// one such row exists — see `run_mutation_and_wait`'s use of this, which keeps polling rather than
+/// guess in that case.
+///
+/// Matching is by `mutation_id` alone, not by comparing `command` text against what was sent:
+/// checked against a real server, `system.mutations.command` is ClickHouse's own reformatting of
+/// the statement (identifiers unquoted, clauses reparenthesised — `` `id` = '2' `` submitted comes
+/// back as `(id = '2')`), not the text this module built. Reproducing that formatting to compare
+/// against would be reproducing ClickHouse's own SQL printer; `mutation_id` set membership carries
+/// the same information without needing to.
 fn find_new_mutation<'a>(
     rows: &'a [Map<String, Value>],
     baseline_ids: &std::collections::HashSet<String>,
-    command: &str,
 ) -> Option<&'a Map<String, Value>> {
     let mut matches = rows.iter().filter(|row| {
-        let is_new = row
-            .get("mutation_id")
+        row.get("mutation_id")
             .and_then(Value::as_str)
             .map(|id| !baseline_ids.contains(id))
-            .unwrap_or(false);
-        let same_command = row
-            .get("command")
-            .and_then(Value::as_str)
-            .map(|c| c.trim() == command.trim())
-            .unwrap_or(false);
-        is_new && same_command
+            .unwrap_or(false)
     });
     let first = matches.next()?;
     if matches.next().is_some() {
@@ -347,8 +346,11 @@ const MUTATION_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_mi
 /// the `Result` this returns means "written" the way every other engine's does — `ALTER TABLE`
 /// itself only *enqueues* the mutation.
 ///
-/// `command_sql` must be the exact text sent, values already spliced in as literals (`quote_literal`),
-/// never a `{name:Type}` parameter — this text is matched back against `system.mutations.command`.
+/// `command_sql` is sent as-is, values already spliced in as literals (`quote_literal`) rather than
+/// as a `{name:Type}` parameter — not because anything reads it back (see `find_new_mutation`'s own
+/// doc for why matching dropped that idea), but because `matched_count`'s pre-check and this
+/// statement have to agree on which rows they mean, and a parameter is one more thing that could
+/// resolve differently between the two calls.
 ///
 /// Never assumes success without finding the mutation and seeing `is_done`: if no row (yet) matches
 /// — including the "more than one matched" case `find_new_mutation` refuses to pick between — this
@@ -359,7 +361,7 @@ async fn run_mutation_and_wait(
     table: &str,
     command_sql: &str,
 ) -> Result<(), AppError> {
-    let mutations_sql = "SELECT mutation_id, command, is_done, latest_fail_reason \
+    let mutations_sql = "SELECT mutation_id, is_done, latest_fail_reason \
          FROM system.mutations WHERE database = {database:String} AND table = {table:String}";
     let params = [
         ("database".to_string(), database.to_string()),
@@ -378,7 +380,7 @@ async fn run_mutation_and_wait(
     let deadline = std::time::Instant::now() + MUTATION_POLL_TIMEOUT;
     loop {
         let result = query_with_params(conn, mutations_sql, &params).await?;
-        if let Some(row) = find_new_mutation(&result.data, &baseline_ids, command_sql) {
+        if let Some(row) = find_new_mutation(&result.data, &baseline_ids) {
             let reason = mutation_fail_reason(row);
             if !reason.is_empty() {
                 return Err(map_error(reason));
@@ -1432,37 +1434,30 @@ mod tests {
     }
 
     #[test]
-    fn finds_the_one_new_row_with_the_matching_command() {
+    fn finds_the_one_mutation_not_in_the_baseline() {
         let baseline: HashSet<String> = ["old-1".to_string()].into_iter().collect();
         let rows = vec![
-            mutation_row("old-1", "ALTER TABLE t UPDATE x", str_val("1"), ""),
-            mutation_row("new-1", "ALTER TABLE t UPDATE x", str_val("0"), ""),
+            mutation_row("old-1", "(UPDATE x)", str_val("1"), ""),
+            mutation_row("new-1", "(UPDATE x)", str_val("0"), ""),
         ];
-        let found = find_new_mutation(&rows, &baseline, "ALTER TABLE t UPDATE x").unwrap();
+        let found = find_new_mutation(&rows, &baseline).unwrap();
         assert_eq!(found.get("mutation_id").unwrap(), "new-1");
     }
 
     #[test]
-    fn finds_nothing_when_no_new_row_matches_the_command() {
-        let baseline: HashSet<String> = HashSet::new();
-        let rows = vec![mutation_row("new-1", "ALTER TABLE t UPDATE y", str_val("0"), "")];
-        assert!(find_new_mutation(&rows, &baseline, "ALTER TABLE t UPDATE x").is_none());
+    fn finds_nothing_when_every_row_is_in_the_baseline() {
+        let baseline: HashSet<String> = ["old-1".to_string()].into_iter().collect();
+        let rows = vec![mutation_row("old-1", "(UPDATE x)", str_val("0"), "")];
+        assert!(find_new_mutation(&rows, &baseline).is_none());
     }
 
     #[test]
-    fn finds_nothing_when_more_than_one_new_row_matches() {
+    fn finds_nothing_when_more_than_one_new_row_appears() {
         let baseline: HashSet<String> = HashSet::new();
         let rows = vec![
-            mutation_row("new-1", "ALTER TABLE t UPDATE x", str_val("0"), ""),
-            mutation_row("new-2", "ALTER TABLE t UPDATE x", str_val("0"), ""),
+            mutation_row("new-1", "(UPDATE x)", str_val("0"), ""),
+            mutation_row("new-2", "(UPDATE y)", str_val("0"), ""),
         ];
-        assert!(find_new_mutation(&rows, &baseline, "ALTER TABLE t UPDATE x").is_none());
-    }
-
-    #[test]
-    fn a_matching_command_still_in_the_baseline_does_not_count_as_new() {
-        let baseline: HashSet<String> = ["old-1".to_string()].into_iter().collect();
-        let rows = vec![mutation_row("old-1", "ALTER TABLE t UPDATE x", str_val("0"), "")];
-        assert!(find_new_mutation(&rows, &baseline, "ALTER TABLE t UPDATE x").is_none());
+        assert!(find_new_mutation(&rows, &baseline).is_none());
     }
 }

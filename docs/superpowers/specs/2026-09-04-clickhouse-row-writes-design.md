@@ -113,18 +113,26 @@ xong, lưới refetch thấy ngay), backend tự poll trước khi trả lời f
 1. Trước khi gửi `ALTER`, đọc `mutation_id` hiện có của `(database, table)` từ `system.mutations`
    làm baseline.
 2. Gửi `ALTER` qua `execute_check` (không `FORMAT JSON` — mutation không trả rows).
-3. Poll `system.mutations WHERE database=? AND table=? AND mutation_id NOT IN (<baseline>)`, so
-   khớp `command` với đúng text vừa gửi. Tìm thấy đúng một dòng mới khớp → theo dõi `is_done`/
-   `latest_fail_reason` của riêng nó, mỗi 200ms, tối đa 30s.
+3. Poll `system.mutations WHERE database=? AND table=?`, tìm dòng có `mutation_id` không nằm trong
+   baseline. Tìm thấy đúng một dòng mới → theo dõi `is_done`/`latest_fail_reason` của riêng nó, mỗi
+   200ms, tối đa 30s.
    - `is_done=1`, `latest_fail_reason` rỗng → `Ok(())`.
    - `latest_fail_reason` khác rỗng → `Err`, kèm chuỗi đó (mutation thất bại — ví dụ type mismatch
      khi SET một cột không decodable).
    - Hết 30s chưa xong → `Err(err!("error.clickhouseMutationTimeout"))`, khoá mới, tiếng Anh nói rõ
      "vẫn có thể đang chạy nền, thử tải lại bảng sau". Không coi là thành công giả.
-   - Không tìm thấy đúng một dòng mới khớp (0 hoặc >1 — mutation khác chen vào cùng lúc) → chờ một
-     nhịp poll ngắn rồi coi là thành công nếu baseline không còn dòng nào `is_done=0` cho bảng này;
-     nếu vẫn không chắc, trả lỗi thay vì đoán. Ghi vào Rủi ro — cần xác minh tay trên
-     `clickhouse-test-server` trước khi chốt hằng số 200ms/30s.
+   - Không tìm thấy đúng một dòng mới (0 hoặc >1 — mutation khác chen vào cùng lúc từ nơi khác) →
+     tiếp tục poll cho tới timeout, không đoán.
+
+**Sửa lại so với bản đầu (đã xác minh sai bằng server thật, xem Kiểm thử):** đề xuất ban đầu định
+so khớp thêm bằng `command` — cột `system.mutations.command` đúng bằng text vừa gửi. Kiểm tra trên
+server thật (`clickhouse-test-server`, ClickHouse 26.8) cho thấy điều đó sai: ClickHouse tự format
+lại câu lệnh trước khi lưu — bỏ backtick quanh tên cột, bọc thêm ngoặc quanh mỗi vế `AND`/`OR`. Gửi
+`` UPDATE name = 'x' WHERE `id` = '2' `` được lưu thành `(UPDATE name = 'x' WHERE (id = '2'))`. So
+khớp text theo cách cũ sẽ không bao giờ khớp, khiến mọi update/delete timeout 30 giây rồi báo lỗi dù
+đã ghi thành công trên server. Sửa: chỉ so khớp bằng `mutation_id` không nằm trong baseline — không
+cần so command nữa, vì tập hợp `mutation_id` mới đã đủ xác định "mutation này là của lời gọi này",
+với cùng giới hạn đã biết trước (mutation khác chen ngang trong đúng khoảng thời gian đó).
 
 `INSERT` **không** đi qua cơ chế này — `INSERT` trên ClickHouse là đồng bộ, không phải mutation.
 
@@ -230,9 +238,13 @@ src/modules/db/sql/SqlWorkspace.tsx  + prop dataReadOnly, chỉ SqlTable dùng n
 ## Rủi ro
 
 - **Nhận nhầm mutation_id (D4).** Hai mutation nộp gần như đồng thời trên cùng bảng (từ MixDB hoặc
-  từ nơi khác) có thể làm bước "tìm đúng một dòng mới khớp command" ra 0 hoặc >1 kết quả. Đã có
-  nhánh dự phòng trong D4, nhưng đây là phần **chưa được xác minh bằng server thật** — ưu tiên kiểm
-  tra tay đầu tiên khi bắt tay implement, trước khi viết phần còn lại.
+  từ nơi khác) có thể làm bước "tìm mutation_id mới" ra 0 hoặc >1 kết quả — trường hợp đó tiếp tục
+  poll tới timeout thay vì đoán (đã sửa ở D4). **Đã xác minh bằng server thật** (`clickhouse-test-
+  server`, ClickHouse 26.8): round-trip insert → update (kể cả khớp qua `IS NULL`) → delete, cộng
+  pre-check `matched=1` chặn đúng khi có ba dòng giống hệt nhau, và `all: true` dùng `TRUNCATE` —
+  tất cả chạy đúng qua code Rust thật, không chỉ unit test thuần. Việc xác minh này cũng là lý do
+  D4 đổi từ so khớp `command` text (sai — xem D4) sang chỉ so khớp `mutation_id`. Rủi ro còn lại
+  (mutation khác chen ngang đúng lúc) là thật nhưng hiếm, chưa có cách kiểm chứng rẻ hơn.
 - **Xoá/sửa nhiều dòng cùng lúc dồn vào một `ALTER TABLE ... WHERE (...) OR (...) OR ...` dài** khi
   người dùng chọn rất nhiều dòng (vài trăm) — WHERE clause dài, mỗi nhánh có thể là toàn bộ cột của
   bảng. Chưa đo ảnh hưởng thật; nếu chậm rõ rệt, có thể cần giới hạn số dòng chọn được xoá cùng lúc
