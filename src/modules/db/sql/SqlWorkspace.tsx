@@ -80,6 +80,15 @@ interface Props {
    * (ClickHouse: row writes shipped before its DDL did).
    */
   dataReadOnly?: boolean;
+  /**
+   * The Query tab's four DML verbs (`INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`) may be sent even while
+   * `readOnly` is `true` for the dialect's own reason (`writable = false` — DDL/dump-restore not
+   * supported yet) rather than because the connection itself is marked read-only. `false` when the
+   * connection *is* marked read-only: that always wins, no exception (see `guard.ts::isRowsDml`'s
+   * caller in `QueryEditor`). `false` on every engine but ClickHouse, since `writable` is already
+   * `true` for the other three — there is nothing for this to add there.
+   */
+  dmlEvenIfReadOnly?: boolean;
   /** The saved connection's own id, as opposed to the session's. What the Query tab files its
    *  draft and its history under, so both survive the app closing. */
   profileId?: string;
@@ -125,6 +134,7 @@ function SqlWorkspace({
   readOnly = false,
   schemaReadOnly = false,
   dataReadOnly = false,
+  dmlEvenIfReadOnly = false,
   profileId = "",
 }: Props) {
   const { t } = useTranslation();
@@ -771,6 +781,7 @@ function SqlWorkspace({
               database={selectedDb}
               active={active && contentMode === "query"}
               readOnly={readOnly}
+              dmlEvenIfReadOnly={dmlEvenIfReadOnly}
               profileId={profileId}
               onOpenTable={openTable}
               // A script that changed the shape of the database is the sidebar's reload, arrived at

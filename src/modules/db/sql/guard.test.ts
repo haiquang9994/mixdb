@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { unguardedWrites, withAutoLimits, withLimit, writingStatements } from "./guard";
+import { clickhouseAlterUpdate, isRowsDml, unguardedWrites, withAutoLimits, withLimit, writingStatements } from "./guard";
 import { splitStatements } from "../sql/statements";
 import { mysqlDialect } from "../mysql/dialect";
 import { postgresDialect } from "../postgres/dialect";
-import { MYSQL_SYNTAX, POSTGRES_SYNTAX } from "../sql/syntax";
+import { clickhouseDialect } from "../clickhouse/dialect";
+import { CLICKHOUSE_SYNTAX, MYSQL_SYNTAX, POSTGRES_SYNTAX } from "../sql/syntax";
 
 /**
  * The gates, held against the statements they exist to stop.
@@ -21,6 +22,75 @@ const blocked = (sql: string) => writingStatements(splitStatements(sql, MYSQL_SY
 const blockedPg = (sql: string) =>
   writingStatements(splitStatements(sql, POSTGRES_SYNTAX), postgresDialect).map((b) => b.verb);
 const guardedPg = (sql: string) => unguardedWrites(splitStatements(sql, POSTGRES_SYNTAX), postgresDialect);
+const chAlterUpdate = (sql: string) =>
+  clickhouseAlterUpdate(splitStatements(sql, CLICKHOUSE_SYNTAX)[0], clickhouseDialect);
+const chIsRowsDml = (sql: string) => isRowsDml(splitStatements(sql, CLICKHOUSE_SYNTAX)[0], clickhouseDialect);
+const chGuarded = (sql: string) => unguardedWrites(splitStatements(sql, CLICKHOUSE_SYNTAX), clickhouseDialect);
+
+describe("unguardedWrites on ClickHouse's ALTER TABLE ... UPDATE", () => {
+  it("stops one that names no rows", () => {
+    expect(chGuarded("ALTER TABLE users UPDATE status = 'x'")).toEqual([
+      { kind: "rows", verb: "UPDATE", table: "users" },
+    ]);
+  });
+
+  it("lets a bounded one through", () => {
+    expect(chGuarded("ALTER TABLE users UPDATE status = 'x' WHERE id = 1")).toEqual([]);
+  });
+
+  it("does not confuse it with a DROP-shaped ALTER", () => {
+    expect(chGuarded("ALTER TABLE users DROP COLUMN status")).toEqual([
+      { kind: "drop", verb: "ALTER TABLE", table: "users" },
+    ]);
+  });
+
+  it("leaves a multi-command ALTER unrecognised as the UPDATE shape — falls through to the existing DROP-shape check, which still catches this one since it names a DROP", () => {
+    expect(chGuarded("ALTER TABLE users DROP COLUMN x, UPDATE y = 1")).toEqual([
+      { kind: "drop", verb: "ALTER TABLE", table: "users" },
+    ]);
+  });
+});
+
+describe("clickhouseAlterUpdate", () => {
+  it("reads the table out of ALTER TABLE ... UPDATE ... WHERE ...", () => {
+    expect(chAlterUpdate("ALTER TABLE t UPDATE x = 1 WHERE id = 2")).toEqual({
+      table: "t",
+      clauses: expect.any(Array),
+    });
+  });
+
+  it("is null for a plain ALTER TABLE ... DROP COLUMN", () => {
+    expect(chAlterUpdate("ALTER TABLE t DROP COLUMN x")).toBeNull();
+  });
+
+  it("is null when more than one AlterCommand is packed in", () => {
+    expect(chAlterUpdate("ALTER TABLE t DROP COLUMN x, UPDATE y = 1 WHERE z = 2")).toBeNull();
+  });
+
+  it("is null on MySQL — this is ClickHouse's own spelling of UPDATE", () => {
+    expect(
+      clickhouseAlterUpdate(splitStatements("ALTER TABLE t UPDATE x = 1", MYSQL_SYNTAX)[0], mysqlDialect)
+    ).toBeNull();
+  });
+});
+
+describe("isRowsDml", () => {
+  it("is true for INSERT, DELETE and TRUNCATE regardless of shape", () => {
+    expect(chIsRowsDml("INSERT INTO t VALUES (1)")).toBe(true);
+    expect(chIsRowsDml("DELETE FROM t WHERE id = 1")).toBe(true);
+    expect(chIsRowsDml("TRUNCATE TABLE t")).toBe(true);
+  });
+
+  it("is true for ALTER TABLE ... UPDATE ... WHERE ...", () => {
+    expect(chIsRowsDml("ALTER TABLE t UPDATE x = 1 WHERE id = 2")).toBe(true);
+  });
+
+  it("is false for a plain ALTER TABLE ... DROP COLUMN, or any other DDL", () => {
+    expect(chIsRowsDml("ALTER TABLE t DROP COLUMN x")).toBe(false);
+    expect(chIsRowsDml("CREATE TABLE t (id UInt32) ENGINE = MergeTree ORDER BY id")).toBe(false);
+    expect(chIsRowsDml("DROP TABLE t")).toBe(false);
+  });
+});
 
 describe("unguardedWrites", () => {
   it("stops a write that names no rows, and names the table it would take", () => {

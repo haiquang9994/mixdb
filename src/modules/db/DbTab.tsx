@@ -769,6 +769,9 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
             (activeSavedConnection?.readOnly ?? false) || !engine.dialect.ddlWritable
           }
           dataReadOnly={(activeSavedConnection?.readOnly ?? false) || !engine.dialect.rowsWritable}
+          dmlEvenIfReadOnly={
+            !(activeSavedConnection?.readOnly ?? false) && engine.dialect.rowsWritable
+          }
           profileId={activeSavedConnection?.id ?? ""}
         />
       </SqlProvider>

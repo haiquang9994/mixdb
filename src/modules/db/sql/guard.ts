@@ -48,6 +48,60 @@ function topLevelWords(statement: SqlStatement, dialect: SqlDialect): TopWord[] 
 }
 
 /**
+ * ClickHouse's own spelling of `UPDATE` — `ALTER TABLE <name> UPDATE col = val, ... [WHERE ...]`.
+ * Recognises only the simplest shape: exactly one `AlterCommand`, nothing else in the same
+ * statement. ClickHouse allows several comma-separated commands in one `ALTER TABLE` (`ALTER TABLE
+ * t DROP COLUMN x, UPDATE y = 1 WHERE ...`) — a top-level comma anywhere in the statement means
+ * more than one command is packed in, and this returns `null` rather than guess which one governs
+ * (D3 of `docs/superpowers/specs/2026-09-04-clickhouse-query-dml-design.md`).
+ *
+ * `null` on every dialect but ClickHouse: no other engine spells `UPDATE` this way, and MySQL's own
+ * `ALTER TABLE` never carries an `UPDATE` clause at all.
+ */
+export function clickhouseAlterUpdate(
+  statement: SqlStatement,
+  dialect: SqlDialect
+): { table: string; clauses: TopWord[] } | null {
+  if (dialect.kind !== "clickhouse" || statement.verb !== "ALTER") return null;
+  const code = tokenize(statement.text, dialect.syntax, statement.from).filter((t) => t.kind !== "comment");
+  let depth = 0;
+  const words: TopWord[] = [];
+  for (const token of code) {
+    if (token.raw === "(") {
+      depth += 1;
+      continue;
+    }
+    if (token.raw === ")") {
+      depth -= 1;
+      continue;
+    }
+    if (depth === 0 && token.raw === ",") return null;
+    if (depth === 0 && (token.kind === "word" || token.kind === "quoted")) {
+      words.push({ word: token.kind === "word" ? token.value.toUpperCase() : "", token });
+    }
+  }
+  // words[0] is ALTER itself.
+  if (words[1]?.word !== "TABLE") return null;
+  const table = words[2];
+  if (!table || words[3]?.word !== "UPDATE") return null;
+  return { table: table.token.value, clauses: words.slice(4) };
+}
+
+/**
+ * Whether `statement` is one of the row-level DML verbs a `rowsWritable` dialect may send through
+ * the Query tab even while `writable` is false — ClickHouse's four verbs (D5 of
+ * `docs/superpowers/specs/2026-09-04-clickhouse-query-dml-design.md`). `INSERT`/`DELETE`/
+ * `TRUNCATE` are spelled the same as on every other dialect; `ALTER TABLE <name> UPDATE ...` is
+ * ClickHouse's own spelling, recognised by {@link clickhouseAlterUpdate}.
+ */
+export function isRowsDml(statement: SqlStatement, dialect: SqlDialect): boolean {
+  if (statement.verb === "INSERT" || statement.verb === "DELETE" || statement.verb === "TRUNCATE") {
+    return true;
+  }
+  return clickhouseAlterUpdate(statement, dialect) !== null;
+}
+
+/**
  * The verbs that make a `WITH` more than a read.
  *
  * MySQL 8 lets a common table expression lead into an `UPDATE`, a `DELETE`, an `INSERT` or a
@@ -211,6 +265,16 @@ export function unguardedWrites(
     const clauses = words.slice(at + 1);
 
     if (verb === "DROP" || verb === "ALTER") {
+      // ClickHouse's own spelling of `UPDATE` — judged the same way a plain `UPDATE` is, just
+      // below, not as a `DROP`: it changes rows, not the table itself. Checked before the
+      // DROP-shape branch so the two never compete over the same statement.
+      const alterUpdate = verb === "ALTER" ? clickhouseAlterUpdate(statement, dialect) : null;
+      if (alterUpdate !== null) {
+        if (!alterUpdate.clauses.some(({ word }) => word === "WHERE" || word === "LIMIT")) {
+          found.push({ kind: "rows", verb: "UPDATE", table: alterUpdate.table });
+        }
+        continue;
+      }
       // An `ALTER` is only here for what it drops: adding a column or an index changes no data,
       // and asking about every one of those is how a question stops being read.
       if (verb === "ALTER" && !clauses.some(({ word }) => word === "DROP")) continue;

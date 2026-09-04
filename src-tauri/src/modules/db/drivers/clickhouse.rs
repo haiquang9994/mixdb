@@ -199,6 +199,58 @@ pub(super) async fn execute_check(
     }
 }
 
+/// The `written_rows` field of an `X-ClickHouse-Summary` response header, or `0` when the header
+/// is missing, is not JSON, or has no such field — a synchronous write has already succeeded by
+/// the time this is read, so a header that cannot be parsed is not a reason to fail the call.
+///
+/// The field is a JSON *string*, not a number — checked against the test server: `written_rows`
+/// comes back as `"2"`, not `2`. Everything else in the header follows the same convention (large
+/// integers as JSON strings, the same reason ClickHouse's `FORMAT JSON` does it for query results).
+pub(super) fn parse_written_rows(summary_header: &str) -> u64 {
+    serde_json::from_str::<Value>(summary_header)
+        .ok()
+        .and_then(|v| v.get("written_rows").and_then(Value::as_str).and_then(|s| s.parse().ok()))
+        .unwrap_or(0)
+}
+
+/// Sends one statement with no `FORMAT` appended — same wire shape as [`execute_check`] — and
+/// reads back how many rows ClickHouse reports having written, from the `X-ClickHouse-Summary`
+/// response header. This is the only place that count is available: `FORMAT JSON` cannot be
+/// appended to ask for it the way a `SELECT`'s can be, since a synchronous `INSERT` has no result
+/// set of its own to format (see `clickhouse_script.rs`'s module doc — `INSERT ... FORMAT JSON` is
+/// parsed as a different statement, not a request for JSON output, checked against the test
+/// server).
+pub(super) async fn execute_with_written_rows(
+    conn: &Connection,
+    sql: &str,
+    database: Option<&str>,
+) -> Result<u64, AppError> {
+    let mut url = url::Url::parse(&conn.base_url).map_err(map_error)?;
+    if let Some(database) = database.filter(|d| !d.is_empty()) {
+        url.query_pairs_mut().append_pair("database", database);
+    }
+    let mut request = conn.client.post(url).body(sql.to_string());
+    if !conn.user.is_empty() {
+        request = request
+            .header("X-ClickHouse-User", &conn.user)
+            .header("X-ClickHouse-Key", &conn.password);
+    }
+    let response = request.send().await.map_err(map_error)?;
+    let status = response.status();
+    let written_rows = response
+        .headers()
+        .get("X-ClickHouse-Summary")
+        .and_then(|v| v.to_str().ok())
+        .map(parse_written_rows)
+        .unwrap_or(0);
+    let text = response.text().await.map_err(map_error)?;
+    if status.is_success() {
+        Ok(written_rows)
+    } else {
+        Err(map_error(text.trim()))
+    }
+}
+
 /// Backtick-quotes an identifier for interpolation into SQL text, backslash-escaping an embedded
 /// backtick.
 ///
@@ -355,7 +407,7 @@ const MUTATION_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_mi
 /// Never assumes success without finding the mutation and seeing `is_done`: if no row (yet) matches
 /// — including the "more than one matched" case `find_new_mutation` refuses to pick between — this
 /// keeps polling rather than guessing, until the timeout turns that into an explicit error.
-async fn run_mutation_and_wait(
+pub(super) async fn run_mutation_and_wait(
     conn: &Connection,
     database: &str,
     table: &str,
@@ -1280,11 +1332,28 @@ pub async fn schema_outline(conn: &Connection, database: &str) -> Result<SchemaO
 mod tests {
     use super::{build_where, is_decodable, quote_ident, Filter, QueryResult};
     use std::collections::BTreeMap;
-    use super::{build_key_where, parse_type_full, quote_literal};
+    use super::{build_key_where, parse_type_full, parse_written_rows, quote_literal};
     use serde_json::{Map, Value};
 
     fn str_val(s: &str) -> Value {
         Value::String(s.to_string())
+    }
+
+    #[test]
+    fn parse_written_rows_reads_the_string_field() {
+        let header = r#"{"read_rows":"0","written_rows":"2","written_bytes":"18"}"#;
+        assert_eq!(parse_written_rows(header), 2);
+    }
+
+    #[test]
+    fn parse_written_rows_defaults_to_zero_when_the_field_is_missing() {
+        assert_eq!(parse_written_rows(r#"{"read_rows":"0"}"#), 0);
+    }
+
+    #[test]
+    fn parse_written_rows_defaults_to_zero_on_malformed_json() {
+        assert_eq!(parse_written_rows("not json"), 0);
+        assert_eq!(parse_written_rows(""), 0);
     }
 
     #[test]

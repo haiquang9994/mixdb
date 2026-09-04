@@ -140,6 +140,11 @@ export interface SqlDialect {
    *
    * True on every engine but ClickHouse. `DbTab` folds this into the same `readOnly` a connection
    * can be marked with by hand: see `SqlWorkspace`'s `readOnly` prop.
+   *
+   * The Query tab's own four DML verbs are an exception to this false: they may be sent even while
+   * this is `false`, as long as `rowsWritable` is `true` and the connection itself is not marked
+   * read-only by hand — see `SqlWorkspaceProps.dmlEvenIfReadOnly` and
+   * `docs/superpowers/specs/2026-09-04-clickhouse-query-dml-design.md`.
    */
   writable: boolean;
 

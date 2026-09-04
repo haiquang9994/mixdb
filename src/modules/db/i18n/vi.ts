@@ -382,6 +382,11 @@ const dbVi: DbDict = {
     // Chip trên thanh công cụ, và điều xảy ra khi vẫn cố ghi.
     readOnly: "Chỉ đọc",
     readOnlyBlocked: "Chưa gửi gì cả: kết nối này được đánh dấu chỉ đọc, mà trong script lại có câu lệnh {{verb}}.",
+    ddlOnlyReadOnly: "Chỉ khoá DDL",
+    ddlOnlyReadOnlyHint:
+      "INSERT/UPDATE/DELETE/TRUNCATE chạy được ở đây. Đổi bảng và database vẫn phải qua Structure tab.",
+    ddlBlocked:
+      "Chưa gửi gì cả: Query tab này chỉ nhận INSERT/UPDATE/DELETE/TRUNCATE gõ tay — thay đổi khác phải qua Structure tab.",
     // Cửa chặn trước một UPDATE, DELETE hay TRUNCATE không nói rõ dòng nào.
     unguardedTitle: "Sửa toàn bộ các dòng?",
     unguardedOne: "{{verb}} trên {{table}} không nói rõ dòng nào, nên nó áp dụng cho tất cả.",
@@ -928,6 +933,8 @@ const dbVi: DbDict = {
     clickhouseOnlyFeature: "Cái này chỉ áp dụng cho kết nối ClickHouse.",
     clickhouseMutationTimeout:
       "Thao tác vẫn đang chạy trên server sau 30 giây — tải lại bảng để xem đã xong chưa.",
+    clickhouseMutationTargetUnknown:
+      "Không có gì để chạy lệnh này: chưa chọn database, và câu lệnh cũng không nêu tên.",
     clickhouseHeterogeneousInsert:
       "Các dòng này không khai báo cùng một tập cột, nên không thể chèn chung thành một câu lệnh nguyên tử trên ClickHouse.",
     clickhouseUnknownEngine:
