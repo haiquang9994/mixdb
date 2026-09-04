@@ -25,6 +25,31 @@ const guardedPg = (sql: string) => unguardedWrites(splitStatements(sql, POSTGRES
 const chAlterUpdate = (sql: string) =>
   clickhouseAlterUpdate(splitStatements(sql, CLICKHOUSE_SYNTAX)[0], clickhouseDialect);
 const chIsRowsDml = (sql: string) => isRowsDml(splitStatements(sql, CLICKHOUSE_SYNTAX)[0], clickhouseDialect);
+const chGuarded = (sql: string) => unguardedWrites(splitStatements(sql, CLICKHOUSE_SYNTAX), clickhouseDialect);
+
+describe("unguardedWrites on ClickHouse's ALTER TABLE ... UPDATE", () => {
+  it("stops one that names no rows", () => {
+    expect(chGuarded("ALTER TABLE users UPDATE status = 'x'")).toEqual([
+      { kind: "rows", verb: "UPDATE", table: "users" },
+    ]);
+  });
+
+  it("lets a bounded one through", () => {
+    expect(chGuarded("ALTER TABLE users UPDATE status = 'x' WHERE id = 1")).toEqual([]);
+  });
+
+  it("does not confuse it with a DROP-shaped ALTER", () => {
+    expect(chGuarded("ALTER TABLE users DROP COLUMN status")).toEqual([
+      { kind: "drop", verb: "ALTER TABLE", table: "users" },
+    ]);
+  });
+
+  it("leaves a multi-command ALTER unrecognised as the UPDATE shape — falls through to the existing DROP-shape check, which still catches this one since it names a DROP", () => {
+    expect(chGuarded("ALTER TABLE users DROP COLUMN x, UPDATE y = 1")).toEqual([
+      { kind: "drop", verb: "ALTER TABLE", table: "users" },
+    ]);
+  });
+});
 
 describe("clickhouseAlterUpdate", () => {
   it("reads the table out of ALTER TABLE ... UPDATE ... WHERE ...", () => {

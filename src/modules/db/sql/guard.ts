@@ -265,6 +265,16 @@ export function unguardedWrites(
     const clauses = words.slice(at + 1);
 
     if (verb === "DROP" || verb === "ALTER") {
+      // ClickHouse's own spelling of `UPDATE` — judged the same way a plain `UPDATE` is, just
+      // below, not as a `DROP`: it changes rows, not the table itself. Checked before the
+      // DROP-shape branch so the two never compete over the same statement.
+      const alterUpdate = verb === "ALTER" ? clickhouseAlterUpdate(statement, dialect) : null;
+      if (alterUpdate !== null) {
+        if (!alterUpdate.clauses.some(({ word }) => word === "WHERE" || word === "LIMIT")) {
+          found.push({ kind: "rows", verb: "UPDATE", table: alterUpdate.table });
+        }
+        continue;
+      }
       // An `ALTER` is only here for what it drops: adding a column or an index changes no data,
       // and asking about every one of those is how a question stops being read.
       if (verb === "ALTER" && !clauses.some(({ word }) => word === "DROP")) continue;
