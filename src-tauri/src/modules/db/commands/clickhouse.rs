@@ -242,3 +242,63 @@ pub async fn clickhouse_modify_column(
     let conn = clickhouse_connection(&state, &id).await?;
     clickhouse_ddl::modify_column(&conn, &database, &table, &name, &spec).await
 }
+
+#[tauri::command]
+pub async fn clickhouse_add_skip_index(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    spec: clickhouse_ddl::SkipIndexSpec,
+) -> Result<(), AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse_ddl::add_skip_index(&conn, &database, &table, &spec).await
+}
+
+#[tauri::command]
+pub async fn clickhouse_modify_skip_index(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+    spec: clickhouse_ddl::SkipIndexSpec,
+) -> Result<(), AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse_ddl::modify_skip_index(&conn, &database, &table, &name, &spec).await
+}
+
+#[tauri::command]
+pub async fn clickhouse_drop_skip_index(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+) -> Result<(), AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse_ddl::drop_skip_index(&conn, &database, &table, &name).await
+}
+
+#[tauri::command]
+pub async fn clickhouse_rebuild_order_by(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    columns: Vec<String>,
+) -> Result<Option<String>, AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse_ddl::rebuild_order_by(&conn, &database, &table, &columns).await
+}
+
+#[tauri::command]
+pub async fn clickhouse_row_count(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+) -> Result<u64, AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse_ddl::row_count(&conn, &database, &table).await
+}
