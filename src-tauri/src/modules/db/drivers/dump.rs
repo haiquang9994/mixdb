@@ -462,7 +462,7 @@ const CALIBRATE_FROM: u64 = 1 << 20;
 ///
 /// That alone would sit still through the one huge table most databases have, so the size of the
 /// file being written is read as well and used to place the dump inside the one it is on.
-struct Tracker {
+pub(super) struct Tracker {
     /// What each table or collection weighs, by name.
     weights: HashMap<String, u64>,
     total: u64,
@@ -487,7 +487,7 @@ struct Tracker {
 }
 
 impl Tracker {
-    fn new(parts: &[(String, u64)], path: &str, rows: bool) -> Self {
+    pub(super) fn new(parts: &[(String, u64)], path: &str, rows: bool) -> Self {
         let mut weights: HashMap<String, u64> = parts.iter().cloned().collect();
         let mut total: u64 = weights.values().sum();
         let rows = rows && total > 0;
@@ -522,7 +522,7 @@ impl Tracker {
     }
 
     /// The tool has reached `part`, which is also to say it has finished the one before it.
-    fn reached(&mut self, part: &str) {
+    pub(super) fn reached(&mut self, part: &str) {
         let size = self.size();
         if let Some((_, weight, from)) = self.current.take() {
             self.done += weight;
@@ -539,7 +539,7 @@ impl Tracker {
         self.current = Some((part.to_string(), weight, size));
     }
 
-    fn progress(&mut self) -> Progress {
+    pub(super) fn progress(&mut self) -> Progress {
         // Nothing was known about what the database holds, so there is nothing to be a fraction of.
         if self.total == 0 {
             return Progress {
