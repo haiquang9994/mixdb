@@ -80,9 +80,9 @@ export interface DatabaseIconProps extends Omit<SVGProps<SVGSVGElement>, "viewBo
 export function DatabaseIcon({ kind, size = "1em", className, ...rest }: DatabaseIconProps) {
   const mark = BRAND_MARKS[kind];
   if (!mark) {
-    // Một kind BRAND_MARKS của bản build này không liệt kê — một connection do bản mới hơn lưu,
-    // đọc lại bằng bản cũ. Không có brand nào để vẽ, nên dùng mark "không thuộc engine nào" của
-    // module thay vì đọc mark.viewBox trên undefined. Xem
+    // A kind this build's BRAND_MARKS doesn't list — a connection saved by a newer version, read
+    // back by this one. No brand to draw, so the module's own "no engine" mark stands in rather
+    // than reading mark.viewBox on undefined. See
     // docs/superpowers/specs/2026-09-05-unknown-db-kind-crash-and-error-logging-design.md.
     return <DatabaseGenericIcon size={size} className={className} {...rest} />;
   }

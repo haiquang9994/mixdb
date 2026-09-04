@@ -184,12 +184,12 @@ export const KIND_LABEL: Record<DbKind, TranslationKey> = {
 };
 
 /**
- * `KIND_LABEL[kind]`, nhưng không crash khi `kind` là một giá trị mà `DbKind` của *bản build này*
- * không thật sự liệt kê. `SavedConnection.config.kind` chỉ được *gán kiểu* `DbKind` lúc đọc từ
- * `connections.json` — không có gì xác minh nó lúc chạy — nên một connection do một bản mới hơn
- * lưu, đọc lại bằng bản cũ, mang một kind không có trong bảng.
+ * `KIND_LABEL[kind]`, but doesn't crash when `kind` is a value *this build's* `DbKind` doesn't
+ * actually list. `SavedConnection.config.kind` is only *typed* as `DbKind` when read from
+ * `connections.json` — nothing verifies it at runtime — so a connection saved by a newer version,
+ * read back by this one, can carry a kind that isn't in the table.
  *
- * Xem docs/superpowers/specs/2026-09-05-unknown-db-kind-crash-and-error-logging-design.md.
+ * See docs/superpowers/specs/2026-09-05-unknown-db-kind-crash-and-error-logging-design.md.
  */
 export function kindLabel(kind: DbKind): TranslationKey {
   return (KIND_LABEL as Partial<Record<string, TranslationKey>>)[kind] ?? "connection.kindUnknown";

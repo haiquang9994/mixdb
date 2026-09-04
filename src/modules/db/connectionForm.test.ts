@@ -180,9 +180,9 @@ describe("kindLabel", () => {
   });
 
   it("falls back instead of crashing for a kind this build's DbKind union does not actually cover", () => {
-    // Đúng dữ liệu thật gặp phải: một `SavedConnection.config.kind` do một bản mới hơn lưu, đọc
-    // lại bằng một bản cũ mà `DbKind` không liệt kê giá trị đó — ép kiểu vì TypeScript không cho
-    // viết một chuỗi tuỳ ý vào tham số kiểu `DbKind` theo cách khác.
+    // The real data this meets: a `SavedConnection.config.kind` saved by a newer version, read
+    // back by this one, whose `DbKind` union doesn't list that value — cast, since TypeScript
+    // won't otherwise let an arbitrary string reach a `DbKind`-typed parameter.
     expect(kindLabel("totally-unknown-kind" as ConnectionConfig["kind"])).toBe("connection.kindUnknown");
   });
 });

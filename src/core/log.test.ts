@@ -7,8 +7,8 @@ describe("formatLogMessage", () => {
     const line = formatLogMessage("react", err);
     expect(line.startsWith("[react] ")).toBe(true);
     expect(line).toContain("boom");
-    // Error.stack luôn bắt đầu bằng "<Name>: <message>" khi có stack — nhưng jsdom-less vitest vẫn
-    // chạy trên V8 thật (Node), nên err.stack tồn tại.
+    // Error.stack always starts with "<Name>: <message>" when there is one — and there is one
+    // here: this jsdom-less vitest run is still real V8 (Node), so err.stack exists.
     expect(line).toContain(err.stack ?? err.message);
   });
 

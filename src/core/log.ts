@@ -1,11 +1,12 @@
 import { error as pluginError } from "@tauri-apps/plugin-log";
 
 /**
- * Một dòng log cho một lỗi không bắt được, kèm nguồn (`"react"` từ Error Boundary, `"window"` từ
- * `window.onerror`, `"promise"` từ `unhandledrejection`) và ngữ cảnh nếu có (ví dụ
- * `ErrorInfo.componentStack` của React).
+ * One log line for an uncaught error, with a source (`"react"` from the Error Boundary,
+ * `"window"` from `window.onerror`, `"promise"` from `unhandledrejection`) and context when there
+ * is any (e.g. React's `ErrorInfo.componentStack`).
  *
- * Hàm thuần, tách khỏi việc ghi thật (`logError`) để test được không cần mock IPC của Tauri.
+ * A pure function, kept apart from the real write (`logError`) so it can be tested without mocking
+ * Tauri's IPC.
  */
 export function formatLogMessage(source: string, error: unknown, context?: string): string {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
@@ -13,10 +14,10 @@ export function formatLogMessage(source: string, error: unknown, context?: strin
 }
 
 /**
- * Ghi một lỗi không bắt được ra file log của app (`tauri-plugin-log`, thư mục `appLogDir()`).
+ * Writes an uncaught error to the app's log file (`tauri-plugin-log`, under `appLogDir()`).
  *
- * Nuốt lỗi của chính việc ghi log — một crash log gãy không được phép thành crash thứ hai. Khi đó
- * `console.error` là chỗ duy nhất còn lại, dù chỉ ai mở devtools mới thấy.
+ * Swallows a failure of the write itself — a broken crash log must not become a second crash.
+ * `console.error` is the only thing left at that point, seen only by whoever has devtools open.
  */
 export async function logError(source: string, error: unknown, context?: string): Promise<void> {
   try {

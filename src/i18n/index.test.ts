@@ -8,14 +8,15 @@ describe("resolve", () => {
   });
 
   it("returns the key itself when the dictionary doesn't have it", () => {
-    // Hành vi đã tài liệu hoá trong .agent/conventions/i18n.md: "An unknown key resolves to the
-    // key string itself rather than throwing."
+    // Documented behaviour, per .agent/conventions/i18n.md: "An unknown key resolves to the key
+    // string itself rather than throwing."
     expect(resolve(EN, "no.such.key" as never)).toBe("no.such.key");
   });
 
   it("does not throw when key is not a string", () => {
-    // Đúng dạng lỗi thật: một Record<SomeUnion, TranslationKey> tra bằng giá trị đọc từ đĩa (ví dụ
-    // KIND_LABEL[kindLạ] trước khi có kindLabel()) trả undefined, và undefined lọt tới đây.
+    // The real failure this guards: a Record<SomeUnion, TranslationKey> indexed by a value read
+    // from disk (e.g. KIND_LABEL[someUnknownKind], before kindLabel() existed) can return
+    // undefined, and undefined ends up here.
     expect(() => resolve(EN, undefined as never)).not.toThrow();
   });
 });

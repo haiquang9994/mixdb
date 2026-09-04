@@ -34,8 +34,8 @@ const dbEn = {
     kindRedis: "Redis",
     kindSqlite: "SQLite",
     kindClickhouse: "ClickHouse",
-    /** Một `kind` bản build này không liệt kê trong `KIND_LABEL` — một connection do bản mới
-     *  hơn lưu, đọc lại bằng bản cũ. Xem `kindLabel` trong connectionForm.ts. */
+    /** A `kind` this build doesn't list in `KIND_LABEL` — a connection saved by a newer version,
+     *  read back by this one. See `kindLabel` in connectionForm.ts. */
     kindUnknown: "Unknown",
     sqlitePathLabel: "Database file",
     sqlitePathPlaceholder: "Path to a .db or .sqlite file",

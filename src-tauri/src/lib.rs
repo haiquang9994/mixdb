@@ -33,8 +33,8 @@ pub fn run() {
                 .target(tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::LogDir { file_name: None },
                 ))
-                // Mặc định của plugin là 40_000 byte — quá nhỏ để giữ được một phiên có lỗi.
-                // 5MB đủ cho rất nhiều dòng log trước khi cần xoay vòng.
+                // The plugin's default is 40_000 bytes — too small to hold a session with a real
+                // bug in it. 5MB holds a lot of lines before it ever needs to rotate.
                 .max_file_size(5_000_000)
                 .build(),
         );
