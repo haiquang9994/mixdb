@@ -640,6 +640,63 @@ mod tests {
         split_statements(sql).into_iter().map(|s| (s.verb, s.text)).collect()
     }
 
+    /// Runs `sql` through `Scanner`, split into `chunk_size`-character pieces fed one chunk's worth
+    /// of `feed()` calls at a time — the same shape the restore reader in `clickhouse_dump.rs` drives
+    /// it in, minus the file I/O. Returns the statement texts it produced.
+    fn split_in_chunks(sql: &str, chunk_size: usize) -> Vec<String> {
+        let mut scanner = Scanner::new();
+        let mut current = String::new();
+        let mut out = Vec::new();
+        for chunk in sql.chars().collect::<Vec<_>>().chunks(chunk_size.max(1)) {
+            for &c in chunk {
+                match scanner.feed(c) {
+                    Fed::More => current.push(c),
+                    Fed::End => {
+                        let text = current.trim().to_string();
+                        current.clear();
+                        if !scanner.verb().is_empty() {
+                            out.push(text);
+                        }
+                        scanner.reset();
+                    }
+                }
+            }
+        }
+        let tail = current.trim().to_string();
+        if !scanner.verb().is_empty() {
+            out.push(tail);
+        }
+        out
+    }
+
+    #[test]
+    fn chunking_never_changes_the_statements_split_produces() {
+        let sql = "SELECT 1 -- a comment with ; in it\n; \
+                    SELECT 'it''s a semicolon: ;' FROM t; \
+                    SELECT \"a`b\" /* nested /* comment ; */ still comment */ FROM u; \
+                    SELECT 'backslash \\' then quote''s here';";
+        let whole: Vec<String> = split(sql).into_iter().map(|(_, text)| text).collect();
+        for chunk_size in [1, 2, 3, 5, 7, 16, 64] {
+            assert_eq!(split_in_chunks(sql, chunk_size), whole, "chunk_size={chunk_size}");
+        }
+    }
+
+    #[test]
+    fn a_chunk_boundary_inside_a_doubled_single_quote_still_resolves() {
+        // `''` is one escaped quote inside the string — a boundary landing exactly between the two
+        // `'` characters is the one-character-lookahead case `MaybeDoubledSingleQuote` exists for.
+        let sql = "SELECT 'it''s fine';";
+        let whole: Vec<String> = split(sql).into_iter().map(|(_, text)| text).collect();
+        assert_eq!(split_in_chunks(sql, 9), whole); // "SELECT 'i" | "t''s fine';" — splits inside `''`
+    }
+
+    #[test]
+    fn a_chunk_boundary_inside_a_backslash_escape_still_resolves() {
+        let sql = r"SELECT 'a\'b';";
+        let whole: Vec<String> = split(sql).into_iter().map(|(_, text)| text).collect();
+        assert_eq!(split_in_chunks(sql, 10), whole); // splits right after the `\`
+    }
+
     #[test]
     fn alter_table_update_target_reads_an_unqualified_table() {
         assert_eq!(
