@@ -975,16 +975,20 @@ const dbVi: DbDict = {
     indexColumnNameRequired: "Mọi cột trong index đều phải có tên.",
     invalidCollation: "Máy chủ này không có collation {{collation}}.",
     unknownIndexKind: "Loại index {{kind}} không hợp lệ.",
-    sqliteColumnTypeUnchangeable:
-      "SQLite không đổi được kiểu của {{column}} — chỉ đổi được tên. Hãy thêm cột mới rồi chép dữ liệu sang.",
-    sqliteColumnNullUnchangeable:
-      "SQLite không thêm hay bỏ được NOT NULL trên {{column}} — chỉ đổi được tên.",
-    sqliteColumnDefaultUnchangeable:
-      "SQLite không đổi được giá trị mặc định của {{column}} — chỉ đổi được tên.",
+    sqliteRenameWithOtherChanges:
+      "Đổi tên {{column}} riêng một lần, rồi sửa kiểu/default/collation ở một lần khác.",
     sqliteNoPrimaryKeyAfterwards:
       "Primary key của SQLite là một phần của chính bảng, không thêm được vào bảng đã tạo mà chưa có.",
     sqliteIndexBelongsToConstraint:
       "{{index}} thuộc về một ràng buộc PRIMARY KEY hoặc UNIQUE, không xóa riêng được.",
+    sqliteColumnInTableConstraint:
+      "{{column}} là một phần của ràng buộc cấp bảng (khoá ghép, UNIQUE, CHECK hay FOREIGN KEY) — viết lại những thứ đó chưa được hỗ trợ.",
+    sqliteColumnGenerated:
+      "{{column}} là cột generated — giá trị của nó đến từ biểu thức, không phải từ việc sửa.",
+    sqliteColumnIsPrimaryKey:
+      "{{column}} chính là rowid của bảng, được đặt bí danh INTEGER PRIMARY KEY, không đổi được.",
+    sqliteRebuildForeignKeyViolation:
+      "Dựng lại {{table}} sẽ để lại một khoá ngoại trỏ vào một dòng không còn khớp — chưa có gì bị đổi.",
     unknownIndexType: "Kiểu index {{type}} không hợp lệ.",
     noVisibleColumns:
       "Không thấy cột nào của {{database}}.{{table}} — có thể bảng không tồn tại, hoặc tài khoản của bạn không có quyền trên bảng đó.",
@@ -1049,8 +1053,8 @@ const dbVi: DbDict = {
     cannotReadFile: "Không đọc được {{path}}: {{message}}",
     cannotWriteFile: "Không ghi được {{path}}: {{message}}",
     sqliteRestoreFailed: "Khôi phục dừng lại ở {{statement}} — {{message}}",
-    sqliteDataDumpUnsupported:
-      "MixDB chỉ dump cấu trúc SQLite, không dump dữ liệu. Hãy chọn Structure, hoặc sao chép chính file đó.",
+    sqliteRebuildParseFailed:
+      "MixDB không đọc được cấu trúc CREATE TABLE của {{table}} đủ rõ để dựng lại — đây là một cú pháp app chưa nhận ra.",
     cannotRemoveDirectory: "Không xóa được {{path}}: {{message}}",
     noAppDataDir: "MixDB không có chỗ nào để lưu file riêng của nó: {{message}}",
   },

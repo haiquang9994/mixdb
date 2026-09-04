@@ -999,18 +999,20 @@ const dbEn = {
     indexColumnNameRequired: "Every column of an index has to be named.",
     invalidCollation: "{{collation}} is not a collation this server has.",
     unknownIndexKind: "Unknown index kind {{kind}}.",
-    /* SQLite's ALTER TABLE renames a column and nothing else. Everything below is a change that
-       would need the whole table rebuilt around the new definition, which MixDB does not do. */
-    sqliteColumnTypeUnchangeable:
-      "SQLite cannot change the type of {{column}} — only its name. Add a new column and copy the values across.",
-    sqliteColumnNullUnchangeable:
-      "SQLite cannot add or remove NOT NULL on {{column}} — only rename it.",
-    sqliteColumnDefaultUnchangeable:
-      "SQLite cannot change the default of {{column}} — only rename it.",
+    sqliteRenameWithOtherChanges:
+      "Rename {{column}} on its own, then edit its type, default or collation separately.",
     sqliteNoPrimaryKeyAfterwards:
       "A SQLite primary key is part of the table itself and cannot be added to a table that has none.",
     sqliteIndexBelongsToConstraint:
       "{{index}} belongs to a PRIMARY KEY or UNIQUE constraint and cannot be dropped on its own.",
+    sqliteColumnInTableConstraint:
+      "{{column}} is part of a table-level constraint (a composite key, a UNIQUE, a CHECK or a FOREIGN KEY) — rewriting those is not supported yet.",
+    sqliteColumnGenerated:
+      "{{column}} is a generated column — its value comes from its expression, not from an edit.",
+    sqliteColumnIsPrimaryKey:
+      "{{column}} is the table's own rowid, aliased as an INTEGER PRIMARY KEY, and cannot be changed.",
+    sqliteRebuildForeignKeyViolation:
+      "Rebuilding {{table}} would leave a foreign key pointing at a row that no longer matches — nothing was changed.",
     unknownIndexType: "Unknown index type {{type}}.",
     noVisibleColumns:
       "No columns of {{database}}.{{table}} are visible \u2014 the table may not exist, or your user may have no privileges on it.",
@@ -1075,8 +1077,8 @@ const dbEn = {
     cannotReadFile: "Cannot read {{path}}: {{message}}",
     cannotWriteFile: "Cannot write {{path}}: {{message}}",
     sqliteRestoreFailed: "The restore stopped at {{statement}} — {{message}}",
-    sqliteDataDumpUnsupported:
-      "MixDB dumps a SQLite schema, not its rows. Choose Structure, or copy the file itself.",
+    sqliteRebuildParseFailed:
+      "MixDB could not read {{table}}'s own CREATE TABLE text well enough to rebuild it — this is a syntax it does not recognise yet.",
     cannotRemoveDirectory: "Cannot remove {{path}}: {{message}}",
     noAppDataDir: "There is nowhere for MixDB to keep its own files: {{message}}",
   },
