@@ -3,6 +3,7 @@ use crate::error::AppError;
 use crate::modules::db::drivers::{clickhouse, clickhouse_script};
 use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::modules::db::state::DbState;
+use serde_json::{Map, Value};
 use tauri::State;
 
 #[tauri::command]
@@ -102,4 +103,17 @@ pub async fn clickhouse_validate_sql(
 ) -> Result<Option<SqlProblem>, AppError> {
     let conn = clickhouse_connection(&state, &id).await?;
     clickhouse_script::validate(&conn, &sql, database.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn clickhouse_update_row(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    updates: Map<String, Value>,
+    key: Map<String, Value>,
+) -> Result<(), AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse::update_row(&conn, &database, &table, &updates, &key).await
 }

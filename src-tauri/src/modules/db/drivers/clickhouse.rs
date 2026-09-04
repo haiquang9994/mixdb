@@ -9,8 +9,10 @@
 //! rows as JSON objects in `data`, which is already the shape `row_to_json` builds by hand for
 //! MySQL and PostgreSQL.
 //!
-//! v1 is read-only throughout — see the plan this was built from
-//! (`docs/superpowers/plans/2026-09-04-clickhouse-db-kind.md`). Nothing in this module writes.
+//! v1 was read-only throughout — see the plan this was built from
+//! (`docs/superpowers/plans/2026-09-04-clickhouse-db-kind.md`). Row writes (insert/update/delete)
+//! shipped after it — see `docs/superpowers/specs/2026-09-04-clickhouse-row-writes-design.md`. DDL,
+//! dump/restore and the Query tab's own writes are still closed.
 
 use super::filters::{escape_like, split_list};
 use crate::error::AppError;
@@ -210,6 +212,228 @@ pub(super) fn quote_ident(ident: &str) -> String {
 /// A database and table addressed together, both quoted — how a table is written into SQL text.
 fn qualified(database: &str, table: &str) -> String {
     format!("{}.{}", quote_ident(database), quote_ident(table))
+}
+
+/// Backslash-escapes and single-quotes a value for splicing into ClickHouse SQL text as a string
+/// literal — the counterpart of `quote_ident` for values instead of identifiers. Checked against
+/// the same backslash convention `quote_ident` uses rather than doubling.
+///
+/// Used only for building `ALTER TABLE ... UPDATE/DELETE` and `INSERT` text: unlike a read, that
+/// text has to be matched back against `system.mutations.command` afterwards (see
+/// `run_mutation_and_wait`), so it is spliced in literally rather than sent as a `{name:Type}`
+/// bound parameter — a resolved literal round-trips there, a parameter placeholder's resolved form
+/// is not something to rely on.
+fn quote_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+/// One column's `WHERE` fragment identifying a row by its current value: direct equality for a
+/// column `is_decodable`, `toString(...)` for one that is not (the design's D2 — direct equality
+/// keeps the sparse primary index usable and avoids `Float`/`Decimal` round-trip mismatches that a
+/// blanket `toString()` would risk), and `IS NULL` for a value that is itself null, since
+/// ClickHouse has no `<=>`.
+fn key_clause(name: &str, type_name: &str, value: &Value) -> String {
+    let ident = quote_ident(name);
+    match value {
+        Value::Null => format!("{ident} IS NULL"),
+        Value::String(s) if is_decodable(type_name) => format!("{ident} = {}", quote_literal(s)),
+        Value::String(s) => format!("toString({ident}) = {}", quote_literal(s)),
+        // The frontend's `SqlApi` types this as `string | null` — anything else reaching here is
+        // impossible through it, but a defensive value beats a panic if that ever changes.
+        _ => format!("{ident} IS NULL"),
+    }
+}
+
+/// The `WHERE` clause identifying one row by every column named in `key` — ClickHouse has no
+/// primary key, so the frontend always sends every column (the design's D1). Each name must be a
+/// real column: an unknown one means the schema drifted out from under an open tab, not something
+/// to guess past.
+fn build_key_where(
+    columns: &BTreeMap<String, String>,
+    key: &Map<String, Value>,
+) -> Result<String, AppError> {
+    let mut clauses = Vec::new();
+    for (name, value) in key {
+        let Some(type_name) = columns.get(name) else {
+            return Err(err!("error.unknownFilterColumn", column = name));
+        };
+        clauses.push(key_clause(name, type_name, value));
+    }
+    Ok(clauses.join(" AND "))
+}
+
+/// Whether `row`'s `is_done` reads as ClickHouse's true — `1` as either the JSON number or the
+/// string `FORMAT JSON` may write a `UInt8` as.
+fn mutation_is_done(row: &Map<String, Value>) -> bool {
+    match row.get("is_done") {
+        Some(Value::Number(n)) => n.as_i64() == Some(1),
+        Some(Value::String(s)) => s == "1",
+        _ => false,
+    }
+}
+
+/// `system.mutations.latest_fail_reason` for `row`, or empty when there is none.
+fn mutation_fail_reason(row: &Map<String, Value>) -> String {
+    row.get("latest_fail_reason")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// Among mutation rows just read from `system.mutations`, the one this call itself submitted: its
+/// `mutation_id` was not in `baseline_ids` (read before submitting), and its `command` is the exact
+/// text sent. `None` when zero or more than one such row exists — see `run_mutation_and_wait`'s use
+/// of this, which keeps polling rather than guess in that case.
+fn find_new_mutation<'a>(
+    rows: &'a [Map<String, Value>],
+    baseline_ids: &std::collections::HashSet<String>,
+    command: &str,
+) -> Option<&'a Map<String, Value>> {
+    let mut matches = rows.iter().filter(|row| {
+        let is_new = row
+            .get("mutation_id")
+            .and_then(Value::as_str)
+            .map(|id| !baseline_ids.contains(id))
+            .unwrap_or(false);
+        let same_command = row
+            .get("command")
+            .and_then(Value::as_str)
+            .map(|c| c.trim() == command.trim())
+            .unwrap_or(false);
+        is_new && same_command
+    });
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(first)
+}
+
+/// How long a poll waits before giving up on a mutation ever finishing, and how often it checks —
+/// named rather than inline so a later tune (see the plan's Task 5 note) is a one-line change.
+const MUTATION_POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const MUTATION_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// Submits an `ALTER TABLE ... UPDATE/DELETE` and waits for the mutation it starts to finish, so
+/// the `Result` this returns means "written" the way every other engine's does — `ALTER TABLE`
+/// itself only *enqueues* the mutation.
+///
+/// `command_sql` must be the exact text sent, values already spliced in as literals (`quote_literal`),
+/// never a `{name:Type}` parameter — this text is matched back against `system.mutations.command`.
+///
+/// Never assumes success without finding the mutation and seeing `is_done`: if no row (yet) matches
+/// — including the "more than one matched" case `find_new_mutation` refuses to pick between — this
+/// keeps polling rather than guessing, until the timeout turns that into an explicit error.
+async fn run_mutation_and_wait(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    command_sql: &str,
+) -> Result<(), AppError> {
+    let mutations_sql = "SELECT mutation_id, command, is_done, latest_fail_reason \
+         FROM system.mutations WHERE database = {database:String} AND table = {table:String}";
+    let params = [
+        ("database".to_string(), database.to_string()),
+        ("table".to_string(), table.to_string()),
+    ];
+
+    let baseline = query_with_params(conn, mutations_sql, &params).await?;
+    let baseline_ids: std::collections::HashSet<String> = baseline
+        .data
+        .iter()
+        .filter_map(|row| row.get("mutation_id").and_then(Value::as_str).map(str::to_string))
+        .collect();
+
+    execute_check(conn, command_sql, None).await?;
+
+    let deadline = std::time::Instant::now() + MUTATION_POLL_TIMEOUT;
+    loop {
+        let result = query_with_params(conn, mutations_sql, &params).await?;
+        if let Some(row) = find_new_mutation(&result.data, &baseline_ids, command_sql) {
+            let reason = mutation_fail_reason(row);
+            if !reason.is_empty() {
+                return Err(map_error(reason));
+            }
+            if mutation_is_done(row) {
+                return Ok(());
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(err!("error.clickhouseMutationTimeout"));
+        }
+        tokio::time::sleep(MUTATION_POLL_INTERVAL).await;
+    }
+}
+
+/// How many rows `where_clause` matches right now — the pre-check every write runs before touching
+/// anything, since ClickHouse has neither a transaction to roll back nor a `LIMIT` on a mutation to
+/// cap the damage of a `WHERE` that turned out to match more than one row (the design's D3).
+async fn matched_count(
+    conn: &Connection,
+    table_ref: &str,
+    where_clause: &str,
+) -> Result<i64, AppError> {
+    let sql = format!("SELECT count() AS total FROM {table_ref} WHERE {where_clause}");
+    let result = query(conn, &sql).await?;
+    Ok(result
+        .data
+        .first()
+        .and_then(|row| row.get("total"))
+        .and_then(|v| v.as_str().and_then(|s| s.parse().ok()).or_else(|| v.as_i64()))
+        .unwrap_or(0))
+}
+
+/// Updates exactly one row, identified by every column of `key` (the design's D1) — refuses if that
+/// does not match exactly one row (D3), then runs the update as a mutation and waits for it (D4).
+/// Values in `updates` are spliced in as literal text without inspecting the column's type (D8): a
+/// value that does not fit the column is ClickHouse's own error to report, not this function's to
+/// predict.
+pub async fn update_row(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    updates: &Map<String, Value>,
+    key: &Map<String, Value>,
+) -> Result<(), AppError> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+    if key.is_empty() {
+        return Err(err!("error.updateWithoutKey"));
+    }
+
+    let column_rows = table_columns(conn, database, table).await?;
+    let types: BTreeMap<String, String> = column_rows
+        .iter()
+        .map(|c| (c.name.clone(), c.type_name.clone()))
+        .collect();
+
+    let table_ref = qualified(database, table);
+    let where_clause = build_key_where(&types, key)?;
+
+    let matched = matched_count(conn, &table_ref, &where_clause).await?;
+    if matched != 1 {
+        return Err(err!("error.rowsMatched", matched = matched));
+    }
+
+    let mut set_parts = Vec::new();
+    for (name, value) in updates {
+        if !types.contains_key(name) {
+            return Err(err!("error.unknownFilterColumn", column = name));
+        }
+        let ident = quote_ident(name);
+        let rhs = match value {
+            Value::String(s) => quote_literal(s),
+            _ => "NULL".to_string(),
+        };
+        set_parts.push(format!("{ident} = {rhs}"));
+    }
+
+    let sql = format!(
+        "ALTER TABLE {table_ref} UPDATE {} WHERE {where_clause}",
+        set_parts.join(", ")
+    );
+    run_mutation_and_wait(conn, database, table, &sql).await
 }
 
 /// What the header shows about the server: its version, and the machine it runs on.
@@ -845,6 +1069,12 @@ pub async fn schema_outline(conn: &Connection, database: &str) -> Result<SchemaO
 mod tests {
     use super::{build_where, is_decodable, quote_ident, Filter, QueryResult};
     use std::collections::BTreeMap;
+    use super::{build_key_where, quote_literal};
+    use serde_json::{Map, Value};
+
+    fn str_val(s: &str) -> Value {
+        Value::String(s.to_string())
+    }
 
     /// `FORMAT JSON`'s own shape, exactly as the server sends it — the fixture this module's
     /// deserialization is checked against without a server in the room.
@@ -954,5 +1184,120 @@ mod tests {
     #[test]
     fn a_column_the_table_does_not_have_is_refused() {
         assert!(build_where(&[filter("nope", "eq", Some("1"))], &columns()).is_err());
+    }
+
+    #[test]
+    fn quotes_a_literal_backslash_escaped_like_an_identifier() {
+        assert_eq!(quote_literal("ann"), "'ann'");
+        assert_eq!(quote_literal("a'b"), "'a\\'b'");
+        assert_eq!(quote_literal("a\\b"), "'a\\\\b'");
+    }
+
+    #[test]
+    fn matches_a_decodable_column_directly() {
+        let mut key = Map::new();
+        key.insert("id".to_string(), str_val("1"));
+        let where_clause = build_key_where(&columns(), &key).unwrap();
+        assert_eq!(where_clause, "`id` = '1'");
+    }
+
+    #[test]
+    fn matches_a_non_decodable_column_through_to_string() {
+        let mut cols = columns();
+        cols.insert("tags".to_string(), "Array(String)".to_string());
+        let mut key = Map::new();
+        key.insert("tags".to_string(), str_val("['a','b']"));
+        let where_clause = build_key_where(&cols, &key).unwrap();
+        assert_eq!(where_clause, "toString(`tags`) = '[\\'a\\',\\'b\\']'");
+    }
+
+    #[test]
+    fn matches_a_null_key_value_with_is_null() {
+        let mut key = Map::new();
+        key.insert("name".to_string(), Value::Null);
+        let where_clause = build_key_where(&columns(), &key).unwrap();
+        assert_eq!(where_clause, "`name` IS NULL");
+    }
+
+    #[test]
+    fn joins_several_key_columns_with_and() {
+        let mut key = Map::new();
+        key.insert("id".to_string(), str_val("1"));
+        key.insert("name".to_string(), Value::Null);
+        let where_clause = build_key_where(&columns(), &key).unwrap();
+        // `Map`/serde_json orders by insertion for the fixture, but the function must not depend on
+        // that — both orders are accepted.
+        assert!(
+            where_clause == "`id` = '1' AND `name` IS NULL"
+                || where_clause == "`name` IS NULL AND `id` = '1'"
+        );
+    }
+
+    #[test]
+    fn refuses_a_key_column_the_table_does_not_have() {
+        let mut key = Map::new();
+        key.insert("nope".to_string(), str_val("1"));
+        assert!(build_key_where(&columns(), &key).is_err());
+    }
+
+    use super::{find_new_mutation, mutation_fail_reason, mutation_is_done};
+    use std::collections::HashSet;
+
+    fn mutation_row(id: &str, command: &str, is_done: Value, fail_reason: &str) -> Map<String, Value> {
+        let mut row = Map::new();
+        row.insert("mutation_id".to_string(), str_val(id));
+        row.insert("command".to_string(), str_val(command));
+        row.insert("is_done".to_string(), is_done);
+        row.insert("latest_fail_reason".to_string(), str_val(fail_reason));
+        row
+    }
+
+    #[test]
+    fn mutation_is_done_reads_both_json_shapes_of_uint8() {
+        assert!(mutation_is_done(&mutation_row("1", "x", Value::Number(1.into()), "")));
+        assert!(mutation_is_done(&mutation_row("1", "x", str_val("1"), "")));
+        assert!(!mutation_is_done(&mutation_row("1", "x", Value::Number(0.into()), "")));
+        assert!(!mutation_is_done(&mutation_row("1", "x", str_val("0"), "")));
+    }
+
+    #[test]
+    fn mutation_fail_reason_reads_the_column_or_falls_back_to_empty() {
+        assert_eq!(mutation_fail_reason(&mutation_row("1", "x", str_val("0"), "boom")), "boom");
+        assert_eq!(mutation_fail_reason(&mutation_row("1", "x", str_val("0"), "")), "");
+    }
+
+    #[test]
+    fn finds_the_one_new_row_with_the_matching_command() {
+        let baseline: HashSet<String> = ["old-1".to_string()].into_iter().collect();
+        let rows = vec![
+            mutation_row("old-1", "ALTER TABLE t UPDATE x", str_val("1"), ""),
+            mutation_row("new-1", "ALTER TABLE t UPDATE x", str_val("0"), ""),
+        ];
+        let found = find_new_mutation(&rows, &baseline, "ALTER TABLE t UPDATE x").unwrap();
+        assert_eq!(found.get("mutation_id").unwrap(), "new-1");
+    }
+
+    #[test]
+    fn finds_nothing_when_no_new_row_matches_the_command() {
+        let baseline: HashSet<String> = HashSet::new();
+        let rows = vec![mutation_row("new-1", "ALTER TABLE t UPDATE y", str_val("0"), "")];
+        assert!(find_new_mutation(&rows, &baseline, "ALTER TABLE t UPDATE x").is_none());
+    }
+
+    #[test]
+    fn finds_nothing_when_more_than_one_new_row_matches() {
+        let baseline: HashSet<String> = HashSet::new();
+        let rows = vec![
+            mutation_row("new-1", "ALTER TABLE t UPDATE x", str_val("0"), ""),
+            mutation_row("new-2", "ALTER TABLE t UPDATE x", str_val("0"), ""),
+        ];
+        assert!(find_new_mutation(&rows, &baseline, "ALTER TABLE t UPDATE x").is_none());
+    }
+
+    #[test]
+    fn a_matching_command_still_in_the_baseline_does_not_count_as_new() {
+        let baseline: HashSet<String> = ["old-1".to_string()].into_iter().collect();
+        let rows = vec![mutation_row("old-1", "ALTER TABLE t UPDATE x", str_val("0"), "")];
+        assert!(find_new_mutation(&rows, &baseline, "ALTER TABLE t UPDATE x").is_none());
     }
 }
