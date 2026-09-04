@@ -1036,9 +1036,10 @@ pub(super) async fn structure_columns(
             let default_kind = row.get("default_kind").and_then(Value::as_str).unwrap_or("");
             let default_expression =
                 row.get("default_expression").and_then(Value::as_str).unwrap_or("");
-            // `'active'` và `now()` là hai thứ khác nhau, và `system.columns` phân biệt chúng bằng
-            // nháy đơn — xem `clickhouse_ddl::read_default`. Không tách ở đây thì mọi default sẽ bị
-            // đánh dấu là biểu thức, và một literal đi ra sẽ bị bọc nháy lần thứ hai.
+            // `'active'` and `now()` are different things, and `system.columns` tells them apart
+            // by the quotes — see `clickhouse_ddl::read_default`. Without splitting them here every
+            // default would be marked an expression, and a literal would be quoted a second time on
+            // its way back out.
             let default = super::clickhouse_ddl::read_default(default_expression);
             let is_primary = row
                 .get("is_in_primary_key")

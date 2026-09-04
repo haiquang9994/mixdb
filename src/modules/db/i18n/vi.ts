@@ -879,6 +879,8 @@ const dbVi: DbDict = {
       "Thao tác vẫn đang chạy trên server sau 30 giây — tải lại bảng để xem đã xong chưa.",
     clickhouseHeterogeneousInsert:
       "Các dòng này không khai báo cùng một tập cột, nên không thể chèn chung thành một câu lệnh nguyên tử trên ClickHouse.",
+    clickhouseUnknownEngine:
+      "MixDB không tạo bảng với engine {{engine}} — hãy chọn một engine thuộc họ MergeTree.",
     handoffInvalid: "Không đọc được kết nối MixDB được mở cùng: {{message}}",
     handoffExpired: "Kết nối được chuyển sang này đã được mở rồi.",
     mongoNoTcpHost: "Chuỗi kết nối không chỉ ra host TCP nào để mở tunnel.",

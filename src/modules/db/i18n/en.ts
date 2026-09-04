@@ -897,6 +897,8 @@ const dbEn = {
       "The mutation is still running on the server after 30 seconds — reload the table to check whether it finished.",
     clickhouseHeterogeneousInsert:
       "These rows don't all fill in the same columns, so ClickHouse cannot insert them as one atomic statement.",
+    clickhouseUnknownEngine:
+      "MixDB does not create tables with the {{engine}} engine — pick one of the MergeTree family.",
     /* A `mixdb://connect?…` URL another program started MixDB with — see `handoff.ts`. The first
        is only ever printed to stderr; the second is answered with an empty form. Both exist so a
        code that does reach the screen one day is a sentence rather than its own key. */
