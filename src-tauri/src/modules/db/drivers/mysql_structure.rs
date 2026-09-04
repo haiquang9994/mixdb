@@ -105,6 +105,11 @@ pub struct TableStructure {
     pub columns: Vec<StructureColumn>,
     /// The primary key first, then the rest as `information_schema` lists them.
     pub indexes: Vec<TableIndex>,
+    /// Always empty: data skipping indices are a ClickHouse-only concept. See
+    /// `docs/superpowers/specs/2026-09-04-clickhouse-index-ddl-design.md`.
+    pub skip_indexes: Vec<super::clickhouse::SkipIndex>,
+    /// Always `None` — the engine guard in the Structure tab only ever reads this for ClickHouse.
+    pub engine: Option<String>,
 }
 
 /// What a column is to be declared as. The write-side counterpart of {@link StructureColumn}:
@@ -591,7 +596,7 @@ pub async fn table_structure(
     // stable, so everything else keeps the order it was listed in.
     indexes.sort_by_key(|index| !index.primary);
 
-    Ok(TableStructure { columns, indexes })
+    Ok(TableStructure { columns, indexes, skip_indexes: Vec::new(), engine: None })
 }
 
 /// One column as completion needs to know it: enough to offer the name and to say what it is,

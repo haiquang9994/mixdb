@@ -1004,15 +1004,15 @@ pub(super) fn parse_type_full(type_full: &str) -> (String, Vec<String>) {
 pub struct TableStructure {
     pub columns: Vec<StructureColumn>,
     pub indexes: Vec<TableIndex>,
+    pub skip_indexes: Vec<SkipIndex>,
+    pub engine: Option<String>,
 }
 
 /// Everything the Structure tab shows about one table.
 ///
 /// `indexes` carries at most one entry — the sorting key, shown as an index it is not, the same
-/// way SQLite's rowid is. ClickHouse also has data-skipping indices (`minmax`, `set`,
-/// `bloom_filter`, …), which are real named objects with their own expressions; v1 leaves them out
-/// rather than showing a half-true picture of what they cover, since they index an expression far
-/// more often than a bare column and this app has nowhere to show one yet.
+/// way SQLite's rowid is. `skip_indexes` is ClickHouse's real secondary index, read from
+/// `system.data_skipping_indices` — see the ClickHouse index DDL design doc's D2.
 pub async fn table_structure(
     conn: &Connection,
     database: &str,
@@ -1039,7 +1039,60 @@ pub async fn table_structure(
             comment: String::new(),
         }]
     };
-    Ok(TableStructure { columns, indexes })
+    let skip_indexes = structure_skip_indexes(conn, database, table).await?;
+    let engine = table_engine(conn, database, table).await?;
+    Ok(TableStructure { columns, indexes, skip_indexes, engine })
+}
+
+/// `system.data_skipping_indices` for one table — ClickHouse's real secondary index, distinct from
+/// the synthetic `sorting_key` row above.
+async fn structure_skip_indexes(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+) -> Result<Vec<SkipIndex>, AppError> {
+    let result = query_with_params(
+        conn,
+        "SELECT name, type_full, expr, granularity FROM system.data_skipping_indices \
+         WHERE database = {database:String} AND table = {table:String}",
+        &[
+            ("database".to_string(), database.to_string()),
+            ("table".to_string(), table.to_string()),
+        ],
+    )
+    .await?;
+
+    Ok(result
+        .data
+        .iter()
+        .filter_map(|row| {
+            let name = row.get("name")?.as_str()?.to_string();
+            let type_full = row.get("type_full")?.as_str()?.to_string();
+            let expr = row.get("expr").and_then(Value::as_str).unwrap_or("").to_string();
+            let granularity = as_u64(row.get("granularity")).unwrap_or(1);
+            let (index_type, args) = parse_type_full(&type_full);
+            Some(SkipIndex { name, expr, index_type, args, granularity })
+        })
+        .collect())
+}
+
+/// `system.tables.engine` for one table — used to guard the sorting-key rebuild (D11): the frontend
+/// disables it outside the four engines `clickhouse_ddl::ENGINES` already whitelists for creation.
+async fn table_engine(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+) -> Result<Option<String>, AppError> {
+    let result = query_with_params(
+        conn,
+        "SELECT engine FROM system.tables WHERE database = {database:String} AND name = {table:String}",
+        &[
+            ("database".to_string(), database.to_string()),
+            ("table".to_string(), table.to_string()),
+        ],
+    )
+    .await?;
+    Ok(result.data.first().and_then(|row| row.get("engine")?.as_str().map(str::to_string)))
 }
 
 pub(super) async fn structure_columns(
@@ -1154,7 +1207,7 @@ pub async fn table_stats(conn: &Connection, database: &str) -> Result<Vec<TableS
 
 /// A number `FORMAT JSON` may have written as a string — see `scalar`'s own note on 64-bit
 /// integers — or left out as JSON `null`, which is what a `NULL` becomes.
-fn as_u64(value: Option<&Value>) -> Option<u64> {
+pub(super) fn as_u64(value: Option<&Value>) -> Option<u64> {
     match value {
         Some(Value::String(s)) => s.parse().ok(),
         Some(Value::Number(n)) => n.as_u64(),

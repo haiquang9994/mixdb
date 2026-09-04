@@ -66,6 +66,11 @@ pub struct TableStructure {
     pub columns: Vec<StructureColumn>,
     /// The primary key first, then the rest by name.
     pub indexes: Vec<TableIndex>,
+    /// Always empty: data skipping indices are a ClickHouse-only concept. See
+    /// `docs/superpowers/specs/2026-09-04-clickhouse-index-ddl-design.md`.
+    pub skip_indexes: Vec<super::clickhouse::SkipIndex>,
+    /// Always `None` — the engine guard in the Structure tab only ever reads this for ClickHouse.
+    pub engine: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,6 +103,8 @@ pub async fn table_structure(pool: &PgPool, table: &str) -> Result<TableStructur
     Ok(TableStructure {
         columns: structure_columns(pool, &schema, &name).await?,
         indexes: table_indexes(pool, &schema, &name).await?,
+        skip_indexes: Vec::new(),
+        engine: None,
     })
 }
 
