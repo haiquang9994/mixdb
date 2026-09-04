@@ -415,4 +415,61 @@ mod tests {
         dump_data(&pool, &out.path, false, &no_op_watch()).await.unwrap();
         assert!(!std::fs::read_to_string(&out.path).unwrap().starts_with("-- already here\n"));
     }
+
+    #[tokio::test]
+    async fn an_all_dump_restores_schema_and_data_into_an_empty_database() {
+        let (_source_fixture, source) = Fixture::open().await;
+        let out = Scratch::new();
+        dump_structure(&source, &out.path, &no_op_watch()).await.unwrap();
+        dump_data(&source, &out.path, true, &no_op_watch()).await.unwrap();
+
+        let (_target_fixture, target) = Fixture::open().await;
+        for statement in ["drop view recent", "drop table post", "drop table tag", "drop table loose", "drop table author"] {
+            sqlx::raw_sql(statement).execute(&target).await.unwrap();
+        }
+
+        restore(&target, &out.path).await.unwrap();
+
+        let count: i64 = sqlx::query_scalar("select count(*) from author")
+            .fetch_one(&target)
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
+        let post_count: i64 = sqlx::query_scalar("select count(*) from post")
+            .fetch_one(&target)
+            .await
+            .unwrap();
+        assert_eq!(post_count, 3);
+    }
+
+    #[tokio::test]
+    async fn a_data_only_restore_loads_rows_into_an_existing_schema() {
+        let (_source_fixture, source) = Fixture::open().await;
+        let out = Scratch::new();
+        dump_data(&source, &out.path, false, &no_op_watch()).await.unwrap();
+
+        // The target keeps the fixture's own schema but is emptied of rows first — a `data`-only
+        // dump carries no `CREATE`/`DROP`, so restoring it on top of rows sharing the same primary
+        // keys would fail on a UNIQUE violation rather than test anything about the restore itself.
+        let (_target_fixture, target) = Fixture::open().await;
+        for table in ["post", "tag", "loose", "author"] {
+            sqlx::query(sqlx::AssertSqlSafe(format!("delete from {table}")))
+                .execute(&target)
+                .await
+                .unwrap();
+        }
+
+        restore(&target, &out.path).await.unwrap();
+
+        let count: i64 = sqlx::query_scalar("select count(*) from tag")
+            .fetch_one(&target)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+        let post_count: i64 = sqlx::query_scalar("select count(*) from post")
+            .fetch_one(&target)
+            .await
+            .unwrap();
+        assert_eq!(post_count, 3);
+    }
 }
