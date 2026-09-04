@@ -190,11 +190,40 @@ export interface SqlIndexSpec {
   comment: string;
 }
 
+/** One data skipping index — ClickHouse's only secondary index. Not a lookup structure: an
+ *  approximate filter that lets the server skip whole blocks a `WHERE` clause cannot match. See
+ *  `docs/superpowers/specs/2026-09-04-clickhouse-index-ddl-design.md`. */
+export interface SqlSkipIndex {
+  name: string;
+  /** An expression, not necessarily a bare column name — `lower(note)` is as common as `note`. */
+  expr: string;
+  /** `minmax`, `set`, `bloom_filter`, `ngrambf_v1` or `tokenbf_v1`. */
+  indexType: string;
+  /** In the order the TYPE's own syntax takes them — always strings, since they mix integers and
+   *  floats and are never computed on, only spliced back into SQL text. */
+  args: string[];
+  granularity: number;
+}
+
+export interface SqlSkipIndexSpec {
+  name: string;
+  expr: string;
+  indexType: string;
+  args: string[];
+  granularity: number;
+}
+
 export interface SqlTableStructure {
   /** In table order, which is the order a `SELECT *` returns them in. */
   columns: SqlStructureColumn[];
   /** The primary key first, then the rest as the server listed them. */
   indexes: SqlTableIndex[];
+  /** Always empty outside ClickHouse — see {@link SqlSkipIndex}. */
+  skipIndexes: SqlSkipIndex[];
+  /** The table's storage engine, or `null` outside ClickHouse. Used to guard the sorting-key
+   *  rebuild against engines it was never verified against (`Replicated*`) — see the design doc's
+   *  D11. */
+  engine: string | null;
 }
 
 /** One column as the Query tab's completion knows it — the name, and enough beside it to tell two

@@ -141,7 +141,20 @@ export const sqliteApi: SqlApi = {
   dropDatabase() {
     return noDatabases();
   },
+
+  addSkipIndex: () => notSupported(),
+  modifySkipIndex: () => notSupported(),
+  dropSkipIndex: () => notSupported(),
+  rebuildOrderBy: () => notSupported(),
+  rowCount: () => notSupported(),
 };
+
+/** These five only mean anything on ClickHouse — see `clickhouseApi`. Reaching one here would be a
+ *  bug in the caller: every dialog and panel that calls them is gated on
+ *  `dialect.kind === "clickhouse"`. */
+function notSupported(): Promise<never> {
+  return Promise.reject(new Error("error.clickhouseOnlyFeature"));
+}
 
 /**
  * Creates an empty database file at `path`, for the connection form's New button.

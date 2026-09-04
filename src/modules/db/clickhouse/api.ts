@@ -124,6 +124,26 @@ export const clickhouseApi: SqlApi = {
     });
   },
 
+  addSkipIndex(id, database, table, spec) {
+    return invoke<void>("clickhouse_add_skip_index", { id, database, table, spec });
+  },
+
+  modifySkipIndex(id, database, table, name, spec) {
+    return invoke<void>("clickhouse_modify_skip_index", { id, database, table, name, spec });
+  },
+
+  dropSkipIndex(id, database, table, name) {
+    return invoke<void>("clickhouse_drop_skip_index", { id, database, table, name });
+  },
+
+  rebuildOrderBy(id, database, table, columns) {
+    return invoke<string | null>("clickhouse_rebuild_order_by", { id, database, table, columns });
+  },
+
+  rowCount(id, database, table) {
+    return invoke<number>("clickhouse_row_count", { id, database, table });
+  },
+
   dump: () => notSupported(),
   restore: () => notSupported(),
   addIndex: () => notSupported(),

@@ -144,7 +144,20 @@ export const postgresApi: SqlApi = {
   restore(id, database, path) {
     return invoke<void>("postgres_restore", { id, database, path });
   },
+
+  addSkipIndex: () => notSupported(),
+  modifySkipIndex: () => notSupported(),
+  dropSkipIndex: () => notSupported(),
+  rebuildOrderBy: () => notSupported(),
+  rowCount: () => notSupported(),
 };
+
+/** These five only mean anything on ClickHouse — see `clickhouseApi`. Reaching one here would be a
+ *  bug in the caller: every dialog and panel that calls them is gated on
+ *  `dialect.kind === "clickhouse"`. */
+function notSupported(): Promise<never> {
+  return Promise.reject(new Error("error.clickhouseOnlyFeature"));
+}
 
 /**
  * Runs one statement and hands back its rows, keyed by column name — the counterpart of

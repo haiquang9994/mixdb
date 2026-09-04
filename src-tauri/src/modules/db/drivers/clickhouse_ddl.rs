@@ -8,8 +8,8 @@
 //! ClickHouse has none — so a run of statements that fails partway leaves exactly what already ran.
 
 use super::clickhouse::{
-    execute_check, qualified, quote_ident, quote_literal, structure_columns, Connection,
-    StructureColumn,
+    as_u64, execute_check, qualified, query, quote_ident, quote_literal, structure_columns,
+    Connection, StructureColumn,
 };
 use serde::Deserialize;
 use crate::error::AppError;
@@ -243,6 +243,204 @@ pub async fn drop_column(
     execute_check(conn, &sql, None).await
 }
 
+/// What a data skipping index is declared as — the write-side counterpart of
+/// `clickhouse::SkipIndex`. See the ClickHouse index DDL design doc's D2/D3.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkipIndexSpec {
+    pub name: String,
+    pub expr: String,
+    pub index_type: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub granularity: u64,
+}
+
+/// `TYPE name(args) GRANULARITY n`, or `TYPE name GRANULARITY n` when the type takes none —
+/// `GRANULARITY` is not required by the server (it defaults to `1` when omitted, checked against the
+/// test server), but is always written here so the dialog and the server never disagree about the
+/// default.
+fn skip_index_type_clause(spec: &SkipIndexSpec) -> String {
+    if spec.args.is_empty() {
+        format!("TYPE {} GRANULARITY {}", spec.index_type, spec.granularity)
+    } else {
+        format!(
+            "TYPE {}({}) GRANULARITY {}",
+            spec.index_type,
+            spec.args.join(", "),
+            spec.granularity
+        )
+    }
+}
+
+/// `expr` is spliced in verbatim rather than quoted as an identifier or a literal: it is an
+/// expression (`lower(note)` is as common a case as a bare column name), and there is no single
+/// quoting rule that would be right for both.
+pub fn add_skip_index_statement(
+    database: &str,
+    table: &str,
+    spec: &SkipIndexSpec,
+) -> Result<String, AppError> {
+    let name = spec.name.trim();
+    if name.is_empty() {
+        return Err(err!("error.indexNameRequired"));
+    }
+    let expr = spec.expr.trim();
+    if expr.is_empty() {
+        return Err(err!("error.clickhouseSkipIndexExprRequired"));
+    }
+    Ok(format!(
+        "ALTER TABLE {} ADD INDEX {} {expr} {}",
+        qualified(database, table),
+        quote_ident(name),
+        skip_index_type_clause(spec)
+    ))
+}
+
+pub async fn add_skip_index(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    spec: &SkipIndexSpec,
+) -> Result<(), AppError> {
+    execute_check(conn, &add_skip_index_statement(database, table, spec)?, None).await
+}
+
+pub async fn drop_skip_index(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    name: &str,
+) -> Result<(), AppError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(err!("error.indexNameRequired"));
+    }
+    let sql = format!(
+        "ALTER TABLE {} DROP INDEX {}",
+        qualified(database, table),
+        quote_ident(name)
+    );
+    execute_check(conn, &sql, None).await
+}
+
+/// `MODIFY INDEX ... TYPE ...` is a syntax error on ClickHouse (checked against the test server) —
+/// an edit is a drop and a re-add, the same shape MySQL's index dialog already documents.
+pub(super) fn modify_skip_index_statements(
+    database: &str,
+    table: &str,
+    old_name: &str,
+    spec: &SkipIndexSpec,
+) -> Result<Vec<String>, AppError> {
+    let old_name = old_name.trim();
+    if old_name.is_empty() {
+        return Err(err!("error.indexNameRequired"));
+    }
+    Ok(vec![
+        format!(
+            "ALTER TABLE {} DROP INDEX {}",
+            qualified(database, table),
+            quote_ident(old_name)
+        ),
+        add_skip_index_statement(database, table, spec)?,
+    ])
+}
+
+pub async fn modify_skip_index(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    old_name: &str,
+    spec: &SkipIndexSpec,
+) -> Result<(), AppError> {
+    for statement in modify_skip_index_statements(database, table, old_name, spec)? {
+        execute_check(conn, &statement, None).await?;
+    }
+    Ok(())
+}
+
+/// A cheap `count()`, read both before a rebuild (so its warning can say how much it is about to
+/// copy) and twice during one (so a mismatch after the copy can abort it — see `rebuild_order_by`).
+pub async fn row_count(conn: &Connection, database: &str, table: &str) -> Result<u64, AppError> {
+    let result = query(
+        conn,
+        &format!("SELECT count() AS n FROM {}", qualified(database, table)),
+    )
+    .await?;
+    as_u64(result.data.first().and_then(|row| row.get("n")))
+        .ok_or_else(|| err!("error.clickhouseRebuildParse"))
+}
+
+/// Rebuilds the whole table with a new sorting key: `ALTER TABLE ... MODIFY ORDER BY` cannot do this
+/// for columns that already exist (checked against the test server — it refuses with
+/// `Existing column X is used in the expression that was added to the sorting key`), so this copies
+/// the table into a new one built with the key already right, then swaps names.
+///
+/// No transaction holds the steps together — ClickHouse has none. Every step before `EXCHANGE
+/// TABLES` leaves the original table untouched on failure; the two after it either both succeed
+/// (`Ok(None)`) or the swap succeeds and only the temp table's own cleanup fails (`Ok(Some(name))`,
+/// not an error — the sorting key change itself has already landed). See the design doc's D7/D8.
+pub async fn rebuild_order_by(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    columns: &[String],
+) -> Result<Option<String>, AppError> {
+    if columns.is_empty() {
+        return Err(err!("error.clickhouseOrderByColumnsRequired"));
+    }
+
+    let show_create = query(conn, &format!("SHOW CREATE TABLE {}", qualified(database, table)))
+        .await?
+        .data
+        .first()
+        .and_then(|row| row.get("statement")?.as_str().map(str::to_string))
+        .ok_or_else(|| err!("error.clickhouseRebuildParse"))?;
+
+    let temp_name = temp_table_name(table);
+    let create_sql = rebuild_ddl(&show_create, database, &temp_name, &order_by_clause(columns))?;
+    execute_check(conn, &create_sql, None).await?;
+
+    let insert_sql = format!(
+        "INSERT INTO {} SELECT * FROM {}",
+        qualified(database, &temp_name),
+        qualified(database, table)
+    );
+    if let Err(cause) = execute_check(conn, &insert_sql, None).await {
+        let _ =
+            execute_check(conn, &format!("DROP TABLE {}", qualified(database, &temp_name)), None)
+                .await;
+        return Err(cause);
+    }
+
+    let old_count = row_count(conn, database, table).await?;
+    let new_count = row_count(conn, database, &temp_name).await?;
+    if old_count != new_count {
+        let _ =
+            execute_check(conn, &format!("DROP TABLE {}", qualified(database, &temp_name)), None)
+                .await;
+        return Err(err!("error.clickhouseRebuildCountMismatch", table = table));
+    }
+
+    execute_check(
+        conn,
+        &format!(
+            "EXCHANGE TABLES {} AND {}",
+            qualified(database, table),
+            qualified(database, &temp_name)
+        ),
+        None,
+    )
+    .await?;
+
+    match execute_check(conn, &format!("DROP TABLE {}", qualified(database, &temp_name)), None)
+        .await
+    {
+        Ok(()) => Ok(None),
+        Err(_) => Ok(Some(temp_name)),
+    }
+}
+
 /// The statements that bring column `current` to what `spec` describes - none at all when nothing
 /// differs.
 ///
@@ -339,10 +537,204 @@ pub async fn modify_column(
     Ok(())
 }
 
+/// `ORDER BY (col1, col2)`, or `ORDER BY tuple()` for an empty key — the same spelling
+/// `create_table_statement` already writes for a brand new table.
+pub(super) fn order_by_clause(columns: &[String]) -> String {
+    if columns.is_empty() {
+        return "ORDER BY tuple()".to_string();
+    }
+    let quoted: Vec<String> = columns.iter().map(|c| quote_ident(c)).collect();
+    format!("ORDER BY ({})", quoted.join(", "))
+}
+
+/// A name for the table the rebuild copies into that never collides with one a previous, failed run
+/// left behind — the millisecond clock makes every call's name different from the last. See the
+/// ClickHouse index DDL design doc's D7/D8.
+pub(super) fn temp_table_name(table: &str) -> String {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("{table}__mixdb_rebuild_{millis}")
+}
+
+/// Turns `SHOW CREATE TABLE`'s own text into the `CREATE TABLE` for the rebuild copy: renamed to
+/// `temp_name`, its `ORDER BY` line replaced. Everything else — `PARTITION BY`, `TTL`, `SETTINGS`,
+/// `COMMENT`, any skip index inside the column list — is carried through untouched because it is
+/// never looked at.
+///
+/// The first line is discarded and rebuilt rather than searched-and-replaced: ClickHouse only wraps
+/// an identifier in backticks in its own output when the name actually needs it (a name with a space
+/// gets them, a plain one does not — checked against the test server), so there is no one spelling
+/// of the old `database.table` reference to search for. Rebuilding the line with `qualified`
+/// sidesteps the question entirely rather than guessing which quoting the server chose.
+pub(super) fn rebuild_ddl(
+    show_create: &str,
+    database: &str,
+    temp_name: &str,
+    order_by: &str,
+) -> Result<String, AppError> {
+    let mut lines = show_create.lines();
+    lines.next().ok_or_else(|| err!("error.clickhouseRebuildParse"))?;
+    let mut found = false;
+    let body: Vec<String> = lines
+        .map(|line| {
+            if line.starts_with("ORDER BY ") {
+                found = true;
+                order_by.to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    if !found {
+        return Err(err!("error.clickhouseRebuildParse"));
+    }
+    Ok(format!("CREATE TABLE {}\n{}", qualified(database, temp_name), body.join("\n")))
+}
+
 /// What is decided here, rather than by a server's answer.
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn skip_spec(
+        name: &str,
+        expr: &str,
+        index_type: &str,
+        args: &[&str],
+        granularity: u64,
+    ) -> SkipIndexSpec {
+        SkipIndexSpec {
+            name: name.to_string(),
+            expr: expr.to_string(),
+            index_type: index_type.to_string(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+            granularity,
+        }
+    }
+
+    #[test]
+    fn a_type_with_no_arguments_is_written_bare() {
+        assert_eq!(
+            add_skip_index_statement("shop", "orders", &skip_spec("ix1", "total", "minmax", &[], 1))
+                .unwrap(),
+            "ALTER TABLE `shop`.`orders` ADD INDEX `ix1` total TYPE minmax GRANULARITY 1"
+        );
+    }
+
+    #[test]
+    fn a_type_with_arguments_writes_them_in_order() {
+        assert_eq!(
+            add_skip_index_statement(
+                "shop",
+                "orders",
+                &skip_spec("ix1", "note", "ngrambf_v1", &["3", "256", "2", "0"], 4)
+            )
+            .unwrap(),
+            "ALTER TABLE `shop`.`orders` ADD INDEX `ix1` note TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4"
+        );
+    }
+
+    #[test]
+    fn an_index_needs_a_name() {
+        assert_eq!(
+            add_skip_index_statement("shop", "orders", &skip_spec("  ", "total", "minmax", &[], 1))
+                .unwrap_err(),
+            err!("error.indexNameRequired")
+        );
+    }
+
+    #[test]
+    fn an_index_needs_an_expression() {
+        assert_eq!(
+            add_skip_index_statement("shop", "orders", &skip_spec("ix1", "  ", "minmax", &[], 1))
+                .unwrap_err(),
+            err!("error.clickhouseSkipIndexExprRequired")
+        );
+    }
+
+    #[test]
+    fn an_empty_key_writes_tuple() {
+        assert_eq!(order_by_clause(&[]), "ORDER BY tuple()");
+    }
+
+    #[test]
+    fn columns_are_quoted_and_kept_in_order() {
+        assert_eq!(
+            order_by_clause(&["b".to_string(), "a".to_string()]),
+            "ORDER BY (`b`, `a`)"
+        );
+    }
+
+    #[test]
+    fn the_temp_name_carries_the_original_and_a_timestamp() {
+        let name = temp_table_name("orders");
+        let suffix = name.strip_prefix("orders__mixdb_rebuild_").expect(&name);
+        assert!(suffix.parse::<u128>().is_ok(), "{suffix}");
+    }
+
+    /// The exact text verified against the test server for a table with every optional clause at
+    /// once — `PARTITION BY`, `TTL`, `SETTINGS`, `COMMENT`, and a skip index sitting inside the
+    /// column list.
+    const SHOW_CREATE_WITH_EVERY_CLAUSE: &str = "CREATE TABLE shop.orders\n(\n    `a` UInt64,\n    `b` UInt64,\n    `c` String,\n    INDEX ix1 c TYPE minmax GRANULARITY 1\n)\nENGINE = MergeTree\nPARTITION BY toYYYYMM(ts)\nORDER BY (a, b)\nTTL ts + toIntervalDay(30)\nSETTINGS index_granularity = 4096\nCOMMENT 'test comment'";
+
+    #[test]
+    fn rebuild_renames_the_table_and_replaces_only_the_order_by_line() {
+        let rebuilt = rebuild_ddl(
+            SHOW_CREATE_WITH_EVERY_CLAUSE,
+            "shop",
+            "orders__mixdb_rebuild_1",
+            "ORDER BY (c)",
+        )
+        .unwrap();
+        assert_eq!(
+            rebuilt,
+            "CREATE TABLE `shop`.`orders__mixdb_rebuild_1`\n(\n    `a` UInt64,\n    `b` UInt64,\n    `c` String,\n    INDEX ix1 c TYPE minmax GRANULARITY 1\n)\nENGINE = MergeTree\nPARTITION BY toYYYYMM(ts)\nORDER BY (c)\nTTL ts + toIntervalDay(30)\nSETTINGS index_granularity = 4096\nCOMMENT 'test comment'"
+        );
+    }
+
+    #[test]
+    fn rebuild_handles_an_empty_sorting_key() {
+        let show_create = "CREATE TABLE shop.orders\n(\n    `id` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192";
+        let rebuilt =
+            rebuild_ddl(show_create, "shop", "orders__mixdb_rebuild_2", "ORDER BY (id)").unwrap();
+        assert_eq!(
+            rebuilt,
+            "CREATE TABLE `shop`.`orders__mixdb_rebuild_2`\n(\n    `id` UInt64\n)\nENGINE = MergeTree\nORDER BY (id)\nSETTINGS index_granularity = 8192"
+        );
+    }
+
+    #[test]
+    fn rebuild_refuses_text_with_no_order_by_line_to_replace() {
+        assert_eq!(
+            rebuild_ddl(
+                "CREATE TABLE shop.orders\n(\n    `id` UInt64\n)\nENGINE = Memory",
+                "shop",
+                "t",
+                "ORDER BY (id)"
+            )
+            .unwrap_err(),
+            err!("error.clickhouseRebuildParse")
+        );
+    }
+
+    #[test]
+    fn modifying_sends_the_drop_before_the_add() {
+        assert_eq!(
+            modify_skip_index_statements(
+                "shop",
+                "orders",
+                "ix1",
+                &skip_spec("ix1", "total", "set", &["100"], 2)
+            )
+            .unwrap(),
+            vec![
+                "ALTER TABLE `shop`.`orders` DROP INDEX `ix1`",
+                "ALTER TABLE `shop`.`orders` ADD INDEX `ix1` total TYPE set(100) GRANULARITY 2",
+            ]
+        );
+    }
 
     #[test]
     fn a_quoted_string_is_a_literal_and_loses_its_quotes() {

@@ -966,20 +966,53 @@ pub struct TableIndex {
     pub comment: String,
 }
 
+/// One data skipping index — ClickHouse's only secondary index, an approximate part-skipping filter
+/// rather than a lookup structure. See the ClickHouse index DDL design doc's D2.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkipIndex {
+    pub name: String,
+    pub expr: String,
+    pub index_type: String,
+    pub args: Vec<String>,
+    pub granularity: u64,
+}
+
+/// Splits `system.data_skipping_indices.type_full` (e.g. `"ngrambf_v1(3, 256, 2, 0)"`) into the bare
+/// type name and its arguments, in order. No type any skip index uses nests parentheses the way
+/// `Decimal(10, 2)` does inside a column type, so a first-`(` split is enough — no need for
+/// `ColumnDialog`'s more careful nested-parens handling.
+pub(super) fn parse_type_full(type_full: &str) -> (String, Vec<String>) {
+    let type_full = type_full.trim();
+    match type_full.find('(') {
+        None => (type_full.to_string(), Vec::new()),
+        Some(open) => {
+            let name = type_full[..open].to_string();
+            let close = type_full.rfind(')').unwrap_or(type_full.len());
+            let inside = type_full[open + 1..close].trim();
+            if inside.is_empty() {
+                (name, Vec::new())
+            } else {
+                (name, inside.split(',').map(|a| a.trim().to_string()).collect())
+            }
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableStructure {
     pub columns: Vec<StructureColumn>,
     pub indexes: Vec<TableIndex>,
+    pub skip_indexes: Vec<SkipIndex>,
+    pub engine: Option<String>,
 }
 
 /// Everything the Structure tab shows about one table.
 ///
 /// `indexes` carries at most one entry — the sorting key, shown as an index it is not, the same
-/// way SQLite's rowid is. ClickHouse also has data-skipping indices (`minmax`, `set`,
-/// `bloom_filter`, …), which are real named objects with their own expressions; v1 leaves them out
-/// rather than showing a half-true picture of what they cover, since they index an expression far
-/// more often than a bare column and this app has nowhere to show one yet.
+/// way SQLite's rowid is. `skip_indexes` is ClickHouse's real secondary index, read from
+/// `system.data_skipping_indices` — see the ClickHouse index DDL design doc's D2.
 pub async fn table_structure(
     conn: &Connection,
     database: &str,
@@ -1006,7 +1039,60 @@ pub async fn table_structure(
             comment: String::new(),
         }]
     };
-    Ok(TableStructure { columns, indexes })
+    let skip_indexes = structure_skip_indexes(conn, database, table).await?;
+    let engine = table_engine(conn, database, table).await?;
+    Ok(TableStructure { columns, indexes, skip_indexes, engine })
+}
+
+/// `system.data_skipping_indices` for one table — ClickHouse's real secondary index, distinct from
+/// the synthetic `sorting_key` row above.
+async fn structure_skip_indexes(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+) -> Result<Vec<SkipIndex>, AppError> {
+    let result = query_with_params(
+        conn,
+        "SELECT name, type_full, expr, granularity FROM system.data_skipping_indices \
+         WHERE database = {database:String} AND table = {table:String}",
+        &[
+            ("database".to_string(), database.to_string()),
+            ("table".to_string(), table.to_string()),
+        ],
+    )
+    .await?;
+
+    Ok(result
+        .data
+        .iter()
+        .filter_map(|row| {
+            let name = row.get("name")?.as_str()?.to_string();
+            let type_full = row.get("type_full")?.as_str()?.to_string();
+            let expr = row.get("expr").and_then(Value::as_str).unwrap_or("").to_string();
+            let granularity = as_u64(row.get("granularity")).unwrap_or(1);
+            let (index_type, args) = parse_type_full(&type_full);
+            Some(SkipIndex { name, expr, index_type, args, granularity })
+        })
+        .collect())
+}
+
+/// `system.tables.engine` for one table — used to guard the sorting-key rebuild (D11): the frontend
+/// disables it outside the four engines `clickhouse_ddl::ENGINES` already whitelists for creation.
+async fn table_engine(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+) -> Result<Option<String>, AppError> {
+    let result = query_with_params(
+        conn,
+        "SELECT engine FROM system.tables WHERE database = {database:String} AND name = {table:String}",
+        &[
+            ("database".to_string(), database.to_string()),
+            ("table".to_string(), table.to_string()),
+        ],
+    )
+    .await?;
+    Ok(result.data.first().and_then(|row| row.get("engine")?.as_str().map(str::to_string)))
 }
 
 pub(super) async fn structure_columns(
@@ -1121,7 +1207,7 @@ pub async fn table_stats(conn: &Connection, database: &str) -> Result<Vec<TableS
 
 /// A number `FORMAT JSON` may have written as a string — see `scalar`'s own note on 64-bit
 /// integers — or left out as JSON `null`, which is what a `NULL` becomes.
-fn as_u64(value: Option<&Value>) -> Option<u64> {
+pub(super) fn as_u64(value: Option<&Value>) -> Option<u64> {
     match value {
         Some(Value::String(s)) => s.parse().ok(),
         Some(Value::Number(n)) => n.as_u64(),
@@ -1194,11 +1280,34 @@ pub async fn schema_outline(conn: &Connection, database: &str) -> Result<SchemaO
 mod tests {
     use super::{build_where, is_decodable, quote_ident, Filter, QueryResult};
     use std::collections::BTreeMap;
-    use super::{build_key_where, quote_literal};
+    use super::{build_key_where, parse_type_full, quote_literal};
     use serde_json::{Map, Value};
 
     fn str_val(s: &str) -> Value {
         Value::String(s.to_string())
+    }
+
+    #[test]
+    fn a_type_with_no_arguments_parses_to_an_empty_list() {
+        assert_eq!(parse_type_full("minmax"), ("minmax".to_string(), Vec::new()));
+    }
+
+    #[test]
+    fn a_single_argument_type_parses_its_one_value() {
+        assert_eq!(parse_type_full("set(100)"), ("set".to_string(), vec!["100".to_string()]));
+    }
+
+    #[test]
+    fn a_four_argument_type_parses_all_four_in_order() {
+        assert_eq!(
+            parse_type_full("ngrambf_v1(3, 256, 2, 0)"),
+            ("ngrambf_v1".to_string(), vec!["3", "256", "2", "0"].into_iter().map(String::from).collect())
+        );
+    }
+
+    #[test]
+    fn empty_parentheses_parse_to_an_empty_list_not_one_empty_string() {
+        assert_eq!(parse_type_full("bloom_filter()"), ("bloom_filter".to_string(), Vec::new()));
     }
 
     /// `FORMAT JSON`'s own shape, exactly as the server sends it — the fixture this module's
