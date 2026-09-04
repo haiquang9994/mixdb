@@ -23,6 +23,15 @@ use tauri::State;
 
 use super::sqlite_pool;
 
+/// Creates an empty database file, for the New button on the connection form.
+///
+/// Takes no connection id: there is nothing open yet, which is the whole point — the form calls
+/// this and then puts the path in its own box for the user to connect with.
+#[tauri::command]
+pub async fn sqlite_create_file(path: String) -> Result<(), AppError> {
+    sqlite::create_file(&path).await
+}
+
 #[tauri::command]
 pub async fn sqlite_server_info(
     state: State<'_, DbState>,

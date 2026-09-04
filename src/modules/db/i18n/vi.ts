@@ -4,6 +4,7 @@ const dbVi: DbDict = {
   connection: {
     selectPrivateKeyDialogTitle: "Chọn private key",
     selectSqliteFileDialogTitle: "Chọn file database SQLite",
+    newSqliteFileDialogTitle: "File database SQLite mới",
     allFilesFilter: "Tất cả file",
     testingTunnel: "Đang kiểm tra...",
     tunnelOk: "\u2713 Tunnel OK \u2014 Xác thực SSH thành công",
@@ -25,6 +26,7 @@ const dbVi: DbDict = {
     kindSqlite: "SQLite",
     sqlitePathLabel: "File database",
     sqlitePathPlaceholder: "Đường dẫn tới file .db hoặc .sqlite",
+    newSqliteFile: "Tạo mới...",
     dbIndexLabel: "Chỉ mục DB",
     connectionStringLabel: "Chuỗi kết nối",
     connectionStringPlaceholder: "mongodb://user:password@host:27017/?authSource=admin&replicaSet=rs0",
@@ -867,6 +869,7 @@ const dbVi: DbDict = {
     mongoUriRequired: "Cần có chuỗi kết nối MongoDB.",
     sqlitePathRequired: "Hãy chọn file database SQLite cần mở.",
     sqliteFileNotFound: "Không có file nào ở {{path}}.",
+    sqliteFileExists: "Đã có file ở {{path}}. Hãy dùng Duyệt để mở nó, hoặc chọn tên khác.",
     sqliteNoDatabases:
       "Một database SQLite là một file. Tạo hay xóa nó là việc của trình quản lý file, không phải ở đây.",
     handoffInvalid: "Không đọc được kết nối MixDB được mở cùng: {{message}}",

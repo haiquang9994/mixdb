@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { useEffect, useRef, useState } from "react";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import Select from "../../../../components/Select";
 import ConfirmDialog from "../../../../components/ConfirmDialog";
 import Button from "../../../../components/Button";
@@ -8,6 +8,8 @@ import { EyeIcon, EyeOffIcon } from "../../../../icons";
 import { DatabaseIcon } from "../../icons";
 import { PRIVATE_KEY_PLACEHOLDER } from "../../../../core/ssh";
 import { useTranslation } from "../../../../i18n";
+import { errorMessage } from "../../../../core/errors";
+import { createSqliteFile } from "../../sqlite/api";
 import { KIND_LABEL, type ConnectionForm as FormState } from "../../connectionForm";
 import type { DbKind } from "../../types";
 
@@ -107,6 +109,8 @@ function ConnectionForm({
 }: Props) {
   const { t } = useTranslation();
   const passwordRef = useRef<HTMLInputElement>(null);
+  /** What went wrong making a database file, shown under the field. Cleared by the next attempt. */
+  const [fileError, setFileError] = useState("");
   useEffect(() => {
     if (focusPassword > 0) passwordRef.current?.focus();
   }, [focusPassword]);
@@ -126,21 +130,51 @@ function ConnectionForm({
     }
   }
 
+  /** The extensions a SQLite file is usually given, and an "any file" entry after them: the
+   *  extension is a convention, not a format — plenty of applications keep theirs with no suffix at
+   *  all, or with one of their own. */
+  function sqliteFilters() {
+    return [
+      { name: "SQLite", extensions: ["db", "sqlite", "sqlite3", "db3"] },
+      { name: t("connection.allFilesFilter"), extensions: ["*"] },
+    ];
+  }
+
   async function browseForDatabaseFile() {
     const chosen = await open({
       title: t("connection.selectSqliteFileDialogTitle"),
       multiple: false,
       directory: false,
-      /* Every extension anyone puts on a SQLite file, and an "any file" entry after them: the
-         extension is a convention, not a format — plenty of applications keep theirs with no
-         suffix at all, or with one of their own. */
-      filters: [
-        { name: "SQLite", extensions: ["db", "sqlite", "sqlite3", "db3"] },
-        { name: t("connection.allFilesFilter"), extensions: ["*"] },
-      ],
+      filters: sqliteFilters(),
     });
     if (typeof chosen === "string") {
+      setFileError("");
       set("path", chosen);
+    }
+  }
+
+  /**
+   * Makes an empty database file and puts it in the box, ready to connect to.
+   *
+   * Two steps rather than one, and deliberately: connecting never creates a file, so that a
+   * mistyped path is reported as the typo it is instead of opening an empty database nobody asked
+   * for. Creating one is this button and nothing else.
+   */
+  async function createDatabaseFile() {
+    const chosen = await save({
+      title: t("connection.newSqliteFileDialogTitle"),
+      defaultPath: "database.db",
+      filters: sqliteFilters(),
+    });
+    if (typeof chosen !== "string") return;
+    try {
+      await createSqliteFile(chosen);
+      set("path", chosen);
+      setFileError("");
+    } catch (e) {
+      // Beside the field rather than in the tab's banner: the banner is for a failed connection,
+      // and nothing has been connected to yet.
+      setFileError(errorMessage(t, e));
     }
   }
 
@@ -210,10 +244,16 @@ function ConnectionForm({
               {t("connection.sqlitePathLabel")}{" "}
               <Input
                 value={path}
-                onChange={(e) => set("path", e.target.value)}
+                onChange={(e) => {
+                  // The complaint was about the path that was there; a different one is a
+                  // different question, and the answer to it comes from Connect.
+                  setFileError("");
+                  set("path", e.target.value);
+                }}
                 placeholder={t("connection.sqlitePathPlaceholder")}
               />
               <Button onClick={browseForDatabaseFile}>{t("common.browse")}</Button>
+              <Button onClick={createDatabaseFile}>{t("connection.newSqliteFile")}</Button>
             </label>
           </div>
         ) : isMongo ? (
@@ -274,6 +314,15 @@ function ConnectionForm({
               <Input value={database} onChange={(e) => set("database", e.target.value)} />
             </label>
           </div>
+        )}
+
+        {/* Under the field it is about, and outside the row so it takes the width rather than a
+            flex item's share of it. Amber like the Redis hint below: nothing has been connected to
+            yet, so this is a note about the box above, not a failed connection. */}
+        {fileError !== "" && (
+          <p className="field-warning" role="alert">
+            {fileError}
+          </p>
         )}
 
         {showRedisProtectedModeHint && (

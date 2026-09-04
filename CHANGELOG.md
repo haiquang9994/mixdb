@@ -44,7 +44,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
-- SQLite: open a `.db` file and browse, edit and query it like any other connection.
+- SQLite: open a `.db` file — or make a new one — and browse, edit and query it like any other
+  connection.
 
 ### Fixed
 

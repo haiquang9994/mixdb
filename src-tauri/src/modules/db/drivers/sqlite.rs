@@ -78,6 +78,46 @@ pub async fn connect(path: &str) -> Result<SqlitePool, AppError> {
         .map_err(map_error)
 }
 
+/// Creates an empty database file at `path`.
+///
+/// The one place in the app that makes a database file, and deliberately apart from [`connect`],
+/// which never does. That split is the point: a path that does not exist is a typo when someone is
+/// opening a connection, and a new database only when they said so — see D5 of the plan this was
+/// built from.
+///
+/// **Refuses a path that already holds a file.** The save dialog this is called after will have
+/// asked about replacing one, and a yes there must not reach here as "delete that database and put
+/// an empty one in its place": nothing else in MixDB deletes a database file, and a New button is
+/// not where that should start.
+pub async fn create_file(path: &str) -> Result<(), AppError> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err(err!("error.sqlitePathRequired"));
+    }
+    if Path::new(path).exists() {
+        return Err(err!("error.sqliteFileExists", path = path));
+    }
+
+    let pool = SqlitePoolOptions::new()
+        .connect_with(
+            SqliteConnectOptions::new()
+                .filename(path)
+                .create_if_missing(true),
+        )
+        .await
+        .map_err(map_error)?;
+
+    /* Opening alone leaves a file of zero bytes. SQLite reads that back as an empty database and
+       so would MixDB, but another tool looking at the header would see nothing to recognise — so
+       one harmless write is made to lay the header down. `user_version` is a value SQLite keeps
+       for the application and reads no meaning into; setting it to the zero it already is changes
+       nothing but the fact that the file has been written to. */
+    let written = sqlx::raw_sql("PRAGMA user_version = 0").execute(&pool).await;
+    pool.close().await;
+    written.map_err(map_error)?;
+    Ok(())
+}
+
 /// The version of the SQLite the app carries, and the file it is pointed at.
 ///
 /// `os` is the file's name rather than a machine's: the header line reads "SQLite 3.x on blog.db",
@@ -1081,6 +1121,37 @@ pub(super) mod tests {
         // The point of the check, not a side effect of it: opening a path that is not there must
         // not leave an empty database behind for the user to wonder about.
         assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn a_created_file_is_an_empty_database_that_opens() {
+        let path = std::env::temp_dir().join(format!("mixdb-new-{}.db", uuid::Uuid::new_v4()));
+        create_file(path.to_str().unwrap()).await.unwrap();
+
+        // Not zero bytes: one write is made so the file carries SQLite's header and another tool
+        // looking at it sees a database rather than an empty file.
+        assert!(std::fs::metadata(&path).unwrap().len() > 0);
+
+        let pool = connect(path.to_str().unwrap()).await.expect("opens");
+        assert!(list_tables(&pool).await.unwrap().is_empty());
+        pool.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn creating_over_an_existing_file_is_refused_and_leaves_it_alone() {
+        let (fixture, pool) = Fixture::open().await;
+        pool.close().await;
+
+        /* The save dialog will have asked about replacing it and been told yes. That must not
+           reach here as "delete that database": nothing else in MixDB deletes a database file. */
+        let error = create_file(fixture.path.to_str().unwrap())
+            .await
+            .expect_err("should refuse");
+        assert_eq!(error.code, "error.sqliteFileExists");
+
+        let pool = connect(fixture.path.to_str().unwrap()).await.expect("still there");
+        assert!(!list_tables(&pool).await.unwrap().is_empty());
     }
 
     #[tokio::test]

@@ -573,6 +573,31 @@ fieldset .row label.field-connection-string {
   flex-basis: 100%;
 }
 
+/* The same bargain as the connection string above, for the same reason: one long value standing in
+   for a whole row of fields. Held to half a row it showed about eight characters of a path, which
+   is not enough to tell two databases apart — let alone read the placeholder that says what goes
+   in it. The two buttons after it keep their own width and the box takes what is left. */
+fieldset .row label.field-file-path {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-basis: 100%;
+}
+
+/* `min-width: 0` is what actually lets it shrink: a flex item defaults to the intrinsic width of
+   its content, so without this a long path pushes the buttons off the end of the row instead of
+   scrolling inside the box. */
+.field-file-path input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+}
+
+.field-file-path button {
+  flex: 0 0 auto;
+}
+
 /* Monospace, but the same box as every other field: the size class already writes this font size,
    so its `em` padding and line height resolve to the same pixels here and only the typeface
    changes. */

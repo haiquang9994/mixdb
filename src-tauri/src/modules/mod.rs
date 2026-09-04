@@ -107,6 +107,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         db::commands::redis::redis_scan_keys,
         db::commands::redis::redis_key_value,
         db::commands::redis::redis_delete_keys,
+        db::commands::sqlite::sqlite_create_file,
         db::commands::sqlite::sqlite_server_info,
         db::commands::sqlite::sqlite_list_databases,
         db::commands::sqlite::sqlite_list_tables,

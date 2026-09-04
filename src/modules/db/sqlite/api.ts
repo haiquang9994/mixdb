@@ -143,6 +143,19 @@ export const sqliteApi: SqlApi = {
   },
 };
 
+/**
+ * Creates an empty database file at `path`, for the connection form's New button.
+ *
+ * Apart from {@link sqliteApi} because it is not part of {@link SqlApi}: every call there acts on
+ * an open connection, and this one runs before there is anything to be connected to.
+ *
+ * Refuses a path that already holds a file. The save dialog will have asked about replacing one,
+ * and a yes there must not reach the backend as "delete that database" — see `create_file`.
+ */
+export function createSqliteFile(path: string): Promise<void> {
+  return invoke<void>("sqlite_create_file", { path });
+}
+
 /** What the two calls that can never exist report, in case a control ever reaches them: no command
  *  is invoked, so neither fails as "command not found". */
 function noDatabases(): Promise<never> {

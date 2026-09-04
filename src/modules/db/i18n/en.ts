@@ -9,6 +9,7 @@ const dbEn = {
   connection: {
     selectPrivateKeyDialogTitle: "Select private key",
     selectSqliteFileDialogTitle: "Select SQLite database file",
+    newSqliteFileDialogTitle: "New SQLite database file",
     allFilesFilter: "All files",
     testingTunnel: "Testing...",
     tunnelOk: "\u2713 Tunnel OK \u2014 SSH auth succeeded",
@@ -34,6 +35,7 @@ const dbEn = {
     kindSqlite: "SQLite",
     sqlitePathLabel: "Database file",
     sqlitePathPlaceholder: "Path to a .db or .sqlite file",
+    newSqliteFile: "New...",
     dbIndexLabel: "DB index",
     connectionStringLabel: "Connection string",
     connectionStringPlaceholder: "mongodb://user:password@host:27017/?authSource=admin&replicaSet=rs0",
@@ -883,6 +885,9 @@ const dbEn = {
     /* MixDB never creates a database file: a path that is not there is a typo, not an empty
        database to start filling. */
     sqliteFileNotFound: "There is no file at {{path}}.",
+    /* Refusing rather than replacing: nothing else in MixDB deletes a database file, and a New
+       button is not where that should start. */
+    sqliteFileExists: "There is already a file at {{path}}. Open it with Browse, or pick another name.",
     sqliteNoDatabases:
       "A SQLite database is a file. Creating or deleting one is done in the file manager, not here.",
     /* A `mixdb://connect?…` URL another program started MixDB with — see `handoff.ts`. The first
