@@ -382,6 +382,11 @@ const dbVi: DbDict = {
     // Chip trên thanh công cụ, và điều xảy ra khi vẫn cố ghi.
     readOnly: "Chỉ đọc",
     readOnlyBlocked: "Chưa gửi gì cả: kết nối này được đánh dấu chỉ đọc, mà trong script lại có câu lệnh {{verb}}.",
+    ddlOnlyReadOnly: "Chỉ khoá DDL",
+    ddlOnlyReadOnlyHint:
+      "INSERT/UPDATE/DELETE/TRUNCATE chạy được ở đây. Đổi bảng và database vẫn phải qua Structure tab.",
+    ddlBlocked:
+      "Chưa gửi gì cả: Query tab này chỉ nhận INSERT/UPDATE/DELETE/TRUNCATE gõ tay — thay đổi khác phải qua Structure tab.",
     // Cửa chặn trước một UPDATE, DELETE hay TRUNCATE không nói rõ dòng nào.
     unguardedTitle: "Sửa toàn bộ các dòng?",
     unguardedOne: "{{verb}} trên {{table}} không nói rõ dòng nào, nên nó áp dụng cho tất cả.",

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { columnDetail, completionSchema } from "../../sql/completion";
 import {
   AUTO_LIMIT,
+  isRowsDml,
   unguardedWrites,
   withAutoLimits,
   writingStatements,
@@ -81,6 +82,8 @@ interface Props {
   /** The saved connection is marked as one nothing is written to, so a statement that would change
    *  anything is refused before it is sent. */
   readOnly?: boolean;
+  /** See `SqlWorkspaceProps.dmlEvenIfReadOnly` — the same meaning, one level down. */
+  dmlEvenIfReadOnly?: boolean;
   /** The *saved* connection's id, which survives the app closing — unlike `connectionId`, which is
    *  the session and is minted fresh on every connect. It is what the draft and the history are
    *  filed under. Empty for a connection nobody saved, and then neither is kept. */
@@ -119,6 +122,7 @@ function QueryEditor({
   database,
   active,
   readOnly = false,
+  dmlEvenIfReadOnly = false,
   profileId = "",
   onOpenTable,
   onDatabaseChanged,
@@ -426,10 +430,14 @@ function QueryEditor({
     const statements = splitStatements(text, dialect.syntax);
 
     if (readOnly) {
-      const writes = writingStatements(statements, dialect);
+      const writes = writingStatements(statements, dialect).filter(
+        (w) => !(dmlEvenIfReadOnly && isRowsDml(w.statement, dialect))
+      );
       if (writes.length > 0) {
         setResults(null);
-        setError(t("query.readOnlyBlocked", { verb: writes[0].verb }));
+        setError(
+          t(dmlEvenIfReadOnly ? "query.ddlBlocked" : "query.readOnlyBlocked", { verb: writes[0].verb })
+        );
         // The refusal is shown in the pane, so it has to be a pane that is up.
         pane.reveal();
         return;

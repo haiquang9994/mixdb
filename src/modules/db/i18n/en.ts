@@ -396,6 +396,14 @@ const dbEn = {
     // The chip in the toolbar, and what happens when a write is attempted anyway.
     readOnly: "Read-only",
     readOnlyBlocked: "Nothing was sent: this connection is marked read-only, and the script holds a {{verb}}.",
+    // Shown instead of the two keys above when `dmlEvenIfReadOnly` is the reason: ClickHouse's
+    // Query tab can send INSERT/UPDATE/DELETE/TRUNCATE even though its DDL/dump-restore stay
+    // closed — see `SqlWorkspaceProps.dmlEvenIfReadOnly`.
+    ddlOnlyReadOnly: "DDL locked",
+    ddlOnlyReadOnlyHint:
+      "INSERT/UPDATE/DELETE/TRUNCATE work here. Table and database changes still go through the Structure tab.",
+    ddlBlocked:
+      "Nothing was sent: this Query tab only takes INSERT/UPDATE/DELETE/TRUNCATE by hand — other changes go through the Structure tab.",
     // The gate in front of an UPDATE, DELETE or TRUNCATE that names no rows.
     unguardedTitle: "Change every row?",
     unguardedOne: "{{verb}} on {{table}} says nothing about which rows, so it applies to all of them.",
