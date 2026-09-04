@@ -966,6 +966,39 @@ pub struct TableIndex {
     pub comment: String,
 }
 
+/// One data skipping index — ClickHouse's only secondary index, an approximate part-skipping filter
+/// rather than a lookup structure. See the ClickHouse index DDL design doc's D2.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkipIndex {
+    pub name: String,
+    pub expr: String,
+    pub index_type: String,
+    pub args: Vec<String>,
+    pub granularity: u64,
+}
+
+/// Splits `system.data_skipping_indices.type_full` (e.g. `"ngrambf_v1(3, 256, 2, 0)"`) into the bare
+/// type name and its arguments, in order. No type any skip index uses nests parentheses the way
+/// `Decimal(10, 2)` does inside a column type, so a first-`(` split is enough — no need for
+/// `ColumnDialog`'s more careful nested-parens handling.
+pub(super) fn parse_type_full(type_full: &str) -> (String, Vec<String>) {
+    let type_full = type_full.trim();
+    match type_full.find('(') {
+        None => (type_full.to_string(), Vec::new()),
+        Some(open) => {
+            let name = type_full[..open].to_string();
+            let close = type_full.rfind(')').unwrap_or(type_full.len());
+            let inside = type_full[open + 1..close].trim();
+            if inside.is_empty() {
+                (name, Vec::new())
+            } else {
+                (name, inside.split(',').map(|a| a.trim().to_string()).collect())
+            }
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableStructure {
@@ -1194,11 +1227,34 @@ pub async fn schema_outline(conn: &Connection, database: &str) -> Result<SchemaO
 mod tests {
     use super::{build_where, is_decodable, quote_ident, Filter, QueryResult};
     use std::collections::BTreeMap;
-    use super::{build_key_where, quote_literal};
+    use super::{build_key_where, parse_type_full, quote_literal};
     use serde_json::{Map, Value};
 
     fn str_val(s: &str) -> Value {
         Value::String(s.to_string())
+    }
+
+    #[test]
+    fn a_type_with_no_arguments_parses_to_an_empty_list() {
+        assert_eq!(parse_type_full("minmax"), ("minmax".to_string(), Vec::new()));
+    }
+
+    #[test]
+    fn a_single_argument_type_parses_its_one_value() {
+        assert_eq!(parse_type_full("set(100)"), ("set".to_string(), vec!["100".to_string()]));
+    }
+
+    #[test]
+    fn a_four_argument_type_parses_all_four_in_order() {
+        assert_eq!(
+            parse_type_full("ngrambf_v1(3, 256, 2, 0)"),
+            ("ngrambf_v1".to_string(), vec!["3", "256", "2", "0"].into_iter().map(String::from).collect())
+        );
+    }
+
+    #[test]
+    fn empty_parentheses_parse_to_an_empty_list_not_one_empty_string() {
+        assert_eq!(parse_type_full("bloom_filter()"), ("bloom_filter".to_string(), Vec::new()));
     }
 
     /// `FORMAT JSON`'s own shape, exactly as the server sends it — the fixture this module's
