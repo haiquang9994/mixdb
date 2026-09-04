@@ -205,3 +205,27 @@ pub async fn clickhouse_drop_table(
     let conn = clickhouse_connection(&state, &id).await?;
     clickhouse_ddl::drop_table(&conn, &database, &table).await
 }
+
+#[tauri::command]
+pub async fn clickhouse_add_column(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    spec: clickhouse_ddl::ColumnSpec,
+) -> Result<(), AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse_ddl::add_column(&conn, &database, &table, &spec).await
+}
+
+#[tauri::command]
+pub async fn clickhouse_drop_column(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+) -> Result<(), AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse_ddl::drop_column(&conn, &database, &table, &name).await
+}
