@@ -1,10 +1,11 @@
-use super::clickhouse_connection;
+use super::{clickhouse_connection, reporter, Transfer};
 use crate::error::AppError;
-use crate::modules::db::drivers::{clickhouse, clickhouse_ddl, clickhouse_script};
+use crate::modules::db::drivers::{clickhouse, clickhouse_ddl, clickhouse_dump, clickhouse_script, dump};
 use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::modules::db::state::DbState;
 use serde_json::{Map, Value};
-use tauri::State;
+use std::sync::atomic::Ordering;
+use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub async fn clickhouse_server_info(
@@ -301,4 +302,49 @@ pub async fn clickhouse_row_count(
 ) -> Result<u64, AppError> {
     let conn = clickhouse_connection(&state, &id).await?;
     clickhouse_ddl::row_count(&conn, &database, &table).await
+}
+
+/// Writes `database` out as SQL — `mode` is `structure`, `data` or `all`. See
+/// `docs/superpowers/specs/2026-09-04-clickhouse-dump-restore-design.md`.
+#[tauri::command]
+pub async fn clickhouse_dump(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    mode: String,
+    path: String,
+) -> Result<(), AppError> {
+    let mode = dump::DumpMode::parse(&mode)?;
+    let conn = clickhouse_connection(&state, &id).await?;
+    let report = reporter(&app, &id);
+    let transfer = Transfer::start(&state, &id);
+    let cancelled = transfer.flag();
+    let watch = dump::Watch { report: &report, cancel: &|| cancelled.load(Ordering::Relaxed) };
+
+    if mode != dump::DumpMode::Data {
+        clickhouse_dump::dump_structure(&conn, &database, &path, &watch).await?;
+    }
+    if mode != dump::DumpMode::Structure {
+        let append = mode == dump::DumpMode::All;
+        clickhouse_dump::dump_data(&conn, &database, &path, append, &watch).await?;
+    }
+    Ok(())
+}
+
+/// Replays a dump file into `database`.
+#[tauri::command]
+pub async fn clickhouse_restore(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    path: String,
+) -> Result<(), AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    let report = reporter(&app, &id);
+    let transfer = Transfer::start(&state, &id);
+    let cancelled = transfer.flag();
+    let watch = dump::Watch { report: &report, cancel: &|| cancelled.load(Ordering::Relaxed) };
+    clickhouse_dump::restore(&conn, &database, &path, &watch).await
 }

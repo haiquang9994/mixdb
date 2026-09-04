@@ -20,16 +20,18 @@ describe("write flags", () => {
   it("leaves the three SQL engines with everything open", () => {
     for (const dialect of SQL_ENGINES) {
       expect(dialect.writable, dialect.kind).toBe(true);
+      expect(dialect.dumpRestoreWritable, dialect.kind).toBe(true);
       expect(dialect.ddlWritable, dialect.kind).toBe(true);
       expect(dialect.rowsWritable, dialect.kind).toBe(true);
     }
   });
 
-  it("opens ClickHouse's schema without opening its Query tab or dump/restore", () => {
-    // `writable` is what gates the Query tab and dump/restore, and the Query tab's guard does not
-    // tell DDL from DML — so reaching `ALTER TABLE` through that flag would open hand-typed
-    // `INSERT` with it. That is the whole reason `ddlWritable` exists.
+  it("opens ClickHouse's schema and dump/restore without opening its Query tab", () => {
+    // `writable` gates only the Query tab now — DDL has `ddlWritable`, dump/restore has
+    // `dumpRestoreWritable`, both split off because the Query tab's guard does not tell DDL from
+    // DML, so reaching either through `writable` would open hand-typed `INSERT` along with it.
     expect(clickhouseDialect.ddlWritable).toBe(true);
+    expect(clickhouseDialect.dumpRestoreWritable).toBe(true);
     expect(clickhouseDialect.writable).toBe(false);
   });
 });

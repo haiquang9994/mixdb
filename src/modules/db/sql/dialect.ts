@@ -125,13 +125,15 @@ export interface SqlDialect {
   cancellable: boolean;
 
   /**
-   * The Query tab may send writing statements, and the database as a whole may be dumped and
-   * restored.
+   * The Query tab may send writing statements — DDL and anything beyond the four DML verbs
+   * `rowsWritable` already covers.
    *
-   * Narrower than it once was: DDL was gated here too until it got `ddlWritable` of its own,
-   * because ClickHouse can have the Structure tab open while the Query tab stays shut. The Query
-   * tab's guard does not tell DDL from DML, so opening this flag to reach `ALTER TABLE` would open
-   * hand-typed `INSERT` along with it.
+   * Narrower than it once was twice over: DDL got `ddlWritable` of its own (ClickHouse can have the
+   * Structure tab open while the Query tab stays shut — its guard does not tell DDL from DML, so
+   * opening this flag to reach `ALTER TABLE` would open hand-typed `INSERT` along with it), and
+   * dump/restore got `dumpRestoreWritable` of its own for the same shape of reason — see that
+   * field's own doc and
+   * `docs/superpowers/specs/2026-09-04-clickhouse-dump-restore-design.md`.
    *
    * Row-level writes — the Data tab's grid inserting, updating or deleting rows — are gated
    * separately by `rowsWritable`, since an engine can have one open without the other: ClickHouse's
@@ -147,6 +149,21 @@ export interface SqlDialect {
    * `docs/superpowers/specs/2026-09-04-clickhouse-query-dml-design.md`.
    */
   writable: boolean;
+
+  /**
+   * The database as a whole may be dumped and restored — `DatabaseActions`' Dump/Restore buttons.
+   *
+   * Split off `writable` (which now gates only the Query tab) because ClickHouse can have this open
+   * without the Query tab: dump/restore runs entirely over the same HTTP interface every other
+   * ClickHouse read/write already uses, with no hand-typed-DDL risk the way opening `writable`
+   * itself would carry. See
+   * `docs/superpowers/specs/2026-09-04-clickhouse-dump-restore-design.md`'s D8.
+   *
+   * True on every engine, ClickHouse included. `DbTab` folds this into `SqlWorkspace`'s
+   * `dumpRestoreReadOnly` prop, which only `DatabaseActions`' dump/restore buttons read (the Drop
+   * button stays on `ddlWritable`/`schemaReadOnly`).
+   */
+  dumpRestoreWritable: boolean;
 
   /**
    * The Structure tab may write, and tables and databases may be created, renamed and dropped.

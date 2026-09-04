@@ -413,14 +413,21 @@ pub struct Progress {
 
 /// Where a transfer says how far it has got, four times a second.
 pub struct Watch<'a> {
-    pub report: &'a dyn Fn(Progress),
+    /// `Send + Sync` even though the three child-process-driven dumps below never need it — their
+    /// own `Watch` never crosses an `.await`, confined to a `spawn_blocking` closure instead. The
+    /// ClickHouse dump/restore in `clickhouse_dump.rs` runs as a plain `async fn` with no child
+    /// process to block on, so it holds a `&Watch` across real `.await` points — which tauri only
+    /// accepts from a command whose whole future is `Send`. Every closure passed in today already
+    /// satisfies this (an `AppHandle`-capturing reporter, an `Arc<AtomicBool>`-capturing cancel
+    /// flag are both `Send + Sync` on their own), so this costs the other three nothing.
+    pub report: &'a (dyn Fn(Progress) + Send + Sync),
     /// Asked four times a second, and again after every line the tool writes: has the transfer
     /// been called off?
     ///
     /// A poll rather than a signal because the work is a blocking loop around a child process,
     /// and the only thing that reliably stops one of those is killing it. What sets it is the tab
     /// closing, `disconnect_db`, or the Cancel button — see `DbState::transfers`.
-    pub cancel: &'a dyn Fn() -> bool,
+    pub cancel: &'a (dyn Fn() -> bool + Send + Sync),
 }
 
 /// The line `mysqldump --verbose` writes as it reaches each table, and the whole of the signal the
@@ -462,7 +469,7 @@ const CALIBRATE_FROM: u64 = 1 << 20;
 ///
 /// That alone would sit still through the one huge table most databases have, so the size of the
 /// file being written is read as well and used to place the dump inside the one it is on.
-struct Tracker {
+pub(super) struct Tracker {
     /// What each table or collection weighs, by name.
     weights: HashMap<String, u64>,
     total: u64,
@@ -487,7 +494,7 @@ struct Tracker {
 }
 
 impl Tracker {
-    fn new(parts: &[(String, u64)], path: &str, rows: bool) -> Self {
+    pub(super) fn new(parts: &[(String, u64)], path: &str, rows: bool) -> Self {
         let mut weights: HashMap<String, u64> = parts.iter().cloned().collect();
         let mut total: u64 = weights.values().sum();
         let rows = rows && total > 0;
@@ -522,7 +529,7 @@ impl Tracker {
     }
 
     /// The tool has reached `part`, which is also to say it has finished the one before it.
-    fn reached(&mut self, part: &str) {
+    pub(super) fn reached(&mut self, part: &str) {
         let size = self.size();
         if let Some((_, weight, from)) = self.current.take() {
             self.done += weight;
@@ -539,7 +546,7 @@ impl Tracker {
         self.current = Some((part.to_string(), weight, size));
     }
 
-    fn progress(&mut self) -> Progress {
+    pub(super) fn progress(&mut self) -> Progress {
         // Nothing was known about what the database holds, so there is nothing to be a fraction of.
         if self.total == 0 {
             return Progress {
