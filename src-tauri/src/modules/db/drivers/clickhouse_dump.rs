@@ -169,6 +169,96 @@ pub(super) fn excluded_from_data_dump(engine: &str) -> bool {
     DATA_DUMP_EXCLUDED_ENGINES.contains(&engine)
 }
 
+/// One table or view of a database, as `system.tables` reports it — the shared read `dump_structure`
+/// and `dump_data` both start from.
+struct TableInfo {
+    name: String,
+    engine: String,
+    total_bytes: u64,
+}
+
+async fn list_tables_with_engine(conn: &Connection, database: &str) -> Result<Vec<TableInfo>, AppError> {
+    let result = clickhouse::query_with_params(
+        conn,
+        "SELECT name, engine, total_bytes FROM system.tables \
+         WHERE database = {database:String} ORDER BY name",
+        &[("database".to_string(), database.to_string())],
+    )
+    .await?;
+    Ok(result
+        .data
+        .iter()
+        .filter_map(|row| {
+            let name = row.get("name")?.as_str()?.to_string();
+            let engine = row.get("engine")?.as_str()?.to_string();
+            let total_bytes = clickhouse::as_u64(row.get("total_bytes")).unwrap_or(0);
+            Some(TableInfo { name, engine, total_bytes })
+        })
+        .collect())
+}
+
+/// Tables before views/materialized views — an index or a trigger replayed before its table fails
+/// on the other engines, and the same reasoning applies here: a `MATERIALIZED VIEW`'s `TO` table
+/// (or a plain `VIEW`'s `AS SELECT`) should exist before the view naming it is created. Stable sort:
+/// ties (both within the "table" group and within the "view" group) keep the `ORDER BY name` order
+/// the query already gave.
+fn ordered_for_structure(mut tables: Vec<TableInfo>) -> Vec<TableInfo> {
+    tables.sort_by_key(|t| matches!(t.engine.as_str(), "View" | "MaterializedView"));
+    tables
+}
+
+async fn show_create(conn: &Connection, database: &str, table: &str) -> Result<String, AppError> {
+    let sql = format!("SHOW CREATE TABLE {}", clickhouse::qualified(database, table));
+    let result = clickhouse::query_in_database(conn, &sql, Some(database)).await?;
+    result
+        .data
+        .first()
+        .and_then(|row| row.values().next())
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| err!("error.clickhouse", message = format!("SHOW CREATE TABLE returned nothing for {table}")))
+}
+
+/// Writes every table/view's `DROP TABLE IF EXISTS` + (database-qualifier-stripped, D4)
+/// `SHOW CREATE TABLE` to `path`, tables before views (see [`ordered_for_structure`]). Creates the
+/// file fresh — a caller doing a `data`-only dump never calls this, and an `all` dump's
+/// [`dump_data`] appends after it.
+pub async fn dump_structure(
+    conn: &Connection,
+    database: &str,
+    path: &str,
+    watch: &dump::Watch<'_>,
+) -> Result<(), AppError> {
+    use std::io::Write;
+
+    let tables = ordered_for_structure(list_tables_with_engine(conn, database).await?);
+    let weights: Vec<(String, u64)> = tables.iter().map(|t| (t.name.clone(), 1)).collect();
+    let mut tracker = Tracker::new(&weights, path, false);
+
+    let mut file = std::fs::File::create(path)
+        .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+    write!(file, "-- MixDB structure dump\n\n")
+        .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+
+    for table in &tables {
+        if (watch.cancel)() {
+            return Err(err!("error.transferCancelled", tool = "ClickHouse dump"));
+        }
+        let create_sql = show_create(conn, database, &table.name).await?;
+        let stripped = strip_database_qualifiers(&create_sql, database);
+        write!(
+            file,
+            "DROP TABLE IF EXISTS {};\n{stripped};\n\n",
+            clickhouse::quote_ident(&table.name)
+        )
+        .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+
+        tracker.reached(&table.name);
+        (watch.report)(tracker.progress());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
