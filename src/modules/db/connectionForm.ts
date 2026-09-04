@@ -1,4 +1,3 @@
-import { isSqlKind } from "./engines";
 import { DEFAULT_PORTS, type ConnectionConfig, type DbKind, type SshConfig } from "./types";
 import type { TranslationKey } from "../../i18n";
 
@@ -23,6 +22,8 @@ export interface ConnectionForm {
   database: string;
   /** Mongo's whole connection string. Empty for every other kind. */
   uri: string;
+  /** SQLite's database file. Empty for every other kind. */
+  path: string;
   /** Whether the connection string is shown. A connection string is only editable once shown, and
    *  showing it puts a password on screen — so an empty one starts open (there is nothing to
    *  protect yet) and a saved one starts hidden. */
@@ -77,6 +78,7 @@ export function formFrom(config: ConnectionConfig | null, keyringRef: string | n
       password: "",
       database: "",
       uri: "",
+      path: "",
       uriRevealed: true,
       confirmingReveal: false,
       // Off to start with: a new connection is most often to a local or tunnelled server, where
@@ -96,6 +98,7 @@ export function formFrom(config: ConnectionConfig | null, keyringRef: string | n
     password: config.password ?? "",
     database: config.database ?? "",
     uri: config.uri ?? "",
+    path: config.path ?? "",
     uriRevealed: !config.uri,
     confirmingReveal: false,
     keyringRef,
@@ -104,7 +107,7 @@ export function formFrom(config: ConnectionConfig | null, keyringRef: string | n
        a kind that has the box at all: `configFrom` writes `undefined` for Mongo and Redis, so
        loading one of those and then switching the form to MySQL used to arrive with TLS silently
        ticked — a form the user never set that way. */
-    useSsl: isSqlKind(config.kind) ? config.use_ssl ?? true : false,
+    useSsl: hasTls(config.kind) ? config.use_ssl ?? true : false,
     ...NO_TUNNEL,
     ...(ssh
       ? {
@@ -142,18 +145,23 @@ function sshFrom(form: ConnectionForm): SshConfig | undefined {
 /** What the form says, as the config to connect or save with. */
 export function configFrom(form: ConnectionForm): ConnectionConfig {
   const isMongo = form.kind === "mongo";
+  const isSqlite = form.kind === "sqlite";
   return {
     kind: form.kind,
     host: form.host,
     port: form.port,
     // Mongo takes its endpoint, credentials and default database from the connection string, so
     // the per-field values are left out entirely rather than saved as dead weight.
-    username: isMongo ? undefined : form.username || undefined,
-    password: isMongo ? undefined : form.password || undefined,
-    database: isMongo ? undefined : form.database || undefined,
+    /* SQLite takes the file and nothing else — there is no server to have an account on, and no
+       address to tunnel to — so its fields are left out rather than saved as dead weight, the way
+       Mongo's per-field values are. */
+    username: isMongo || isSqlite ? undefined : form.username || undefined,
+    password: isMongo || isSqlite ? undefined : form.password || undefined,
+    database: isMongo || isSqlite ? undefined : form.database || undefined,
     uri: isMongo ? form.uri.trim() || undefined : undefined,
-    ssh: sshFrom(form),
-    use_ssl: isSqlKind(form.kind) ? form.useSsl : undefined,
+    path: isSqlite ? form.path.trim() || undefined : undefined,
+    ssh: isSqlite ? undefined : sshFrom(form),
+    use_ssl: hasTls(form.kind) ? form.useSsl : undefined,
   };
 }
 
@@ -171,4 +179,16 @@ export const KIND_LABEL: Record<DbKind, TranslationKey> = {
   postgres: "connection.kindPostgres",
   mongo: "connection.kindMongo",
   redis: "connection.kindRedis",
+  sqlite: "connection.kindSqlite",
 };
+
+/**
+ * Whether this kind has a TLS box on the form at all.
+ *
+ * Not `isSqlKind`, which this used to borrow. The two agreed while every SQL engine was a server,
+ * and stopped agreeing the moment SQLite became one: a file has no transport to secure, so the box
+ * would be a control that changes nothing.
+ */
+function hasTls(kind: DbKind): boolean {
+  return kind === "mysql" || kind === "postgres";
+}

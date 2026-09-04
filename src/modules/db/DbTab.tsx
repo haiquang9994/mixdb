@@ -55,6 +55,15 @@ function mongoUriHost(uri: string): string {
   return MONGO_URI_RE.exec(uri.trim())?.[1] ?? "";
 }
 
+/** The last segment of a file path, whichever separator it was written with — Windows paths reach
+ *  here with backslashes and the dialog's own with forward ones. Falls back to the whole path when
+ *  it ends in a separator, so the title is never empty. */
+function fileName(path: string): string {
+  const trimmed = path.trim();
+  const segments = trimmed.split(/[\/]/).filter((segment) => segment !== "");
+  return segments[segments.length - 1] ?? trimmed;
+}
+
 /** The default database, i.e. the path segment in `mongodb://host/thisOne?options`. */
 function mongoUriDatabase(uri: string): string {
   const path = MONGO_URI_RE.exec(uri.trim())?.[2] ?? "";
@@ -420,7 +429,16 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
       const pointsAt = savedId ?? editingId;
       onStateChange(pointsAt === null ? undefined : { savedId: pointsAt, connected: true });
       setStatus(t("connection.connectedStatus", { id: id.slice(0, 8) }));
-      const titleHost = config.kind === "mongo" ? mongoUriHost(config.uri ?? "") : config.host;
+      /* What a tab with no name of its own says it is pointing at. Each kind keeps its address
+         somewhere different: Mongo inside the connection string, SQLite in a path — whose last
+         segment is the useful half, since the tab is a word or two wide — and the rest in `host`,
+         which for those two is empty. */
+      const titleHost =
+        config.kind === "mongo"
+          ? mongoUriHost(config.uri ?? "")
+          : config.kind === "sqlite"
+            ? fileName(config.path ?? "")
+            : config.host;
       onTitleChange(
         title ??
           (saveAsName.trim() ||

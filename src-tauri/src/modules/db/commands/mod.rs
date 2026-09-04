@@ -49,6 +49,7 @@ pub mod mongo;
 pub mod mysql;
 pub mod postgres;
 pub mod redis;
+pub mod sqlite;
 pub mod tools;
 
 
@@ -230,6 +231,14 @@ pub async fn connect_db(
                 with_timeout(drivers::mongo::connect(uri, endpoint.clone()), "MongoDB").await?;
             (DbHandle::Mongo(client), endpoint, tunnel)
         }
+        // A file, not a server: no endpoint to resolve, so no tunnel and no TLS. `endpoint` stays
+        // `None`, which is also what tells the dump path there is no address to hand a tool — see
+        // `sql_endpoint`.
+        DbKind::Sqlite => {
+            let path = config.path.as_deref().unwrap_or_default();
+            let pool = with_timeout(drivers::sqlite::connect(path), "SQLite").await?;
+            (DbHandle::Sqlite(pool), None, None)
+        }
         DbKind::Redis => {
             let (host, port, tunnel) =
                 resolve_endpoint(&config, &app_data, Arc::clone(&notify)).await?;
@@ -286,6 +295,7 @@ pub async fn disconnect_db(state: State<'_, DbState>, id: String) -> Result<(), 
     match &connection.handle {
         DbHandle::Mysql { pool, .. } => pool.close().await,
         DbHandle::Postgres(pools) => pools.close_all().await,
+        DbHandle::Sqlite(pool) => pool.close().await,
         // Mongo tự gom lại khi tay cầm cuối cùng đi, và Redis là một kết nối chứ không phải pool.
         DbHandle::Mongo(_) | DbHandle::Redis(_) => {}
     }
@@ -372,6 +382,15 @@ async fn postgres_pools(
     }
 }
 
+/// The pool for the one database file `id` names. There is no per-database pool to choose between
+/// the way PostgreSQL has: a SQLite connection is the file, and the file is one database.
+async fn sqlite_pool(state: &State<'_, DbState>, id: &str) -> Result<sqlx::SqlitePool, AppError> {
+    match handle(state, id).await? {
+        DbHandle::Sqlite(pool) => Ok(pool),
+        _ => Err(err!("error.wrongConnectionKind", kind = "SQLite")),
+    }
+}
+
 async fn mongo_client(state: &State<'_, DbState>, id: &str) -> Result<mongodb::Client, AppError> {
     match handle(state, id).await? {
         DbHandle::Mongo(client) => Ok(client),
@@ -414,10 +433,14 @@ async fn sql_endpoint(
 ) -> Result<SqlEndpoint, AppError> {
     let connections = state.connections.lock().await;
     let connection = connections.get(id).ok_or_else(|| err!("error.unknownConnection"))?;
+    /* Written out rather than closed with a `_`, so that a kind added later is a compile error
+       here instead of a wrong message: SQLite reaches this with no endpoint and used to come back
+       as `error.noDumpAddress`, which reads as "the address is missing" for a kind that has none
+       by construction. */
     let matches = match kind {
         DbKind::Mysql => matches!(connection.handle, DbHandle::Mysql { .. }),
         DbKind::Postgres => matches!(connection.handle, DbHandle::Postgres(_)),
-        _ => false,
+        DbKind::Mongo | DbKind::Redis | DbKind::Sqlite => false,
     };
     if !matches {
         let name = if kind == DbKind::Postgres { "PostgreSQL" } else { "MySQL" };

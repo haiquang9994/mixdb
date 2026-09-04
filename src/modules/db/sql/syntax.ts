@@ -71,6 +71,28 @@ export const POSTGRES_SYNTAX: SqlSyntax = {
   dollarQuoting: true,
 };
 
+/**
+ * SQLite, which sits between the two on almost every line.
+ *
+ * It understands MySQL's backtick and PostgreSQL's double quote as identifier quotes, and a
+ * double-quoted run is a name — a string only if there is no column of that name, which is a
+ * fallback the tokenizer has no business reproducing. `identifierQuote` names the backtick so both
+ * spellings lex, and `doubleQuoteIsIdentifier` settles the standard one.
+ *
+ * No backslash escaping: `'a\b'` in SQLite is the four characters it looks like, and a quote
+ * inside a string is doubled the standard way.
+ */
+export const SQLITE_SYNTAX: SqlSyntax = {
+  hashComments: false,
+  dashCommentNeedsSpace: false,
+  nestedBlockComments: false,
+  identifierQuote: "`",
+  doubleQuoteIsIdentifier: true,
+  backslashEscapes: false,
+  escapeStringPrefix: false,
+  dollarQuoting: false,
+};
+
 /** What may sit inside a PostgreSQL identifier after its first character — `$` included. */
 const IDENT_CHAR = /[\p{L}\p{N}_$]/u;
 

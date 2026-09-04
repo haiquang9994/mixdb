@@ -18,4 +18,6 @@ export const postgresDialect: SqlDialect = {
   isGenerated,
   isServerAssigned,
   isBinary,
+  cancellable: true,
+  regexpFilter: true,
 };

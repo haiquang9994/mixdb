@@ -3,6 +3,9 @@ import type { DbDict } from "./en";
 const dbVi: DbDict = {
   connection: {
     selectPrivateKeyDialogTitle: "Chọn private key",
+    selectSqliteFileDialogTitle: "Chọn file database SQLite",
+    newSqliteFileDialogTitle: "File database SQLite mới",
+    allFilesFilter: "Tất cả file",
     testingTunnel: "Đang kiểm tra...",
     tunnelOk: "\u2713 Tunnel OK \u2014 Xác thực SSH thành công",
     tunnelFailed: "\u2717 {{error}}",
@@ -20,6 +23,10 @@ const dbVi: DbDict = {
     kindPostgres: "PostgreSQL",
     kindMongo: "MongoDB",
     kindRedis: "Redis",
+    kindSqlite: "SQLite",
+    sqlitePathLabel: "File database",
+    sqlitePathPlaceholder: "Đường dẫn tới file .db hoặc .sqlite",
+    newSqliteFile: "Tạo mới...",
     dbIndexLabel: "Chỉ mục DB",
     connectionStringLabel: "Chuỗi kết nối",
     connectionStringPlaceholder: "mongodb://user:password@host:27017/?authSource=admin&replicaSet=rs0",
@@ -850,6 +857,7 @@ const dbVi: DbDict = {
     postgres: "PostgreSQL: {{message}}",
     mongo: "MongoDB: {{message}}",
     redis: "Redis: {{message}}",
+    sqlite: "SQLite: {{message}}",
     // Kết nối
     unknownConnection: "Kết nối này không còn mở — hãy kết nối lại.",
     wrongConnectionKind: "Đây không phải kết nối {{kind}}.",
@@ -859,6 +867,11 @@ const dbVi: DbDict = {
       "Mất kết nối tới máy chủ. Nếu kết nối này đi qua SSH tunnel, MixDB đang mở lại — thử lại sau giây lát.",
     noTunnel: "Kết nối này không đi qua SSH tunnel.",
     mongoUriRequired: "Cần có chuỗi kết nối MongoDB.",
+    sqlitePathRequired: "Hãy chọn file database SQLite cần mở.",
+    sqliteFileNotFound: "Không có file nào ở {{path}}.",
+    sqliteFileExists: "Đã có file ở {{path}}. Hãy dùng Duyệt để mở nó, hoặc chọn tên khác.",
+    sqliteNoDatabases:
+      "Một database SQLite là một file. Tạo hay xóa nó là việc của trình quản lý file, không phải ở đây.",
     handoffInvalid: "Không đọc được kết nối MixDB được mở cùng: {{message}}",
     handoffExpired: "Kết nối được chuyển sang này đã được mở rồi.",
     mongoNoTcpHost: "Chuỗi kết nối không chỉ ra host TCP nào để mở tunnel.",
@@ -887,6 +900,16 @@ const dbVi: DbDict = {
     indexColumnNameRequired: "Mọi cột trong index đều phải có tên.",
     invalidCollation: "Máy chủ này không có collation {{collation}}.",
     unknownIndexKind: "Loại index {{kind}} không hợp lệ.",
+    sqliteColumnTypeUnchangeable:
+      "SQLite không đổi được kiểu của {{column}} — chỉ đổi được tên. Hãy thêm cột mới rồi chép dữ liệu sang.",
+    sqliteColumnNullUnchangeable:
+      "SQLite không thêm hay bỏ được NOT NULL trên {{column}} — chỉ đổi được tên.",
+    sqliteColumnDefaultUnchangeable:
+      "SQLite không đổi được giá trị mặc định của {{column}} — chỉ đổi được tên.",
+    sqliteNoPrimaryKeyAfterwards:
+      "Primary key của SQLite là một phần của chính bảng, không thêm được vào bảng đã tạo mà chưa có.",
+    sqliteIndexBelongsToConstraint:
+      "{{index}} thuộc về một ràng buộc PRIMARY KEY hoặc UNIQUE, không xóa riêng được.",
     unknownIndexType: "Kiểu index {{type}} không hợp lệ.",
     noVisibleColumns:
       "Không thấy cột nào của {{database}}.{{table}} — có thể bảng không tồn tại, hoặc tài khoản của bạn không có quyền trên bảng đó.",
@@ -950,6 +973,9 @@ const dbVi: DbDict = {
     // File và thư mục riêng của ứng dụng
     cannotReadFile: "Không đọc được {{path}}: {{message}}",
     cannotWriteFile: "Không ghi được {{path}}: {{message}}",
+    sqliteRestoreFailed: "Khôi phục dừng lại ở {{statement}} — {{message}}",
+    sqliteDataDumpUnsupported:
+      "MixDB chỉ dump cấu trúc SQLite, không dump dữ liệu. Hãy chọn Structure, hoặc sao chép chính file đó.",
     cannotRemoveDirectory: "Không xóa được {{path}}: {{message}}",
     noAppDataDir: "MixDB không có chỗ nào để lưu file riêng của nó: {{message}}",
   },

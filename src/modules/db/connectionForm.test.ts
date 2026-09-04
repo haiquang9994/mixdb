@@ -67,6 +67,11 @@ describe("formFrom", () => {
     // silently ticked — a form the user never set that way.
     expect(formFrom({ kind: "mongo", host: "", port: 27017, uri: "mongodb://h/db" }).useSsl).toBe(false);
     expect(formFrom({ kind: "redis", host: "127.0.0.1", port: 6379 }).useSsl).toBe(false);
+    // SQLite is a SQL kind and still has no box: there is no transport to secure. This is what
+    // stopped `isSqlKind` from being what decides.
+    expect(formFrom({ kind: "sqlite", host: "", port: 0, path: "C:/db/blog.sqlite" }).useSsl).toBe(
+      false
+    );
   });
 
   it("starts a saved connection string hidden, and an empty one open", () => {
@@ -115,6 +120,33 @@ describe("configFrom", () => {
 
   it("keeps the connection string out of every other kind", () => {
     expect(configFrom({ ...formFrom(null), uri: "mongodb://h/db" }).uri).toBeUndefined();
+  });
+
+  it("keeps SQLite to its file, and nothing else", () => {
+    // There is no server, so an account, a database name and a tunnel left over from the kind
+    // that was selected before are all meaningless — and a saved tunnel would be a tunnel the
+    // connection silently tries to open.
+    const form = {
+      ...formFrom(null),
+      kind: "sqlite" as const,
+      username: "left",
+      password: "over",
+      database: "fields",
+      tunnelType: "ssh" as const,
+      sshHost: "bastion",
+      path: "  C:/db/blog.sqlite  ",
+    };
+    const config = configFrom(form);
+    expect(config.path).toBe("C:/db/blog.sqlite");
+    expect(config.username).toBeUndefined();
+    expect(config.password).toBeUndefined();
+    expect(config.database).toBeUndefined();
+    expect(config.ssh).toBeUndefined();
+    expect(config.use_ssl).toBeUndefined();
+  });
+
+  it("keeps the file path out of every other kind", () => {
+    expect(configFrom({ ...formFrom(null), path: "C:/db/blog.sqlite" }).path).toBeUndefined();
   });
 });
 

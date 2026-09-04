@@ -8,6 +8,9 @@
 const dbEn = {
   connection: {
     selectPrivateKeyDialogTitle: "Select private key",
+    selectSqliteFileDialogTitle: "Select SQLite database file",
+    newSqliteFileDialogTitle: "New SQLite database file",
+    allFilesFilter: "All files",
     testingTunnel: "Testing...",
     tunnelOk: "\u2713 Tunnel OK \u2014 SSH auth succeeded",
     tunnelFailed: "\u2717 {{error}}",
@@ -29,6 +32,10 @@ const dbEn = {
     kindPostgres: "PostgreSQL",
     kindMongo: "MongoDB",
     kindRedis: "Redis",
+    kindSqlite: "SQLite",
+    sqlitePathLabel: "Database file",
+    sqlitePathPlaceholder: "Path to a .db or .sqlite file",
+    newSqliteFile: "New...",
     dbIndexLabel: "DB index",
     connectionStringLabel: "Connection string",
     connectionStringPlaceholder: "mongodb://user:password@host:27017/?authSource=admin&replicaSet=rs0",
@@ -864,6 +871,7 @@ const dbEn = {
     postgres: "PostgreSQL: {{message}}",
     mongo: "MongoDB: {{message}}",
     redis: "Redis: {{message}}",
+    sqlite: "SQLite: {{message}}",
     // Connections
     unknownConnection: "This connection is no longer open \u2014 connect again.",
     wrongConnectionKind: "This is not a {{kind}} connection.",
@@ -873,6 +881,15 @@ const dbEn = {
       "The connection to the server was lost. If it goes through an SSH tunnel, MixDB is opening it again \u2014 try once more in a moment.",
     noTunnel: "This connection does not go through an SSH tunnel.",
     mongoUriRequired: "A MongoDB connection string is required.",
+    sqlitePathRequired: "Choose the SQLite database file to open.",
+    /* MixDB never creates a database file: a path that is not there is a typo, not an empty
+       database to start filling. */
+    sqliteFileNotFound: "There is no file at {{path}}.",
+    /* Refusing rather than replacing: nothing else in MixDB deletes a database file, and a New
+       button is not where that should start. */
+    sqliteFileExists: "There is already a file at {{path}}. Open it with Browse, or pick another name.",
+    sqliteNoDatabases:
+      "A SQLite database is a file. Creating or deleting one is done in the file manager, not here.",
     /* A `mixdb://connect?…` URL another program started MixDB with — see `handoff.ts`. The first
        is only ever printed to stderr; the second is answered with an empty form. Both exist so a
        code that does reach the screen one day is a sentence rather than its own key. */
@@ -904,6 +921,18 @@ const dbEn = {
     indexColumnNameRequired: "Every column of an index has to be named.",
     invalidCollation: "{{collation}} is not a collation this server has.",
     unknownIndexKind: "Unknown index kind {{kind}}.",
+    /* SQLite's ALTER TABLE renames a column and nothing else. Everything below is a change that
+       would need the whole table rebuilt around the new definition, which MixDB does not do. */
+    sqliteColumnTypeUnchangeable:
+      "SQLite cannot change the type of {{column}} — only its name. Add a new column and copy the values across.",
+    sqliteColumnNullUnchangeable:
+      "SQLite cannot add or remove NOT NULL on {{column}} — only rename it.",
+    sqliteColumnDefaultUnchangeable:
+      "SQLite cannot change the default of {{column}} — only rename it.",
+    sqliteNoPrimaryKeyAfterwards:
+      "A SQLite primary key is part of the table itself and cannot be added to a table that has none.",
+    sqliteIndexBelongsToConstraint:
+      "{{index}} belongs to a PRIMARY KEY or UNIQUE constraint and cannot be dropped on its own.",
     unknownIndexType: "Unknown index type {{type}}.",
     noVisibleColumns:
       "No columns of {{database}}.{{table}} are visible \u2014 the table may not exist, or your user may have no privileges on it.",
@@ -967,6 +996,9 @@ const dbEn = {
     // Files and the app's own directory
     cannotReadFile: "Cannot read {{path}}: {{message}}",
     cannotWriteFile: "Cannot write {{path}}: {{message}}",
+    sqliteRestoreFailed: "The restore stopped at {{statement}} — {{message}}",
+    sqliteDataDumpUnsupported:
+      "MixDB dumps a SQLite schema, not its rows. Choose Structure, or copy the file itself.",
     cannotRemoveDirectory: "Cannot remove {{path}}: {{message}}",
     noAppDataDir: "There is nowhere for MixDB to keep its own files: {{message}}",
   },

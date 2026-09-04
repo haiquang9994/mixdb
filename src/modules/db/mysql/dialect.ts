@@ -19,4 +19,6 @@ export const mysqlDialect: SqlDialect = {
   isGenerated,
   isServerAssigned,
   isBinary,
+  cancellable: true,
+  regexpFilter: true,
 };

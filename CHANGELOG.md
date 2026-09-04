@@ -42,6 +42,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- SQLite: open a `.db` file — or make a new one — and browse, edit and query it like any other
+  connection.
+
 ### Fixed
 
 - File properties of the Windows app now show the publisher and copyright instead of blanks.

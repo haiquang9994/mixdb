@@ -9,8 +9,8 @@ MixDB is a desktop app built with **Tauri 2 + React 19 + TypeScript** (frontend)
 (backend). It is a **shell** — a tab bar, keyboard shortcuts and a Settings dialog — plus one
 **module** per kind of thing a tab can hold. There are three:
 
-- **`db`** — MySQL, PostgreSQL, MongoDB and Redis connections, optionally through an SSH tunnel,
-  with saved connections remembered.
+- **`db`** — MySQL, PostgreSQL, SQLite, MongoDB and Redis connections, optionally through an SSH
+  tunnel, with saved connections remembered.
 - **`rest`** — an HTTP client: saved requests, environments, history, and a response pane.
 - **`terminal`** — a shell on this machine or on a server over SSH, with saved hosts.
 
@@ -64,6 +64,7 @@ src/                 React frontend
     DbTab.tsx        Connection form -> connects -> renders one workspace
     sql/             The workspace every SQL engine shares, and the SqlApi/SqlDialect behind it
     mysql/ postgres/ What each SQL engine says for itself: api.ts, dialect.ts, columns.ts
+    sqlite/          The third, and the only one with no server behind it
     mongo/ redis/    The two with a workspace of their own: <Kind>Workspace.tsx, api.ts
     components/      This module's own components
     i18n/            This module's own strings

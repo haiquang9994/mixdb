@@ -14,6 +14,10 @@ const MODES: { mode: SqlDumpMode; labelKey: "dump.modeAll" | "dump.modeStructure
 ];
 
 interface Props {
+  /** The modes to offer, in the order they are shown. Defaults to all three; an engine whose dump
+   *  cannot carry rows passes the one it can write, so the choice on screen is a choice that
+   *  works. */
+  modes?: SqlDumpMode[];
   database: string;
   onCancel: () => void;
   /** Given the chosen mode. The file to write to is asked for after this, by the caller. */
@@ -22,9 +26,10 @@ interface Props {
 
 /** What of a MySQL database to write out. Only MySQL asks: a mongodump archive is whole or not
  *  at all. */
-function DumpDialog({ database, onCancel, onSubmit }: Props) {
+function DumpDialog({ database, modes, onCancel, onSubmit }: Props) {
   const { t } = useTranslation();
-  const [mode, setMode] = useState<SqlDumpMode>("all");
+  const offered = modes === undefined ? MODES : MODES.filter((m) => modes.includes(m.mode));
+  const [mode, setMode] = useState<SqlDumpMode>(offered[0]?.mode ?? "all");
 
   return (
     <Modal
@@ -38,7 +43,7 @@ function DumpDialog({ database, onCancel, onSubmit }: Props) {
           <h3 className={styles.title}>{t("dump.dumpTitle", { database })}</h3>
 
           <div className={styles.modes}>
-            {MODES.map((option) => (
+            {offered.map((option) => (
               <label key={option.mode} className={styles.mode}>
                 <input
                   type="radio"

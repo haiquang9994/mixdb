@@ -17,7 +17,7 @@ import type { SqlDumpMode } from "../../sql/api";
 export type DatabaseChange = "restored" | "dropped";
 
 interface Props {
-  kind: "mysql" | "postgres" | "mongo";
+  kind: "mysql" | "postgres" | "mongo" | "sqlite";
   connectionId: string;
   /** The database the three actions act on; empty when none is selected, which disables them. */
   database: string;
@@ -56,9 +56,19 @@ function DatabaseActions({
   const [dropping, setDropping] = useState(false);
   const [running, setRunning] = useState(false);
 
-  /** The command-line tools this kind's dump and restore run through. One suite per kind, named
-   *  the same — see `ToolSuite`. */
-  const suite: ToolSuite = kind;
+  /** The command-line tools this kind's dump and restore run through, or `null` for one that needs
+   *  none. One suite per kind, named the same — see `ToolSuite`.
+   *
+   *  SQLite is the `null`: there is no `sqlitedump` to go and fetch, and the format is simple
+   *  enough that MixDB writes the SQL itself. Everything below that would install or check for
+   *  tools is skipped for it rather than asking about a download that does not exist. */
+  const suite: ToolSuite | null = kind === "sqlite" ? null : kind;
+
+  /** Whether databases are objects on a server that can be created and dropped.
+   *
+   *  False for SQLite, where a database is a file: dropping one is deleting a file, which is the
+   *  operating system's job and not a button in a database tool that has the file open. */
+  const serverDatabases = kind !== "sqlite";
 
   /** The SQL workspace this is rendered in. Every caller sits on a branch `kind` has already
    *  settled, which is what makes the connection certain to be there — see {@link useOptionalSql}. */
@@ -102,6 +112,7 @@ function DatabaseActions({
    * nothing to download, in which case it says where the tools have to come from instead of
    * offering a button that could only fail. */
   async function toolsPresent(pending: Pending): Promise<boolean> {
+    if (suite === null) return true;
     try {
       if (await toolsReady(suite)) return true;
       if (!(await toolsDownloadable(suite))) {
@@ -182,6 +193,7 @@ function DatabaseActions({
   async function install() {
     const pending = installFor;
     setInstallFor(null);
+    if (suite === null) return;
     const ok = await withBusy(t("dump.installing"), () => toolsInstall(suite));
     if (!ok) return;
     if (pending === "dump") await startDump();
@@ -216,20 +228,30 @@ function DatabaseActions({
             disabled: busy,
             onClick: () => void startRestore(),
           },
-          {
-            key: "drop",
-            icon: TrashIcon,
-            label: label("dump.drop"),
-            danger: true,
-            disabled: busy,
-            onClick: () => setDropping(true),
-          },
+          /* Absent rather than disabled where a database is a file: the button would not be
+             "temporarily unavailable", it would be an offer to delete a file, which this is not
+             the tool for. */
+          ...(serverDatabases
+            ? [
+                {
+                  key: "drop",
+                  icon: TrashIcon,
+                  label: label("dump.drop"),
+                  danger: true,
+                  disabled: busy,
+                  onClick: () => setDropping(true),
+                },
+              ]
+            : []),
         ]}
       />
 
       {choosingMode && (
         <DumpDialog
           database={database}
+          /* SQLite's dump carries the schema and not the rows — see `sqlite_dump.rs`. Offered as
+             the one choice rather than as one of three, two of which would be refused. */
+          modes={kind === "sqlite" ? ["structure"] : undefined}
           onCancel={() => setChoosingMode(false)}
           onSubmit={(mode) => void runDump(mode)}
         />

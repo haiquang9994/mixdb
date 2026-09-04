@@ -10,6 +10,7 @@ pub enum DbKind {
     Postgres,
     Mongo,
     Redis,
+    Sqlite,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -29,6 +30,10 @@ pub struct ConnectionConfig {
     /// connection string, which carries host, port, credentials and options in one value —
     /// so `host`/`port`/`username`/`password` are ignored for that kind.
     pub uri: Option<String>,
+    /// SQLite only, and its whole address: the path of the database file on this machine. There is
+    /// no server, so `host`, `port`, `username`, `password`, `ssh` and `use_ssl` are all ignored
+    /// for that kind — the same way `uri` above replaces them for MongoDB.
+    pub path: Option<String>,
     pub ssh: Option<SshConfig>,
     /// MySQL and PostgreSQL. `None`/`Some(true)` tries SSL and falls back to plaintext
     /// if the server doesn't advertise it; `Some(false)` skips SSL entirely
@@ -57,6 +62,8 @@ impl std::fmt::Debug for ConnectionConfig {
                and a parser that is slightly wrong here prints exactly what it was written to
                hide. What is lost is the host, which `host` above already carries. */
             .field("uri", &self.uri.as_ref().map(|_| Redacted))
+            /* Printed in full, unlike `uri`: a file path is a name, not a credential. */
+            .field("path", &self.path)
             .field("ssh", &self.ssh)
             .field("use_ssl", &self.use_ssl)
             .finish()
@@ -148,6 +155,7 @@ mod tests {
             password: Some("hunter2".to_string()),
             database: Some("shop".to_string()),
             uri: Some("mongodb://root:swordfish@db.example/shop".to_string()),
+            path: Some("C:/db/shop.sqlite".to_string()),
             ssh: Some(SshConfig {
                 host: "jump.example".to_string(),
                 port: 22,
