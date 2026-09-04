@@ -62,6 +62,12 @@
   background: var(--hover-bg);
 }
 
+/* Higher specificity than `.frequentRow:hover` (2 classes vs. 1), so a selected row keeps its
+   accent fill on hover instead of being covered by the plain hover background. */
+.frequentRow:has(.item.selected) {
+  background: rgb(var(--accent-rgb) / 0.16);
+}
+
 .frequentRow .item {
   flex: 1 1 auto;
   min-width: 0;
@@ -71,6 +77,14 @@
    darker under the label than under the × — `:not(.selected)` so a selected row keeps its accent
    untouched, same as every other group. */
 .frequentRow .item:not(.selected):hover {
+  background: transparent;
+}
+
+/* The row now paints the accent fill (see `.frequentRow:has` above) — without this, `.item.selected`
+   would still paint its own copy underneath, stacking two tints and leaving a visible seam where the
+   item's background stops short of the × button. */
+.frequentRow .item.selected,
+.frequentRow .item.selected:hover {
   background: transparent;
 }
 

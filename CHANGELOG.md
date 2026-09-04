@@ -55,6 +55,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 ### Fixed
 
 - File properties of the Windows app now show the publisher and copyright instead of blanks.
+- The active tool's highlight in the Frequently used list now reaches the remove button instead of stopping short.
 
 ## [0.0.29] - 2026-09-04
 
