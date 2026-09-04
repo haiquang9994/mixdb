@@ -514,6 +514,266 @@ pub async fn table_data(
     })
 }
 
+/// One column as the Structure tab's column grid shows it — the shape MySQL and PostgreSQL report,
+/// with the fields ClickHouse has nothing to say about left at their empty value rather than
+/// dropped: no `ON UPDATE CURRENT_TIMESTAMP`, no per-column collation to report on a `String`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StructureColumn {
+    pub name: String,
+    pub data_type: String,
+    pub nullable: bool,
+    pub default_value: Option<String>,
+    pub default_is_expression: bool,
+    pub auto_increment: bool,
+    pub on_update_current_timestamp: bool,
+    pub generated: bool,
+    pub collation: Option<String>,
+    pub comment: String,
+    /// `PRI` for a column in the sorting key, empty otherwise — MySQL's letters, since one grid
+    /// draws either. ClickHouse has no `UNI`/`MUL` to report: uniqueness is not a thing an index
+    /// enforces here.
+    pub key: String,
+    pub extra: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexColumn {
+    pub name: Option<String>,
+    pub prefix_length: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableIndex {
+    pub name: String,
+    pub unique: bool,
+    pub primary: bool,
+    pub index_type: String,
+    pub columns: Vec<IndexColumn>,
+    pub comment: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableStructure {
+    pub columns: Vec<StructureColumn>,
+    pub indexes: Vec<TableIndex>,
+}
+
+/// Everything the Structure tab shows about one table.
+///
+/// `indexes` carries at most one entry — the sorting key, shown as an index it is not, the same
+/// way SQLite's rowid is. ClickHouse also has data-skipping indices (`minmax`, `set`,
+/// `bloom_filter`, …), which are real named objects with their own expressions; v1 leaves them out
+/// rather than showing a half-true picture of what they cover, since they index an expression far
+/// more often than a bare column and this app has nowhere to show one yet.
+pub async fn table_structure(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+) -> Result<TableStructure, AppError> {
+    let columns = structure_columns(conn, database, table).await?;
+    let key_columns: Vec<String> = columns
+        .iter()
+        .filter(|c| c.key == "PRI")
+        .map(|c| c.name.clone())
+        .collect();
+    let indexes = if key_columns.is_empty() {
+        Vec::new()
+    } else {
+        vec![TableIndex {
+            name: "sorting_key".to_string(),
+            unique: false,
+            primary: true,
+            index_type: "sorting_key".to_string(),
+            columns: key_columns
+                .into_iter()
+                .map(|name| IndexColumn { name: Some(name), prefix_length: None })
+                .collect(),
+            comment: String::new(),
+        }]
+    };
+    Ok(TableStructure { columns, indexes })
+}
+
+async fn structure_columns(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+) -> Result<Vec<StructureColumn>, AppError> {
+    let result = query_with_params(
+        conn,
+        "SELECT name, type, default_kind, default_expression, comment, is_in_primary_key \
+         FROM system.columns \
+         WHERE database = {database:String} AND table = {table:String} \
+         ORDER BY position",
+        &[
+            ("database".to_string(), database.to_string()),
+            ("table".to_string(), table.to_string()),
+        ],
+    )
+    .await?;
+
+    Ok(result
+        .data
+        .iter()
+        .filter_map(|row| {
+            let name = row.get("name")?.as_str()?.to_string();
+            let data_type = row.get("type")?.as_str()?.to_string();
+            let default_kind = row.get("default_kind").and_then(Value::as_str).unwrap_or("");
+            let default_expression =
+                row.get("default_expression").and_then(Value::as_str).filter(|s| !s.is_empty());
+            let is_primary = row
+                .get("is_in_primary_key")
+                .and_then(truthy)
+                .unwrap_or(false);
+            Some(StructureColumn {
+                nullable: data_type.starts_with("Nullable("),
+                data_type,
+                default_value: default_expression.map(str::to_string),
+                default_is_expression: default_expression.is_some(),
+                auto_increment: false,
+                on_update_current_timestamp: false,
+                // MATERIALIZED and ALIAS columns are computed from the others, the closest
+                // ClickHouse comes to a MySQL/PostgreSQL generated column.
+                generated: default_kind == "MATERIALIZED" || default_kind == "ALIAS",
+                collation: None,
+                comment: row.get("comment").and_then(Value::as_str).unwrap_or("").to_string(),
+                key: if is_primary { "PRI".to_string() } else { String::new() },
+                extra: default_kind.to_string(),
+                name,
+            })
+        })
+        .collect())
+}
+
+/// `FORMAT JSON` writes ClickHouse's `UInt8` booleans as either `0`/`1` or `true`/`false`
+/// depending on how the column arrived (a plain `UInt8` reads as a number; the handful of
+/// genuinely `Bool`-typed system columns read as JSON booleans) — this reads either.
+fn truthy(value: &Value) -> Option<bool> {
+    match value {
+        Value::Bool(b) => Some(*b),
+        Value::Number(n) => n.as_i64().map(|n| n != 0),
+        Value::String(s) => Some(s == "1" || s.eq_ignore_ascii_case("true")),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableStats {
+    pub name: String,
+    pub rows: u64,
+    pub data_size: u64,
+    /// Always 0: ClickHouse stores a MergeTree table's data-skipping indices inline with the data
+    /// parts rather than as separate files with a size of their own to report.
+    pub index_size: u64,
+    pub avg_record_size: u64,
+}
+
+/// What every table in `database` weighs. `total_rows`/`total_bytes` are `NULL` for an engine that
+/// keeps no such count — a `Log` table, a `View` — which reads here as zero rather than as a
+/// missing table.
+pub async fn table_stats(conn: &Connection, database: &str) -> Result<Vec<TableStats>, AppError> {
+    let result = query_with_params(
+        conn,
+        "SELECT name, total_rows, total_bytes FROM system.tables \
+         WHERE database = {database:String} ORDER BY name",
+        &[("database".to_string(), database.to_string())],
+    )
+    .await?;
+
+    Ok(result
+        .data
+        .iter()
+        .filter_map(|row| {
+            let name = row.get("name")?.as_str()?.to_string();
+            let rows = as_u64(row.get("total_rows")).unwrap_or(0);
+            let data_size = as_u64(row.get("total_bytes")).unwrap_or(0);
+            Some(TableStats {
+                name,
+                rows,
+                data_size,
+                index_size: 0,
+                avg_record_size: data_size.checked_div(rows).unwrap_or(0),
+            })
+        })
+        .collect())
+}
+
+/// A number `FORMAT JSON` may have written as a string — see `scalar`'s own note on 64-bit
+/// integers — or left out as JSON `null`, which is what a `NULL` becomes.
+fn as_u64(value: Option<&Value>) -> Option<u64> {
+    match value {
+        Some(Value::String(s)) => s.parse().ok(),
+        Some(Value::Number(n)) => n.as_u64(),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutlineColumn {
+    pub name: String,
+    pub data_type: String,
+    pub nullable: bool,
+    pub key: String,
+    /// Always `None`: ClickHouse has no foreign keys to report.
+    pub references: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutlineTable {
+    pub name: String,
+    pub columns: Vec<OutlineColumn>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaOutline {
+    pub database: String,
+    pub tables: Vec<OutlineTable>,
+}
+
+/// What the Query tab's completion knows about `database`: every table and column of it, in one
+/// read.
+pub async fn schema_outline(conn: &Connection, database: &str) -> Result<SchemaOutline, AppError> {
+    let result = query_with_params(
+        conn,
+        "SELECT table, name, type, is_in_primary_key FROM system.columns \
+         WHERE database = {database:String} ORDER BY table, position",
+        &[("database".to_string(), database.to_string())],
+    )
+    .await?;
+
+    let mut tables: Vec<OutlineTable> = Vec::new();
+    for row in &result.data {
+        let (Some(table), Some(name), Some(data_type)) = (
+            row.get("table").and_then(Value::as_str),
+            row.get("name").and_then(Value::as_str),
+            row.get("type").and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        let is_primary = row.get("is_in_primary_key").and_then(truthy).unwrap_or(false);
+        let column = OutlineColumn {
+            name: name.to_string(),
+            nullable: data_type.starts_with("Nullable("),
+            data_type: data_type.to_string(),
+            key: if is_primary { "PRI".to_string() } else { String::new() },
+            references: None,
+        };
+        match tables.last_mut() {
+            Some(last) if last.name == table => last.columns.push(column),
+            _ => tables.push(OutlineTable { name: table.to_string(), columns: vec![column] }),
+        }
+    }
+    Ok(SchemaOutline { database: database.to_string(), tables })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{build_where, is_decodable, quote_ident, Filter, QueryResult};

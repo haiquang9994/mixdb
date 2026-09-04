@@ -44,3 +44,34 @@ pub async fn clickhouse_table_data(
     let conn = clickhouse_connection(&state, &id).await?;
     clickhouse::table_data(&conn, &database, &table, &query).await
 }
+
+#[tauri::command]
+pub async fn clickhouse_table_structure(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+) -> Result<clickhouse::TableStructure, AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse::table_structure(&conn, &database, &table).await
+}
+
+#[tauri::command]
+pub async fn clickhouse_table_stats(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+) -> Result<Vec<clickhouse::TableStats>, AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse::table_stats(&conn, &database).await
+}
+
+#[tauri::command]
+pub async fn clickhouse_schema_outline(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+) -> Result<clickhouse::SchemaOutline, AppError> {
+    let conn = clickhouse_connection(&state, &id).await?;
+    clickhouse::schema_outline(&conn, &database).await
+}
