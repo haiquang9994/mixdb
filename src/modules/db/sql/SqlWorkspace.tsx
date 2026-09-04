@@ -75,6 +75,12 @@ interface Props {
    */
   schemaReadOnly?: boolean;
   /**
+   * The database as a whole may be dumped and restored — `DatabaseActions`' Dump/Restore buttons
+   * specifically. Independent of `readOnly`: an engine can have this open while the Query tab stays
+   * closed (ClickHouse).
+   */
+  dumpRestoreReadOnly?: boolean;
+  /**
    * The Data tab's grid specifically: rows do not open for editing, and "Add row"/"Delete" are
    * closed. Independent of `readOnly` — an engine can have this open while `readOnly` stays true
    * (ClickHouse: row writes shipped before its DDL did).
@@ -134,6 +140,7 @@ function SqlWorkspace({
   readOnly = false,
   schemaReadOnly = false,
   dataReadOnly = false,
+  dumpRestoreReadOnly = false,
   dmlEvenIfReadOnly = false,
   profileId = "",
 }: Props) {
@@ -684,15 +691,16 @@ function SqlWorkspace({
             {/* The database as a whole, kept at the far end: these act on everything the list
                 above is showing rather than on anything in it. */}
             {/* Dump, restore and drop. Dump only reads, but restore is here too and both go
-                through `disabled` — closing the pair together is the right way round: a read-only
-                connection losing its dump button is a nuisance, and keeping its restore button is
-                the thing the flag was set to prevent. Drop takes `schemaDisabled` instead, since an
-                engine can have its schema open while having no dump tool at all (ClickHouse). */}
+                through `disabled` (fed by `dumpRestoreReadOnly`) — closing the pair together is the
+                right way round: a read-only connection losing its dump button is a nuisance, and
+                keeping its restore button is the thing the flag was set to prevent. Drop takes
+                `schemaDisabled` instead, since an engine can have its schema open while dump/
+                restore is closed, or vice versa. */}
             <DatabaseActions
               kind={dialect.kind}
               connectionId={connectionId}
               database={selectedDb}
-              disabled={tablesLoading || readOnly}
+              disabled={tablesLoading || dumpRestoreReadOnly}
               schemaDisabled={tablesLoading || schemaReadOnly}
               onError={setLocalError}
               onChanged={databaseChanged}
