@@ -1005,6 +1005,12 @@ const dbEn = {
       "A SQLite primary key is part of the table itself and cannot be added to a table that has none.",
     sqliteIndexBelongsToConstraint:
       "{{index}} belongs to a PRIMARY KEY or UNIQUE constraint and cannot be dropped on its own.",
+    sqliteColumnInTableConstraint:
+      "{{column}} is part of a table-level constraint (a composite key, a UNIQUE, a CHECK or a FOREIGN KEY) — rewriting those is not supported yet.",
+    sqliteColumnGenerated:
+      "{{column}} is a generated column — its value comes from its expression, not from an edit.",
+    sqliteColumnIsPrimaryKey:
+      "{{column}} is the table's own rowid, aliased as an INTEGER PRIMARY KEY, and cannot be changed.",
     unknownIndexType: "Unknown index type {{type}}.",
     noVisibleColumns:
       "No columns of {{database}}.{{table}} are visible \u2014 the table may not exist, or your user may have no privileges on it.",

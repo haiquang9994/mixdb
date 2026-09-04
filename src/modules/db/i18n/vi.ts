@@ -981,6 +981,12 @@ const dbVi: DbDict = {
       "Primary key của SQLite là một phần của chính bảng, không thêm được vào bảng đã tạo mà chưa có.",
     sqliteIndexBelongsToConstraint:
       "{{index}} thuộc về một ràng buộc PRIMARY KEY hoặc UNIQUE, không xóa riêng được.",
+    sqliteColumnInTableConstraint:
+      "{{column}} là một phần của ràng buộc cấp bảng (khoá ghép, UNIQUE, CHECK hay FOREIGN KEY) — viết lại những thứ đó chưa được hỗ trợ.",
+    sqliteColumnGenerated:
+      "{{column}} là cột generated — giá trị của nó đến từ biểu thức, không phải từ việc sửa.",
+    sqliteColumnIsPrimaryKey:
+      "{{column}} chính là rowid của bảng, được đặt bí danh INTEGER PRIMARY KEY, không đổi được.",
     unknownIndexType: "Kiểu index {{type}} không hợp lệ.",
     noVisibleColumns:
       "Không thấy cột nào của {{database}}.{{table}} — có thể bảng không tồn tại, hoặc tài khoản của bạn không có quyền trên bảng đó.",

@@ -625,6 +625,43 @@ async fn drop_index_sql(pool: &SqlitePool, name: &str) -> Result<String, AppErro
     Ok(format!("DROP INDEX {}", quote_ident(name)))
 }
 
+/// Refuses a rebuild up front when `column` is named inside a table-level constraint clause
+/// (`PRIMARY KEY (...)`, `UNIQUE (...)`, `FOREIGN KEY (...)`, ...) — rewriting those is out of
+/// scope (B3/B6 of the design spec).
+fn rebuild_blockers(clauses: &[String], column: &str) -> Result<(), AppError> {
+    for clause in clauses {
+        if is_table_constraint(clause) && clause_mentions_column(clause, column) {
+            return Err(err!("error.sqliteColumnInTableConstraint", column = column));
+        }
+    }
+    Ok(())
+}
+
+/// Whether `column` is a generated column (`hidden` 2 or 3) or the `INTEGER PRIMARY KEY` rowid
+/// alias — the same `hidden`/`pk` reading `sqlite_structure.rs::structure_columns` does, narrowed
+/// to one column (B6 of the design spec).
+async fn generated_or_rowid_alias(
+    pool: &SqlitePool,
+    table: &str,
+    column: &str,
+) -> Result<(bool, bool), AppError> {
+    let rows = sqlx::query("select name, type, pk, hidden from pragma_table_xinfo(?)")
+        .bind(table)
+        .fetch_all(pool)
+        .await
+        .map_err(map_error)?;
+    let key_count = rows.iter().filter(|r| r.get::<i64, _>("pk") > 0).count();
+    let Some(row) = rows.iter().find(|r| r.get::<String, _>("name") == column) else {
+        return Ok((false, false));
+    };
+    let hidden = row.get::<i64, _>("hidden");
+    let generated = hidden == 2 || hidden == 3;
+    let pk = row.get::<i64, _>("pk");
+    let data_type = row.get::<String, _>("type");
+    let rowid_alias = key_count == 1 && pk == 1 && data_type.eq_ignore_ascii_case("integer");
+    Ok((generated, rowid_alias))
+}
+
 /// Placeholder for the 12-step rebuild — replaced with the real implementation in Task 11 of the
 /// implementation plan. Kept here only so `modify_column`'s new branch compiles and this task's
 /// own tests can run in isolation.
@@ -964,5 +1001,57 @@ mod tests {
         let (_fixture, pool) = Fixture::open().await;
         let current = current_column(&pool, "author", "bio").await.unwrap();
         assert_eq!(current.collation, None);
+    }
+
+    #[test]
+    fn rebuild_blockers_refuses_a_column_named_in_a_table_constraint() {
+        let (clauses, _) = split_column_clauses(
+            "CREATE TABLE t (id INTEGER, label TEXT, PRIMARY KEY (id, label))",
+        )
+        .unwrap();
+        let error = rebuild_blockers(&clauses, "label").expect_err("should refuse");
+        assert_eq!(error.code, "error.sqliteColumnInTableConstraint");
+    }
+
+    #[test]
+    fn rebuild_blockers_allows_a_column_outside_any_table_constraint() {
+        let (clauses, _) =
+            split_column_clauses("CREATE TABLE t (id INTEGER, label TEXT, note TEXT)").unwrap();
+        rebuild_blockers(&clauses, "note").unwrap();
+    }
+
+    #[tokio::test]
+    async fn generated_or_rowid_alias_flags_a_generated_column() {
+        let (_fixture, pool) = Fixture::open().await;
+        let (generated, rowid) = generated_or_rowid_alias(&pool, "post", "slug").await.unwrap();
+        assert!(generated);
+        assert!(!rowid);
+    }
+
+    #[tokio::test]
+    async fn generated_or_rowid_alias_flags_the_rowid_alias() {
+        let (_fixture, pool) = Fixture::open().await;
+        let (generated, rowid) = generated_or_rowid_alias(&pool, "author", "id").await.unwrap();
+        assert!(!generated);
+        assert!(rowid);
+    }
+
+    #[tokio::test]
+    async fn a_two_column_primary_key_is_not_a_rowid_alias() {
+        let (_fixture, pool) = Fixture::open().await;
+        // `tag.id` is declared INTEGER and leads the key, but the key is two columns — the exact
+        // shape that is *not* a rowid alias (same fixture note `sqlite_structure.rs` already
+        // relies on).
+        let (generated, rowid) = generated_or_rowid_alias(&pool, "tag", "id").await.unwrap();
+        assert!(!generated);
+        assert!(!rowid);
+    }
+
+    #[tokio::test]
+    async fn generated_or_rowid_alias_flags_neither_for_a_plain_column() {
+        let (_fixture, pool) = Fixture::open().await;
+        let (generated, rowid) = generated_or_rowid_alias(&pool, "author", "name").await.unwrap();
+        assert!(!generated);
+        assert!(!rowid);
     }
 }
