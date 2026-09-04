@@ -644,8 +644,11 @@ function QueryEditor({
         {/* Beside the target, because it is part of the same sentence: which server, and what may
             be done to it. */}
         {readOnly && (
-          <span className={styles.readOnly} title={t("common.readOnlyConnection")}>
-            {t("query.readOnly")}
+          <span
+            className={styles.readOnly}
+            title={t(dmlEvenIfReadOnly ? "query.ddlOnlyReadOnlyHint" : "common.readOnlyConnection")}
+          >
+            {t(dmlEvenIfReadOnly ? "query.ddlOnlyReadOnly" : "query.readOnly")}
           </span>
         )}
         {database ? (

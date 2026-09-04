@@ -46,9 +46,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 - SQLite: open a `.db` file — or make a new one — and browse, edit and query it like any other
   connection.
-- ClickHouse: the Data tab's grid can insert, update and delete rows, and the Structure tab can
-  create, rename and drop tables and databases and add, change and remove columns. Still no
-  dump/restore, no indexes, and the Query tab still only reads.
+- ClickHouse: the Data tab's grid can insert, update and delete rows, the Structure tab can create,
+  rename and drop tables, databases and columns and manage data skipping indexes and the sorting
+  key, and the Query tab now takes `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` by hand. Still no
+  dump/restore.
 
 ### Fixed
 
