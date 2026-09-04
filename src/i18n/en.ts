@@ -89,6 +89,7 @@ const en = {
     privacyPolicy: "Privacy policy",
     privacyHint:
       "MixDB collects nothing about you and has no server of its own. What it keeps, it keeps on this machine.",
+    openLogFolder: "Open log folder",
   },
   // The Ctrl/Cmd chords the app answers, as Settings lists them. A module's own chords are named in
   // that module's dictionary, beside the rest of its words — see `src/i18n/dicts.ts`, which will
@@ -172,6 +173,14 @@ const en = {
     clipboard: "Nothing was copied — the clipboard refused: {{message}}",
     /** An error shape MixDB doesn't recognise \u2014 shown as-is rather than swallowed. */
     unknown: "{{message}}",
+    /** The Error Boundary around one tab \u2014 the rest of the app (other tabs, the update check) is
+     *  still alive. */
+    crashedTab: "This tab hit a bug and could not go on. The rest of MixDB is unaffected.",
+    /** The outermost Error Boundary \u2014 the whole App failed to render. No "Try again": there is
+     *  nothing left to try it into, only a restart. */
+    crashedApp: "MixDB hit a bug it could not recover from.",
+    tryAgain: "Try again",
+    restartApp: "Restart MixDB",
   },
 };
 

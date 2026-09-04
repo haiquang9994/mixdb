@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useLayoutEffect, useState } from "react";
 import LoadingOverlay from "../components/LoadingOverlay";
+import ErrorBoundary from "../components/ErrorBoundary";
 import GlassFilter from "./components/GlassFilter";
 import SettingsModal from "./components/SettingsModal";
 import UpdateToast from "./components/UpdateToast";
@@ -299,16 +300,22 @@ function App() {
             >
               {/* Each module's workspace arrives on first use — see the note beside its `Tab`.
                   One boundary per tab and not one around the list: a tab still loading must not
-                  take the panes beside it off screen while it does. */}
-              <Suspense fallback={<LoadingOverlay />}>
-                <Tab
-                  active={tab.id === activeId}
-                  onTitleChange={(title) => renameTab(tab.id, title)}
-                  onBadgesChange={(badges) => setTabBadges(tab.id, badges)}
-                  restored={tab.state}
-                  onStateChange={(state) => setTabState(tab.id, state)}
-                />
-              </Suspense>
+                  take the panes beside it off screen while it does. The Error Boundary follows
+                  the same rule, and for the same reason: a tab that crashes must not take the
+                  panes beside it, the tab strip, or useUpdateCheck (living in App, outside every
+                  boundary) down with it. Keyed on tab.id so closing a crashed tab and opening a
+                  new one is a fresh boundary, not the old one still remembering the error. */}
+              <ErrorBoundary key={tab.id}>
+                <Suspense fallback={<LoadingOverlay />}>
+                  <Tab
+                    active={tab.id === activeId}
+                    onTitleChange={(title) => renameTab(tab.id, title)}
+                    onBadgesChange={(badges) => setTabBadges(tab.id, badges)}
+                    restored={tab.state}
+                    onStateChange={(state) => setTabState(tab.id, state)}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           );
         })}

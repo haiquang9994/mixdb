@@ -51,6 +51,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
   rename and drop tables, databases and columns and manage data skipping indexes and the sorting
   key, the Query tab now takes `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` by hand, and Dump/Restore works
   like the other engines.
+- MixDB now keeps a local error log and shows a recovery screen instead of a blank window when
+  something goes wrong; open the log folder from Settings → Updates.
 
 ### Fixed
 
