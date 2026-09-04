@@ -5,6 +5,8 @@ import ActionBar from "../../../../components/ActionBar";
 import ColumnDialog from "../ColumnDialog";
 import ConfirmDialog from "../../../../components/ConfirmDialog";
 import IndexDialog, { indexKind } from "../IndexDialog";
+import SkipIndexDialog from "../SkipIndexDialog";
+import OrderByDialog from "../OrderByDialog";
 import Input from "../../../../components/Input";
 import LoadingOverlay from "../../../../components/LoadingOverlay";
 import { PencilIcon, PlusIcon, ReloadIcon, TrashIcon } from "../../../../icons";
@@ -17,6 +19,8 @@ import type {
   SqlCollation,
   SqlColumnSpec,
   SqlIndexSpec,
+  SqlSkipIndex,
+  SqlSkipIndexSpec,
   SqlStructureColumn,
   SqlTableIndex,
   SqlTableStructure,
@@ -70,11 +74,27 @@ const VIRTUAL_FROM = 60;
  *  line, 4px of padding above and below, and the 1px rule. Was 33px on a 24px line. */
 const ROW_HEIGHT = 29;
 
+/** The engines a sorting-key rebuild is allowed to run on — the same four
+ *  `clickhouse_ddl::ENGINES` already whitelists for creating a new table (D2 of the main ClickHouse
+ *  DDL design doc). `EXCHANGE TABLES`/`CREATE`/`DROP` with no `ON CLUSTER` only ever reach one
+ *  replica of a `Replicated*` engine, which this has never been verified against — see the index DDL
+ *  design doc's D11. */
+const CLICKHOUSE_REBUILD_ENGINES = [
+  "MergeTree",
+  "ReplacingMergeTree",
+  "SummingMergeTree",
+  "AggregatingMergeTree",
+];
+
 /** Which dialog is open and on what: an entry with nothing in it is the "add" form. */
 type ColumnDialogState = { column?: SqlStructureColumn };
 type IndexDialogState = { index?: SqlTableIndex };
+type SkipIndexDialogState = { index?: SqlSkipIndex };
 /** What the confirmation is about to drop. */
-type PendingDrop = { kind: "column"; name: string } | { kind: "index"; name: string };
+type PendingDrop =
+  | { kind: "column"; name: string }
+  | { kind: "index"; name: string }
+  | { kind: "skipIndex"; name: string };
 
 /** One table's shape as it was last read, and which shape of the database it was read from — see
  * {@link Props.schemaToken}. */
@@ -154,7 +174,8 @@ function TableStructure({
 }: Props) {
   const { t } = useTranslation();
   const api = useSqlApi();
-  const { editing: offers } = useSqlDialect();
+  const dialect = useSqlDialect();
+  const offers = dialect.editing;
   /** Bumped whenever the cache is written to or dropped, since a Map is the same object either way
    *  and nothing would re-render off it on its own. Only the setter is ever read: the count says
    *  nothing, it only says that the cache is worth looking at again. */
@@ -163,6 +184,9 @@ function TableStructure({
   const [saving, setSaving] = useState(false);
   const [columnDialog, setColumnDialog] = useState<ColumnDialogState | null>(null);
   const [indexDialog, setIndexDialog] = useState<IndexDialogState | null>(null);
+  const [skipIndexDialog, setSkipIndexDialog] = useState<SkipIndexDialogState | null>(null);
+  const [orderByDialogOpen, setOrderByDialogOpen] = useState(false);
+  const [orderByRowCount, setOrderByRowCount] = useState<number | null>(null);
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null);
   const [collations, setCollations] = useState<SqlCollation[]>([]);
   /** What the columns grid is narrowed to, as typed. A wide table is the one nobody can read down,
@@ -230,7 +254,28 @@ function TableStructure({
 
   const columns = structure?.columns ?? [];
   const indexes = structure?.indexes ?? [];
+  const skipIndexes = structure?.skipIndexes ?? [];
+  const engine = structure?.engine ?? null;
   const busy = loading || saving;
+
+  // Read only while the dialog asking about it is open — the same reason the collations list above
+  // is read once and not on every render, but this one is per-table rather than per-connection, so
+  // it is keyed on the dialog being open rather than on mount.
+  useEffect(() => {
+    if (!orderByDialogOpen) return;
+    let cancelled = false;
+    api
+      .rowCount(connectionId, selectedDb, selectedTable)
+      .then((n) => {
+        if (!cancelled) setOrderByRowCount(n);
+      })
+      .catch(() => {
+        if (!cancelled) setOrderByRowCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orderByDialogOpen, api, connectionId, selectedDb, selectedTable]);
 
   // Emptied whenever another table is put on screen: a filter left over from the last one would
   // hide most of this table's columns while reading as if the table simply had that few.
@@ -396,16 +441,52 @@ function TableStructure({
     setIndexDialog(null);
   }
 
+  async function submitSkipIndex(spec: SqlSkipIndexSpec) {
+    const original = skipIndexDialog?.index;
+    await apply(() =>
+      original
+        ? api.modifySkipIndex(connectionId, selectedDb, selectedTable, original.name, spec)
+        : api.addSkipIndex(connectionId, selectedDb, selectedTable, spec),
+    );
+    setSkipIndexDialog(null);
+  }
+
+  // Deliberately not routed through `apply`: a successful rebuild that left a temp table behind is
+  // not a failure (see `rebuildOrderBy`'s own doc), so this needs to tell that case apart from a
+  // real rejection rather than let `apply` treat both the same way.
+  async function submitOrderBy(columnsChosen: string[]) {
+    setSaving(true);
+    try {
+      const leftover = await api.rebuildOrderBy(
+        connectionId,
+        selectedDb,
+        selectedTable,
+        columnsChosen,
+      );
+      onSchemaChanged();
+      setOrderByDialogOpen(false);
+      if (leftover !== null) {
+        onError(t("orderByDialog.leftoverWarning", { table: leftover }));
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function confirmDrop() {
     const target = pendingDrop;
     setPendingDrop(null);
     if (!target) return;
     try {
-      await apply(() =>
-        target.kind === "column"
-          ? api.dropColumn(connectionId, selectedDb, selectedTable, target.name)
-          : api.dropIndex(connectionId, selectedDb, selectedTable, target.name),
-      );
+      await apply(() => {
+        if (target.kind === "column") {
+          return api.dropColumn(connectionId, selectedDb, selectedTable, target.name);
+        }
+        if (target.kind === "skipIndex") {
+          return api.dropSkipIndex(connectionId, selectedDb, selectedTable, target.name);
+        }
+        return api.dropIndex(connectionId, selectedDb, selectedTable, target.name);
+      });
     } catch (e) {
       onError(errorMessage(t, e));
     }
@@ -690,7 +771,7 @@ function TableStructure({
                 key: "add",
                 icon: PlusIcon,
                 label: t("structure.addIndex"),
-                disabled: noWrites || columns.length === 0,
+                disabled: noWrites || columns.length === 0 || offers.indexKinds.length === 0,
                 disabledHint: noWritesHint,
                 onClick: () => setIndexDialog({}),
               },
@@ -786,6 +867,9 @@ function TableStructure({
               )}
               {indexes.slice(indexView.first, indexView.last).map((index) => {
                 const functional = isFunctional(index);
+                const isSortingKey =
+                  dialect.kind === "clickhouse" && index.indexType === "sorting_key";
+                const engineAllowed = CLICKHOUSE_REBUILD_ENGINES.includes(engine ?? "");
                 return (
                   <tr key={index.name}>
                     <td>
@@ -819,21 +903,27 @@ function TableStructure({
                         <button
                           type="button"
                           className={styles.iconButton}
-                          disabled={noWrites || functional}
+                          disabled={
+                            noWrites || functional || (isSortingKey && !engineAllowed)
+                          }
                           title={
                             functional
                               ? t("structure.functionalIndexTooltip")
-                              : (noWritesHint ?? t("structure.editIndex"))
+                              : isSortingKey && !engineAllowed
+                                ? t("structure.rebuildEngineNotAllowed", { engine: engine ?? "" })
+                                : (noWritesHint ?? t("structure.editIndex"))
                           }
                           aria-label={t("structure.editIndex")}
-                          onClick={() => setIndexDialog({ index })}
+                          onClick={() =>
+                            isSortingKey ? setOrderByDialogOpen(true) : setIndexDialog({ index })
+                          }
                         >
                           <PencilIcon size={14} />
                         </button>
                         <button
                           type="button"
                           className={`${styles.iconButton} ${styles.danger}`}
-                          disabled={noWrites}
+                          disabled={noWrites || isSortingKey}
                           title={noWritesHint ?? t("structure.dropIndex")}
                           aria-label={t("structure.dropIndex")}
                           onClick={() => setPendingDrop({ kind: "index", name: index.name })}
@@ -860,6 +950,84 @@ function TableStructure({
         </div>
       </section>
 
+      {dialect.kind === "clickhouse" && (
+        <section className={styles.panel}>
+          <header className={styles.panelHeader}>
+            <h4 className={styles.panelTitle}>{t("structure.skipIndexesTitle")}</h4>
+            <ActionBar
+              actions={[
+                {
+                  key: "add",
+                  icon: PlusIcon,
+                  label: t("structure.addSkipIndex"),
+                  disabled: noWrites,
+                  disabledHint: noWritesHint,
+                  onClick: () => setSkipIndexDialog({}),
+                },
+              ]}
+            />
+          </header>
+          <div className={styles.gridWrap}>
+            <table className={styles.grid}>
+              <thead>
+                <tr>
+                  <th>{t("structure.skipIndexName")}</th>
+                  <th>{t("structure.skipIndexExpr")}</th>
+                  <th>{t("structure.skipIndexType")}</th>
+                  <th>{t("structure.skipIndexGranularity")}</th>
+                  <th className={styles.rowActions} />
+                </tr>
+              </thead>
+              <tbody>
+                {skipIndexes.map((index) => (
+                  <tr key={index.name}>
+                    <td>
+                      <span className={styles.name}>{index.name}</span>
+                    </td>
+                    <td className={styles.mono}>{index.expr}</td>
+                    <td className={styles.mono}>
+                      {index.args.length === 0
+                        ? index.indexType
+                        : `${index.indexType}(${index.args.join(", ")})`}
+                    </td>
+                    <td className={styles.muted}>{index.granularity}</td>
+                    <td className={styles.rowActions}>
+                      <div className={styles.rowButtons}>
+                        <button
+                          type="button"
+                          className={styles.iconButton}
+                          disabled={noWrites}
+                          title={noWritesHint ?? t("structure.editIndex")}
+                          aria-label={t("structure.editIndex")}
+                          onClick={() => setSkipIndexDialog({ index })}
+                        >
+                          <PencilIcon size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className={`${styles.iconButton} ${styles.danger}`}
+                          disabled={noWrites}
+                          title={noWritesHint ?? t("structure.dropIndex")}
+                          aria-label={t("structure.dropIndex")}
+                          onClick={() =>
+                            setPendingDrop({ kind: "skipIndex", name: index.name })
+                          }
+                        >
+                          <TrashIcon size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!loading && skipIndexes.length === 0 && (
+              <p className="muted">{t("structure.noSkipIndexes")}</p>
+            )}
+          </div>
+        </section>
+      )}
+
       {(loading || saving) && (
         <LoadingOverlay label={saving ? t("structure.saving") : t("structure.loading")} />
       )}
@@ -885,15 +1053,46 @@ function TableStructure({
         />
       )}
 
+      {skipIndexDialog !== null && (
+        <SkipIndexDialog
+          table={selectedTable}
+          index={skipIndexDialog.index}
+          onCancel={() => setSkipIndexDialog(null)}
+          onSubmit={submitSkipIndex}
+        />
+      )}
+
+      {orderByDialogOpen && (
+        <OrderByDialog
+          table={selectedTable}
+          columns={columns.map((c) => c.name)}
+          current={
+            indexes
+              .find((i) => i.indexType === "sorting_key")
+              ?.columns.map((c) => c.name ?? "")
+              .filter((n) => n !== "") ?? []
+          }
+          rowCount={orderByRowCount}
+          onCancel={() => setOrderByDialogOpen(false)}
+          onSubmit={submitOrderBy}
+        />
+      )}
+
       {pendingDrop !== null && (
         <ConfirmDialog
           title={t(
-            pendingDrop.kind === "column" ? "structure.dropColumnTitle" : "structure.dropIndexTitle",
+            pendingDrop.kind === "column"
+              ? "structure.dropColumnTitle"
+              : pendingDrop.kind === "skipIndex"
+                ? "structure.dropSkipIndexTitle"
+                : "structure.dropIndexTitle",
           )}
           message={
             pendingDrop.kind === "column"
               ? t("structure.dropColumnMessage", { column: pendingDrop.name })
-              : t("structure.dropIndexMessage", { index: pendingDrop.name })
+              : pendingDrop.kind === "skipIndex"
+                ? t("structure.dropSkipIndexMessage", { index: pendingDrop.name })
+                : t("structure.dropIndexMessage", { index: pendingDrop.name })
           }
           confirmLabel={t("common.delete")}
           danger
