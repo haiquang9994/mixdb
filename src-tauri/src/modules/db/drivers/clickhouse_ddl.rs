@@ -243,6 +243,122 @@ pub async fn drop_column(
     execute_check(conn, &sql, None).await
 }
 
+/// What a data skipping index is declared as — the write-side counterpart of
+/// `clickhouse::SkipIndex`. See the ClickHouse index DDL design doc's D2/D3.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkipIndexSpec {
+    pub name: String,
+    pub expr: String,
+    pub index_type: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub granularity: u64,
+}
+
+/// `TYPE name(args) GRANULARITY n`, or `TYPE name GRANULARITY n` when the type takes none —
+/// `GRANULARITY` is not required by the server (it defaults to `1` when omitted, checked against the
+/// test server), but is always written here so the dialog and the server never disagree about the
+/// default.
+fn skip_index_type_clause(spec: &SkipIndexSpec) -> String {
+    if spec.args.is_empty() {
+        format!("TYPE {} GRANULARITY {}", spec.index_type, spec.granularity)
+    } else {
+        format!(
+            "TYPE {}({}) GRANULARITY {}",
+            spec.index_type,
+            spec.args.join(", "),
+            spec.granularity
+        )
+    }
+}
+
+/// `expr` is spliced in verbatim rather than quoted as an identifier or a literal: it is an
+/// expression (`lower(note)` is as common a case as a bare column name), and there is no single
+/// quoting rule that would be right for both.
+pub fn add_skip_index_statement(
+    database: &str,
+    table: &str,
+    spec: &SkipIndexSpec,
+) -> Result<String, AppError> {
+    let name = spec.name.trim();
+    if name.is_empty() {
+        return Err(err!("error.indexNameRequired"));
+    }
+    let expr = spec.expr.trim();
+    if expr.is_empty() {
+        return Err(err!("error.clickhouseSkipIndexExprRequired"));
+    }
+    Ok(format!(
+        "ALTER TABLE {} ADD INDEX {} {expr} {}",
+        qualified(database, table),
+        quote_ident(name),
+        skip_index_type_clause(spec)
+    ))
+}
+
+pub async fn add_skip_index(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    spec: &SkipIndexSpec,
+) -> Result<(), AppError> {
+    execute_check(conn, &add_skip_index_statement(database, table, spec)?, None).await
+}
+
+pub async fn drop_skip_index(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    name: &str,
+) -> Result<(), AppError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(err!("error.indexNameRequired"));
+    }
+    let sql = format!(
+        "ALTER TABLE {} DROP INDEX {}",
+        qualified(database, table),
+        quote_ident(name)
+    );
+    execute_check(conn, &sql, None).await
+}
+
+/// `MODIFY INDEX ... TYPE ...` is a syntax error on ClickHouse (checked against the test server) —
+/// an edit is a drop and a re-add, the same shape MySQL's index dialog already documents.
+pub(super) fn modify_skip_index_statements(
+    database: &str,
+    table: &str,
+    old_name: &str,
+    spec: &SkipIndexSpec,
+) -> Result<Vec<String>, AppError> {
+    let old_name = old_name.trim();
+    if old_name.is_empty() {
+        return Err(err!("error.indexNameRequired"));
+    }
+    Ok(vec![
+        format!(
+            "ALTER TABLE {} DROP INDEX {}",
+            qualified(database, table),
+            quote_ident(old_name)
+        ),
+        add_skip_index_statement(database, table, spec)?,
+    ])
+}
+
+pub async fn modify_skip_index(
+    conn: &Connection,
+    database: &str,
+    table: &str,
+    old_name: &str,
+    spec: &SkipIndexSpec,
+) -> Result<(), AppError> {
+    for statement in modify_skip_index_statements(database, table, old_name, spec)? {
+        execute_check(conn, &statement, None).await?;
+    }
+    Ok(())
+}
+
 /// The statements that bring column `current` to what `spec` describes - none at all when nothing
 /// differs.
 ///
@@ -343,6 +459,79 @@ pub async fn modify_column(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn skip_spec(
+        name: &str,
+        expr: &str,
+        index_type: &str,
+        args: &[&str],
+        granularity: u64,
+    ) -> SkipIndexSpec {
+        SkipIndexSpec {
+            name: name.to_string(),
+            expr: expr.to_string(),
+            index_type: index_type.to_string(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+            granularity,
+        }
+    }
+
+    #[test]
+    fn a_type_with_no_arguments_is_written_bare() {
+        assert_eq!(
+            add_skip_index_statement("shop", "orders", &skip_spec("ix1", "total", "minmax", &[], 1))
+                .unwrap(),
+            "ALTER TABLE `shop`.`orders` ADD INDEX `ix1` total TYPE minmax GRANULARITY 1"
+        );
+    }
+
+    #[test]
+    fn a_type_with_arguments_writes_them_in_order() {
+        assert_eq!(
+            add_skip_index_statement(
+                "shop",
+                "orders",
+                &skip_spec("ix1", "note", "ngrambf_v1", &["3", "256", "2", "0"], 4)
+            )
+            .unwrap(),
+            "ALTER TABLE `shop`.`orders` ADD INDEX `ix1` note TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4"
+        );
+    }
+
+    #[test]
+    fn an_index_needs_a_name() {
+        assert_eq!(
+            add_skip_index_statement("shop", "orders", &skip_spec("  ", "total", "minmax", &[], 1))
+                .unwrap_err(),
+            err!("error.indexNameRequired")
+        );
+    }
+
+    #[test]
+    fn an_index_needs_an_expression() {
+        assert_eq!(
+            add_skip_index_statement("shop", "orders", &skip_spec("ix1", "  ", "minmax", &[], 1))
+                .unwrap_err(),
+            err!("error.clickhouseSkipIndexExprRequired")
+        );
+    }
+
+    #[test]
+    fn modifying_sends_the_drop_before_the_add() {
+        assert_eq!(
+            modify_skip_index_statements(
+                "shop",
+                "orders",
+                "ix1",
+                &skip_spec("ix1", "total", "set", &["100"], 2)
+            )
+            .unwrap(),
+            vec![
+                "ALTER TABLE `shop`.`orders` DROP INDEX `ix1`",
+                "ALTER TABLE `shop`.`orders` ADD INDEX `ix1` total TYPE set(100) GRANULARITY 2",
+            ]
+        );
+    }
 
     #[test]
     fn a_quoted_string_is_a_literal_and_loses_its_quotes() {
