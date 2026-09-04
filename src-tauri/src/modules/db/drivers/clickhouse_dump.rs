@@ -138,9 +138,53 @@ pub(super) fn strip_database_qualifiers(sql: &str, database: &str) -> String {
     out
 }
 
+/// Table engines whose data a dump never exports (D9): either they carry no storage of their own
+/// (`View`, `MaterializedView` — its rows live in a hidden `.inner_id` table this app does not
+/// reach), or exporting through them has a side effect or is meaningless as a backup
+/// (`Kafka`/`RabbitMQ`/`NATS`/`FileLog` consume a queue by reading it; `Distributed`/`MySQL`/
+/// `PostgreSQL`/`S3`/`URL`/`HDFS`/`ODBC`/`JDBC`/`ExternalDistributed` proxy data that lives
+/// somewhere else entirely). Structure is still dumped for all of these — see `dump_structure`.
+///
+/// An exclude list, not a whitelist: an engine not named here is still tried, so a valid storage
+/// engine this list has not caught up with is not silently skipped.
+const DATA_DUMP_EXCLUDED_ENGINES: &[&str] = &[
+    "View",
+    "MaterializedView",
+    "Distributed",
+    "Kafka",
+    "RabbitMQ",
+    "NATS",
+    "FileLog",
+    "MySQL",
+    "PostgreSQL",
+    "S3",
+    "URL",
+    "HDFS",
+    "ODBC",
+    "JDBC",
+    "ExternalDistributed",
+];
+
+pub(super) fn excluded_from_data_dump(engine: &str) -> bool {
+    DATA_DUMP_EXCLUDED_ENGINES.contains(&engine)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn excludes_every_named_engine() {
+        for engine in DATA_DUMP_EXCLUDED_ENGINES {
+            assert!(excluded_from_data_dump(engine), "{engine}");
+        }
+    }
+
+    #[test]
+    fn does_not_exclude_an_unlisted_engine() {
+        assert!(!excluded_from_data_dump("MergeTree"));
+        assert!(!excluded_from_data_dump("SomeFutureEngine"));
+    }
 
     #[test]
     fn strips_the_leading_qualifier_of_a_table() {
