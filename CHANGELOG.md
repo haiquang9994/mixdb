@@ -45,7 +45,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 ### Added
 
 - SQLite: open a `.db` file — or make a new one — and browse, edit and query it like any other
-  connection.
+  connection. Dump/Restore can now include row data, not just the schema, and the Structure tab can
+  now change a column's type, `NOT NULL`, default or collation, not just its name.
 - ClickHouse: the Data tab's grid can insert, update and delete rows, the Structure tab can create,
   rename and drop tables, databases and columns and manage data skipping indexes and the sorting
   key, the Query tab now takes `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` by hand, and Dump/Restore works
