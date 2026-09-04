@@ -1,5 +1,6 @@
 import type { SVGProps } from "react";
 import type { DbKind } from "./types";
+import { DatabaseGenericIcon } from "../../icons";
 import styles from "../../icons/Icon.module.css";
 
 /* The logo of each database engine, kept apart from the line icons in `icons.tsx` on purpose.
@@ -78,6 +79,13 @@ export interface DatabaseIconProps extends Omit<SVGProps<SVGSVGElement>, "viewBo
  * the engine's name in text. */
 export function DatabaseIcon({ kind, size = "1em", className, ...rest }: DatabaseIconProps) {
   const mark = BRAND_MARKS[kind];
+  if (!mark) {
+    // Một kind BRAND_MARKS của bản build này không liệt kê — một connection do bản mới hơn lưu,
+    // đọc lại bằng bản cũ. Không có brand nào để vẽ, nên dùng mark "không thuộc engine nào" của
+    // module thay vì đọc mark.viewBox trên undefined. Xem
+    // docs/superpowers/specs/2026-09-05-unknown-db-kind-crash-and-error-logging-design.md.
+    return <DatabaseGenericIcon size={size} className={className} {...rest} />;
+  }
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
