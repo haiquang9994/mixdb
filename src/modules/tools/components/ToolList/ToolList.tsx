@@ -1,11 +1,7 @@
 import { useTranslation, type TranslationKey } from "../../../../i18n";
 import { CloseIcon } from "../../../../icons";
 import { TOOL_GROUPS, type ToolDefinition, type ToolGroup } from "../../tool";
-import { clearToolUse, useFrequentTools } from "../../usageStore";
 import styles from "./ToolList.module.css";
-
-/** How many tools the "Frequently used" group holds at most. */
-const FREQUENT_LIMIT = 5;
 
 const GROUP_LABEL: Record<ToolGroup, TranslationKey> = {
   data: "toolbox.groupData",
@@ -22,6 +18,11 @@ interface ToolListProps {
   /** What the search box above holds — filters tools by their (translated) label. Empty means
    *  every tool, same as before this existed. */
   query?: string;
+  /** "Frequently used" order, most-used first — owned by the caller so it stays fixed for the tab's
+   *  lifetime instead of resorting on every pick. See `ToolsTab`. */
+  frequentIds: string[];
+  /** Drops a tool from the "Frequently used" group. */
+  onRemoveFrequent: (id: string) => void;
 }
 
 /**
@@ -32,9 +33,15 @@ interface ToolListProps {
  * không cần, và nống nó ra cho đúng một người dùng thì hại nhiều hơn lợi. Việc lọc theo `query` thì
  * vẫn cần — chỉ là nhỏ đến mức viết thẳng ở đây rẻ hơn kéo `ItemList` vào.
  */
-function ToolList({ tools, selectedId, onSelect, query = "" }: ToolListProps) {
+function ToolList({
+  tools,
+  selectedId,
+  onSelect,
+  query = "",
+  frequentIds,
+  onRemoveFrequent,
+}: ToolListProps) {
   const { t } = useTranslation();
-  const frequentIds = useFrequentTools(FREQUENT_LIMIT);
   if (tools.length === 0) return <p className={styles.empty}>{t("toolbox.empty")}</p>;
 
   const needle = query.trim().toLowerCase();
@@ -43,8 +50,8 @@ function ToolList({ tools, selectedId, onSelect, query = "" }: ToolListProps) {
     : tools;
   if (matches.length === 0) return <p className={styles.empty}>{t("toolbox.noMatch")}</p>;
 
-  // Ranked by recent-use, not by registry order — and filtered through `matches` so a search that
-  // excludes a frequent tool excludes it here too, same as everywhere else in this list.
+  // Order comes from the caller as-is — filtered through `matches` so a search that excludes a
+  // frequent tool excludes it here too, same as everywhere else in this list.
   const frequentTools = frequentIds
     .map((id) => matches.find((tool) => tool.id === id))
     .filter((tool): tool is ToolDefinition => tool !== undefined);
@@ -69,7 +76,7 @@ function ToolList({ tools, selectedId, onSelect, query = "" }: ToolListProps) {
                 className={styles.frequentRemove}
                 title={t("toolbox.removeFrequent")}
                 aria-label={t("toolbox.removeFrequent")}
-                onClick={() => clearToolUse(tool.id)}
+                onClick={() => onRemoveFrequent(tool.id)}
               >
                 <CloseIcon size="0.85em" />
               </button>

@@ -1,4 +1,4 @@
-import { createStore, jsonFile, useStore } from "../../core/jsonStore";
+import { createStore, jsonFile } from "../../core/jsonStore";
 import { clearUse, rankFrequentTools, recordUse, sanitizeUsage, type ToolUsage } from "./usage";
 
 /**
@@ -33,8 +33,11 @@ export function clearToolUse(toolId: string): void {
   write(clearUse(shared.get(), toolId));
 }
 
-/** The `limit` tools opened most in the last 30 days, most-used first. */
-export function useFrequentTools(limit: number): string[] {
-  const usage = useStore(shared);
-  return rankFrequentTools(usage, limit);
+/** A one-off snapshot of the `limit` tools opened most in the last 30 days, most-used first —
+ *  waits for the on-disk history to be read at least once, then resolves and stays put. Not
+ *  reactive: callers that want a stable "Frequently used" order for the life of a tab should call
+ *  this once (e.g. on mount) rather than resubscribing to every usage change. */
+export async function loadFrequentTools(limit: number): Promise<string[]> {
+  await shared.ready();
+  return rankFrequentTools(shared.get(), limit);
 }

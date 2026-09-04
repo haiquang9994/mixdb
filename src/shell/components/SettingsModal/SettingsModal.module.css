@@ -275,12 +275,14 @@
 }
 
 .toolButton {
+  flex: none;
   border: 1px solid transparent;
   box-shadow: none;
   background: var(--hover-bg);
   padding: 0.3em 0.7em;
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
+  white-space: nowrap;
 }
 
 .toolButton:hover:not(:disabled) {
