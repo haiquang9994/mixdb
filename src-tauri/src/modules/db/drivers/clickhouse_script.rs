@@ -15,7 +15,10 @@
 //! refuses a body holding more than one — which is the reason this module exists at all rather
 //! than handing `run_script`'s whole text to `query` in one call.
 
-use super::clickhouse::{execute_check, query_in_database, Connection};
+use super::clickhouse::{
+    execute_check, execute_with_written_rows, query_in_database, run_mutation_and_wait, Connection,
+    QueryResult,
+};
 use crate::error::AppError;
 use crate::modules::db::models::{SqlProblem, StatementResult};
 use serde_json::Value;
@@ -386,11 +389,93 @@ fn delete_from_target(sql: &str) -> Option<(Option<String>, String)> {
     Some((database, table))
 }
 
+/// What sending one statement to ClickHouse turned into — the result [`dispatch_statement`] hands
+/// back to `run()`'s loop, which is the one place `duration_ms` and the statement's own text get
+/// folded in to build a `StatementResult`.
+enum DispatchOutcome {
+    /// A result set from the unchanged `query_in_database` path.
+    Rows(QueryResult),
+    /// `INSERT`, synchronous — ClickHouse's own count of what it wrote.
+    Affected(u64),
+    /// `TRUNCATE`, or a mutation (`ALTER TABLE ... UPDATE`/`DELETE FROM ... WHERE`) that finished.
+    /// ClickHouse gives no rows-affected count for either (see the design doc's Phi mục tiêu), so
+    /// there is nothing more than "it worked" to report.
+    Ok,
+    Err(AppError),
+}
+
+/// Resolves which database a mutation's table sits in — the statement's own qualifier if it named
+/// one, the Query tab's active database otherwise — then runs it through the same
+/// `run_mutation_and_wait` the grid's `update_row`/`delete_rows` already use (D1 of the design:
+/// dialect-agnostic, does not care whether `command_sql` is an `UPDATE` or a `DELETE` mutation).
+async fn run_as_mutation(
+    conn: &Connection,
+    qualifier: Option<String>,
+    table: &str,
+    database: Option<&str>,
+    command_sql: &str,
+) -> DispatchOutcome {
+    let resolved = qualifier
+        .filter(|d| !d.is_empty())
+        .or_else(|| database.filter(|d| !d.is_empty()).map(str::to_string));
+    let Some(db) = resolved else {
+        return DispatchOutcome::Err(err!("error.clickhouseMutationTargetUnknown"));
+    };
+    match run_mutation_and_wait(conn, &db, table, command_sql).await {
+        Ok(()) => DispatchOutcome::Ok,
+        Err(e) => DispatchOutcome::Err(e),
+    }
+}
+
+/// Sends one statement the way its own shape asks for — D1 of
+/// `docs/superpowers/specs/2026-09-04-clickhouse-query-dml-design.md`. `database` is the Query
+/// tab's own active database, used when the statement itself does not qualify the table.
+async fn dispatch_statement(
+    conn: &Connection,
+    statement: &Statement,
+    database: Option<&str>,
+) -> DispatchOutcome {
+    match statement.verb.as_str() {
+        "INSERT" => match execute_with_written_rows(conn, &statement.text, database).await {
+            Ok(written) => DispatchOutcome::Affected(written),
+            Err(e) => DispatchOutcome::Err(e),
+        },
+        "TRUNCATE" => match execute_check(conn, &statement.text, database).await {
+            Ok(()) => DispatchOutcome::Ok,
+            Err(e) => DispatchOutcome::Err(e),
+        },
+        "DELETE" => match delete_from_target(&statement.text) {
+            Some((qualifier, table)) => {
+                run_as_mutation(conn, qualifier, &table, database, &statement.text).await
+            }
+            None => match query_in_database(conn, &statement.text, database).await {
+                Ok(result) => DispatchOutcome::Rows(result),
+                Err(e) => DispatchOutcome::Err(e),
+            },
+        },
+        "ALTER" => match alter_table_update_target(&statement.text) {
+            Some((qualifier, table)) => {
+                run_as_mutation(conn, qualifier, &table, database, &statement.text).await
+            }
+            None => match query_in_database(conn, &statement.text, database).await {
+                Ok(result) => DispatchOutcome::Rows(result),
+                Err(e) => DispatchOutcome::Err(e),
+            },
+        },
+        _ => match query_in_database(conn, &statement.text, database).await {
+            Ok(result) => DispatchOutcome::Rows(result),
+            Err(e) => DispatchOutcome::Err(e),
+        },
+    }
+}
+
 /// Runs a script, statement by statement, each on its own request — see the module doc for why.
 ///
-/// v1 never writes, so every statement's `kind` is `"rows"` or `"ok"`: there is no `"affected"`
-/// here, and `last_insert_id` is always `None`. A failed statement stops the script, the way it
-/// would in `clickhouse-client`.
+/// `INSERT`, `TRUNCATE`, `ALTER TABLE ... UPDATE ... WHERE` and `DELETE FROM ... WHERE` are sent
+/// through [`dispatch_statement`] rather than `query_in_database` — see
+/// `docs/superpowers/specs/2026-09-04-clickhouse-query-dml-design.md`'s D1. Everything else keeps
+/// the original `"rows"`/`"ok"` shape. A failed statement stops the script, the way it would in
+/// `clickhouse-client`.
 pub async fn run(
     conn: &Connection,
     sql: &str,
@@ -405,10 +490,10 @@ pub async fn run(
 
     for statement in statements {
         let started = Instant::now();
-        let outcome = query_in_database(conn, &statement.text, database).await;
+        let outcome = dispatch_statement(conn, &statement, database).await;
 
-        let (columns, rows, truncated, failure) = match outcome {
-            Ok(result) => {
+        let (columns, rows, truncated, rows_affected, kind, failure) = match outcome {
+            DispatchOutcome::Rows(result) => {
                 let columns: Vec<String> =
                     result.data.first().map(|row| row.keys().cloned().collect()).unwrap_or_default();
                 let truncated = result.data.len() > MAX_ROWS;
@@ -418,22 +503,22 @@ pub async fn run(
                     .take(MAX_ROWS)
                     .map(|row| row_to_columns(row, &columns))
                     .collect();
-                (columns, rows, truncated, None)
+                let kind = if columns.is_empty() { "ok" } else { "rows" };
+                (columns, rows, truncated, 0u64, kind, None)
             }
+            DispatchOutcome::Affected(written) => {
+                (Vec::new(), Vec::new(), false, written, "affected", None)
+            }
+            DispatchOutcome::Ok => (Vec::new(), Vec::new(), false, 0u64, "ok", None),
             // `message` rather than `e.to_string()`: the latter is `AppError`'s own debug form
             // ("error.clickhouse message=…"), meant for a log line — this field is what the Query
             // tab shows beside the statement, and what belongs there is the server's own words.
-            Err(e) => (Vec::new(), Vec::new(), false, Some(server_message(&e))),
+            DispatchOutcome::Err(e) => {
+                (Vec::new(), Vec::new(), false, 0u64, "error", Some(server_message(&e)))
+            }
         };
 
         let failed = failure.is_some();
-        let kind = if failed {
-            "error"
-        } else if !columns.is_empty() {
-            "rows"
-        } else {
-            "ok"
-        };
         results.push(StatementResult {
             statement: statement.text,
             verb: statement.verb,
@@ -441,7 +526,7 @@ pub async fn run(
             columns,
             rows,
             truncated,
-            rows_affected: 0,
+            rows_affected,
             last_insert_id: None,
             duration_ms: started.elapsed().as_millis() as u64,
             error: failure,

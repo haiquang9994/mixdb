@@ -946,6 +946,8 @@ const dbEn = {
     clickhouseOnlyFeature: "This only applies to a ClickHouse connection.",
     clickhouseMutationTimeout:
       "The mutation is still running on the server after 30 seconds — reload the table to check whether it finished.",
+    clickhouseMutationTargetUnknown:
+      "Nothing to run this against: no database is selected, and the statement does not name one.",
     clickhouseHeterogeneousInsert:
       "These rows don't all fill in the same columns, so ClickHouse cannot insert them as one atomic statement.",
     clickhouseUnknownEngine:

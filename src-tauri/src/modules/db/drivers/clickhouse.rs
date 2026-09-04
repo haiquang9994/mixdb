@@ -407,7 +407,7 @@ const MUTATION_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_mi
 /// Never assumes success without finding the mutation and seeing `is_done`: if no row (yet) matches
 /// — including the "more than one matched" case `find_new_mutation` refuses to pick between — this
 /// keeps polling rather than guessing, until the timeout turns that into an explicit error.
-async fn run_mutation_and_wait(
+pub(super) async fn run_mutation_and_wait(
     conn: &Connection,
     database: &str,
     table: &str,

@@ -928,6 +928,8 @@ const dbVi: DbDict = {
     clickhouseOnlyFeature: "Cái này chỉ áp dụng cho kết nối ClickHouse.",
     clickhouseMutationTimeout:
       "Thao tác vẫn đang chạy trên server sau 30 giây — tải lại bảng để xem đã xong chưa.",
+    clickhouseMutationTargetUnknown:
+      "Không có gì để chạy lệnh này: chưa chọn database, và câu lệnh cũng không nêu tên.",
     clickhouseHeterogeneousInsert:
       "Các dòng này không khai báo cùng một tập cột, nên không thể chèn chung thành một câu lệnh nguyên tử trên ClickHouse.",
     clickhouseUnknownEngine:
