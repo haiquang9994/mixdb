@@ -87,7 +87,7 @@ export const mysqlApi: SqlApi = {
     return invoke<void>("mysql_create_database", { id, name, collation });
   },
 
-  createTable(id, database, table, collation) {
+  createTable(id, database, table, collation, _engine) {
     return invoke<void>("mysql_create_table", { id, database, table, collation });
   },
 

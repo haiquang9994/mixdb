@@ -101,7 +101,7 @@ export const postgresApi: SqlApi = {
     return invoke<void>("postgres_drop_database", { id, database });
   },
 
-  createTable(id, database, table, collation) {
+  createTable(id, database, table, collation, _engine) {
     return invoke<void>("postgres_create_table", { id, database, table, collation });
   },
 

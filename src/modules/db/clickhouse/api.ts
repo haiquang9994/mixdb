@@ -10,13 +10,16 @@ import type {
 import type { SqlApi, SqlPageQuery, SqlServerInfo } from "../sql/api";
 
 /**
- * ClickHouse's side of {@link SqlApi}. Row writes (`updateRow`/`insertRows`/`deleteRows`) call real
- * commands — see `docs/superpowers/specs/2026-09-04-clickhouse-row-writes-design.md`. Every other
- * write method still is `notSupported()`: no Tauri command exists for any of them, and none is ever
- * registered — a call here fails as a rejected promise carrying `error.clickhouseReadOnly` rather
- * than as "command not found". `writable: false` on {@link clickhouseDialect} is what keeps the
- * Structure tab, "Add table", `DatabaseActions` and the Query tab from ever offering a path to any
- * of them.
+ * ClickHouse's side of {@link SqlApi}. Row writes and DDL both call real commands — see
+ * `docs/superpowers/specs/2026-09-04-clickhouse-row-writes-design.md` and
+ * `docs/superpowers/specs/2026-09-04-clickhouse-ddl-design.md`.
+ *
+ * What is left as `notSupported()` is dump, restore and the three index methods: no Tauri command
+ * exists for any of them, and none is ever registered — a call here fails as a rejected promise
+ * carrying `error.clickhouseReadOnly` rather than as "command not found". `writable: false` on
+ * {@link clickhouseDialect} keeps `DatabaseActions`' dump and restore buttons and the Query tab
+ * from offering a path to the first two, and `editing.indexKinds` being empty does the same for
+ * the index dialog.
  */
 export const clickhouseApi: SqlApi = {
   listDatabases(id) {
@@ -76,6 +79,40 @@ export const clickhouseApi: SqlApi = {
     return invoke<void>("clickhouse_insert_rows", { id, database, table, rows });
   },
 
+  createDatabase(id, name, collation) {
+    // `collation` goes across and is dropped there: ClickHouse has none, and this signature is
+    // shared by four engines.
+    return invoke<void>("clickhouse_create_database", { id, name, collation });
+  },
+
+  dropDatabase(id, database) {
+    return invoke<void>("clickhouse_drop_database", { id, database });
+  },
+
+  createTable(id, database, table, _collation, engine) {
+    return invoke<void>("clickhouse_create_table", { id, database, table, engine });
+  },
+
+  renameTable(id, database, table, newName) {
+    return invoke<void>("clickhouse_rename_table", { id, database, table, newName });
+  },
+
+  dropTable(id, database, table) {
+    return invoke<void>("clickhouse_drop_table", { id, database, table });
+  },
+
+  addColumn(id, database, table, spec) {
+    return invoke<void>("clickhouse_add_column", { id, database, table, spec });
+  },
+
+  modifyColumn(id, database, table, name, spec) {
+    return invoke<void>("clickhouse_modify_column", { id, database, table, name, spec });
+  },
+
+  dropColumn(id, database, table, name) {
+    return invoke<void>("clickhouse_drop_column", { id, database, table, name });
+  },
+
   deleteRows(id, database, table, keys, all, resetAutoIncrement) {
     return invoke<void>("clickhouse_delete_rows", {
       id,
@@ -89,20 +126,13 @@ export const clickhouseApi: SqlApi = {
 
   dump: () => notSupported(),
   restore: () => notSupported(),
-  dropDatabase: () => notSupported(),
-  createDatabase: () => notSupported(),
-  createTable: () => notSupported(),
-  renameTable: () => notSupported(),
-  dropTable: () => notSupported(),
-  addColumn: () => notSupported(),
-  modifyColumn: () => notSupported(),
-  dropColumn: () => notSupported(),
   addIndex: () => notSupported(),
   modifyIndex: () => notSupported(),
   dropIndex: () => notSupported(),
 };
 
-/** What every write method reports: no command is invoked, so none fails as "command not found". */
+/** What the five methods above report: no command is invoked, so none fails as "command not
+ *  found". */
 function notSupported(): Promise<never> {
   return Promise.reject(new Error("error.clickhouseReadOnly"));
 }

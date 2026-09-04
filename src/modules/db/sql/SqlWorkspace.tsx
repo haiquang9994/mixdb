@@ -443,8 +443,8 @@ function SqlWorkspace({
 
   /** Creates the table and leaves it selected, so the columns it still needs are one tab away.
    * Errors reject back into the dialog, which is what shows them and stays open. */
-  async function createTable(name: string, collation: string | null) {
-    await api.createTable(connectionId, selectedDb, name, collation);
+  async function createTable(name: string, collation: string | null, engine: string | null) {
+    await api.createTable(connectionId, selectedDb, name, collation, engine);
     setCreatingTable(false);
     // Cleared so the new table is visible whatever was being searched for when it was made.
     setTableFilter("");

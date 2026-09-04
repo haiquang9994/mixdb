@@ -12,6 +12,7 @@ import { clickhouseDialect } from "../clickhouse/dialect";
 import { mysqlDialect } from "../mysql/dialect";
 import { postgresDialect } from "../postgres/dialect";
 import { sqliteDialect } from "../sqlite/dialect";
+import { CLICKHOUSE_ENGINES } from "../components/TableDialog/TableDialog";
 
 const SQL_ENGINES = [mysqlDialect, postgresDialect, sqliteDialect];
 
@@ -30,5 +31,25 @@ describe("write flags", () => {
     // `INSERT` with it. That is the whole reason `ddlWritable` exists.
     expect(clickhouseDialect.ddlWritable).toBe(true);
     expect(clickhouseDialect.writable).toBe(false);
+  });
+});
+
+describe("ClickHouse table engines", () => {
+  it("offers only engines that need no parameter", () => {
+    // `CollapsingMergeTree` and `VersionedCollapsingMergeTree` each point at a `sign` column that
+    // does not exist yet when the placeholder table is created, and the server refuses them:
+    // `Code: 42 ... requires 1 parameter`.
+    expect(CLICKHOUSE_ENGINES).toEqual([
+      "MergeTree",
+      "ReplacingMergeTree",
+      "SummingMergeTree",
+      "AggregatingMergeTree",
+    ]);
+  });
+
+  it("starts from plain MergeTree", () => {
+    // The engine cannot be changed once the table exists, so the default has to be the least
+    // surprising of the four.
+    expect(CLICKHOUSE_ENGINES[0]).toBe("MergeTree");
   });
 });

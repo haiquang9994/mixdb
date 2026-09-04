@@ -70,7 +70,7 @@ export const sqliteApi: SqlApi = {
     });
   },
 
-  createTable(id, database, table, collation) {
+  createTable(id, database, table, collation, _engine) {
     return invoke<void>("sqlite_create_table", { id, database, table, collation });
   },
 
