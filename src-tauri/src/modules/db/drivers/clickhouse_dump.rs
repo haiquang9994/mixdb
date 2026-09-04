@@ -114,9 +114,10 @@ pub(super) fn strip_database_qualifiers(sql: &str, database: &str) -> String {
             continue;
         }
 
-        // A bare (unquoted) identifier — the same check without quotes. `SHOW CREATE TABLE` always
-        // backtick-quotes what it names, so this is a defensive fallback rather than the common
-        // case; kept for the same reason `split_statements` handles bare identifiers too.
+        // A bare (unquoted) identifier — the same check without quotes. Checked against the test
+        // server: `SHOW CREATE TABLE` only backtick-quotes a *column* name, not the table/database
+        // name itself when it needs no quoting — `CREATE TABLE mixdb_agent_test.events (...)`, no
+        // backticks around either half. This branch is the common case, not a defensive fallback.
         if c.is_alphabetic() || c == '_' {
             let start = i;
             while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
@@ -296,9 +297,16 @@ pub async fn dump_data(
 
     for table in &tables {
         tracker.reached(&table.name);
+        // `output_format_sql_insert_table_name` has to be set explicitly — left at its default,
+        // `FORMAT SQLInsert` writes the literal placeholder `INSERT INTO table (...)` rather than
+        // the table's real name (checked against the test server). The bare, unquoted-by-`quote_
+        // ident` name matches what `strip_database_qualifiers` leaves the structure dump's own
+        // `CREATE TABLE` statements with, so both halves of an `all`-mode dump agree on how a table
+        // is named once the database qualifier is gone.
         let sql = format!(
-            "SELECT * FROM {} FORMAT SQLInsert",
-            clickhouse::qualified(database, &table.name)
+            "SELECT * FROM {} FORMAT SQLInsert SETTINGS output_format_sql_insert_table_name = {}",
+            clickhouse::qualified(database, &table.name),
+            clickhouse::quote_literal(&table.name)
         );
         let response = clickhouse::query_streaming(conn, &sql, Some(database)).await?;
         let mut stream = response.bytes_stream();
