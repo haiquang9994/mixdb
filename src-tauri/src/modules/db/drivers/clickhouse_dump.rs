@@ -259,6 +259,63 @@ pub async fn dump_structure(
     Ok(())
 }
 
+/// Streams `SELECT * FROM t FORMAT SQLInsert` for every table not in [`excluded_from_data_dump`]
+/// (D9) straight into `path`, never buffering a whole response in memory (D5) — `FORMAT SQLInsert`
+/// is ClickHouse's own SQL-generating output format, so what arrives on the wire is already valid
+/// `INSERT` text.
+///
+/// `append`: `true` when this follows [`dump_structure`] into the same file (an `all`-mode dump),
+/// `false` for a `data`-only dump, which owns the file from scratch.
+pub async fn dump_data(
+    conn: &Connection,
+    database: &str,
+    path: &str,
+    append: bool,
+    watch: &dump::Watch<'_>,
+) -> Result<(), AppError> {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    let tables: Vec<TableInfo> = list_tables_with_engine(conn, database)
+        .await?
+        .into_iter()
+        .filter(|t| !excluded_from_data_dump(&t.engine))
+        .collect();
+    let weights: Vec<(String, u64)> =
+        tables.iter().map(|t| (t.name.clone(), t.total_bytes.max(1))).collect();
+    let mut tracker = Tracker::new(&weights, path, true);
+
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(append)
+        .truncate(!append)
+        .open(path)
+        .await
+        .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+
+    for table in &tables {
+        tracker.reached(&table.name);
+        let sql = format!(
+            "SELECT * FROM {} FORMAT SQLInsert",
+            clickhouse::qualified(database, &table.name)
+        );
+        let response = clickhouse::query_streaming(conn, &sql, Some(database)).await?;
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            if (watch.cancel)() {
+                return Err(err!("error.transferCancelled", tool = "ClickHouse dump"));
+            }
+            let bytes = chunk.map_err(|e| err!("error.clickhouse", message = e))?;
+            file.write_all(&bytes)
+                .await
+                .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+            (watch.report)(tracker.progress());
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

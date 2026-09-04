@@ -168,6 +168,37 @@ pub(super) async fn query_in_database(
     serde_json::from_str(&text).map_err(map_error)
 }
 
+/// Sends one statement and hands back the raw response for the caller to read as a stream, rather
+/// than buffering it into a `String` first the way [`query_with_params`]/[`query_in_database`] do —
+/// for `clickhouse_dump.rs`'s data export, where the whole point is never holding a table's worth of
+/// output in memory at once. Checks the status before handing the response back: a failure's body
+/// is still small (ClickHouse's own error text), so reading it here is cheaper than making every
+/// caller re-implement the same check.
+pub(super) async fn query_streaming(
+    conn: &Connection,
+    sql: &str,
+    database: Option<&str>,
+) -> Result<reqwest::Response, AppError> {
+    let mut url = url::Url::parse(&conn.base_url).map_err(map_error)?;
+    if let Some(database) = database.filter(|d| !d.is_empty()) {
+        url.query_pairs_mut().append_pair("database", database);
+    }
+    let mut request = conn.client.post(url).body(sql.to_string());
+    if !conn.user.is_empty() {
+        request = request
+            .header("X-ClickHouse-User", &conn.user)
+            .header("X-ClickHouse-Key", &conn.password);
+    }
+    let response = request.send().await.map_err(map_error)?;
+    let status = response.status();
+    if status.is_success() {
+        Ok(response)
+    } else {
+        let text = response.text().await.map_err(map_error)?;
+        Err(map_error(text.trim()))
+    }
+}
+
 /// Sends one statement with no `FORMAT` appended, and reports only whether the server accepted it
 /// — for `EXPLAIN AST`, whose own output is a plain-text tree rather than anything `FORMAT JSON`
 /// would turn into rows. Checked against the test server: `EXPLAIN AST select 1\nFORMAT JSON`
