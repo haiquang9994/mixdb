@@ -4,7 +4,8 @@ import { splitStatements } from "../sql/statements";
 import { mysqlDialect } from "../mysql/dialect";
 import { postgresDialect } from "../postgres/dialect";
 import { clickhouseDialect } from "../clickhouse/dialect";
-import { CLICKHOUSE_SYNTAX, MYSQL_SYNTAX, POSTGRES_SYNTAX } from "../sql/syntax";
+import { mssqlDialect } from "../mssql/dialect";
+import { CLICKHOUSE_SYNTAX, MSSQL_SYNTAX, MYSQL_SYNTAX, POSTGRES_SYNTAX } from "../sql/syntax";
 
 /**
  * The gates, held against the statements they exist to stop.
@@ -325,6 +326,43 @@ describe("withLimit", () => {
     );
     expect(one("WITH ids AS (SELECT id FROM banned) DELETE FROM users")).toBeNull();
     expect(one("WITH ids AS (SELECT id FROM banned) UPDATE users u JOIN ids SET u.x = 1")).toBeNull();
+  });
+
+  describe("on SQL Server, which has no LIMIT", () => {
+    const mssql = (sql: string, limit = 500) =>
+      withLimit(splitStatements(sql, MSSQL_SYNTAX)[0], limit, mssqlDialect);
+
+    it("inserts TOP right after SELECT rather than appending anything", () => {
+      expect(mssql("SELECT * FROM users")).toBe("SELECT TOP (500) * FROM users");
+      // Never on its own line at the end — there is nothing to append at all here.
+      expect(mssql("SELECT * FROM users -- everyone")).toBe(
+        "SELECT TOP (500) * FROM users -- everyone"
+      );
+    });
+
+    it("lands after DISTINCT, not before it", () => {
+      expect(mssql("SELECT DISTINCT name FROM users")).toBe(
+        "SELECT DISTINCT TOP (500) name FROM users"
+      );
+      expect(mssql("SELECT ALL name FROM users")).toBe("SELECT ALL TOP (500) name FROM users");
+    });
+
+    it("leaves alone what already sets its own ceiling", () => {
+      expect(mssql("SELECT TOP 10 * FROM users")).toBeNull();
+      expect(mssql("SELECT TOP (10) * FROM users")).toBeNull();
+      expect(mssql("SELECT * FROM users ORDER BY id OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY")).toBeNull();
+      expect(mssql("SELECT 1")).toBeNull();
+    });
+
+    it("leaves a SELECT ... INTO alone rather than silently truncating what it copies", () => {
+      expect(mssql("SELECT * INTO backup FROM users")).toBeNull();
+    });
+
+    it("still finds the outer SELECT past a CTE's own body", () => {
+      expect(mssql("WITH ids AS (SELECT id FROM banned) SELECT * FROM ids")).toBe(
+        "WITH ids AS (SELECT id FROM banned) SELECT TOP (500) * FROM ids"
+      );
+    });
   });
 });
 
