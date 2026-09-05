@@ -11,7 +11,7 @@
 use super::dump::{self, Tracker};
 use super::mssql::{
     column_value, is_binary_type, map_error, primary_key, quote_ident, read_uncommitted, resolve,
-    select_expr, table_columns, Pool, DEFAULT_SCHEMA,
+    select_expr, table_columns, three_part, Pool, DEFAULT_SCHEMA,
 };
 use super::mssql_ddl::{column_definition, comment_statement, quote_string, ColumnSpec};
 use super::mssql_script;
@@ -489,7 +489,20 @@ pub async fn dump_data(
         tracker.reached(&table.name);
 
         let (schema, name) = resolve(&table.name);
+        // Two names, deliberately not one: `qualified` (no database) is what gets *written into
+        // the file* — `mssql_script::run` (Task 5) puts the target database in scope with its own
+        // `USE` before replaying it, and a hardcoded database there would fight that `USE` the way
+        // the earlier database-qualification bug did (see this plan's Task 8). `live_qualified`
+        // (three-part) is what *this function itself* queries against the pool right now, on a
+        // connection that is not guaranteed to be sitting on `database` at all — the pool is one
+        // per server (D2), shared by every command, so a connection `pool.get()` hands back may
+        // still default to whatever database it was opened with. Using `qualified` for the live
+        // `SELECT` below reads (or errors on) whatever database the connection happens to be on
+        // instead of the one being dumped — confirmed against a real multi-database server, where
+        // it failed with "Invalid object name" the single-database live test in Task 7 could not
+        // have caught (its pool happened to open on the exact database being dumped).
         let qualified = qualified_ident(&schema, &name);
+        let live_qualified = three_part(database, &schema, &name);
         // Computed and rowversion/timestamp columns are never inserted — the server derives or
         // assigns both — the same set `mssql::table_data`'s insert path already excludes.
         let columns: Vec<_> = table_columns(pool, database, &schema, &name)
@@ -526,7 +539,7 @@ pub async fn dump_data(
                 return Err(err!("error.transferCancelled", tool = "SQL Server dump"));
             }
             let sql = read_uncommitted(&format!(
-                "SELECT {select_list} FROM {qualified} ORDER BY {order_by} \
+                "SELECT {select_list} FROM {live_qualified} ORDER BY {order_by} \
                  OFFSET {offset} ROWS FETCH NEXT {READ_PAGE_ROWS} ROWS ONLY"
             ));
             let mut client = pool.get().await.map_err(|e| err!("error.mssql", message = e))?;
