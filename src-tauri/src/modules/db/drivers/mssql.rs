@@ -6,6 +6,7 @@
 //! every database of the server over one pool rather than dialing again per database.
 
 use crate::error::AppError;
+use crate::modules::db::models::ServerInfo;
 use deadpool::managed::{Manager as ManagerTrait, Metrics, Pool as DeadPool, RecycleError, RecycleResult};
 use tiberius::{AuthMethod, Client, Config, EncryptionLevel};
 use tokio::net::TcpStream;
@@ -60,6 +61,12 @@ fn needs_quoting(name: &str) -> bool {
 
 /// The schema and table a [`qualify`]ed name stands for. An unqualified name is a table of
 /// [`DEFAULT_SCHEMA`], which is what `qualify` leaves the prefix off for.
+///
+/// Nothing calls this yet: the commands that take a table name — reading a page, reading a
+/// structure — arrive with the reads in Plan 2. It is written and tested here rather than there
+/// because it is the half of [`qualify`] that proves `qualify` reversible, and a round-trip test
+/// needs both halves in one place.
+#[allow(dead_code)]
 pub fn resolve(qualified: &str) -> (String, String) {
     let (schema, table) = split_qualified(qualified);
     (unquote_ident(schema), unquote_ident(table))
@@ -221,6 +228,137 @@ pub async fn connect(
     // pool — it is the dialing that was the point, not the object.
     drop(pool.get().await.map_err(|e| err!("error.mssql", message = e))?);
     Ok(pool)
+}
+
+/// The server's version and the machine under it, for the header.
+///
+/// `SERVERPROPERTY` rather than cutting the version out of `@@VERSION`, which is the
+/// obvious-looking way and the wrong one: `@@VERSION` is localised to the language the server was
+/// installed in, so looking for English words in it gives an empty header on any server that is
+/// not English. `SERVERPROPERTY` answers in numbers whatever the language.
+///
+/// `@@VERSION` is still read, for the operating system alone — its tail, after " on ", is the one
+/// part `SERVERPROPERTY` has no equivalent for. It failing leaves `os` empty rather than failing
+/// the command: a header without the machine is still a header.
+pub async fn server_info(pool: &Pool) -> Result<ServerInfo, AppError> {
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+
+    let row = client
+        .query(
+            "SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)),
+                    CAST(SERVERPROPERTY('Edition') AS nvarchar(128))",
+            &[],
+        )
+        .await
+        .map_err(map_error)?
+        .into_row()
+        .await
+        .map_err(map_error)?
+        .ok_or_else(|| err!("error.mssql", message = "the server reported no version"))?;
+
+    let product: &str = row.get(0).unwrap_or_default();
+    let edition: &str = row.get(1).unwrap_or_default();
+    let version = if edition.is_empty() {
+        product.to_string()
+    } else {
+        format!("{product} ({edition})")
+    };
+
+    let os = match client.query("SELECT @@VERSION", &[]).await {
+        Ok(stream) => stream
+            .into_row()
+            .await
+            .ok()
+            .flatten()
+            .and_then(|row| row.get::<&str, _>(0).map(str::to_string))
+            .and_then(|banner| banner.split(" on ").nth(1).map(|tail| tail.trim().to_string()))
+            .unwrap_or_default(),
+        Err(_) => String::new(),
+    };
+
+    Ok(ServerInfo { version, os })
+}
+
+/// Every database on the server this login can actually open, the server's own left out.
+///
+/// Three conditions, and the third is the one that is easy to leave off and impossible to notice
+/// while testing as `sa`:
+///
+/// * `database_id > 4` drops `master`, `tempdb`, `model` and `msdb`, which the server rebuilds
+///   from its own files and which nobody browsing their data wants to see.
+/// * `state = 0` drops one that is offline, restoring, or otherwise not readable.
+/// * `HAS_DBACCESS(name) = 1` drops the ones this login has no rights to. Without it an ordinary
+///   login sees a database in the sidebar and is told "The server principal is not able to access
+///   the database" the moment it clicks — `sa` sees everything, so the bug hides during testing.
+pub async fn list_databases(pool: &Pool) -> Result<Vec<String>, AppError> {
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+    let rows = client
+        .query(
+            "SELECT name FROM sys.databases
+             WHERE database_id > 4 AND state = 0 AND HAS_DBACCESS(name) = 1
+             ORDER BY name",
+            &[],
+        )
+        .await
+        .map_err(map_error)?
+        .into_first_result()
+        .await
+        .map_err(map_error)?;
+
+    Ok(rows
+        .iter()
+        .filter_map(|row| row.get::<&str, _>(0).map(str::to_string))
+        .collect())
+}
+
+/// Every table and view of `database`, across every schema, named as [`qualify`] names them.
+///
+/// Views as well as tables, because `postgres::list_tables` lists both and the sidebar is one list
+/// whichever server filled it. That is why this reads `sys.objects` filtered to `U` and `V` rather
+/// than `sys.tables`, which holds no views at all.
+///
+/// `dbo` first and the other schemas after it, alphabetically — so the tables of the schema that
+/// needs no prefix are together at the top, the way they are on PostgreSQL. No system-schema
+/// filter is needed: `sys.objects` in a user database holds that user's own objects.
+///
+/// The database is written into the query as a three-part name rather than reached with a `USE`,
+/// since the pooled session may be sitting on any database at all (D2) and a `USE` would leave it
+/// somewhere else for the next borrower.
+pub async fn list_tables(pool: &Pool, database: &str) -> Result<Vec<String>, AppError> {
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+    let db = quote_ident(database);
+    let sql = format!(
+        "SELECT s.name, o.name
+         FROM {db}.sys.objects o
+         JOIN {db}.sys.schemas s ON s.schema_id = o.schema_id
+         WHERE o.type IN ('U', 'V')
+         ORDER BY CASE WHEN s.name = '{DEFAULT_SCHEMA}' THEN 0 ELSE 1 END, s.name, o.name"
+    );
+    let rows = client
+        .query(sql, &[])
+        .await
+        .map_err(map_error)?
+        .into_first_result()
+        .await
+        .map_err(map_error)?;
+
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            let schema: &str = row.get(0)?;
+            let table: &str = row.get(1)?;
+            Some(qualify(schema, table))
+        })
+        .collect())
 }
 
 #[cfg(test)]

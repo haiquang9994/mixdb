@@ -47,6 +47,7 @@ macro_rules! retry_read {
 pub mod clickhouse;
 pub mod handoff;
 pub mod mongo;
+pub mod mssql;
 pub mod mysql;
 pub mod postgres;
 pub mod redis;
@@ -273,9 +274,25 @@ pub async fn connect_db(
             .await?;
             (DbHandle::Clickhouse(conn), Some((host, port)), tunnel)
         }
-        // The driver lands in the next task; until then this kind is registered but not dialable,
-        // so that every `match DbKind` in the tree compiles while the driver is written.
-        DbKind::Mssql => return Err(err!("error.mssql", message = "driver not wired yet")),
+        DbKind::Mssql => {
+            let (host, port, tunnel) =
+                resolve_endpoint(&config, &app_data, Arc::clone(&notify)).await?;
+            let username = config.username.clone().unwrap_or_default();
+            let password = config.password.clone().unwrap_or_default();
+            let pool = with_timeout(
+                drivers::mssql::connect(
+                    &host,
+                    port,
+                    &username,
+                    &password,
+                    config.database.as_deref(),
+                    config.use_ssl,
+                ),
+                "SQL Server",
+            )
+            .await?;
+            (DbHandle::Mssql(pool), Some((host, port)), tunnel)
+        }
     };
 
     state.connections.lock().await.insert(
@@ -413,6 +430,18 @@ async fn mongo_client(state: &State<'_, DbState>, id: &str) -> Result<mongodb::C
     match handle(state, id).await? {
         DbHandle::Mongo(client) => Ok(client),
         _ => Err(err!("error.wrongConnectionKind", kind = "MongoDB")),
+    }
+}
+
+/// The pool for `id`. One for the whole server, so unlike `postgres_pool` there is no database to
+/// choose between — every command writes the database it wants into its own SQL instead.
+async fn mssql_pool(
+    state: &State<'_, DbState>,
+    id: &str,
+) -> Result<drivers::mssql::Pool, AppError> {
+    match handle(state, id).await? {
+        DbHandle::Mssql(pool) => Ok(pool),
+        _ => Err(err!("error.wrongConnectionKind", kind = "SQL Server")),
     }
 }
 
