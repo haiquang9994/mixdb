@@ -147,13 +147,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          # `latest.json` — the manifest the updater reads. Each platform's job merges its own
-          # entry into the copy already on the release, so all three end up in one file.
-          #
-          # Its `notes` field is a copy of the `releaseBody` below, frozen at build time — so it
-          # carries whatever the changelog said, but not any edit made to the draft afterwards.
-          # update-notes.yml rewrites it from the finished body once the release is published.
-          includeUpdaterJson: true
+          # `latest.json` — the manifest the updater reads — is built by the `merge-manifest` job
+          # below instead, once, from every platform's uploaded `.sig` rather than three matrix
+          # jobs racing to merge their own entry into the same shared file. That race is exactly
+          # what lost v0.0.30's windows and linux entries: the macOS job's write overwrote the file
+          # instead of extending it. Each job here still produces and uploads its own installer and
+          # `.sig` — only the merge into one JSON file moves out.
+          includeUpdaterJson: false
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseName: "MixDB __VERSION__"
           releaseDraft: true
@@ -191,3 +191,61 @@ jobs:
 
             ${{ steps.notes.outputs.changes }}
           args: ${{ matrix.args }}
+
+  # Builds `latest.json` once, here, instead of three matrix jobs each merging their own platform
+  # into a shared copy of the file — see the comment on `includeUpdaterJson` above for the race
+  # that left it broken for v0.0.30.
+  #
+  # `if: always()` so one platform failing (fail-fast is off) still gets the others merged; the
+  # script itself only includes a platform whose `.sig` actually made it onto the release, and
+  # a failed one can be topped up later by re-running its job and then this one.
+  merge-manifest:
+    needs: build
+    if: always() && needs.build.result != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Resolve the version and release tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          tag="${{ github.ref_type == 'tag' && github.ref_name || '' }}"
+          if [ -z "$tag" ]; then tag="v$version"; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Read the changelog section for this version
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/scripts/changelog-section.mjs CHANGELOG.md "${{ steps.version.outputs.version }}" > notes.md
+
+      - name: Download every installer's signature
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir sigs
+          gh release download "${{ steps.version.outputs.tag }}" \
+            --repo "${{ github.repository }}" --pattern "*.sig" --dir sigs
+
+      - name: Build latest.json from the signatures actually present
+        run: |
+          set -euo pipefail
+          node .github/scripts/build-manifest.mjs \
+            "${{ steps.version.outputs.version }}" notes.md sigs latest.json
+
+      - name: Upload latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "${{ steps.version.outputs.tag }}" \
+            --repo "${{ github.repository }}" latest.json --clobber
