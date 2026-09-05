@@ -8,7 +8,9 @@
 use crate::error::AppError;
 use crate::modules::db::models::ServerInfo;
 use deadpool::managed::{Manager as ManagerTrait, Metrics, Pool as DeadPool, RecycleError, RecycleResult};
-use tiberius::{AuthMethod, Client, Config, EncryptionLevel};
+use serde_json::{Map, Value};
+use tiberius::numeric::Decimal;
+use tiberius::{AuthMethod, Client, ColumnData, Config, EncryptionLevel, FromSql, Row};
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
@@ -361,9 +363,184 @@ pub async fn list_tables(pool: &Pool, database: &str) -> Result<Vec<String>, App
         .collect())
 }
 
+/// One row as the grid reads it: every column by name, whatever the column holds.
+pub(super) fn row_to_json(row: &Row) -> Map<String, Value> {
+    let mut obj = Map::new();
+    for (column, data) in row.cells() {
+        obj.insert(column.name().to_string(), column_value(data));
+    }
+    obj
+}
+
+/// One value, as the closest JSON the frontend can show.
+///
+/// A `match` rather than the chain of `try_get`s `postgres::column_value` is, because tiberius has
+/// already decided what the column is: `ColumnData` is typed off the column's own metadata, so
+/// there is nothing to guess and no order for a wrong branch to claim a value in.
+///
+/// Three arms are worth their reasons:
+///
+/// * `Numeric` becomes **text**. `DECIMAL(19,4)` does not fit an f64, and the precision is the
+///   reason someone chose the type; `rust_decimal` re-renders it exactly, which is the same answer
+///   PostgreSQL's `numeric` gives here.
+/// * A float that JSON cannot write — NaN, ±infinity — becomes null. `serde_json` refuses those,
+///   and a silently dropped column would read in the grid as a row that holds nothing.
+/// * `Binary` becomes base64, bytes having no representation of their own in JSON. The frontend's
+///   `mssqlDialect.isBinary` is what tells the grid a column arrives that way.
+///
+/// `money`/`smallmoney`, `xml`, `sql_variant`, `geography`, `geometry` and `hierarchyid` do not
+/// reach the arms one would expect: [`select_expr`] asks the server for them as text first, which
+/// is what keeps `money`'s four decimal places from going through tiberius' f64 decoding.
+pub(super) fn column_value(data: &ColumnData<'static>) -> Value {
+    match data {
+        ColumnData::U8(v) => v.map(Value::from).unwrap_or(Value::Null),
+        ColumnData::I16(v) => v.map(Value::from).unwrap_or(Value::Null),
+        ColumnData::I32(v) => v.map(Value::from).unwrap_or(Value::Null),
+        ColumnData::I64(v) => v.map(Value::from).unwrap_or(Value::Null),
+        ColumnData::F32(v) => v
+            .and_then(|n| serde_json::Number::from_f64(n as f64).map(Value::Number))
+            .unwrap_or(Value::Null),
+        ColumnData::F64(v) => v
+            .and_then(serde_json::Number::from_f64)
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
+        ColumnData::Bit(v) => v.map(Value::from).unwrap_or(Value::Null),
+        ColumnData::String(v) => v
+            .as_ref()
+            .map(|s| Value::String(s.to_string()))
+            .unwrap_or(Value::Null),
+        ColumnData::Guid(v) => v
+            .map(|u| Value::String(u.to_string()))
+            .unwrap_or(Value::Null),
+        ColumnData::Binary(v) => {
+            use base64::Engine;
+            v.as_ref()
+                .map(|bytes| {
+                    Value::String(base64::engine::general_purpose::STANDARD.encode(bytes))
+                })
+                .unwrap_or(Value::Null)
+        }
+        ColumnData::Numeric(v) => v
+            .and_then(|_| {
+                Decimal::from_sql(data)
+                    .ok()
+                    .flatten()
+                    .map(|d| Value::String(d.to_string()))
+            })
+            .unwrap_or(Value::Null),
+        ColumnData::Xml(v) => v
+            .as_ref()
+            .map(|x| Value::String(x.to_string()))
+            .unwrap_or(Value::Null),
+        // The four date/time shapes all go through tiberius' own chrono conversions rather than
+        // through their day and increment counts by hand: those counts have three different epochs
+        // between them, and getting one wrong is a value that is merely plausible.
+        ColumnData::DateTime(_) | ColumnData::SmallDateTime(_) | ColumnData::DateTime2(_) => {
+            chrono::NaiveDateTime::from_sql(data)
+                .ok()
+                .flatten()
+                .map(|d| Value::String(d.to_string()))
+                .unwrap_or(Value::Null)
+        }
+        ColumnData::Date(_) => chrono::NaiveDate::from_sql(data)
+            .ok()
+            .flatten()
+            .map(|d| Value::String(d.to_string()))
+            .unwrap_or(Value::Null),
+        ColumnData::Time(_) => chrono::NaiveTime::from_sql(data)
+            .ok()
+            .flatten()
+            .map(|t| Value::String(t.to_string()))
+            .unwrap_or(Value::Null),
+        // The only one that carries a zone. Kept as RFC 3339 rather than flattened to UTC: the
+        // offset is part of what was stored.
+        ColumnData::DateTimeOffset(_) => chrono::DateTime::<chrono::FixedOffset>::from_sql(data)
+            .ok()
+            .flatten()
+            .map(|d| Value::String(d.to_rfc3339()))
+            .unwrap_or(Value::Null),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{qualify, quote_ident, resolve};
+    use super::{column_value, qualify, quote_ident, resolve};
+    use serde_json::Value;
+    use std::borrow::Cow;
+    use tiberius::numeric::Numeric;
+    use tiberius::time::{Date, DateTime, DateTime2, Time};
+    use tiberius::ColumnData;
+
+    /// Every integer width lands on a JSON number, and a NULL of any of them lands on JSON null —
+    /// the grid tells "no value" from "the empty string" by exactly this.
+    #[test]
+    fn integers_become_numbers_and_nulls_become_null() {
+        assert_eq!(column_value(&ColumnData::U8(Some(7))), Value::from(7));
+        assert_eq!(column_value(&ColumnData::I16(Some(-3))), Value::from(-3));
+        assert_eq!(column_value(&ColumnData::I32(Some(1_000))), Value::from(1_000));
+        assert_eq!(column_value(&ColumnData::I64(Some(-9))), Value::from(-9));
+        assert_eq!(column_value(&ColumnData::I32(None)), Value::Null);
+    }
+
+    /// A float JSON cannot write — NaN, either infinity — reads as null rather than as a number
+    /// that is not the one stored, the same choice `postgres::column_value` makes.
+    #[test]
+    fn a_float_json_cannot_write_becomes_null() {
+        assert_eq!(column_value(&ColumnData::F64(Some(1.5))), Value::from(1.5));
+        assert_eq!(column_value(&ColumnData::F32(Some(f32::NAN))), Value::Null);
+        assert_eq!(column_value(&ColumnData::F64(Some(f64::INFINITY))), Value::Null);
+    }
+
+    /// DECIMAL/NUMERIC arrives as text, not as an f64: the precision is the whole point of the
+    /// type, and an f64 would round it away before the grid ever saw it.
+    #[test]
+    fn a_decimal_keeps_its_digits_by_arriving_as_text() {
+        let value = column_value(&ColumnData::Numeric(Some(Numeric::new_with_scale(12345, 2))));
+        assert_eq!(value, Value::String("123.45".into()));
+    }
+
+    /// Bytes have no JSON of their own, so they arrive base64-encoded — which is what
+    /// `mssqlDialect.isBinary` then tells the grid to expect.
+    #[test]
+    fn binary_arrives_base64_encoded() {
+        let value = column_value(&ColumnData::Binary(Some(Cow::Borrowed(&[1, 2, 3]))));
+        assert_eq!(value, Value::String("AQID".into()));
+    }
+
+    /// Dates and times are formatted the way `postgres::column_value` formats them, since one grid
+    /// draws either: `2020-01-02 03:04:05`, never a driver's own Debug spelling.
+    #[test]
+    fn dates_and_times_read_the_way_postgres_writes_them() {
+        // 1900-01-01 plus 0 days, at 300 seconds-fragments past midnight — 1/300 of a second each.
+        assert_eq!(
+            column_value(&ColumnData::DateTime(Some(DateTime::new(0, 300)))),
+            Value::String("1900-01-01 00:00:01".into())
+        );
+        // DateTime2 counts days from year 1 and time in 10^-scale second increments.
+        let dt2 = DateTime2::new(Date::new(730_119), Time::new(0, 0));
+        assert_eq!(
+            column_value(&ColumnData::DateTime2(Some(dt2))),
+            Value::String("2000-01-01 00:00:00".into())
+        );
+        assert_eq!(
+            column_value(&ColumnData::Date(Some(Date::new(730_119)))),
+            Value::String("2000-01-01".into())
+        );
+        assert_eq!(
+            column_value(&ColumnData::Time(Some(Time::new(3_600, 0)))),
+            Value::String("01:00:00".into())
+        );
+    }
+
+    /// Text is text, and a NULL string is null rather than "".
+    #[test]
+    fn strings_pass_through_and_a_null_string_is_null() {
+        assert_eq!(
+            column_value(&ColumnData::String(Some(Cow::Borrowed("hello")))),
+            Value::String("hello".into())
+        );
+        assert_eq!(column_value(&ColumnData::String(None)), Value::Null);
+    }
 
     /// SQL Server brackets an identifier rather than quoting it, and the character doubled inside
     /// is the *closing* bracket — the one asymmetry no other engine here has.
