@@ -1304,6 +1304,140 @@ async fn insert_rows_body(
     Ok(())
 }
 
+/// Deletes the rows `keys` names — each map is one row's primary key columns, or every column when
+/// the table has none — or every row when `all` is set. The deletes run in one transaction: if any
+/// of them fails, none of them land.
+///
+/// SQL Server has no `(tableoid, ctid)` the way PostgreSQL does for a table with no primary key, and
+/// no need of one: a heap or a clustered index both support `DELETE TOP (n)`, T-SQL's spelling of
+/// the cap MySQL's `LIMIT 1` puts on the same fallback — one row's predicate deletes at most one
+/// row, never its duplicate, when every column is the key rather than a real one.
+///
+/// `reset_auto_increment` keeps the name the frontend already uses for the checkbox; what it resets
+/// here is the table's IDENTITY seed.
+pub async fn delete_rows(
+    pool: &Pool,
+    database: &str,
+    table: &str,
+    keys: &[Map<String, Value>],
+    all: bool,
+    reset_auto_increment: bool,
+) -> Result<(), AppError> {
+    if !all && keys.is_empty() {
+        return Ok(());
+    }
+
+    let (schema, name) = resolve(table);
+    let qualified = three_part(database, &schema, &name);
+    let column_rows = table_columns(pool, database, &schema, &name).await?;
+    let types: BTreeMap<String, String> = column_rows
+        .iter()
+        .map(|c| (c.name.clone(), c.data_type.clone()))
+        .collect();
+
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+    client
+        .simple_query("BEGIN TRANSACTION")
+        .await
+        .map_err(map_error)?;
+
+    let result = delete_rows_body(&mut client, &qualified, &types, keys, all).await;
+    end_transaction(&mut client, result).await?;
+
+    if reset_auto_increment {
+        reset_identity(pool, database, &schema, &name).await?;
+    }
+    Ok(())
+}
+
+async fn delete_rows_body(
+    client: &mut Connection,
+    qualified: &str,
+    types: &BTreeMap<String, String>,
+    keys: &[Map<String, Value>],
+    all: bool,
+) -> Result<(), AppError> {
+    if all {
+        client
+            .simple_query(format!("DELETE FROM {qualified}"))
+            .await
+            .map_err(map_error)?;
+        return Ok(());
+    }
+
+    for key in keys {
+        if key.is_empty() {
+            return Err(err!("error.deleteWithoutKey"));
+        }
+        let sql = format!(
+            "DELETE TOP (1) FROM {qualified} WHERE {}",
+            key_predicate(key, 1)
+        );
+        let mut query = tiberius::Query::new(sql);
+        for (column, value) in key {
+            let binary = types
+                .get(column)
+                .map(|t| is_binary_type(t))
+                .unwrap_or(false);
+            bind_write(&mut query, value, binary)?;
+        }
+        query.execute(client).await.map_err(map_error)?;
+    }
+
+    Ok(())
+}
+
+/// Puts the table's IDENTITY seed back to 0, so the next insert numbers from 1 again — SQL Server's
+/// counterpart to PostgreSQL's `ALTER SEQUENCE ... RESTART` and MySQL's `AUTO_INCREMENT = 1`.
+///
+/// `DBCC CHECKIDENT` errors outright on a table with no IDENTITY column, unlike MySQL's
+/// unconditional `AUTO_INCREMENT = 1` — so this checks `sys.identity_columns` first and does
+/// nothing on a table that has none, since `delete_rows(all, true)` is called on any table
+/// regardless of whether it has a counter (D7).
+async fn reset_identity(
+    pool: &Pool,
+    database: &str,
+    schema: &str,
+    table: &str,
+) -> Result<(), AppError> {
+    let db = quote_ident(database);
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+
+    let sql = format!(
+        "SELECT TOP (1) 1 FROM {db}.sys.identity_columns c
+         JOIN {db}.sys.objects o ON o.object_id = c.object_id
+         JOIN {db}.sys.schemas s ON s.schema_id = o.schema_id
+         WHERE s.name = @P1 AND o.name = @P2"
+    );
+    let has_identity = client
+        .query(sql, &[&schema, &table])
+        .await
+        .map_err(map_error)?
+        .into_row()
+        .await
+        .map_err(map_error)?
+        .is_some();
+    if !has_identity {
+        return Ok(());
+    }
+
+    // A string argument, not SQL: DBCC CHECKIDENT takes the table's name as a quoted literal, which
+    // is why it needs its own escaping (doubling `'`) rather than `quote_ident`'s bracket rule, and
+    // why it needs its schema spelled out explicitly rather than left to resolve on its own (D7).
+    let object = full_object_name(schema, table).replace('\'', "''");
+    client
+        .simple_query(format!("DBCC CHECKIDENT ('{object}', RESEED, 0)"))
+        .await
+        .map_err(map_error)?;
+    Ok(())
+}
+
 /// One row as the grid reads it: every column by name, whatever the column holds.
 pub(super) fn row_to_json(row: &Row) -> Map<String, Value> {
     let mut obj = Map::new();
