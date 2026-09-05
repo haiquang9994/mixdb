@@ -9,16 +9,16 @@ kết nối (kể cả qua SSH tunnel có sẵn), duyệt database/schema/table,
 tab, chạy script tay qua Query tab, sửa cấu trúc qua Structure tab, và dump/restore. Vì đây là một
 engine hoàn toàn mới (không phải mở thêm một tính năng trên engine đã có, như các spec ClickHouse
 trước), khối lượng việc tương đương với lúc PostgreSQL được thêm vào — spec này vì vậy chia thành
-**7 kế hoạch (plan) làm tuần tự**, mỗi plan tự build/test được và đóng góp đúng một lát ngang của
+**8 kế hoạch (plan) làm tuần tự**, mỗi plan tự build/test được và đóng góp đúng một lát ngang của
 `SqlApi`, giống cách ClickHouse được mở dần qua nhiều spec (`...-ddl-design.md`,
 `...-row-writes-design.md`, `...-dump-restore-design.md`, `...-query-dml-design.md`).
 
-Xong toàn bộ 7 plan: mở MixDB, thêm connection SQL Server (`192.168.50.86:1433`, user `sa`, pass
+Xong toàn bộ 8 plan: mở MixDB, thêm connection SQL Server (`192.168.50.86:1433`, user `sa`, pass
 `admin` — server test hiện có), thấy sidebar liệt kê database/table, mở một bảng thấy dữ liệu phân
 trang lọc được, sửa/thêm/xoá dòng, mở Query tab gõ T-SQL nhiều câu (kể cả nhiều batch ngăn bởi
 `GO`), mở Structure tab thêm/sửa/xoá cột và index, và Dump/Restore ra file `.sql` chạy lại được.
 
-## Phi mục tiêu (toàn bộ 7 plan)
+## Phi mục tiêu (toàn bộ 8 plan)
 
 - **Không Always On / replicas / linked servers / CLR / temporal tables / graph tables.** Đọc và
   ghi nhắm vào bảng thường (`rowstore`, `heap` hoặc có clustered index) trong một database — đúng
@@ -37,9 +37,19 @@ trang lọc được, sửa/thêm/xoá dòng, mở Query tab gõ T-SQL nhiều c
   on-prem/container trước (test server hiện có là SQL Server thường). Azure SQL khác một số DMV và
   hành vi (không có `sys.dm_exec_sessions` đầy đủ quyền, không `KILL` được phiên của người khác trên
   một số gói) — để lại thành việc riêng nếu cần sau.
+- **Không hỗ trợ named instance (`host\SQLEXPRESS`) và dynamic port** trong v1. Đây là cấu hình
+  rất phổ biến với SQL Server on-prem: instance không nghe cổng 1433 cố định mà đăng ký một cổng
+  động, client phải hỏi SQL Browser qua UDP 1434 để biết cổng. `tiberius` có sẵn feature
+  `sql-browser-tokio` cho việc này, nhưng `ConnectionConfig` chỉ có `host`/`port` và thêm một field
+  `instance` là một thay đổi shape chạm mọi engine ([[connectionconfig_shape_decision]]) — để lại
+  thành việc riêng. Người dùng có instance đặt tên vẫn kết nối được nếu bật TCP/IP cổng tĩnh cho
+  instance đó, và tài liệu nên nói vậy thay vì im lặng.
 - **Không tự bundle driver ODBC hay cài đặt gì lên máy người dùng cho phần đọc/ghi/DDL** (D1) —
-  chỉ Plan 6 (dump/restore) có thể cần một tool ngoài, và ngay cả đó cũng ưu tiên tự sinh SQL thay
+  chỉ Plan 7 (dump/restore) có thể cần một tool ngoài, và ngay cả đó cũng ưu tiên tự sinh SQL thay
   vì phụ thuộc tool (D10).
+- **Không hỗ trợ toán tử `REGEXP` trong filter bar** — SQL Server không có toán tử regex nào cho
+  tới `REGEXP_LIKE` của SQL Server 2025/Azure SQL, nên `regexpFilter: false` giống ClickHouse
+  (xem D12).
 
 ## Hiện trạng — khuôn mẫu đã có, kế thừa nguyên
 
@@ -93,16 +103,37 @@ mới, nên một bảng thuộc `dbo` hiển thị không tiền tố, bảng t
 **D4 — Định danh dùng ngoặc vuông `[ ]`, không phải backtick hay `"`. Cần mở rộng `SqlSyntax`.**
 `quote_ident` của MSSQL là `[name]` (đóng ngoặc `]` bên trong nhân đôi thành `]]`), không phải một
 ký tự đối xứng như ba engine kia. `SqlSyntax.identifierQuote: string | null` hiện giả định ký tự mở
-= ký tự đóng — đúng cho backtick và `"` nhưng sai cho `[`/`]`. Việc này ảnh hưởng bộ tách câu lệnh
-(`src/modules/db/sql/statements.ts` và bản Rust tương đương) và bộ tô màu cú pháp trong
-`SqlEditor`.
+= ký tự đóng — đúng cho backtick và `"` nhưng sai cho `[`/`]`.
 
 Chọn: đổi `identifierQuote` thành một cặp `{ open: string; close: string } | null` (khi
-`open === close`, hành vi y hệt hôm nay — MySQL/SQLite `` ` ``/`` ` ``, Postgres/ClickHouse không có
-biến thể này thay đổi vì chúng không dùng field này để mở/đóng khác ký tự). Đây là thay đổi *shape*
-duy nhất chạm vào cả 4 engine cũ, nên nó đứng ở Plan 7 (không phải Plan 1) — Plan 1-6 code MSSQL mà
-**chưa cắm vào statement splitter/editor cú pháp**, y hệt cách ClickHouse có `writable: false` một
-thời gian trong khi phần đọc đã chạy.
+`open === close`, hành vi y hệt hôm nay). Ba hằng số hiện có phải sửa —
+`MYSQL_SYNTAX`/`SQLITE_SYNTAX`/`CLICKHOUSE_SYNTAX` đều đang là `` "`" `` và thành
+`` { open: "`", close: "`" } ``; chỉ `POSTGRES_SYNTAX` là `null` (nó đọc `"` qua nhánh
+`doubleQuoteIsIdentifier` chứ không qua field này).
+
+**Bốn chỗ đọc field này, không phải một** — cả bốn đều ở frontend, `identifierQuote` không tồn tại
+phía Rust:
+
+- `src/modules/db/sql/statements.ts:126,131` — bộ tách câu.
+- `src/modules/db/sql/lint.ts:154,160` — tokenizer của bộ kiểm tra.
+- `src/modules/db/sql/lint.ts:344` (`asWritten`) — bọc một tên gợi ý bằng *một* ký tự và nhân đôi
+  chính nó để escape. Với `[`/`]` nó sẽ sinh ra `[name[`; hàm này phải viết lại theo cặp
+  open/close, escape bằng cách nhân đôi ký tự **đóng**.
+
+Phía Rust không có `SqlSyntax`: `mysql_script.rs`/`postgres_script.rs` hard-code luật lexing của
+riêng chúng. `mssql_script.rs` vì vậy viết splitter riêng (Plan 5), và giữ đồng bộ với bản JS bằng
+test song song chứ không bằng một shape dùng chung.
+
+Đây là thay đổi *shape* duy nhất chạm vào các engine cũ. **Nó phải đứng ở Plan 4, trước Query tab
+(Plan 5), không phải ở cuối** — xem hộp bên dưới.
+
+> **Vì sao không hoãn tới plan cuối được.** Bộ tách câu chạy ở **frontend**, không phải backend:
+> `QueryEditor.tsx:430` và `:735` gọi `splitStatements(text, dialect.syntax)` để quyết định gửi gì
+> lên server và để `guard.ts` xét statement nào là write. Nếu Query tab mở ra khi `MSSQL_SYNTAX`
+> chưa hiểu `[ ]` và `GO`: `SELECT * FROM [Order;Details]` bị cắt làm hai câu và gửi SQL rác lên
+> server; `GO` được gửi nguyên như một statement và luôn lỗi cú pháp — dù `mssql_script.rs` phía
+> Rust có tách batch đúng thì cũng vô nghĩa, vì frontend đã cắt sai trước đó. Plan 1-3 (chỉ Data
+> tab, không có Query tab) thì hoàn toàn không cần nó, nên đây là chỗ đúng để cắt.
 
 CodeMirror không cần việc này: `@codemirror/lang-sql` đã có `MSSQL` dialect dựng sẵn và
 `SQLConfig.identifierQuotes` nhận `"\"["` để hiểu cả `"` lẫn `[` — chỉ cần truyền đúng string đó khi
@@ -117,15 +148,19 @@ Backend:
 - `state.rs`: thêm biến thể `DbHandle::Mssql(Pool)` (kiểu `Pool` xem D2).
 - `commands/mod.rs`: thêm nhánh `DbKind::Mssql` trong `connect_db` (Plan 1), `disconnect_db`
   (Plan 1), một hàm `mssql_pool(state, id)` cạnh `mysql_pool`/`postgres_pool` (Plan 1), nhánh trong
-  `sql_endpoint` cho dump/restore (Plan 6).
-- `drivers/mod.rs`: `pub mod mssql; pub mod mssql_ddl; pub mod mssql_script; pub mod
-  mssql_structure;` (chia file y hệt cách postgres chia bốn file, không dồn hết vào một file
-  nghìn dòng).
+  `sql_endpoint` cho dump/restore (Plan 7).
+- `drivers/mod.rs`: `pub mod mssql; pub mod mssql_ddl; pub mod mssql_dump; pub mod mssql_script;
+  pub mod mssql_structure;` (chia file y hệt cách postgres chia bốn file, cộng một `_dump.rs` riêng
+  giống `clickhouse_dump.rs`/`sqlite_dump.rs` vì dump ở đây tự sinh SQL — xem D10 — không dồn hết
+  vào một file nghìn dòng).
 - `commands/mod.rs` (khai module) + `modules/mod.rs`: `pub mod mssql;` và các dòng
   `generate_handler!` cho từng lệnh mới.
 
 Frontend:
 - `types.ts`: `DbKind` union thêm `"mssql"`, `DEFAULT_PORTS.mssql = 1433`.
+- `sql/dialect.ts`: `SqlDialect.kind` là một union literal **riêng**
+  (`"mysql" | "postgres" | "sqlite" | "clickhouse"`, `dialect.ts:73`) — phải nới thêm `"mssql"`
+  cùng lúc với `types.ts`, nếu không `mssqlDialect` không type-check.
 - `engines.ts`: `SQL_ENGINES.mssql = { api: mssqlApi, dialect: mssqlDialect }`.
 - `connectionForm.ts`: `KIND_LABEL.mssql`, `hasTls` thêm `"mssql"` (D6 — MSSQL có encryption
   option, box TLS có ý nghĩa).
@@ -135,6 +170,13 @@ Frontend:
 
 Mỗi plan bên dưới nói rõ nó cần *bao nhiêu* trong checklist này để tự chạy được (Plan 1 cần gần hết
 để app build và connect được; các plan sau chỉ thêm method/lệnh mới, không đụng lại phần khung).
+
+**Feature của `tiberius` trong `Cargo.toml`** — không chỉ `tokio` + TLS. D11 hứa đọc được
+`DECIMAL`/`DATE`/`TIME`/`DATETIME2`/`DATETIMEOFFSET`, và mỗi thứ đó là một feature gate: `tds73`
+(giao thức TDS 7.3 trở lên — không có nó thì server hạ cấp và các kiểu date/time mới **không có
+biến thể `ColumnData` tương ứng**), `rust_decimal` (hoặc `bigdecimal`) cho `DECIMAL`/`NUMERIC`,
+`chrono` (hoặc `time`) cho nhóm ngày giờ. Bật thiếu thì D11 không thực hiện được chứ không phải
+hiển thị xấu. TLS thì `tiberius` có sẵn `native-tls`, nên không cần ngoại lệ so với stack hiện có.
 
 **D6 — TLS/encryption: `use_ssl` giữ nguyên nghĩa, map sang `EncryptionLevel` của `tiberius`.**
 `tiberius::Config::encryption(EncryptionLevel)` nhận `Off`/`On`/`Required`. `use_ssl == Some(false)`
@@ -153,10 +195,23 @@ test (`192.168.50.86:1433`, khả năng cao dùng self-signed cert mặc định
 Đọc từ `sys.identity_columns` (has columns `seed_value`, `increment_value`, `last_value`) join
 `sys.columns`. Ánh xạ vào field chung: `SqlColumnMeta.extra`/`SqlStructureColumn.autoIncrement` đọc
 y hệt MySQL's `auto_increment` — cột có trong `sys.identity_columns` → `autoIncrement = true`.
-Reset counter sau khi xoá hết dữ liệu (`resetAutoIncrement`) dùng
-`DBCC CHECKIDENT ('table', RESEED, 0)` — tương đương `ALTER TABLE ... AUTO_INCREMENT = 1` của MySQL.
+Reset counter sau khi xoá hết dữ liệu (`resetAutoIncrement`) dùng `DBCC CHECKIDENT` — tương đương
+`ALTER TABLE ... AUTO_INCREMENT = 1` của MySQL, nhưng với hai khác biệt phải xử lý, không gọi vô
+điều kiện như MySQL:
 
-**D8 — Cancel một script đang chạy: cần xác minh API `tiberius` lúc code Plan 4, không chốt cứng ở
+- **Tên bảng là một chuỗi có schema, không phải định danh.** `DBCC CHECKIDENT ('dbo.mytable',
+  RESEED, 0)` — bỏ schema thì lệnh chỉ trúng khi bảng thuộc schema mặc định của user, và cú pháp
+  `[ ]` của D4 không dùng ở đây (đây là tham số chuỗi, escape bằng nhân đôi `'`).
+- **Bảng không có cột IDENTITY thì lệnh báo lỗi**, trong khi `AUTO_INCREMENT = 1` của MySQL vô
+  hại. Phải kiểm `sys.identity_columns` trước và bỏ qua lặng lẽ nếu không có — `deleteRows(all =
+  true, resetAutoIncrement = true)` được gọi trên bảng bất kỳ.
+
+Một cột `rowversion`/`timestamp` cũng do server tự gán và **không insert/update được**, dù nó không
+phải IDENTITY. Nó phải rơi vào `isServerAssigned` (xem `postgres/columns.ts:22` làm mẫu: hàm đó là
+`isAutoIncrement || isGenerated`, MSSQL cần thêm vế thứ ba theo `dataType`), nếu không mọi INSERT
+từ grid trên bảng có cột như vậy sẽ lỗi.
+
+**D8 — Cancel một script đang chạy: cần xác minh API `tiberius` lúc code Plan 5, không chốt cứng ở
 đây.** MySQL huỷ bằng `KILL QUERY <thread_id>` (dừng câu lệnh, giữ session), PostgreSQL bằng
 `pg_cancel_backend(pid)` (tương tự). SQL Server có `KILL <session_id>` qua T-SQL, nhưng đó là lệnh
 **đóng luôn cả session** chứ không có "KILL QUERY" tách riêng dừng-statement-giữ-session — nếu đúng
@@ -167,6 +222,14 @@ nếu `tiberius` expose được API này (cần đọc doc/source của crate l
 đó là lựa chọn ưu tiên; nếu không, rơi về `KILL <session_id>` qua một connection phụ (giống mẫu
 MySQL/Postgres), chấp nhận cái giá "cancel = mất session" và ghi rõ trong doc comment của
 `dialect.cancellable`.
+
+**Cái bẫy của nhánh `KILL`: nó là chuyện quyền, không chỉ chuyện nặng tay.** `KILL` đòi
+`ALTER ANY CONNECTION` (hoặc `sysadmin`/`processadmin`) — khác hẳn `pg_cancel_backend` của
+PostgreSQL, vốn luôn cho phép huỷ backend của chính mình. Nghĩa là một login thường **không huỷ
+được ngay cả session của chính nó**. Server test dùng `sa` nên sẽ chạy được và che mất vấn đề này;
+đừng lấy đó làm bằng chứng là xong. Nếu phải rơi về `KILL`, chọn một trong hai và ghi vào spec lúc
+code Plan 5: hoặc thử quyền một lần lúc connect và đặt `cancellable` theo kết quả, hoặc để nút
+Cancel luôn bật và trả nguyên lỗi permission của server cho người dùng đọc.
 
 **D9 — `GO` là dấu ngăn batch phía client, không phải cú pháp SQL thật — ảnh hưởng bộ tách câu.**
 T-SQL script thường ngăn cách các "batch" bằng dòng chỉ chứa `GO` (không phải `;` — `;` vẫn ngăn
@@ -186,12 +249,19 @@ build cho cả ba platform) chạy được script `.sql` — dùng được cho
 tương đương `pg_dump`/`mysqldump` cho chiều **dump** (`bcp` chỉ xuất dữ liệu thô một bảng ở định
 dạng riêng, không sinh DDL + INSERT thành file `.sql` đọc được). Đề xuất: viết **dump tự thân bằng
 `tiberius`** — không tool ngoài — sinh DDL (`CREATE TABLE`, `CREATE INDEX`...) bằng cách đọc lại
-catalog views (Plan 5 đã có sẵn code đọc structure để tái dùng) và sinh `INSERT` bằng cách đọc dữ
-liệu theo trang (giống cách Plan 2 đã đọc). Đây là plan duy nhất **không** đi theo khuôn tool-ngoài
-`tools.rs` cho chiều dump — restore vẫn có thể dùng `sqlcmd` nếu tìm/tải được, hoặc cũng tự thân nếu
-`sqlcmd` không tải được trên một platform nào đó. **Quyết định cuối (dùng `sqlcmd` cho restore hay
-tự thân luôn cả hai chiều) để ngỏ tới Plan 6** — cần hỏi lại sau khi Plan 1-5 xong, xem giá tự viết
-dump/restore round-trip đáng tin tới đâu so với công sức thêm một `Suite::Mssql` vào `tools.rs`.
+catalog views (Plan 2 đã có sẵn code đọc structure để tái dùng) và sinh `INSERT` bằng cách đọc dữ
+liệu theo trang (giống cách Plan 2 đã đọc).
+
+Đây **không** phải chuyện chưa có tiền lệ trong repo này:
+[`clickhouse_dump.rs`](../../../src-tauri/src/modules/db/drivers/clickhouse_dump.rs) và
+[`sqlite_dump.rs`](../../../src-tauri/src/modules/db/drivers/sqlite_dump.rs) đã tự sinh dump không
+tool ngoài. `mssql_dump.rs` lấy `clickhouse_dump.rs` làm khuôn — cùng `dump::Tracker`, cùng
+`TRANSFER_PROGRESS_EVENT` — chứ không phát minh lại cách báo tiến độ.
+
+Restore vẫn có thể dùng `sqlcmd` nếu tìm/tải được, hoặc cũng tự thân nếu `sqlcmd` không tải được
+trên một platform nào đó. **Quyết định cuối (dùng `sqlcmd` cho restore hay tự thân luôn cả hai
+chiều) để ngỏ tới Plan 7** — cần hỏi lại sau khi Plan 1-6 xong, xem giá tự viết dump/restore
+round-trip đáng tin tới đâu so với công sức thêm một `Suite::Mssql` vào `tools.rs`.
 
 **D11 — Kiểu dữ liệu: thứ tự thử decode trong `column_value`, giống `postgres::column_value`.**
 `tiberius` trả `ColumnData<'_>` là một enum Rust đã gõ kiểu theo cột (giống Postgres, khác cách
@@ -207,7 +277,88 @@ DATETIMEOFFSET→string` (ISO-ish, giống format Postgres đang trả), `UNIQUE
 text nếu server cho phép ép `CAST(col AS nvarchar(max))`, giống cách Postgres text-hoá kiểu không có
 decoder riêng.
 
-## Kế hoạch triển khai — 7 plan
+**D12 — Filter bar: `regexpFilter: false`, và `escape_like` phải có bản riêng cho MSSQL.**
+`build_where` "copy khuôn Postgres" đúng ở phần khung nhưng sai ở ba toán tử, cả ba đều là khác
+biệt thật của T-SQL chứ không phải khác cách viết:
+
+- **Không có regex.** SQL Server không có toán tử nào tương đương `~` của PostgreSQL hay `REGEXP`
+  của MySQL cho tới `REGEXP_LIKE` của SQL Server 2025. `mssqlDialect.regexpFilter = false`, giống
+  `clickhouse/dialect.ts:57` — một toán tử không bao giờ chạy được thì không nên có trong dropdown.
+  `build_where` cũng không cần nhánh cho nó, y hệt `sqlite.rs`.
+- **`LIKE` của SQL Server không có escape character mặc định.** `filters.rs::escape_like` dùng `\`
+  và doc comment của chính nó nói rõ vì sao nó là *một* hàm cho hai engine: "MySQL và PostgreSQL
+  đều lấy `\` làm escape mặc định". SQL Server thì không — `\` chỉ là một ký tự thường, nên phải
+  viết `ESCAPE '\'` tường minh vào **mọi** câu `LIKE` sinh ra.
+- **`[` là ký tự đại diện trong `LIKE` của T-SQL** (`[a-c]` là một tập ký tự), thứ không engine nào
+  khác có. `escape_like` hiện escape `\ % _` và để lọt `[`, nên filter "contains" cho chuỗi `a[0]`
+  sẽ trả sai kết quả một cách im lặng.
+
+Chọn: một hàm `escape_like_mssql` riêng trong `mssql.rs` (không sửa `filters.rs` dùng chung — hàm
+đó đang đúng cho hai engine nó phục vụ), escape `\ % _ [`, và mọi `LIKE`/`NOT LIKE` sinh ra đều
+kèm `ESCAPE '\'`. Thêm test cho `a[0]` và `50%` giống các test đã có ở cuối `filters.rs`.
+
+Cuối cùng, **không có `ILIKE`**: so sánh phân biệt hoa thường hay không là do collation của cột
+quyết định (`*_CI_*` là mặc định của đa số cài đặt, nên trên thực tế filter sẽ *không* phân biệt
+hoa thường). Không ép bằng `LOWER()` — nó phá index. Ghi hành vi này vào doc comment của
+`build_where` vì nó khác cả ba engine kia.
+
+**D13 — Isolation level: Data tab đọc phải có `LOCK_TIMEOUT`, nếu không nó sẽ treo im lặng.**
+SQL Server mặc định chạy `READ COMMITTED` **có khoá**, không phải MVCC như PostgreSQL và InnoDB.
+Hệ quả cụ thể: mở một bảng đang bị transaction khác giữ khoá ghi thì `SELECT` **chờ vô hạn** —
+không lỗi, không timeout, spinner quay mãi. Ba engine hiện có không bao giờ hành xử như vậy, nên
+đây không phải "SQL Server chậm" mà là một khác biệt phải xử lý ở tầng driver.
+
+Chọn: mọi connection đi ra từ pool đặt `SET LOCK_TIMEOUT 5000` ngay khi mở (5 giây — đủ để một
+transaction ngắn đi qua, đủ ngắn để người dùng không tưởng app treo), và lỗi 1222 "Lock request
+time out" được trả nguyên văn lên UI. Đường **chỉ đọc** (`table_data`, `table_structure`,
+`table_stats`, `schema_outline`, `list_tables`) thêm `SET TRANSACTION ISOLATION LEVEL READ
+UNCOMMITTED` — duyệt dữ liệu để xem không đáng để chặn người khác ghi, và đây đúng là cái mọi công
+cụ cùng loại làm. Đường **ghi** (`update_row`/`insert_rows`/`delete_rows`, DDL, script tay) giữ
+nguyên `READ COMMITTED` mặc định: một dòng đọc bẩn rồi ghi đè là chuyện khác hẳn với một dòng đọc
+bẩn rồi hiển thị. Ghi rõ sự chia đôi này trong doc comment của `mssql::connect`.
+
+**D14 — `objectCollation`: SQL Server có collation cấp database nhưng không có cấp bảng, mà cờ
+này gate cả hai.** `SqlEditing.objectCollation` (`sql/dialect.ts:46`) là "một database **hoặc một
+bảng** mang collation của riêng nó", và nó được đọc ở đúng hai chỗ:
+`DatabaseDialog.tsx:38` và `TableDialog.tsx:84`. Lưu ý collation **cấp cột** luôn được chào và
+không đi qua cờ này (`ColumnDialog` đọc `collations` trực tiếp) — nên PostgreSQL, nơi chỉ cột mới
+có collation, để `objectCollation: false` (`postgres/editing.ts:74`).
+
+SQL Server nằm giữa: `CREATE DATABASE [x] COLLATE Vietnamese_CI_AS` là hợp lệ và là một thuộc tính
+quan trọng của database, còn `CREATE TABLE` thì **không có mệnh đề `COLLATE` cấp bảng** nào cả.
+Đặt `true` sẽ chào một ô collation trong TableDialog mà `create_table` không có chỗ để dùng; đặt
+`false` thì mất luôn ô collation lúc tạo database, dù `SqlApi.createDatabase(id, name, collation)`
+(`sql/api.ts:137`) đã sẵn tham số cho nó.
+
+Chọn: **tách cờ thành `databaseCollation` và `tableCollation`** trong `SqlEditing`, MySQL đặt cả
+hai `true`, PostgreSQL/ClickHouse cả hai `false` (hành vi không đổi), MSSQL `databaseCollation:
+true` / `tableCollation: false`. Đây là thay đổi shape thứ hai chạm các engine cũ, nhưng nhỏ hơn
+D4 nhiều (một field tách đôi, hai call site) và nó thuộc Plan 6 (DDL) — đúng plan cần nó. Kèm
+theo: `create_database` phải thật sự sinh `COLLATE` khi tham số khác `null`, việc mà bản nháp
+trước của spec này bỏ quên.
+
+**D15 — `ALTER COLUMN` của SQL Server không phải một câu lệnh, mà là một chuỗi lệnh.**
+Đây là chỗ MSSQL lệch MySQL/PostgreSQL nhiều nhất trong toàn bộ spec này. `ALTER TABLE ... ALTER
+COLUMN` **bị server từ chối** khi cột đang:
+
+- có default constraint gắn vào — và tên constraint thường do server tự sinh (`DF__t__col__1A2B3C4D`),
+  nên phải tra `sys.default_constraints` mới biết mà `DROP CONSTRAINT`;
+- nằm trong một index, PRIMARY KEY hay UNIQUE constraint — phải drop index, alter, tạo lại;
+- có check constraint, hoặc bị một FOREIGN KEY tham chiếu tới.
+
+Thêm hai cái bẫy nữa: `ALTER COLUMN` **thay thế toàn bộ định nghĩa cột**, nên quên viết lại
+`NOT NULL` là cột lặng lẽ thành nullable và quên `COLLATE` là mất collation; và **không có cách nào
+bật/tắt `IDENTITY` bằng `ALTER COLUMN`** (đổi được chỉ bằng cách tạo bảng mới rồi copy).
+
+Chọn: `mssql_ddl::modify_column` là một **chuỗi lệnh chạy trong một transaction**, không phải một
+câu — đọc constraint/index hiện có của cột từ catalog → drop những cái chặn → `sp_rename` nếu tên
+đổi → `ALTER COLUMN` với định nghĩa **đầy đủ** dựng lại từ `SqlColumnSpec` (kiểu, nullable,
+collation — mọi thứ, kể cả phần người dùng không sửa) → dựng lại default constraint và index đã
+drop. `drop_column` cũng phải drop default constraint trước. Phi mục tiêu của D15: **không** đổi
+được IDENTITY on/off qua Structure tab — nút đó phải bị khoá với thông báo rõ, chứ không phải để
+người dùng bấm rồi nhận lỗi server.
+
+## Kế hoạch triển khai — 8 plan
 
 Mỗi plan là một PR/commit-set độc lập, build xanh và test qua được sau khi làm xong, không để dở
 dang giữa plan. Thứ tự là bắt buộc: plan sau dựa vào file/hàm plan trước tạo ra.
@@ -219,23 +370,32 @@ dang giữa plan. Thứ tự là bắt buộc: plan sau dựa vào file/hàm pla
 báo "not implemented" tạm), chưa Query/Structure tab.
 
 **Backend:**
-- `Cargo.toml`: thêm `tiberius` (+ pool crate theo D2) với feature phù hợp (`tokio`, TLS
-  native-tls để đồng bộ với stack hiện có nếu `tiberius` hỗ trợ; nếu chỉ hỗ trợ `rustls` thì ghi rõ
-  đây là ngoại lệ so với "mọi driver dùng native-tls" đã có, kèm lý do trong comment `Cargo.toml`
-  giống cách file này đã giải thích lựa chọn `native-tls` cho những driver khác).
-- `drivers/mssql.rs`: `pub async fn connect(host, port, username, password, database, use_ssl) ->
-  Result<Pool, AppError>` (D1/D2/D6), `pub async fn server_info(pool) -> Result<ServerInfo,
-  AppError>` (`SELECT @@VERSION`, cắt chuỗi lấy version + OS giống cách `postgres::server_info` cắt
-  chuỗi `version()` — `@@VERSION` của SQL Server có dạng nhiều dòng "Microsoft SQL Server 2022
-  (RTM)... on Linux (Ubuntu ...)", cần parse cụ thể khi có server thật để thử), `pub async fn
-  list_databases(pool) -> Result<Vec<String>, AppError>` (`SELECT name FROM sys.databases WHERE
-  database_id > 4 AND state = 0 ORDER BY name` — `database_id > 4` loại bỏ 4 database hệ thống
-  `master/tempdb/model/msdb`, `state = 0` loại database offline/đang restore), `pub async fn
-  list_tables(pool, database) -> Result<Vec<String>, AppError>` (`SELECT s.name, t.name FROM
-  sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id ORDER BY (s.name <> 'dbo'), s.name,
-  t.name` — không lọc thêm gì vì `sys.tables` vốn đã không chứa bảng hệ thống, khác
-  `system_schema_filter` Postgres cần), `qualify`/`resolve`/`quote_ident` (D3/D4, copy từ
-  `postgres.rs`, đổi `DEFAULT_SCHEMA = "dbo"` và quote thành `[ident]`/`]]`).
+- `Cargo.toml`: thêm `tiberius` (+ pool crate theo D2) với đủ feature theo D5 — `tokio`,
+  `native-tls`, `tds73`, `rust_decimal`, `chrono`. Ba cái sau không phải tuỳ chọn: thiếu chúng thì
+  D11 không có biến thể `ColumnData` để match.
+- `drivers/mssql.rs`:
+  - `pub async fn connect(host, port, username, password, database, use_ssl) -> Result<Pool,
+    AppError>` (D1/D2/D6), đặt `SET LOCK_TIMEOUT` cho mỗi connection mới theo D13.
+  - `pub async fn server_info(pool) -> Result<ServerInfo, AppError>` — **đọc
+    `SERVERPROPERTY('ProductVersion')`, `SERVERPROPERTY('Edition')` và
+    `SERVERPROPERTY('ProductLevel')`, không cắt chuỗi `@@VERSION`.** `@@VERSION` được **localize**
+    theo ngôn ngữ cài đặt của server, nên parse nó ra rác trên bất kỳ server không phải tiếng Anh
+    nào; `SERVERPROPERTY` trả giá trị máy đọc được và ổn định. `@@VERSION` chỉ dùng để lấy phần tên
+    OS ở cuối chuỗi, và hỏng ở đó thì `ServerInfo.os` để rỗng chứ không làm hỏng cả lệnh.
+  - `pub async fn list_databases(pool) -> Result<Vec<String>, AppError>`: `SELECT name FROM
+    sys.databases WHERE database_id > 4 AND state = 0 AND HAS_DBACCESS(name) = 1 ORDER BY name` —
+    `database_id > 4` loại 4 database hệ thống `master/tempdb/model/msdb`, `state = 0` loại
+    database offline/đang restore, và **`HAS_DBACCESS(name) = 1` loại database mà login hiện tại
+    không mở được**. Vế thứ ba là vế dễ quên nhất vì server test dùng `sa` (thấy mọi thứ): thiếu
+    nó, một login thường thấy database trong sidebar rồi nhận lỗi "server principal is not able to
+    access the database" khi bấm vào.
+  - `pub async fn list_tables(pool, database) -> Result<Vec<String>, AppError>`: **liệt kê cả bảng
+    lẫn view**, vì `postgres::list_tables` cũng vậy (`relkind IN ('r','p','v','m','f')`, và doc
+    comment của nó nói rõ "Every table **and view**") — dùng `sys.objects WHERE type IN ('U','V')`
+    join `sys.schemas`, không dùng `sys.tables` (chỉ có bảng, mất hết view). `ORDER BY (s.name <>
+    'dbo'), s.name, o.name`. Không cần lọc schema hệ thống như `system_schema_filter` bên Postgres.
+  - `qualify`/`resolve`/`quote_ident` (D3/D4, copy từ `postgres.rs`, đổi `DEFAULT_SCHEMA = "dbo"`
+    và quote thành `[ident]`/`]]`).
 - `state.rs`: `DbHandle::Mssql(Pool)`.
 - `commands/mssql.rs` (mới): `mssql_list_databases`, `mssql_server_info`, `mssql_list_tables` —
   ba lệnh, chữ ký y hệt `postgres_list_databases`/`postgres_server_info`/`postgres_list_tables`.
@@ -270,15 +430,33 @@ một database hiện đúng danh sách table.
   `varchar(255)`/`decimal(10,2)` giống MySQL/Postgres đang hiển thị). Default value đọc qua
   `sys.default_constraints` (`definition` column, dạng `((0))`/`(getdate())` — bọc thêm ngoặc so
   với Postgres, cần bóc ngoặc ngoài khi hiển thị, giữ để hiển thị y hệt SSMS khi ghi lại DDL).
+
+  **Hai quy ước của catalog SQL Server làm chuỗi kiểu hiển thị sai nếu đọc thẳng:**
+  - `sys.columns.max_length` đo bằng **byte**, không phải ký tự. Với `nchar`/`nvarchar` (2
+    byte/ký tự) thì `nvarchar(255)` đọc ra `510` — phải chia đôi cho nhóm Unicode trước khi ghép
+    chuỗi. `CHARACTER_MAXIMUM_LENGTH` của `INFORMATION_SCHEMA` thì đã là ký tự, nên chọn một nguồn
+    và dùng nhất quán chứ đừng trộn.
+  - Giá trị `-1` (ở cả `max_length` lẫn `CHARACTER_MAXIMUM_LENGTH`) nghĩa là **`MAX`**, không phải
+    độ dài âm — phải sinh `varchar(max)`/`nvarchar(max)`/`varbinary(max)`, chứ không phải
+    `varchar(-1)`.
+- `rowversion`/`timestamp` phải được đánh dấu server-assigned (D7) để INSERT không bao giờ nêu tên
+  chúng.
 - Foreign key: `sys.foreign_key_columns` join `sys.foreign_keys`, `sys.tables`, `sys.columns` —
   cùng shape `ForeignKey { table, column }` của Postgres.
 - `primary_key`: `sys.indexes WHERE is_primary_key = 1` join `sys.index_columns`.
-- `build_where`/`table_data`: copy khuôn Postgres (COUNT trước, rồi SELECT phân trang), nhưng
-  phân trang dùng `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY` (cú pháp SQL Server 2012+, không phải
-  `LIMIT`/`OFFSET`) — **bắt buộc có `ORDER BY`** đi kèm `OFFSET`/`FETCH` (SQL Server từ chối cú
-  pháp này nếu thiếu `ORDER BY`, khác Postgres/MySQL cho phép `LIMIT` không `ORDER BY`) — khi
-  người dùng không chọn cột sort, dùng khoá chính (hoặc cột đầu tiên nếu không có khoá chính) làm
-  `ORDER BY` ngầm, viết rõ trong comment vì đây là khác biệt hành vi so với 3 engine kia.
+- `build_where`: copy khuôn Postgres cho phần khung, nhưng theo **D12** cho ba toán tử lệch —
+  không có nhánh `regexp`/`notRegexp` (dialect đã đóng chúng), `escape_like_mssql` escape thêm `[`,
+  và mọi `LIKE` sinh ra kèm `ESCAPE '\'`. Test kèm theo: filter "contains" cho `a[0]` và cho `50%`
+  phải trả đúng dòng chứa đúng chuỗi đó.
+- `table_data`: COUNT trước rồi SELECT phân trang như Postgres, nhưng phân trang dùng
+  `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY` (cú pháp SQL Server 2012+, không phải `LIMIT`/`OFFSET`)
+  — và cú pháp này **bắt buộc có `ORDER BY`**, khác Postgres/MySQL cho phép `LIMIT` trần.
+
+  Khi người dùng không chọn cột sort, dùng **`ORDER BY (SELECT NULL)`**, không phải khoá chính và
+  càng không phải "cột đầu tiên". `(SELECT NULL)` thoả cú pháp mà không ép server sort gì cả, nên
+  nó giữ đúng ngữ nghĩa "không có thứ tự nào được yêu cầu" mà `postgres::table_data` có khi nó bỏ
+  hẳn mệnh đề `ORDER BY` (`postgres.rs:761`). Sắp theo cột đầu tiên thì ngược lại: một cột không
+  index trên bảng lớn là một lần sort toàn bảng cho mỗi lần lật trang.
 - `mssql_structure.rs`: `table_structure`/`table_stats`/`collations`, shape y hệt
   `postgres_structure.rs`. `table_stats` đọc từ `sys.dm_db_partition_stats`/`sys.partitions` (số
   dòng ước tính, giống MySQL/Postgres đọc từ catalog thay vì COUNT thật). `collations` đọc
@@ -288,14 +466,18 @@ một database hiện đúng danh sách table.
 
 **Frontend:**
 - `src/modules/db/mssql/columns.ts`: `isAutoIncrement` (D7), `isGenerated` (cột computed —
-  `sys.columns.is_computed`), `isServerAssigned`, `isBinary` (`varbinary`/`binary`/`image`).
+  `sys.columns.is_computed`), `isServerAssigned` (`isAutoIncrement || isGenerated ||` cột
+  `rowversion`/`timestamp` — xem D7), `isBinary` (`varbinary`/`binary`/`image`).
 - `src/modules/db/mssql/system.ts`: `isMssqlSystemDatabase` — trả `true` cho
   `master/tempdb/model/msdb` dù chúng đã bị lọc khỏi `listDatabases` (D3-style: hàm vẫn nên tồn tại
   và đúng, phòng khi tương lai một chỗ khác gọi tới, giống cách Postgres vẫn định nghĩa dù
   `list_databases` cũng đã tự lọc trước).
 - `src/modules/db/mssql/dialect.ts`: điền `kind: "mssql"`, `editing` tạm để rỗng/placeholder
-  (Plan 5 điền thật), mọi cờ ghi (`writable`/`ddlWritable`/`rowsWritable`/`dumpRestoreWritable`)
-  **để `false`** ở plan này — chỉ đọc, giống ClickHouse's giai đoạn đầu.
+  (Plan 6 điền thật), `regexpFilter: false` (D12), `cancellable: false` cho tới Plan 5, mọi cờ ghi
+  (`writable`/`ddlWritable`/`rowsWritable`/`dumpRestoreWritable`) **để `false`** ở plan này — chỉ
+  đọc, giống ClickHouse's giai đoạn đầu. `syntax` ở plan này dùng shape *cũ* của `SqlSyntax`
+  (`identifierQuote` là một ký tự) và tạm để `null`: Query tab chưa mở nên chưa ai đọc tới nó, và
+  Plan 4 mới đổi shape rồi điền `MSSQL_SYNTAX` thật.
 - `engines.ts`: `SQL_ENGINES.mssql = { api: mssqlApi, dialect: mssqlDialect }`.
 
 **Tiêu chí xong:** mở một bảng SQL Server có dữ liệu, thấy đúng cột/kiểu/khoá chính, phân trang và
@@ -321,7 +503,10 @@ Add table...) đều khoá — giống trải nghiệm ClickHouse trước khi r
   trùng dòng y hệt MySQL đang chấp nhận, **không** cần bắt chước cơ chế đặc thù `ctid` của Postgres).
 - Placeholder: `tiberius` dùng `@P1, @P2, ...` (named-ish nhưng đơn giản đếm số, giống spirit của
   Postgres's `$1, $2` — không phải `?` như MySQL).
-- `DBCC CHECKIDENT` cho reset counter (D7).
+- `DBCC CHECKIDENT ('schema.table', RESEED, 0)` cho reset counter, **có schema và chỉ gọi khi bảng
+  thật sự có cột IDENTITY** (D7) — lệnh này báo lỗi trên bảng không có IDENTITY, khác
+  `AUTO_INCREMENT = 1` của MySQL vốn vô hại, mà `deleteRows(all, resetAutoIncrement)` thì được gọi
+  trên bảng bất kỳ.
 
 **Frontend:** `mssqlDialect.rowsWritable = true`. Không đổi gì khác ở tầng UI — `SqlTable.tsx` đã
 tổng quát hoá đủ qua `dialect`/`api`.
@@ -329,17 +514,46 @@ tổng quát hoá đủ qua `dialect`/`api`.
 **Tiêu chí xong:** sửa một ô, thêm một dòng (kể cả bỏ trống cột có DEFAULT/IDENTITY), xoá dòng (kể
 cả xoá hết + reset IDENTITY) trên bảng SQL Server test, y hệt trải nghiệm MySQL/Postgres.
 
-### Plan 4 — Query tab: run_script, cancelQuery, validateSql
+### Plan 4 — Cú pháp: `SqlSyntax` thành cặp open/close, `MSSQL_SYNTAX`, tách batch `GO`
+
+**Phạm vi:** thuần frontend, không lệnh backend mới, không tính năng người dùng thấy được. Đây là
+plan dọn đường: sau nó, `splitStatements` và bộ lint hiểu `[bracket identifier]` và `GO`. **Phải
+đứng trước Plan 5**, vì bộ tách câu chạy ở frontend và Query tab gọi thẳng nó — xem hộp trong D4.
+
+- `sql/syntax.ts`: đổi `identifierQuote: string | null` thành
+  `identifierQuote: { open: string; close: string } | null` (D4). Sửa ba hằng số hiện có —
+  `MYSQL_SYNTAX`, `SQLITE_SYNTAX`, `CLICKHOUSE_SYNTAX` đều đang là `` "`" `` → 
+  `` { open: "`", close: "`" } ``; `POSTGRES_SYNTAX` giữ `null`. Thêm `MSSQL_SYNTAX`:
+  `identifierQuote: { open: "[", close: "]" }`, `hashComments: false`,
+  `dashCommentNeedsSpace: false`, `nestedBlockComments: false` (SQL Server không nest `/* */`),
+  `doubleQuoteIsIdentifier: true` (mặc định `QUOTED_IDENTIFIER ON`), `backslashEscapes: false`,
+  `escapeStringPrefix: false`, `dollarQuoting: false`.
+- Thêm field `batchSeparator: boolean` vào `SqlSyntax` (D9) — chỉ `true` cho MSSQL. Bộ tách đọc
+  field này để tách thêm một tầng theo dòng chỉ chứa `GO` (hoặc `GO <n>`), **trước** khi tách theo
+  `;` trong mỗi batch. Một chuỗi hay comment chứa chữ `go` không được nhầm là separator.
+- Sửa cả **bốn** chỗ đọc `identifierQuote`, không phải một: `sql/statements.ts:126,131`,
+  `sql/lint.ts:154,160`, và `sql/lint.ts:344` (`asWritten` — hàm này bọc tên bằng một ký tự và
+  nhân đôi chính nó để escape; với `[`/`]` phải bọc bằng cặp và escape bằng nhân đôi ký tự đóng).
+- Chạy lại **toàn bộ** `sql/syntax.test.ts`, `sql/statements.test.ts`, `sql/lint.test.ts` trước khi
+  thêm test mới — đây là plan duy nhất đổi shape chạm các engine cũ, nên bằng chứng là test cũ vẫn
+  xanh chứ không phải test mới xanh. `syntax.test.ts:21-22` đang assert giá trị cũ và phải sửa.
+- `mssqlDialect.syntax = MSSQL_SYNTAX`.
+
+**Tiêu chí xong:** test cũ của 4 engine xanh nguyên; `splitStatements` trên
+`SELECT * FROM [Order;Details]; SELECT 1` trả về đúng **hai** câu (không phải ba), trên một script
+có `GO`/`GO 3` trả về đúng số batch, và một comment `-- go` không cắt gì cả.
+
+### Plan 5 — Query tab: run_script, cancelQuery, validateSql
 
 **Phạm vi:** Query tab mở được, chạy multi-statement, hỗ trợ `GO` (D9), cancel được (D8),
 validate cú pháp không chạy thật. **Chưa** bật `writable` (DDL/DML tay qua Query tab) — đó là
-Plan 5, vì `guard.ts` cần biết `ddlWritable` trước khi cho phép DDL qua đường này.
+Plan 6, vì `guard.ts` cần biết `ddlWritable` trước khi cho phép DDL qua đường này.
 
 **Backend (`drivers/mssql_script.rs` mới):**
-- Tách batch theo `GO` (D9) trước khi tách câu theo `;` trong mỗi batch — dùng lại
-  `sql/statements.ts`'s thuật toán tách `;` (port sang Rust, hoặc port ngược lại nếu Rust có sẵn
-  logic tổng quát hơn — kiểm tra `mysql_script.rs`/`postgres_script.rs` lúc code xem có phần dùng
-  chung được không, tránh viết lại từ đầu).
+- Tách batch theo `GO` (D9) trước khi tách câu theo `;` trong mỗi batch. Phía Rust **không** có
+  `SqlSyntax` — `mysql_script.rs`/`postgres_script.rs` hard-code luật lexing riêng — nên đây là
+  một splitter viết riêng, giữ đồng bộ với bản JS của Plan 4 bằng test song song (cùng input, cùng
+  số câu) chứ không bằng một shape dùng chung.
 - `run(pool, sql, on_session_id)`: mỗi batch một round trip, gom `StatementResult` mọi batch nối
   lại làm một danh sách, dừng toàn bộ script (mọi batch còn lại) nếu một câu lỗi — giữ đúng hợp đồng
   `SqlApi.runScript` hiện tại ("một statement lỗi dừng cả script, statement trước đó vẫn trả về
@@ -347,7 +561,9 @@ Plan 5, vì `guard.ts` cần biết `ddlWritable` trước khi cho phép DDL qua
 - `verb`/`kind` (`rows`/`affected`/`ok`) suy từ statement text đầu batch, giống MySQL/Postgres.
 - Session id cho cancel: `SELECT @@SPID` đầu phiên (giống `thread_id`/`CONNECTION_ID()` MySQL).
 - `cancel(pool, session_id)`: xem D8 — code lúc này mới xác nhận `tiberius` có Attention API hay
-  phải rơi về `KILL`.
+  phải rơi về `KILL`. Nếu rơi về `KILL`, phải chốt luôn cách xử lý quyền `ALTER ANY CONNECTION`
+  theo D8 và **thử với một login không phải `sa`** trước khi coi là xong; test bằng `sa` không
+  chứng minh được gì ở đây.
 - `validate`: SQL Server không có cách "parse mà không chạy" rẻ như MySQL's `PREPARE`/Postgres's
   `PREPARE` — tương đương gần nhất là `SET PARSEONLY ON; <statement>; SET PARSEONLY OFF;` (server
   parse cú pháp, không thực thi, không cả resolve tên bảng/cột — nghĩa là *ít* warning hữu ích hơn
@@ -360,27 +576,38 @@ Plan 5, vì `guard.ts` cần biết `ddlWritable` trước khi cho phép DDL qua
 comment `-- go` không bị nhầm là separator) vào Query tab, chạy ra đúng kết quả từng câu; bấm Cancel
 giữa chừng một câu chạy lâu (`WAITFOR DELAY`) dừng được.
 
-### Plan 5 — DDL: database/table/column/index
+### Plan 6 — DDL: database/table/column/index
 
 **Phạm vi:** Structure tab ghi được, sidebar "Add table"/Drop database hoạt động. Bật
 `ddlWritable: true`, `writable: true` (Query tab giờ nhận DDL/DML tay gõ).
 
 **Backend (`drivers/mssql_ddl.rs` mới), copy khuôn `postgres_ddl.rs`:**
-- `create_database`/`drop_database`: `CREATE DATABASE [name]` / `DROP DATABASE [name]` — SQL
-  Server từ chối `DROP DATABASE` nếu có kết nối khác đang mở nó, giống PostgreSQL — cần đóng pool
-  của chính connection này lên database đó trước khi drop nếu đang đứng ngay trên nó (D2: vì MSSQL
-  dùng một pool cho cả server chứ không theo database như Postgres, việc "đóng pool của riêng
-  database đó" đơn giản hơn — không cần `Pools::close_pool` phức tạp, chỉ cần `USE master` trước
-  khi `DROP`, hoặc set `SINGLE_USER WITH ROLLBACK IMMEDIATE` nếu server test có session khác đang
-  mở nó).
+- `create_database`: `CREATE DATABASE [name]`, **kèm `COLLATE <name>` khi tham số `collation` khác
+  `null`** — `SqlApi.createDatabase(id, name, collation)` (`sql/api.ts:137`) đã có sẵn tham số đó
+  và D14 mở ô nhập cho nó.
+- `drop_database`: `DROP DATABASE [name]` — SQL Server từ chối nếu có kết nối khác đang mở
+  database đó, giống PostgreSQL. `USE master` trên một connection là **không đủ**: pool có nhiều
+  connection và mỗi cái giữ database context riêng, nên connection nào đang đứng trên database bị
+  drop vẫn chặn lệnh. Cách chắc chắn là `ALTER DATABASE [name] SET SINGLE_USER WITH ROLLBACK
+  IMMEDIATE` rồi `DROP DATABASE [name]`, hoặc đóng và dựng lại pool. Đây **không** đơn giản hơn
+  `Pools::close_pool` của Postgres như bản nháp trước của spec này nói — nó chỉ khác kiểu.
 - `create_table`: một bảng rỗng với cột `id INT IDENTITY(1,1) PRIMARY KEY`, giống mẫu MySQL/
   Postgres tạo lúc bấm "Add table".
-- `rename_table`: `EXEC sp_rename 'old', 'new'` (không có `ALTER TABLE ... RENAME TO` chuẩn ANSI
-  trên SQL Server — `sp_rename` là thủ tục hệ thống, cách duy nhất).
-- `add_column`/`modify_column`/`drop_column`: `ALTER TABLE ... ADD`/`ALTER TABLE ... ALTER COLUMN`
-  (SQL Server không có `CHANGE COLUMN` đổi tên+kiểu cùng lúc như MySQL — đổi tên qua
-  `sp_rename 'table.old', 'new', 'COLUMN'` riêng, đổi kiểu/nullable qua `ALTER COLUMN` riêng — hai
-  câu lệnh cho một lần "modify" nếu cả tên lẫn kiểu cùng đổi, chạy trong một transaction).
+- `rename_table`: `EXEC sp_rename 'schema.old', 'new'` (không có `ALTER TABLE ... RENAME TO` chuẩn
+  ANSI trên SQL Server — `sp_rename` là thủ tục hệ thống, cách duy nhất). Hai lưu ý: tham số là
+  **chuỗi**, không phải định danh `[ ]`, và tên mới **không** mang schema (nó không đổi được
+  schema); `sp_rename` trả về một *warning message* về việc script cũ có thể gãy — `run` không được
+  hiểu nhầm message đó là lỗi.
+- `add_column`: `ALTER TABLE ... ADD` — thẳng, giống hai engine kia.
+- `modify_column`/`drop_column`: **không phải một câu lệnh, xem D15.** `modify_column` là một chuỗi
+  chạy trong một transaction: đọc default constraint (`sys.default_constraints`) và index
+  (`sys.indexes`/`sys.index_columns`) đang gắn vào cột → drop những cái chặn `ALTER COLUMN` →
+  `sp_rename 'schema.table.old', 'new', 'COLUMN'` nếu tên đổi → `ALTER COLUMN` với định nghĩa
+  **đầy đủ** dựng lại từ `SqlColumnSpec` (kiểu, nullable, collation — kể cả phần người dùng không
+  sửa, vì `ALTER COLUMN` thay thế toàn bộ định nghĩa và im lặng biến cột thành nullable nếu thiếu
+  `NOT NULL`) → dựng lại default constraint và index đã drop. `drop_column` phải drop default
+  constraint của cột trước khi drop cột. Đổi IDENTITY on/off là phi mục tiêu (D15) — Structure tab
+  khoá ô đó với thông báo rõ thay vì để người dùng bấm rồi nhận lỗi server.
 - `add_index`/`modify_index`/`drop_index`: `CREATE [UNIQUE] [CLUSTERED|NONCLUSTERED] INDEX`.
   Primary key không phải "một loại index tạo bằng CREATE INDEX" như MySQL/Postgres — nó là một
   constraint (`ALTER TABLE ... ADD CONSTRAINT ... PRIMARY KEY`) tuy về mặt vật lý vẫn là index —
@@ -395,20 +622,23 @@ giữa chừng một câu chạy lâu (`WAITFOR DELAY`) dừng được.
   `datetimeoffset`, `varbinary(n)`, `binary(n)`, `uniqueidentifier`, `xml`), `unsigned: false`
   (không có UNSIGNED), `columnPosition: false` (không có `FIRST`/`AFTER`, luôn append — giống
   Postgres), `onUpdateCurrentTimestamp: false` (không có, tương đương là trigger), `autoIncrement:
-  true` (D7), `objectCollation: true` (cột có COLLATE riêng, giống Postgres), `markExpressionDefaults:
+  true` (D7), `databaseCollation: true` /
+  `tableCollation: false` (**D14** — có collation cấp database, không có cấp bảng; plan này tách
+  `objectCollation` cũ thành hai field và cập nhật bốn engine kia theo, hành vi của chúng không
+  đổi), `markExpressionDefaults:
   true`, `indexKinds`: `["primary", "unique", "index"]` (không có fulltext/spatial trong v1 —
   SQL Server có cả hai nhưng cú pháp riêng biệt hẳn, để lại phi mục tiêu), `indexMethods`:
   `["CLUSTERED", "NONCLUSTERED"]` (khái niệm khác hẳn MySQL's BTREE/HASH — đây là "có sắp xếp vật
   lý theo index này hay không", field có sẵn dùng vừa vặn dù ý nghĩa khác), `indexPrefix: false`,
   `primaryKeyName: null` (đặt tên tự do, giống Postgres).
 - `mssqlDialect`: `ddlWritable = true`, `writable = true`, `dumpRestoreWritable` vẫn `false` tới
-  Plan 6.
+  Plan 7.
 
 **Tiêu chí xong:** trên database test, tạo bảng mới từ sidebar, thêm/sửa/xoá cột và index qua
 Structure tab, đổi tên bảng, xoá bảng/database — mọi thao tác phản ánh đúng qua SSMS hoặc
 `sqlcmd` chạy tay kiểm lại.
 
-### Plan 6 — Dump & restore
+### Plan 7 — Dump & restore
 
 **Phạm vi:** `DatabaseActions`'s Dump/Restore hoạt động. Bật `dumpRestoreWritable: true`.
 
@@ -417,42 +647,44 @@ Structure tab, đổi tên bảng, xoá bảng/database — mọi thao tác ph�
   (`Suite::Mssql`, checksum pin cứng) hay không — nếu được, dùng nó cho **restore** (thay `psql`/
   `mysql` client). Nếu tải được cả bản build sẵn ổn định trên cả ba platform, cân nhắc dùng luôn cho
   cả liệt kê nhưng **không** cho dump (vẫn không giải quyết việc sinh DDL+INSERT thành file).
-- **Dump: viết tự thân, không tool ngoài.** Tái dùng `mssql_structure::table_structure` (Plan 2)
-  để sinh `CREATE TABLE`+`CREATE INDEX` mỗi bảng, và `mssql::table_data` (Plan 2, đọc theo trang
-  thay vì `SELECT *` một lần — bảng lớn không load hết vào RAM) để sinh câu `INSERT` hàng loạt
-  (`INSERT INTO ... VALUES (...), (...), ...` theo lô để tránh câu quá dài, giống cách driver khác
-  chia lô insert). `mode: "structure" | "data" | "all"` giữ nguyên nghĩa. Tiến độ báo qua
+- **Dump: viết tự thân, không tool ngoài**, lấy `clickhouse_dump.rs` làm khuôn (D10). Tái dùng
+  `mssql_structure::table_structure` (Plan 2) để sinh `CREATE TABLE`+`CREATE INDEX` mỗi bảng, và
+  `mssql::table_data` (Plan 2, đọc theo trang thay vì `SELECT *` một lần — bảng lớn không load hết
+  vào RAM) để sinh câu `INSERT` hàng loạt.
+
+  **Ba ràng buộc của T-SQL mà thiếu cái nào thì tiêu chí "dump → restore → dữ liệu khớp" cũng
+  không đạt:**
+  - **`SET IDENTITY_INSERT [schema].[table] ON` bao quanh phần INSERT của mọi bảng có cột
+    IDENTITY**, và `OFF` ngay sau. Không có nó, server tự đánh số lại khoá chính khi restore và mọi
+    khoá ngoại trỏ vào bảng đó thành rác — dữ liệu "khớp" theo số dòng nhưng sai theo quan hệ. Lưu
+    ý SQL Server chỉ cho **một** bảng bật `IDENTITY_INSERT` tại một thời điểm trong một session,
+    nên phải bật/tắt theo từng bảng chứ không bật một lượt đầu file.
+  - **Thứ tự khoá ngoại.** Chọn cách bền hơn là sắp topological: sinh `CREATE TABLE` **không kèm
+    FOREIGN KEY** → INSERT hết mọi bảng → `ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY` gom ở
+    cuối file. Một chu trình FK (bảng tự tham chiếu hay hai bảng trỏ nhau) làm topological sort bế
+    tắc, còn cách này thì không.
+  - **Kích thước lô INSERT:** `INSERT ... VALUES` của SQL Server tối đa **1000 dòng một câu**, và
+    một request tối đa **2100 tham số**. Lô phải lấy `min(1000, 2100 / số_cột)` chứ không phải một
+    hằng số "đủ nhỏ" đoán bằng cảm tính.
+
+  `mode: "structure" | "data" | "all"` giữ nguyên nghĩa. Tiến độ báo qua
   `TRANSFER_PROGRESS_EVENT` như các driver khác — tính theo số bảng đã sinh xong / tổng số bảng
   (không có ước lượng `data_size` đẹp như `pg_dump`/`mysqldump` báo, vì không có tool ngoài đếm hộ
   — chấp nhận progress bar "chạy nhưng không có số phần trăm chính xác", giống trường hợp
   `data_size` không đọc được đã có sẵn trong `dump.rs::Watch`).
 - **Restore:** nếu `sqlcmd` khả dụng (theo D10), chạy `sqlcmd -S host,port -U user -P password -d
   database -i path`. Nếu quyết định không đưa `sqlcmd` vào, restore cũng tự thân: đọc file `.sql`,
-  tách batch theo `GO` (dùng lại bộ tách Plan 4), chạy tuần tự qua `mssql_script::run`.
+  tách batch theo `GO` (dùng lại bộ tách Plan 5), chạy tuần tự qua `mssql_script::run`.
 
 **Tiêu chí xong:** Dump một database ra file, tạo database rỗng mới, Restore file đó vào, so sánh
 dữ liệu khớp — vòng lặp dump→restore giữ nguyên dữ liệu, giống test đã có cho MySQL/Postgres.
 
-### Plan 7 — Cú pháp/lint/hoàn thiện: SqlSyntax, reserved words, connection form, i18n, CHANGELOG
+### Plan 8 — Hoàn thiện: CodeMirror, reserved words, connection form, i18n, CHANGELOG
 
-**Phạm vi:** Query tab tô màu đúng T-SQL, autocomplete/lint hiểu `[bracket]`/`GO`/comment T-SQL,
-connection form hoàn thiện, tài liệu cập nhật. Đây là plan duy nhất **đổi shape** ảnh hưởng 4
-engine cũ (D4) — cần chạy lại toàn bộ test hiện có của `sql/syntax.test.ts`,
-`sql/statements.test.ts`, `sql/lint.test.ts` sau khi đổi, không chỉ test mới của MSSQL.
+**Phạm vi:** Query tab tô màu đúng T-SQL, autocomplete/lint gợi ý đúng, connection form hoàn thiện,
+tài liệu cập nhật. Phần `SqlSyntax`/bộ tách câu đã xong ở Plan 4, nên plan này không còn đổi shape
+nào chạm các engine cũ.
 
-- `sql/syntax.ts`: đổi `identifierQuote: string | null` thành
-  `identifierQuote: { open: string; close: string } | null` (D4), sửa 4 hằng số hiện có
-  (`MYSQL_SYNTAX`/`SQLITE_SYNTAX` dùng `{ open: "\`", close: "\`" }`, `POSTGRES_SYNTAX`/
-  `CLICKHOUSE_SYNTAX` giữ `null` — không dùng field này để mở/đóng, chúng đọc `"` qua nhánh khác
-  của tokenizer), thêm `MSSQL_SYNTAX` với `identifierQuote: { open: "[", close: "]" }`,
-  `hashComments: false`, `dashCommentNeedsSpace: false`, `nestedBlockComments: false` (SQL Server
-  không nest `/* */`), `doubleQuoteIsIdentifier: true` (mặc định `QUOTED_IDENTIFIER ON`, ăn theo
-  chuẩn ANSI giống Postgres), `backslashEscapes: false`, `escapeStringPrefix: false`,
-  `dollarQuoting: false`. Thêm field mới `batchSeparator: boolean` (D9) — chỉ `true` cho MSSQL,
-  bộ tách statement kiểm field này để tách thêm một tầng theo dòng `GO`/`GO <n>` đứng riêng.
-  Sửa lại bộ tách câu (`src/modules/db/sql/statements.ts` và `mysql_script.rs`/`postgres_script.rs`
-  phía Rust nếu chúng đọc trực tiếp field cũ) cho khớp shape mới — chạy lại toàn bộ test cũ trước
-  khi thêm test mới.
 - `src/modules/db/components/SqlEditor/extensions.ts`/`theme.ts`: đăng ký `sql({ dialect: MSSQL,
   ...KHÔNG cần override identifierQuotes vì MSSQL dialect của CodeMirror đã tự có `[` sẵn — chỉ
   cần dùng đúng export `MSSQL` từ `@codemirror/lang-sql` như đã xác nhận có sẵn }))`.
@@ -471,9 +703,29 @@ autocomplete gợi ý tên bảng/cột đúng, chạy lại toàn bộ test sui
 
 - D2: pool crate cụ thể cho `tiberius` (`deadpool-tiberius` hay tự viết).
 - D6: `trust_cert` mặc định bật hay thành một ô riêng trên form.
-- D8: `tiberius` có Attention/cancel API cấp-statement hay phải rơi về `KILL` cấp-session.
+- D8: `tiberius` có Attention/cancel API cấp-statement hay phải rơi về `KILL` cấp-session — và nếu
+  là `KILL` thì xử lý quyền `ALTER ANY CONNECTION` theo cách nào (đo lúc connect, hay để lỗi nổi
+  lên UI).
 - D10: `sqlcmd` (Go) có đưa vào `tools.rs` được không, hay restore cũng tự thân luôn.
+- D13: con số `LOCK_TIMEOUT` cụ thể (5s là đề xuất, đo lại với server thật).
 
-Bốn điểm này đều nằm ở lớp "chi tiết triển khai phụ thuộc crate/tool đang ở version nào tại thời
+Năm điểm này đều nằm ở lớp "chi tiết triển khai phụ thuộc crate/tool đang ở version nào tại thời
 điểm code", không đổi kiến trúc tổng thể nếu câu trả lời đi khác dự đoán — nên không chặn việc bắt
 đầu Plan 1.
+
+## Thứ tự plan, tóm tắt
+
+| Plan | Nội dung | Cờ bật sau khi xong |
+| --- | --- | --- |
+| 1 | Khung kết nối, server info, list databases/tables | — (chưa vào `SQL_ENGINES`) |
+| 2 | Đọc bảng: table data, structure, outline, collations | vào `SQL_ENGINES`, mọi cờ ghi `false` |
+| 3 | Ghi dòng | `rowsWritable` |
+| 4 | `SqlSyntax` open/close + `MSSQL_SYNTAX` + tách `GO` (D4/D9) | — (dọn đường, không tính năng) |
+| 5 | Query tab: run_script, cancel, validate | `cancellable` |
+| 6 | DDL: database/table/column/index (D14/D15) | `ddlWritable`, `writable` |
+| 7 | Dump & restore | `dumpRestoreWritable` |
+| 8 | CodeMirror, i18n, connection form, CHANGELOG | — |
+
+Hai plan đổi shape chạm các engine cũ là **4** (`SqlSyntax.identifierQuote`) và **6**
+(`SqlEditing.objectCollation` tách đôi). Cả hai đều phải chạy lại toàn bộ test hiện có, không chỉ
+test mới của MSSQL.
