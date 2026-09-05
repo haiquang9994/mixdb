@@ -9,7 +9,7 @@ use super::filters::split_list;
 use crate::error::AppError;
 use crate::modules::db::models::ServerInfo;
 use deadpool::managed::{Manager as ManagerTrait, Metrics, Pool as DeadPool, RecycleError, RecycleResult};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use tiberius::numeric::Decimal;
@@ -366,6 +366,156 @@ pub async fn list_tables(pool: &Pool, database: &str) -> Result<Vec<String>, App
         .collect())
 }
 
+/// The types whose length the catalogue reports in bytes but which are counted in characters.
+const UNICODE_TYPES: [&str; 3] = ["nchar", "nvarchar", "ntext"];
+/// The types declared with a precision and a scale.
+const DECIMAL_TYPES: [&str; 2] = ["decimal", "numeric"];
+/// The types declared with a fractional-seconds scale alone.
+const SCALED_TIME_TYPES: [&str; 3] = ["datetime2", "time", "datetimeoffset"];
+/// The types declared with a length.
+const SIZED_TYPES: [&str; 6] = ["char", "varchar", "nchar", "nvarchar", "binary", "varbinary"];
+
+/// A column's type the way it would be written in a `CREATE TABLE`: `nvarchar(255)`,
+/// `decimal(10,2)`, `int`.
+///
+/// Two conventions of `sys.columns` make the obvious reading wrong, and both are silent:
+///
+/// * `max_length` is in **bytes**. An `nvarchar(255)` reads 510 there, two bytes to the character,
+///   so the Unicode types are halved. `INFORMATION_SCHEMA.COLUMNS` counts characters instead — one
+///   source or the other, never a mix, and this file is on `sys.columns` throughout.
+/// * `-1` means **`MAX`**, not a negative width. It appears for `varchar(max)`, `nvarchar(max)` and
+///   `varbinary(max)`, and reads as a length only if nobody looks.
+///
+/// Everything else takes no argument, precision and scale being reported for the fixed-width
+/// numbers as well: `int` has a precision of 10 in the catalogue, and `int(10)` is not a type.
+pub(super) fn display_type(name: &str, max_length: i16, precision: u8, scale: u8) -> String {
+    let lower = name.to_ascii_lowercase();
+    if DECIMAL_TYPES.contains(&lower.as_str()) {
+        return format!("{name}({precision},{scale})");
+    }
+    if SCALED_TIME_TYPES.contains(&lower.as_str()) {
+        return format!("{name}({scale})");
+    }
+    if SIZED_TYPES.contains(&lower.as_str()) {
+        if max_length == -1 {
+            return format!("{name}(max)");
+        }
+        let length = if UNICODE_TYPES.contains(&lower.as_str()) {
+            max_length / 2
+        } else {
+            max_length
+        };
+        return format!("{name}({length})");
+    }
+    name.to_string()
+}
+
+/// A default constraint's definition without the parentheses SQL Server wraps it in.
+///
+/// The catalogue stores `((0))` for the literal 0 and `(getdate())` for the call, so showing the
+/// definition as it is stored puts a pair of brackets on every default in the grid. Only pairs that
+/// wrap the **whole** expression come off — `(a)+(b)` opens and closes twice and keeps both.
+///
+/// Writing DDL puts them back: SQL Server accepts a `DEFAULT` either way, and re-wrapping is what
+/// makes what MixDB writes read the way what SSMS writes does. That is Plan 6's problem, not this
+/// one's.
+pub(super) fn strip_default_parens(definition: &str) -> String {
+    let mut current = definition.trim();
+    loop {
+        let Some(inner) = current.strip_prefix('(').and_then(|s| s.strip_suffix(')')) else {
+            return current.to_string();
+        };
+        // The leading `(` has to be the one the trailing `)` closes. It is not, in `(a)+(b)`:
+        // scanning what is between them, the depth goes negative at the first `)`, which is where
+        // the leading bracket was already closed.
+        let mut depth = 0i32;
+        for ch in inner.chars() {
+            match ch {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+            if depth < 0 {
+                return current.to_string();
+            }
+        }
+        current = inner.trim();
+    }
+}
+
+/// One column of one table, as this file reads it out of the catalogue.
+pub(super) struct ColumnRow {
+    pub name: String,
+    /// Already through [`display_type`]: `nvarchar(255)`, not `nvarchar` and a byte count.
+    pub data_type: String,
+    pub nullable: bool,
+    /// The default constraint's definition, already through [`strip_default_parens`].
+    pub default_value: Option<String>,
+    pub is_identity: bool,
+    pub is_computed: bool,
+    /// A `rowversion` (spelled `timestamp` by older schemas): a value the server stamps on every
+    /// write and that nothing may ever name in an INSERT (D7).
+    pub is_rowversion: bool,
+}
+
+/// The tokens `ColumnMeta::extra` carries for one column — what the server fills in itself.
+///
+/// Read back by `src/modules/db/mssql/columns.ts`, and those two files are the only ones that need
+/// to agree on the spelling. Three `bool`s rather than a [`ColumnRow`] because the two callers read
+/// them out of two different catalogue queries.
+pub(super) fn extra_tokens(is_identity: bool, is_computed: bool, is_rowversion: bool) -> String {
+    let mut tokens: Vec<&str> = Vec::new();
+    if is_identity {
+        tokens.push("identity");
+    }
+    if is_computed {
+        tokens.push("generated");
+    }
+    if is_rowversion {
+        tokens.push("rowversion");
+    }
+    tokens.join(" ")
+}
+
+/// Whether a type is a `rowversion` under either of its two names.
+///
+/// `timestamp` is what older schemas call it, and it has nothing to do with a date — it is eight
+/// bytes the server stamps on every write.
+pub(super) fn is_rowversion_type(type_name: &str) -> bool {
+    let lower = type_name.to_ascii_lowercase();
+    lower == "rowversion" || lower == "timestamp"
+}
+
+/// A table named the way a pooled session can reach it whatever database it is sitting on.
+pub(super) fn three_part(database: &str, schema: &str, table: &str) -> String {
+    format!(
+        "{}.{}.{}",
+        quote_ident(database),
+        quote_ident(schema),
+        quote_ident(table)
+    )
+}
+
+/// A read, wrapped so it does not queue behind someone else's uncommitted write.
+///
+/// SQL Server's default READ COMMITTED takes locks rather than reading a snapshot, so a plain
+/// SELECT on a table another transaction is holding **waits** — the reason [`dial`] sets
+/// `LOCK_TIMEOUT` at all (D13). Browsing data to look at it is not worth blocking on, and reading a
+/// row someone is about to commit is not worth failing over, so every read here runs at READ
+/// UNCOMMITTED. The write paths keep the default: a dirty row that is displayed is a different
+/// thing from a dirty row that is written back.
+///
+/// The level is put back explicitly rather than left to the RPC. tiberius sends a parameterised
+/// query through `sp_executesql`, and SQL Server restores the isolation level a stored procedure
+/// changed when it returns — but this connection goes back into a pool that write paths will
+/// borrow, and that is not a guarantee worth depending on being right about.
+pub(super) fn read_uncommitted(sql: &str) -> String {
+    format!(
+        "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;\n{sql};\n\
+         SET TRANSACTION ISOLATION LEVEL READ COMMITTED;"
+    )
+}
+
 /// One condition on the rows a page is cut out of, as the grid's filter bar sends it. The same
 /// shape and the same operator ids as MySQL's and PostgreSQL's — only what they become differs.
 #[derive(Debug, Deserialize)]
@@ -516,6 +666,192 @@ fn build_where(
     Ok((format!(" WHERE {}", clauses.join(" AND ")), binds))
 }
 
+/// The row a foreign key column points at.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignKey {
+    /// [`qualify`]ed, so a key into another schema names a table the sidebar can open.
+    pub table: String,
+    pub column: String,
+}
+
+/// What is known about one column beyond its name — everything a new row would have to respect.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnMeta {
+    /// The declared type as a `CREATE TABLE` would write it: `nvarchar(255)`, `decimal(10,2)`.
+    pub data_type: String,
+    pub nullable: bool,
+    /// The column's DEFAULT, without the parentheses the catalogue wraps it in.
+    pub default_value: Option<String>,
+    /// `identity`, `generated`, `rowversion` — see [`extra_tokens`].
+    pub extra: String,
+    pub foreign_key: Option<ForeignKey>,
+}
+
+/// The columns of one table, in table order, with what each one is declared as.
+///
+/// `sys.columns` rather than `INFORMATION_SCHEMA.COLUMNS`: the identity and computed flags are
+/// there as proper bits, and the length conventions [`display_type`] knows about are that view's.
+/// `sys.default_constraints` carries the default, whose name the server usually generated
+/// (`DF__t__col__1A2B3C4D`) and which is therefore looked up by column rather than by name.
+///
+/// Read from the catalogue rather than from a result set, so a table with no rows still describes
+/// itself.
+pub(super) async fn table_columns(
+    pool: &Pool,
+    database: &str,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<ColumnRow>, AppError> {
+    let db = quote_ident(database);
+    let sql = read_uncommitted(&format!(
+        "SELECT c.name, t.name AS type_name, c.max_length, c.precision, c.scale,
+                c.is_nullable, c.is_identity, c.is_computed, d.definition
+         FROM {db}.sys.columns c
+         JOIN {db}.sys.objects o ON o.object_id = c.object_id
+         JOIN {db}.sys.schemas s ON s.schema_id = o.schema_id
+         JOIN {db}.sys.types t ON t.user_type_id = c.user_type_id
+         LEFT JOIN {db}.sys.default_constraints d ON d.object_id = c.default_object_id
+         WHERE s.name = @P1 AND o.name = @P2
+         ORDER BY c.column_id"
+    ));
+
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+    let rows = client
+        .query(sql, &[&schema, &table])
+        .await
+        .map_err(map_error)?
+        .into_first_result()
+        .await
+        .map_err(map_error)?;
+
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            let name: &str = row.get("name")?;
+            let type_name: &str = row.get("type_name")?;
+            Some(ColumnRow {
+                name: name.to_string(),
+                data_type: display_type(
+                    type_name,
+                    row.get("max_length").unwrap_or(0),
+                    row.get("precision").unwrap_or(0),
+                    row.get("scale").unwrap_or(0),
+                ),
+                nullable: row.get("is_nullable").unwrap_or(true),
+                default_value: row.get::<&str, _>("definition").map(strip_default_parens),
+                is_identity: row.get("is_identity").unwrap_or(false),
+                is_computed: row.get("is_computed").unwrap_or(false),
+                is_rowversion: is_rowversion_type(type_name),
+            })
+        })
+        .collect())
+}
+
+/// The primary key's columns, in the order the key declares them — not the table's order, and the
+/// order a composite key has to be written in.
+async fn primary_key(
+    pool: &Pool,
+    database: &str,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<String>, AppError> {
+    let db = quote_ident(database);
+    let sql = read_uncommitted(&format!(
+        "SELECT c.name
+         FROM {db}.sys.indexes i
+         JOIN {db}.sys.objects o ON o.object_id = i.object_id
+         JOIN {db}.sys.schemas s ON s.schema_id = o.schema_id
+         JOIN {db}.sys.index_columns ic
+             ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+         JOIN {db}.sys.columns c
+             ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+         WHERE i.is_primary_key = 1 AND s.name = @P1 AND o.name = @P2
+         ORDER BY ic.key_ordinal"
+    ));
+
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+    let rows = client
+        .query(sql, &[&schema, &table])
+        .await
+        .map_err(map_error)?
+        .into_first_result()
+        .await
+        .map_err(map_error)?;
+
+    Ok(rows
+        .iter()
+        .filter_map(|row| row.get::<&str, _>(0).map(str::to_string))
+        .collect())
+}
+
+/// Which columns of the table are foreign keys, and what each one points at.
+///
+/// A failure is swallowed by the caller: the markers are decoration on the grid, and losing them
+/// must not cost the rows.
+async fn foreign_keys(
+    pool: &Pool,
+    database: &str,
+    schema: &str,
+    table: &str,
+) -> Result<BTreeMap<String, ForeignKey>, AppError> {
+    let db = quote_ident(database);
+    let sql = read_uncommitted(&format!(
+        "SELECT c.name AS column_name,
+                rs.name AS ref_schema, ro.name AS ref_table, rc.name AS ref_column
+         FROM {db}.sys.foreign_key_columns fk
+         JOIN {db}.sys.objects o ON o.object_id = fk.parent_object_id
+         JOIN {db}.sys.schemas s ON s.schema_id = o.schema_id
+         JOIN {db}.sys.columns c
+             ON c.object_id = fk.parent_object_id AND c.column_id = fk.parent_column_id
+         JOIN {db}.sys.objects ro ON ro.object_id = fk.referenced_object_id
+         JOIN {db}.sys.schemas rs ON rs.schema_id = ro.schema_id
+         JOIN {db}.sys.columns rc
+             ON rc.object_id = fk.referenced_object_id
+             AND rc.column_id = fk.referenced_column_id
+         WHERE s.name = @P1 AND o.name = @P2
+         ORDER BY fk.constraint_object_id, fk.constraint_column_id"
+    ));
+
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+    let rows = client
+        .query(sql, &[&schema, &table])
+        .await
+        .map_err(map_error)?
+        .into_first_result()
+        .await
+        .map_err(map_error)?;
+
+    let mut keys = BTreeMap::new();
+    for row in &rows {
+        let (Some(column), Some(ref_schema), Some(ref_table), Some(ref_column)) = (
+            row.get::<&str, _>("column_name"),
+            row.get::<&str, _>("ref_schema"),
+            row.get::<&str, _>("ref_table"),
+            row.get::<&str, _>("ref_column"),
+        ) else {
+            continue;
+        };
+        // The first key a column takes part in is the one shown; a column in two keys is rare and
+        // the grid has one marker to give it.
+        keys.entry(column.to_string()).or_insert_with(|| ForeignKey {
+            table: qualify(ref_schema, ref_table),
+            column: ref_column.to_string(),
+        });
+    }
+    Ok(keys)
+}
+
 /// One row as the grid reads it: every column by name, whatever the column holds.
 pub(super) fn row_to_json(row: &Row) -> Map<String, Value> {
     let mut obj = Map::new();
@@ -617,7 +953,10 @@ pub(super) fn column_value(data: &ColumnData<'static>) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_where, column_value, escape_like_mssql, qualify, quote_ident, resolve, Filter};
+    use super::{
+        build_where, column_value, display_type, escape_like_mssql, extra_tokens, qualify,
+        quote_ident, resolve, strip_default_parens, three_part, Filter,
+    };
     use serde_json::Value;
     use std::borrow::Cow;
     use std::collections::BTreeMap;
@@ -788,6 +1127,68 @@ mod tests {
         let (clause, binds) = build_where(&[], &columns()).expect("nothing to fail");
         assert_eq!(clause, "");
         assert!(binds.is_empty());
+    }
+
+    /// `sys.columns.max_length` counts **bytes**, so an `nvarchar(255)` reads 510 there — two bytes
+    /// to the character. Halved for the Unicode types and left alone for the rest; mixing the two
+    /// is how a column ends up declared twice the width it has.
+    #[test]
+    fn a_unicode_length_is_halved_because_the_catalog_counts_bytes() {
+        assert_eq!(display_type("nvarchar", 510, 0, 0), "nvarchar(255)");
+        assert_eq!(display_type("nchar", 20, 0, 0), "nchar(10)");
+        assert_eq!(display_type("varchar", 255, 0, 0), "varchar(255)");
+        assert_eq!(display_type("binary", 8, 0, 0), "binary(8)");
+    }
+
+    /// -1 is `MAX`, not a negative width. `varchar(-1)` is not a type anything could declare.
+    #[test]
+    fn minus_one_is_the_word_max() {
+        assert_eq!(display_type("varchar", -1, 0, 0), "varchar(max)");
+        assert_eq!(display_type("nvarchar", -1, 0, 0), "nvarchar(max)");
+        assert_eq!(display_type("varbinary", -1, 0, 0), "varbinary(max)");
+    }
+
+    /// Precision and scale belong to the numeric types, and to them only — an `int` has a precision
+    /// in the catalogue too, and writing `int(10)` would be a type SQL Server rejects.
+    #[test]
+    fn only_the_types_that_take_arguments_get_them() {
+        assert_eq!(display_type("decimal", 9, 10, 2), "decimal(10,2)");
+        assert_eq!(display_type("numeric", 9, 18, 0), "numeric(18,0)");
+        assert_eq!(display_type("int", 4, 10, 0), "int");
+        assert_eq!(display_type("bit", 1, 1, 0), "bit");
+        assert_eq!(display_type("datetime2", 8, 27, 7), "datetime2(7)");
+        assert_eq!(display_type("time", 5, 16, 3), "time(3)");
+    }
+
+    /// SQL Server stores a default wrapped in its own parentheses — `((0))`, `(getdate())` — and
+    /// showing them would put a pair of brackets on every default in the grid. Only the wrapping
+    /// pairs come off: an expression whose own parentheses reach the ends keeps them.
+    #[test]
+    fn a_default_loses_the_parentheses_the_catalog_added() {
+        assert_eq!(strip_default_parens("((0))"), "0");
+        assert_eq!(strip_default_parens("(getdate())"), "getdate()");
+        assert_eq!(strip_default_parens("('new')"), "'new'");
+        // Not one wrapping pair: the first `(` closes before the end.
+        assert_eq!(strip_default_parens("(a)+(b)"), "(a)+(b)");
+    }
+
+    /// The tokens `ColumnMeta::extra` carries, which `src/modules/db/mssql/columns.ts` reads back.
+    /// `rowversion` is on the list because an INSERT must not name such a column either — see D7.
+    #[test]
+    fn extra_names_every_kind_of_column_the_server_fills_in() {
+        assert_eq!(extra_tokens(true, false, false), "identity");
+        assert_eq!(extra_tokens(false, true, false), "generated");
+        assert_eq!(extra_tokens(false, false, true), "rowversion");
+        assert_eq!(extra_tokens(true, false, true), "identity rowversion");
+        assert_eq!(extra_tokens(false, false, false), "");
+    }
+
+    /// A pooled session may be sitting on any database at all (D2), so every read names its own —
+    /// three parts, each bracketed.
+    #[test]
+    fn a_read_names_its_database_rather_than_switching_to_it() {
+        assert_eq!(three_part("shop", "dbo", "users"), "[shop].[dbo].[users]");
+        assert_eq!(three_part("a b", "sales", "Order"), "[a b].[sales].[Order]");
     }
 
     /// SQL Server brackets an identifier rather than quoting it, and the character doubled inside
