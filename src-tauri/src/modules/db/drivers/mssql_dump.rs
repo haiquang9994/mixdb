@@ -17,6 +17,7 @@ use super::mssql_ddl::{
     column_definition, comment_statement, create_index_statements, index_spec_from, quote_string,
     ColumnSpec,
 };
+use super::mssql_script;
 use super::mssql_structure::{self, StructureColumn};
 use crate::error::AppError;
 use std::collections::HashMap;
@@ -506,6 +507,30 @@ pub async fn dump_data(
                 .await
                 .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
         }
+    }
+    Ok(())
+}
+
+/// Replays a dump file into `database`, one call into `mssql_script::run` (Plan 5) — the same
+/// `GO`-aware batch splitter the Query tab drives, so a file this app wrote (`GO` never appears in
+/// it, since `dump_structure`/`dump_data` separate statements with `;` alone) and a file written by
+/// hand with `GO` batches both replay correctly.
+///
+/// No `Watch`, no mid-run cancel and no incremental progress — the same limit `sqlite_dump::restore`
+/// already accepts, for the same reason: `run` takes the whole script as one call and returns only
+/// once every statement in it has been tried, so there is no point inside it this file could check
+/// a cancel flag from outside.
+pub async fn restore(pool: &Pool, database: &str, path: &str) -> Result<(), AppError> {
+    let sql = std::fs::read_to_string(path)
+        .map_err(|e| err!("error.cannotReadFile", path = path, message = e))?;
+
+    let results = mssql_script::run(pool, &sql, Some(database), |_| {}).await?;
+    if let Some(failed) = results.iter().find(|result| result.error.is_some()) {
+        return Err(err!(
+            "error.mssqlRestoreFailed",
+            statement = failed.statement.chars().take(200).collect::<String>(),
+            message = failed.error.clone().unwrap_or_default()
+        ));
     }
     Ok(())
 }
