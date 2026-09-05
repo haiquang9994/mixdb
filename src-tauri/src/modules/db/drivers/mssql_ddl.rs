@@ -126,6 +126,22 @@ async fn execute_all_body(client: &mut Connection, statements: Vec<String>) -> R
     Ok(())
 }
 
+/// Checks a collation name against the one rule every SQL Server collation actually follows
+/// (`Latin1_General_CI_AS`, `SQL_Latin1_General_CP1_CI_AS`, `Vietnamese_CI_AS` — letters, digits and
+/// underscores only), the same check `mysql_structure::validated_collation` runs for the same reason:
+/// **a collation name cannot be bracket-quoted at all** — `COLLATE [Latin1_General_CI_AS]` is a
+/// syntax error, confirmed against the real test server while writing this (not assumed). So this is
+/// the only guard between user-chosen text and a statement that interpolates it bare.
+fn validated_collation(collation: Option<&str>) -> Result<Option<&str>, AppError> {
+    let Some(collation) = collation.map(str::trim).filter(|c| !c.is_empty()) else {
+        return Ok(None);
+    };
+    if !collation.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(err!("error.invalidCollation", collation = collation));
+    }
+    Ok(Some(collation))
+}
+
 /// Creates a database, `COLLATE`d when `collation` is given (D14) — the one place SQL Server's
 /// collation dialog has anything to write to, since a table has none of its own (`tableCollation:
 /// false`).
@@ -135,8 +151,8 @@ pub async fn create_database(pool: &Pool, name: &str, collation: Option<&str>) -
         return Err(err!("error.databaseNameRequired"));
     }
     let mut sql = format!("CREATE DATABASE {}", quote_ident(name));
-    if let Some(collation) = collation.map(str::trim).filter(|c| !c.is_empty()) {
-        sql.push_str(&format!(" COLLATE {}", quote_ident(collation)));
+    if let Some(collation) = validated_collation(collation)? {
+        sql.push_str(&format!(" COLLATE {collation}"));
     }
     execute_single(pool, sql).await
 }
@@ -235,15 +251,16 @@ pub async fn drop_table(pool: &Pool, database: &str, table: &str) -> Result<(), 
     execute_all(pool, database, vec![format!("DROP TABLE {qualified}")]).await
 }
 
-/// The `COLLATE ...` of a column, empty when none was asked for. Bracket-quoted like any other
-/// identifier here — a collation name has no space or special character SQL Server itself allows,
-/// but quoting costs nothing and keeps this file's one rule ("every identifier goes through
-/// `quote_ident`") without an exception.
-fn collate_clause(collation: Option<&str>) -> String {
-    match collation.map(str::trim).filter(|c| !c.is_empty()) {
-        Some(collation) => format!(" COLLATE {}", quote_ident(collation)),
+/// The `COLLATE ...` of a column, empty when none was asked for. **Not** bracket-quoted, unlike
+/// every other identifier in this file — `COLLATE [Latin1_General_CI_AS]` is a syntax error on real
+/// SQL Server (confirmed against the test server; an earlier draft of this function assumed quoting
+/// was safe here and it is not), so [`validated_collation`]'s allow-list is what stands between user
+/// input and this string instead.
+fn collate_clause(collation: Option<&str>) -> Result<String, AppError> {
+    Ok(match validated_collation(collation)? {
+        Some(collation) => format!(" COLLATE {collation}"),
         None => String::new(),
-    }
+    })
 }
 
 /// How a DEFAULT reaches the DDL. An expression goes in as written; anything else is a literal and
@@ -273,7 +290,7 @@ fn column_definition(spec: &ColumnSpec) -> Result<String, AppError> {
     }
 
     let mut sql = format!("{} {data_type}", quote_ident(name));
-    sql.push_str(&collate_clause(spec.collation.as_deref()));
+    sql.push_str(&collate_clause(spec.collation.as_deref())?);
     if spec.auto_increment {
         // IDENTITY is NOT NULL by definition (D7) and carries no DEFAULT of its own.
         sql.push_str(" IDENTITY(1,1) NOT NULL");
@@ -736,15 +753,10 @@ pub async fn modify_column(
     }
 
     if !current.identity {
-        let collation = spec
-            .collation
-            .as_deref()
-            .map(str::trim)
-            .filter(|c| !c.is_empty());
         statements.push(format!(
             "ALTER TABLE {qualified} ALTER COLUMN {} {data_type}{} {}",
             quote_ident(new_name),
-            collate_clause(collation),
+            collate_clause(spec.collation.as_deref())?,
             if spec.nullable { "NULL" } else { "NOT NULL" }
         ));
     }
@@ -861,13 +873,22 @@ mod tests {
     }
 
     #[test]
-    fn a_collation_is_bracket_quoted() {
+    fn a_collation_is_written_bare_not_bracket_quoted() {
+        // `COLLATE [Latin1_General_CI_AS]` is a syntax error on real SQL Server — confirmed against
+        // the test server. A collation name is validated against an allow-list instead of quoted.
         let mut spec = spec("name", "nvarchar(50)");
         spec.collation = Some("Latin1_General_CI_AS".to_string());
         assert_eq!(
             column_definition(&spec).unwrap(),
-            "[name] nvarchar(50) COLLATE [Latin1_General_CI_AS] NULL"
+            "[name] nvarchar(50) COLLATE Latin1_General_CI_AS NULL"
         );
+    }
+
+    #[test]
+    fn a_collation_with_a_character_outside_the_allow_list_is_refused() {
+        let mut spec = spec("name", "nvarchar(50)");
+        spec.collation = Some("Latin1_General_CI_AS; DROP TABLE t".to_string());
+        assert!(column_definition(&spec).is_err());
     }
 
     #[test]
