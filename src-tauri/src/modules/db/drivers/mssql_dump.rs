@@ -176,14 +176,139 @@ pub async fn dump_structure(
     write_foreign_keys(pool, database, &mut file, path).await
 }
 
-/// Forward-declared here, defined in a later task of this plan alongside the foreign-key catalogue
-/// read.
+/// One foreign key constraint in full — every column of a composite key, and the referential
+/// action either side declares — read once for the whole database rather than once per table:
+/// `mssql::foreign_keys` (used to decorate the Data tab's grid) answers "what does this column
+/// point at", one row per column, which loses which columns of a composite key belong together and
+/// drops the constraint's name and its `ON DELETE`/`ON UPDATE` entirely.
+struct ForeignKeyConstraint {
+    name: String,
+    schema: String,
+    table: String,
+    columns: Vec<String>,
+    ref_schema: String,
+    ref_table: String,
+    ref_columns: Vec<String>,
+    on_delete: String,
+    on_update: String,
+}
+
+async fn foreign_key_constraints(
+    pool: &Pool,
+    database: &str,
+) -> Result<Vec<ForeignKeyConstraint>, AppError> {
+    let db = quote_ident(database);
+    let sql = read_uncommitted(&format!(
+        "SELECT fk.name AS constraint_name, ps.name AS schema_name, po.name AS table_name,
+                rs.name AS ref_schema_name, ro.name AS ref_table_name,
+                pc.name AS column_name, rc.name AS ref_column_name,
+                fk.delete_referential_action_desc, fk.update_referential_action_desc
+         FROM {db}.sys.foreign_keys fk
+         JOIN {db}.sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+         JOIN {db}.sys.objects po ON po.object_id = fk.parent_object_id
+         JOIN {db}.sys.schemas ps ON ps.schema_id = po.schema_id
+         JOIN {db}.sys.columns pc
+             ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
+         JOIN {db}.sys.objects ro ON ro.object_id = fk.referenced_object_id
+         JOIN {db}.sys.schemas rs ON rs.schema_id = ro.schema_id
+         JOIN {db}.sys.columns rc
+             ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+         ORDER BY fk.name, fkc.constraint_column_id"
+    ));
+    let mut client = pool.get().await.map_err(|e| err!("error.mssql", message = e))?;
+    let rows = client
+        .query(sql, &[])
+        .await
+        .map_err(map_error)?
+        .into_first_result()
+        .await
+        .map_err(map_error)?;
+
+    let mut constraints: Vec<ForeignKeyConstraint> = Vec::new();
+    for row in &rows {
+        let Some(name) = row.get::<&str, _>("constraint_name") else {
+            continue;
+        };
+        if constraints.last().map(|last| last.name != name).unwrap_or(true) {
+            constraints.push(ForeignKeyConstraint {
+                name: name.to_string(),
+                schema: row.get::<&str, _>("schema_name").unwrap_or("").to_string(),
+                table: row.get::<&str, _>("table_name").unwrap_or("").to_string(),
+                ref_schema: row.get::<&str, _>("ref_schema_name").unwrap_or("").to_string(),
+                ref_table: row.get::<&str, _>("ref_table_name").unwrap_or("").to_string(),
+                columns: Vec::new(),
+                ref_columns: Vec::new(),
+                on_delete: row
+                    .get::<&str, _>("delete_referential_action_desc")
+                    .unwrap_or("NO_ACTION")
+                    .to_string(),
+                on_update: row
+                    .get::<&str, _>("update_referential_action_desc")
+                    .unwrap_or("NO_ACTION")
+                    .to_string(),
+            });
+        }
+        if let Some(fk) = constraints.last_mut() {
+            if let Some(col) = row.get::<&str, _>("column_name") {
+                fk.columns.push(col.to_string());
+            }
+            if let Some(col) = row.get::<&str, _>("ref_column_name") {
+                fk.ref_columns.push(col.to_string());
+            }
+        }
+    }
+    Ok(constraints)
+}
+
+/// `sys.foreign_keys`' own spelling (`NO_ACTION`, `CASCADE`, `SET_NULL`, `SET_DEFAULT`) turned into
+/// what `ON DELETE`/`ON UPDATE` actually takes — an underscore standing in for the one space
+/// `NO ACTION` needs, and a name this file does not recognise falling back to `NO ACTION` rather
+/// than failing the dump over a value only a SQL Server version newer than this code knows about.
+fn referential_action(desc: &str) -> &'static str {
+    match desc {
+        "CASCADE" => "CASCADE",
+        "SET_NULL" => "SET NULL",
+        "SET_DEFAULT" => "SET DEFAULT",
+        _ => "NO ACTION",
+    }
+}
+
+fn foreign_key_statement(database: &str, fk: &ForeignKeyConstraint) -> String {
+    let qualified = three_part(database, &fk.schema, &fk.table);
+    let ref_qualified = three_part(database, &fk.ref_schema, &fk.ref_table);
+    let columns = fk.columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+    let ref_columns = fk.ref_columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+    format!(
+        "ALTER TABLE {qualified} ADD CONSTRAINT {} FOREIGN KEY ({columns}) \
+         REFERENCES {ref_qualified} ({ref_columns}) ON DELETE {} ON UPDATE {}",
+        quote_ident(&fk.name),
+        referential_action(&fk.on_delete),
+        referential_action(&fk.on_update)
+    )
+}
+
+/// Every foreign key of the database, added after every table exists — no topological sort of
+/// tables by dependency (a self-referencing table or a two-table cycle would deadlock one), the
+/// same trade dump tools that defer constraints to the end rather than order `CREATE TABLE` by
+/// dependency already make.
 async fn write_foreign_keys(
-    _pool: &Pool,
-    _database: &str,
-    _file: &mut std::fs::File,
-    _path: &str,
+    pool: &Pool,
+    database: &str,
+    file: &mut std::fs::File,
+    path: &str,
 ) -> Result<(), AppError> {
+    use std::io::Write;
+
+    let constraints = foreign_key_constraints(pool, database).await?;
+    if constraints.is_empty() {
+        return Ok(());
+    }
+    write!(file, "-- Foreign keys\n\n")
+        .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+    for fk in &constraints {
+        write!(file, "{};\n", foreign_key_statement(database, fk))
+            .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+    }
     Ok(())
 }
 
@@ -233,5 +358,40 @@ mod tests {
     fn a_non_persisted_computed_column_does_not() {
         let def = ComputedDefinition { definition: "[a] + [b]".to_string(), persisted: false };
         assert_eq!(computed_column_definition("total", &def), "[total] AS ([a] + [b])");
+    }
+
+    #[test]
+    fn referential_action_translates_every_known_value() {
+        assert_eq!(referential_action("CASCADE"), "CASCADE");
+        assert_eq!(referential_action("SET_NULL"), "SET NULL");
+        assert_eq!(referential_action("SET_DEFAULT"), "SET DEFAULT");
+        assert_eq!(referential_action("NO_ACTION"), "NO ACTION");
+    }
+
+    #[test]
+    fn an_unrecognised_action_falls_back_to_no_action() {
+        assert_eq!(referential_action("SOMETHING_FUTURE"), "NO ACTION");
+    }
+
+    #[test]
+    fn a_composite_foreign_key_lists_every_column_in_order() {
+        let fk = ForeignKeyConstraint {
+            name: "FK_order_item_order".to_string(),
+            schema: "dbo".to_string(),
+            table: "order_item".to_string(),
+            columns: vec!["order_id".to_string(), "order_line".to_string()],
+            ref_schema: "dbo".to_string(),
+            ref_table: "order".to_string(),
+            ref_columns: vec!["id".to_string(), "line".to_string()],
+            on_delete: "CASCADE".to_string(),
+            on_update: "NO_ACTION".to_string(),
+        };
+        assert_eq!(
+            foreign_key_statement("mixdb_agent_test", &fk),
+            "ALTER TABLE [mixdb_agent_test].[dbo].[order_item] \
+             ADD CONSTRAINT [FK_order_item_order] FOREIGN KEY ([order_id], [order_line]) \
+             REFERENCES [mixdb_agent_test].[dbo].[order] ([id], [line]) \
+             ON DELETE CASCADE ON UPDATE NO ACTION"
+        );
     }
 }
