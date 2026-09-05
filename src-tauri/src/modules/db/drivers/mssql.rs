@@ -668,12 +668,20 @@ fn build_where(
 
 /// The types read as text rather than decoded, and why each one is on the list.
 ///
-/// `money`/`smallmoney` arrive through tiberius as an f64 — four decimal places of a fixed-point
-/// type put through a binary float, which is the same reason `Numeric` is rendered as text in
-/// [`column_value`]. `xml` and `sql_variant` have no shape the grid could draw. The three CLR types
-/// are read with `.ToString()` instead, having no `CAST` to text at all.
-const TEXT_CAST_TYPES: [&str; 4] = ["money", "smallmoney", "xml", "sql_variant"];
+/// `xml` and `sql_variant` have no shape the grid could draw. The three CLR types are read with
+/// `.ToString()` instead, having no `CAST` to text at all. `money` is text too but through
+/// [`MONEY_TYPES`], which needs a conversion style the others do not.
+const TEXT_CAST_TYPES: [&str; 2] = ["xml", "sql_variant"];
 const CLR_TYPES: [&str; 3] = ["geography", "geometry", "hierarchyid"];
+/// The fixed-point currency types, which lose digits twice over if read the obvious way.
+///
+/// Through tiberius they arrive as an f64 — four decimal places of a fixed-point type put through a
+/// binary float, which is the same reason `Numeric` is rendered as text in [`column_value`]. And a
+/// plain `CAST(m AS nvarchar(max))` is no better: its default style rounds to **two** decimal
+/// places, so a column holding 9.9999 reads 10.00. `CONVERT`'s style 2 is the one that writes all
+/// four with no thousands separators, and it is the only spelling of this that keeps what is
+/// stored.
+const MONEY_TYPES: [&str; 2] = ["money", "smallmoney"];
 
 /// How one column is named in the SELECT list.
 ///
@@ -689,6 +697,9 @@ pub(super) fn select_expr(column: &str, data_type: &str) -> String {
         .to_ascii_lowercase();
     if CLR_TYPES.contains(&base.as_str()) {
         return format!("{column}.ToString() AS {column}");
+    }
+    if MONEY_TYPES.contains(&base.as_str()) {
+        return format!("CONVERT(nvarchar(max), {column}, 2) AS {column}");
     }
     if TEXT_CAST_TYPES.contains(&base.as_str()) {
         return format!("CAST({column} AS nvarchar(max)) AS {column}");
@@ -1393,9 +1404,11 @@ mod tests {
     fn a_lossy_column_is_asked_for_as_text_instead() {
         assert_eq!(select_expr("[id]", "int"), "[id]");
         assert_eq!(select_expr("[name]", "nvarchar(255)"), "[name]");
+        // Style 2, not a plain CAST: the default style rounds a `money` to two decimal places, so
+        // a column holding 9.9999 would arrive as 10.00 — found on the live server, not in review.
         assert_eq!(
             select_expr("[price]", "money"),
-            "CAST([price] AS nvarchar(max)) AS [price]"
+            "CONVERT(nvarchar(max), [price], 2) AS [price]"
         );
         assert_eq!(
             select_expr("[doc]", "xml"),
