@@ -12,6 +12,7 @@ use super::mssql::{
 };
 use crate::error::AppError;
 use serde::Serialize;
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -423,6 +424,177 @@ pub async fn collations(pool: &Pool) -> Result<Vec<Collation>, AppError> {
             })
         })
         .collect())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutlineColumn {
+    pub name: String,
+    /// The declared type as a `CREATE TABLE` would write it: `nvarchar(255)`, `decimal(10,2)`.
+    pub data_type: String,
+    pub nullable: bool,
+    /// `PRI`, `UNI`, `MUL` or empty — see [`key_marker`].
+    pub key: String,
+    /// The `table.column` this one points at, when it is a foreign key. Qualified the way the
+    /// sidebar names it, so a key across schemas reads as something that can be opened.
+    pub references: Option<String>,
+}
+
+/// One table, with its columns in table order.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutlineTable {
+    /// Qualified the way the sidebar names it, so completing `sales.` offers that schema's tables
+    /// and an unqualified name completes against `dbo` — which is what an unqualified name in the
+    /// statement being written would resolve to as well.
+    pub name: String,
+    pub columns: Vec<OutlineColumn>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaOutline {
+    /// The database this describes, so a cached outline can be told apart from the one asked for.
+    pub database: String,
+    pub tables: Vec<OutlineTable>,
+}
+
+/// What the Query tab's completion knows about the connected database: every table and column of
+/// it, across every schema the user can see, in two reads.
+///
+/// Views are in it as well as tables — their columns complete like any others', which is why this
+/// reads `sys.objects` filtered to `U` and `V` rather than `sys.tables`, the same filter
+/// `mssql::list_tables` uses so the two lists cannot drift apart.
+///
+/// The foreign keys are read first and separately. A failure there is not worth failing the whole
+/// outline over: completion is for the columns, and where a key points is a line of detail beside
+/// them.
+pub async fn schema_outline(pool: &Pool, database: &str) -> Result<SchemaOutline, AppError> {
+    let db = quote_ident(database);
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+
+    let key_sql = read_uncommitted(&format!(
+        "SELECT s.name AS schema_name, o.name AS table_name, c.name AS column_name,
+                rs.name AS ref_schema, ro.name AS ref_table, rc.name AS ref_column
+         FROM {db}.sys.foreign_key_columns fk
+         JOIN {db}.sys.objects o ON o.object_id = fk.parent_object_id
+         JOIN {db}.sys.schemas s ON s.schema_id = o.schema_id
+         JOIN {db}.sys.columns c
+             ON c.object_id = fk.parent_object_id AND c.column_id = fk.parent_column_id
+         JOIN {db}.sys.objects ro ON ro.object_id = fk.referenced_object_id
+         JOIN {db}.sys.schemas rs ON rs.schema_id = ro.schema_id
+         JOIN {db}.sys.columns rc
+             ON rc.object_id = fk.referenced_object_id
+             AND rc.column_id = fk.referenced_column_id"
+    ));
+    let key_rows = match client.query(key_sql, &[]).await {
+        Ok(stream) => stream.into_first_result().await.unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+
+    let mut references: HashMap<(String, String), String> = HashMap::new();
+    for row in &key_rows {
+        let (
+            Some(schema),
+            Some(table),
+            Some(column),
+            Some(ref_schema),
+            Some(ref_table),
+            Some(ref_column),
+        ) = (
+            row.get::<&str, _>("schema_name"),
+            row.get::<&str, _>("table_name"),
+            row.get::<&str, _>("column_name"),
+            row.get::<&str, _>("ref_schema"),
+            row.get::<&str, _>("ref_table"),
+            row.get::<&str, _>("ref_column"),
+        )
+        else {
+            continue;
+        };
+        references.insert(
+            (qualify(schema, table), column.to_string()),
+            format!("{}.{}", qualify(ref_schema, ref_table), ref_column),
+        );
+    }
+
+    let column_sql = read_uncommitted(&format!(
+        "SELECT s.name AS schema_name, o.name AS table_name, c.name AS column_name,
+                t.name AS type_name, c.max_length, c.precision, c.scale, c.is_nullable,
+                COALESCE(k.is_primary, 0) AS is_primary,
+                COALESCE(k.is_unique, 0) AS is_unique,
+                COALESCE(k.is_indexed, 0) AS is_indexed
+         FROM {db}.sys.columns c
+         JOIN {db}.sys.objects o ON o.object_id = c.object_id
+         JOIN {db}.sys.schemas s ON s.schema_id = o.schema_id
+         JOIN {db}.sys.types t ON t.user_type_id = c.user_type_id
+         OUTER APPLY (
+             SELECT MAX(CASE WHEN i.is_primary_key = 1 THEN 1 ELSE 0 END) AS is_primary,
+                    MAX(CASE WHEN i.is_unique = 1 THEN 1 ELSE 0 END) AS is_unique,
+                    MAX(1) AS is_indexed
+             FROM {db}.sys.indexes i
+             JOIN {db}.sys.index_columns ic
+                 ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+             WHERE i.object_id = c.object_id AND ic.column_id = c.column_id
+               AND ic.key_ordinal = 1
+         ) k
+         WHERE o.type IN ('U', 'V')
+         ORDER BY CASE WHEN s.name = '{DEFAULT_SCHEMA}' THEN 0 ELSE 1 END,
+                  s.name, o.name, c.column_id"
+    ));
+    let column_rows = client
+        .query(column_sql, &[])
+        .await
+        .map_err(map_error)?
+        .into_first_result()
+        .await
+        .map_err(map_error)?;
+
+    let mut tables: Vec<OutlineTable> = Vec::new();
+    for row in &column_rows {
+        let (Some(schema), Some(table), Some(column), Some(type_name)) = (
+            row.get::<&str, _>("schema_name"),
+            row.get::<&str, _>("table_name"),
+            row.get::<&str, _>("column_name"),
+            row.get::<&str, _>("type_name"),
+        ) else {
+            continue;
+        };
+        let name = qualify(schema, table);
+        if tables.last().map(|last| last.name != name).unwrap_or(true) {
+            tables.push(OutlineTable {
+                name: name.clone(),
+                columns: Vec::new(),
+            });
+        }
+        if let Some(last) = tables.last_mut() {
+            last.columns.push(OutlineColumn {
+                name: column.to_string(),
+                data_type: display_type(
+                    type_name,
+                    row.get("max_length").unwrap_or(0),
+                    row.get("precision").unwrap_or(0),
+                    row.get("scale").unwrap_or(0),
+                ),
+                nullable: row.get("is_nullable").unwrap_or(true),
+                key: key_marker(
+                    row.get::<i32, _>("is_primary").unwrap_or(0) == 1,
+                    row.get::<i32, _>("is_unique").unwrap_or(0) == 1,
+                    row.get::<i32, _>("is_indexed").unwrap_or(0) == 1,
+                )
+                .to_string(),
+                references: references.remove(&(name.clone(), column.to_string())),
+            });
+        }
+    }
+
+    Ok(SchemaOutline {
+        database: database.to_string(),
+        tables,
+    })
 }
 
 #[cfg(test)]

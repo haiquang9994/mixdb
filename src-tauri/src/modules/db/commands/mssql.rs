@@ -94,3 +94,15 @@ pub async fn mssql_collations(
         mssql_structure::collations(&pool).await
     })
 }
+
+#[tauri::command]
+pub async fn mssql_schema_outline(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+) -> Result<mssql_structure::SchemaOutline, AppError> {
+    retry_read!({
+        let pool = mssql_pool(&state, &id).await?;
+        mssql_structure::schema_outline(&pool, &database).await
+    })
+}
