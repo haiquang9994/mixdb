@@ -150,6 +150,24 @@ export function wrapNullable(dataType: string, nullable: boolean): string {
   return unwrapNullable(text) === text ? `Nullable(${text})` : text;
 }
 
+/**
+ * Whether a SQL Server column being edited is one `ALTER COLUMN` cannot touch: SQL Server refuses
+ * that statement outright on a column carrying the IDENTITY property, not merely for turning
+ * IDENTITY on or off but for its type, nullability and collation too (D15,
+ * `mssql_ddl::modify_column`). Locking those controls here is what keeps this dialog from promising
+ * an edit the backend would silently drop rather than apply.
+ *
+ * `false` on every other engine, and `false` while adding a new column: only an *existing*
+ * SQL Server column already carrying IDENTITY is affected — a new column may still ask for one.
+ */
+export function isIdentityLocked(
+  kind: SqlDialect["kind"],
+  editingExistingColumn: boolean,
+  column: SqlStructureColumn | undefined,
+): boolean {
+  return kind === "mssql" && editingExistingColumn && column?.autoIncrement === true;
+}
+
 /** Where the column is to sit. The two fixed choices carry no colon, so they can never collide
  * with the `AFTER:` of a column that is named after one of them. */
 const KEEP = "KEEP";
@@ -239,6 +257,7 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
   const { t } = useTranslation();
   const { kind, editing: offers } = useSqlDialect();
   const editing = column !== undefined;
+  const identityLocked = isIdentityLocked(kind, editing, column);
   const [draft, setDraft] = useState<Draft>(() =>
     draftFromColumn(offers.columnTypes, kind, column),
   );
@@ -380,7 +399,7 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
                   className={styles.typeSelect}
                   placeholder={t("columnDialog.typePlaceholder")}
                   ariaLabel={t("columnDialog.type")}
-                  disabled={saving}
+                  disabled={saving || identityLocked}
                   searchable
                   options={typeOptions}
                   onChange={chooseType}
@@ -395,7 +414,7 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
                   aria-label={t("columnDialog.typeArg")}
                   // Closed for a type with no parentheses to put anything in, rather than hidden:
                   // the row keeps its shape as the type changes.
-                  disabled={saving || selectedType?.arg === null}
+                  disabled={saving || identityLocked || selectedType?.arg === null}
                   onChange={(e) => patch({ typeArg: e.target.value })}
                 />
               </div>
@@ -425,7 +444,7 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
                 collations={collations}
                 placeholder={t("columnDialog.collationPlaceholder")}
                 ariaLabel={t("columnDialog.collation")}
-                disabled={saving}
+                disabled={saving || identityLocked}
                 onChange={(collation) => patch({ collation })}
               />
             </label>
@@ -446,7 +465,7 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
               <input
                 type="checkbox"
                 checked={draft.nullable}
-                disabled={saving}
+                disabled={saving || identityLocked}
                 onChange={(e) => patch({ nullable: e.target.checked })}
               />
               {t("columnDialog.nullable")}
@@ -471,11 +490,14 @@ function ColumnDialog({ table, columns, collations, column, onCancel, onSubmit }
                 <input
                   type="checkbox"
                   checked={draft.autoIncrement}
-                  disabled={saving}
+                  disabled={saving || identityLocked}
                   onChange={(e) => patch({ autoIncrement: e.target.checked })}
                 />
                 {t("columnDialog.autoIncrement")}
               </label>
+            )}
+            {identityLocked && (
+              <p className={styles.hint}>{t("columnDialog.identityLockedMssql")}</p>
             )}
             {/* A MySQL clause. The same effect on PostgreSQL is a trigger, which is not a property of
                 the column and so not this dialog's to offer. */}

@@ -9,11 +9,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { composeType, parseType, unwrapNullable, wrapNullable } from "./ColumnDialog";
+import { composeType, isIdentityLocked, parseType, unwrapNullable, wrapNullable } from "./ColumnDialog";
 import { mysqlEditing } from "../../mysql/editing";
 import { postgresEditing } from "../../postgres/editing";
 import { clickhouseEditing } from "../../clickhouse/editing";
 import type { SqlTypeSpec } from "../../sql/dialect";
+import type { SqlStructureColumn } from "../../types";
 
 /** Opens a declared type in the dialog and saves it again without touching anything. */
 function roundTrip(types: readonly SqlTypeSpec[], dataType: string): string {
@@ -165,5 +166,40 @@ describe("ClickHouse nullability travels inside the type", () => {
 
   it("wraps nothing when there is no type yet", () => {
     expect(wrapNullable("", true)).toBe("");
+  });
+});
+
+describe("SQL Server locks an existing IDENTITY column's type/nullable/collation", () => {
+  const identityColumn: SqlStructureColumn = {
+    name: "id",
+    dataType: "int",
+    nullable: false,
+    defaultValue: null,
+    defaultIsExpression: false,
+    autoIncrement: true,
+    onUpdateCurrentTimestamp: false,
+    generated: false,
+    collation: null,
+    comment: "",
+    key: "PRI",
+    extra: "identity",
+  };
+  const plainColumn: SqlStructureColumn = { ...identityColumn, name: "note", autoIncrement: false };
+
+  it("locks an existing IDENTITY column on SQL Server", () => {
+    expect(isIdentityLocked("mssql", true, identityColumn)).toBe(true);
+  });
+
+  it("does not lock a column that is not IDENTITY", () => {
+    expect(isIdentityLocked("mssql", true, plainColumn)).toBe(false);
+  });
+
+  it("does not lock while adding a new column, even one that will be IDENTITY", () => {
+    expect(isIdentityLocked("mssql", false, undefined)).toBe(false);
+  });
+
+  it("does not lock an IDENTITY-shaped column on another engine", () => {
+    expect(isIdentityLocked("mysql", true, identityColumn)).toBe(false);
+    expect(isIdentityLocked("postgres", true, identityColumn)).toBe(false);
   });
 });

@@ -283,6 +283,8 @@ const dbEn = {
     defaultIsExpression: "Read the default as an expression, not as text",
     defaultExpressionHint:
       "CURRENT_TIMESTAMP and NOW() are recognised on their own; tick this for any other expression, e.g. uuid().",
+    identityLockedMssql:
+      "SQL Server can't change an IDENTITY column's type, nullability or collation — only its name and comment. Drop and re-add the column to change the rest.",
     errorName: "The column needs a name.",
     errorType: "The column needs a type.",
     errorTypeArg: "{{type}} needs a list of values, e.g. 'a','b'.",

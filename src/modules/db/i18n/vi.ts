@@ -267,6 +267,8 @@ const dbVi: DbDict = {
     defaultIsExpression: "Hiểu giá trị mặc định là biểu thức, không phải chuỗi",
     defaultExpressionHint:
       "CURRENT_TIMESTAMP và NOW() được nhận ra sẵn; tích vào đây cho các biểu thức khác, ví dụ uuid().",
+    identityLockedMssql:
+      "SQL Server không thể đổi type, nullable hay collation của cột IDENTITY — chỉ đổi được tên và comment. Xoá rồi thêm lại cột nếu cần đổi phần còn lại.",
     errorName: "Cột cần có tên.",
     errorType: "Cột cần có kiểu dữ liệu.",
     errorTypeArg: "{{type}} cần có danh sách giá trị, ví dụ 'a','b'.",
