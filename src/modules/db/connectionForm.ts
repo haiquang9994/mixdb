@@ -204,8 +204,12 @@ export function kindLabel(kind: DbKind): TranslationKey {
  * would be a control that changes nothing. ClickHouse is back to being a server — `use_ssl` there
  * picks `https://` over `http://` outright rather than negotiating TLS inside one connection the
  * way MySQL and PostgreSQL do, but the box asks the same question a user has an answer to either
- * way: does reaching this server need encryption.
+ * way: does reaching this server need encryption. SQL Server is a fourth spelling of the same
+ * question — it encrypts the login packet whatever this says, so the box decides whether the rest
+ * of the session is encrypted too.
  */
 function hasTls(kind: DbKind): boolean {
-  return kind === "mysql" || kind === "postgres" || kind === "clickhouse";
+  return (
+    kind === "mysql" || kind === "postgres" || kind === "clickhouse" || kind === "mssql"
+  );
 }

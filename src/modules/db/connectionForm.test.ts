@@ -70,6 +70,14 @@ describe("formFrom", () => {
     ).toBe(true);
   });
 
+  it("gives SQL Server the TLS box, like the other three servers", () => {
+    // SQL Server always encrypts the login packet, so the box is not "negotiate TLS or not" the
+    // way it is on MySQL — it decides whether the rest of the session is encrypted too. Either
+    // way it is a question the user has an answer to, so the box belongs; and an entry saved
+    // before it existed reads as on, the same as MySQL/Postgres/ClickHouse.
+    expect(formFrom({ kind: "mssql", host: "127.0.0.1", port: 1433 }).useSsl).toBe(true);
+  });
+
   it("reads it as off for a kind that has no box at all", () => {
     // Otherwise loading a Mongo connection and switching the form to MySQL arrives with TLS
     // silently ticked — a form the user never set that way.
