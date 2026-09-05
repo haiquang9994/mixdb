@@ -3,7 +3,8 @@
 Kế hoạch dựng phần UI để quản lý **MixEngine** ngay trong MixDB. Viết 2026-09-06, trước khi có
 dòng code nào. Năm pha; mỗi pha tự chạy được và để lại một tab dùng được.
 
-**Trạng thái: chưa bắt đầu.**
+**Trạng thái: Pha 0 đã xong từ trước khi roadmap này được viết** — `91abac3`,
+`feat(db): save MixEngine handoffs as a keyring reference (#20)`, 2026-09-04. Pha 1–4 chưa bắt đầu.
 
 Nguồn phía MixEngine dùng để viết roadmap này:
 
@@ -29,7 +30,8 @@ Hai app đã biết nhau một chiều rồi: MixEngine gọi MixDB là extensio
 (`DesktopClient.name` = `"MixDB"`), và `database.open` bắn `mixdb://connect?…` sang. Phía nhận đã có
 trong repo này — [`handoff.rs`](../src-tauri/src/modules/db/handoff.rs) và
 [spec T83](../docs/superpowers/specs/2026-09-03-mixengine-connection-handoff-design.md). Pha 0 dưới
-đây trả nốt phần còn nợ của đường đó trước khi mở module mới.
+đây là đường đó, và nó **đã hoàn tất**; ghi lại ở đây vì nó là nền của màn hình Services ở Pha 3,
+không phải vì còn việc.
 
 ## Quyết định chốt trước
 
@@ -102,29 +104,45 @@ cửa sổ console đen trước mặt người dùng.
 
 ---
 
-## Pha 0 — trả nợ đường handoff đã có
+## Pha 0 — đường handoff và tham chiếu keyring · **ĐÃ XONG**
 
-Không đụng tới module mới. Đây là phần MixDB còn nợ sau khi MixEngine chốt T84, ghi trong
-`docs/superpowers/plans/2026-09-04-mixengine-keyring-convention.md` (gitignored, local-only).
+Không phải việc phải làm. Pha này được ghi lại vì Pha 3 dựng màn hình Services lên trên nó, và vì
+nó là chỗ duy nhất tới lúc này hai app dùng chung một khái niệm.
 
-Hợp đồng T84: URL handoff mọc thêm đúng một tham số `secret_key`, luôn đi kèm `user`. Địa chỉ đầy đủ
-của credential là **một cặp** — `service` = `"mixengine"` (hằng số biên dịch cứng ở cả hai phía,
-không bao giờ đi trên wire) và `key` = `<service-id>/<user>` (đi qua `secret_key`).
+Shipped ở `91abac3` — `feat(db): save MixEngine handoffs as a keyring reference (#20)`, 2026-09-04,
+cùng ngày note `docs/superpowers/plans/2026-09-04-mixengine-keyring-convention.md` được viết. Note
+đó là bản *trước khi làm*, gitignored và không ai cập nhật lại sau khi PR land — đọc nó một mình sẽ
+tưởng đây còn là việc còn nợ. **Code là câu trả lời, note không phải.**
 
-- **T0.1** — `handoff::parse()` đọc thêm `secret_key`, thành field mới trên `Handoff`; `ConnectionConfig`
-  không đổi hình.
-- **T0.2** — mang "bằng chứng env" từ lúc nhận tới lúc Save: `Opening.secret.is_some()` → field trên
-  `Handoff` → `TabRequest.state` → state của form → payload lúc Save. Thiếu cờ này (link bấm từ
-  trình duyệt) thì form vẫn mở, nhưng Save chỉ được lưu mật khẩu người dùng tự gõ, không được tạo
-  tham chiếu.
-- **T0.3** — chốt định dạng "tham chiếu" trong `Secrets`, và UI nói *"đọc từ kho credential của máy"*
-  thay vì hiện một ô mật khẩu rỗng khó hiểu.
+Hợp đồng T84 nó hiện thực: URL handoff mọc thêm đúng một tham số `secret_key`, luôn đi kèm `user`.
+Địa chỉ đầy đủ của credential là **một cặp** — `service` = `"mixengine"` (hằng số biên dịch cứng ở cả
+hai phía, không bao giờ đi trên wire) và `key` = `<service-id>/<user>` (đi qua `secret_key`).
 
-**Vì sao đứng trước:** `SecretAddress` là kiểu đầu tiên hai app dùng chung. Dựng module mới trước khi
-nó đúng nghĩa là dựng màn hình Services trên một khái niệm còn nợ.
+| Việc | Đã land ở đâu |
+| --- | --- |
+| Parse `secret_key` | `Handoff::keyring_ref` — [handoff.rs:32](../src-tauri/src/modules/db/handoff.rs) |
+| Cờ "đã xác thực bằng env" đi tới lúc Save | `secret.is_some().then(…)` ở [handoff.rs:118](../src-tauri/src/modules/db/handoff.rs) → `handoff_take` → [DbTab.tsx:512](../src/modules/db/DbTab.tsx) → `form.keyringRef` → payload Save |
+| Định dạng tham chiếu | `SavedConnection.keyringRef` — [types.ts:67](../src/modules/db/types.ts); `connections.json` vẫn là text thuần |
+| Đọc namespace ngoài | `MIXENGINE_SERVICE` + `read_mixengine_entry` — [secrets.rs:296](../src-tauri/src/secrets.rs), đi thẳng `Entry::new`, cố ý không qua `Keeper` |
+| Save không copy mật khẩu sang vault mình | `readSecrets(config, keyringRef)` — [savedConnections.ts:47](../src/modules/db/savedConnections.ts) |
+| Đọc hụt thì hỏi lại, không báo lỗi | `resolveKeyringRef` trả `undefined` — [savedConnections.ts:80](../src/modules/db/savedConnections.ts) |
 
-**Xong khi:** một connection MixEngine bắn sang, Save lại, đóng app, mở lại — vẫn kết nối được mà
-MixDB chưa từng giữ bản sao thứ hai của mật khẩu.
+Hai chi tiết dễ bỏ sót, cả hai đều đã có:
+
+- **Gõ tay vào ô mật khẩu thì xoá `keyringRef`** ([DbTab.tsx:109](../src/modules/db/DbTab.tsx)). Thứ
+  trong ô không còn là thứ tham chiếu trỏ tới nữa, nên giữ tham chiếu lại là nói dối về nguồn.
+- **Một `secret_key` không có `secret` đứng sau thì không thành tham chiếu.** Đây chính là hình dạng
+  của một link `mixdb://` bấm từ trình duyệt: nó nêu được `secret_key` tuỳ ý, nhưng không đặt được
+  biến môi trường cho process nó mở. Test canh điều này là
+  `a_secret_key_without_a_proven_secret_is_not_a_keyring_ref`.
+
+Kiểm lại 2026-09-06: `npm run build` xanh, `npm test` 1547/1547, `cargo test handoff` 10/10.
+
+**Một hệ quả cố ý, không phải thiếu sót.** Khi MixEngine xoá entry (service/account/extension bị
+gỡ), tham chiếu giải ra `undefined` và form mở ra rỗng như một connection chưa từng lưu mật khẩu —
+không toast đỏ, không câu giải thích. Đó là điều note chốt, và nó đúng: một tham chiếu sống lâu hơn
+credential của nó là một kết thúc bình thường. Nếu sau này muốn một câu *"credential này MixEngine
+không còn giữ"*, đó là việc mới, không phải nợ cũ.
 
 ---
 
