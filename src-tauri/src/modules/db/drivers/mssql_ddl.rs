@@ -70,7 +70,7 @@ pub struct IndexSpec {
 /// Wraps text as a SQL string literal, doubling the quote that would otherwise end it early. T-SQL
 /// does not backslash-escape a plain literal, so a backslash is left alone — the same rule
 /// `postgres_ddl::quote_string` follows and for the same reason.
-fn quote_string(value: &str) -> String {
+pub(super) fn quote_string(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
@@ -277,7 +277,7 @@ fn default_clause(value: &str, is_expression: bool) -> String {
 
 /// The `name type ...` of a column, as `CREATE TABLE`/`ADD` spells it. The comment is not here — it
 /// is a separate statement, see [`comment_statement`].
-fn column_definition(spec: &ColumnSpec) -> Result<String, AppError> {
+pub(super) fn column_definition(spec: &ColumnSpec) -> Result<String, AppError> {
     let name = spec.name.trim();
     if name.is_empty() {
         return Err(err!("error.columnNameRequired"));
@@ -310,7 +310,7 @@ fn column_definition(spec: &ColumnSpec) -> Result<String, AppError> {
 /// stored procedures below are not interchangeable: asking `sp_addextendedproperty` to add a second
 /// one, or `sp_updateextendedproperty` to update one that is not there, is an error rather than a
 /// no-op.
-fn comment_statement(
+pub(super) fn comment_statement(
     schema: &str,
     table: &str,
     column: &str,
@@ -592,7 +592,7 @@ fn generated_index_name(table: &str, columns: &[IndexColumnSpec]) -> String {
 
 /// The statement that creates one index — an `ALTER TABLE ... ADD [CONSTRAINT] ... PRIMARY KEY` for
 /// a primary key, a `CREATE INDEX` for everything else.
-fn create_index_statements(
+pub(super) fn create_index_statements(
     database: &str,
     schema: &str,
     table: &str,
@@ -654,7 +654,7 @@ fn create_index_statements(
 
 /// Turns one read-back `TableIndex` into the `IndexSpec` that recreates it — used only to put an
 /// index back after [`modify_column`] has had to drop it out of `ALTER COLUMN`'s way.
-fn index_spec_from(index: &TableIndex) -> IndexSpec {
+pub(super) fn index_spec_from(index: &TableIndex) -> IndexSpec {
     IndexSpec {
         name: index.name.clone(),
         kind: if index.primary {
