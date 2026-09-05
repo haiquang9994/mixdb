@@ -1111,6 +1111,111 @@ pub async fn table_data(
     })
 }
 
+/// Updates exactly one row, identified by `key` (the primary key's columns, or — when a table has
+/// none — every column, the same fallback MySQL uses). Runs inside a transaction that first counts
+/// what the key matches, so the no-primary-key fallback cannot silently clobber a row's duplicate.
+///
+/// The count runs at the connection's default isolation, not `READ UNCOMMITTED` the way browsing a
+/// page of data does (D13): reading how many rows a key matches right before writing one of them is
+/// exactly the "dirty read then write" D13 keeps off the write path, unlike reading a row only to
+/// display it.
+pub async fn update_row(
+    pool: &Pool,
+    database: &str,
+    table: &str,
+    updates: &Map<String, Value>,
+    key: &Map<String, Value>,
+) -> Result<(), AppError> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+    if key.is_empty() {
+        return Err(err!("error.updateWithoutKey"));
+    }
+
+    let (schema, name) = resolve(table);
+    let qualified = three_part(database, &schema, &name);
+    let column_rows = table_columns(pool, database, &schema, &name).await?;
+    let types: BTreeMap<String, String> = column_rows
+        .iter()
+        .map(|c| (c.name.clone(), c.data_type.clone()))
+        .collect();
+
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+    client
+        .simple_query("BEGIN TRANSACTION")
+        .await
+        .map_err(map_error)?;
+
+    let result = update_row_body(&mut client, &qualified, &types, updates, key).await;
+    end_transaction(&mut client, result).await
+}
+
+/// The body of [`update_row`] once inside its transaction — split out so [`end_transaction`] can
+/// commit or roll back around whatever it returns, rather than the function returning early through
+/// several `?`s that would each have to remember to roll back by hand.
+async fn update_row_body(
+    client: &mut Connection,
+    qualified: &str,
+    types: &BTreeMap<String, String>,
+    updates: &Map<String, Value>,
+    key: &Map<String, Value>,
+) -> Result<(), AppError> {
+    let is_binary = |column: &str| {
+        types
+            .get(column)
+            .map(|t| is_binary_type(t))
+            .unwrap_or(false)
+    };
+
+    let count_sql = format!(
+        "SELECT COUNT_BIG(*) FROM {qualified} WHERE {}",
+        key_predicate(key, 1)
+    );
+    let mut count_query = tiberius::Query::new(count_sql);
+    for (column, value) in key {
+        bind_write(&mut count_query, value, is_binary(column))?;
+    }
+    let matched: i64 = count_query
+        .query(client)
+        .await
+        .map_err(map_error)?
+        .into_row()
+        .await
+        .map_err(map_error)?
+        .and_then(|row| row.get::<i64, _>(0))
+        .unwrap_or(0);
+    if matched != 1 {
+        return Err(err!("error.rowsMatched", matched = matched));
+    }
+
+    let set_clause = updates
+        .keys()
+        .enumerate()
+        .map(|(i, c)| format!("{} = @P{}", quote_ident(c), i + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    // The key's placeholders carry on where the SET clause's left off: one numbering runs through
+    // the whole statement, unlike MySQL's positional `?`.
+    let update_sql = format!(
+        "UPDATE {qualified} SET {set_clause} WHERE {}",
+        key_predicate(key, updates.len() + 1)
+    );
+    let mut update_query = tiberius::Query::new(update_sql);
+    for (column, value) in updates {
+        bind_write(&mut update_query, value, is_binary(column))?;
+    }
+    for (column, value) in key {
+        bind_write(&mut update_query, value, is_binary(column))?;
+    }
+    update_query.execute(client).await.map_err(map_error)?;
+
+    Ok(())
+}
+
 /// One row as the grid reads it: every column by name, whatever the column holds.
 pub(super) fn row_to_json(row: &Row) -> Map<String, Value> {
     let mut obj = Map::new();
