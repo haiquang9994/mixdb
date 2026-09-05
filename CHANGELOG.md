@@ -42,6 +42,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ## [Unreleased]
 
+### Added
+
+- SQL Server connections: connect, and browse the server's databases and tables.
+
 ## [0.0.30] - 2026-09-05
 
 ### Added
