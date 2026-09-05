@@ -5,10 +5,13 @@
 //! and so name a table `schema.table`; closest to `mysql.rs` in connection model, since both reach
 //! every database of the server over one pool rather than dialing again per database.
 
+use super::filters::split_list;
 use crate::error::AppError;
 use crate::modules::db::models::ServerInfo;
 use deadpool::managed::{Manager as ManagerTrait, Metrics, Pool as DeadPool, RecycleError, RecycleResult};
+use serde::Deserialize;
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 use tiberius::numeric::Decimal;
 use tiberius::{AuthMethod, Client, ColumnData, Config, EncryptionLevel, FromSql, Row};
 use tokio::net::TcpStream;
@@ -363,6 +366,156 @@ pub async fn list_tables(pool: &Pool, database: &str) -> Result<Vec<String>, App
         .collect())
 }
 
+/// One condition on the rows a page is cut out of, as the grid's filter bar sends it. The same
+/// shape and the same operator ids as MySQL's and PostgreSQL's — only what they become differs.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Filter {
+    pub column: String,
+    pub operator: String,
+    #[serde(default)]
+    pub value: Option<String>,
+}
+
+/// The wildcards out of a value going into a `LIKE`, T-SQL's set of them.
+///
+/// Not `filters::escape_like`, which is right for the two engines it serves and wrong here twice
+/// over: SQL Server takes **no** escape character in a `LIKE` unless the pattern names one (so
+/// every clause below writes `ESCAPE '\'`), and `[` opens a character set — `[0-9]` is a range —
+/// which neither MySQL nor PostgreSQL does. A `contains` filter for `a[0]` must find the text
+/// `a[0]`; without the bracket escaped it silently finds `a0` instead. See D12.
+pub(super) fn escape_like_mssql(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+        .replace('[', "\\[")
+}
+
+/// Turns the filter rows into a WHERE clause and the values to bind into it, in order.
+///
+/// Every value reaches the server as a bound parameter — tiberius numbers them `@P1`, `@P2`, …, the
+/// way PostgreSQL numbers `$1`, so they cannot simply be counted off the bind list at the end. The
+/// column name is the one part that has to be interpolated, which is why it is checked against the
+/// table's own columns first.
+///
+/// Two differences from the PostgreSQL version this is shaped after:
+///
+/// * **No regex.** SQL Server has no counterpart to `~` or `REGEXP` before its 2025 release, so
+///   there is no arm for `regexp`/`notRegexp` and `mssqlDialect.regexpFilter` is false — the
+///   operator is gone from the dropdown rather than offered and failing (D12).
+/// * **Case is the column's business.** There is no `ILIKE` here, and no `LOWER()` wrapped around
+///   anything: whether a comparison is case-sensitive is decided by the column's collation, and
+///   most installations default to a `_CI_` one — so in practice these filters ignore case. Forcing
+///   it either way with `LOWER()` would only make every one of them unable to use an index.
+///
+/// Text comparisons cast the column to `nvarchar(max)` so a value bound as text compares as typed.
+/// The ordering operators are the exception, and cast nothing: `CAST([id] AS nvarchar(max)) > '9'`
+/// would sort 10 before 9. There the column stands and SQL Server converts the bound text to the
+/// column's own type, which is what it does implicitly in a comparison — and what it refuses,
+/// loudly, when the text is not a value of that type after all. That refusal is the right answer:
+/// the user typed something this column could not hold.
+fn build_where(
+    filters: &[Filter],
+    columns: &BTreeMap<String, String>,
+) -> Result<(String, Vec<String>), AppError> {
+    let mut clauses: Vec<String> = Vec::new();
+    let mut binds: Vec<String> = Vec::new();
+    let mut next = 1usize;
+    let mut placeholder = |binds: &mut Vec<String>, value: String| {
+        binds.push(value);
+        let p = format!("@P{next}");
+        next += 1;
+        p
+    };
+
+    for filter in filters {
+        if !columns.contains_key(&filter.column) {
+            return Err(err!("error.unknownFilterColumn", column = &filter.column));
+        }
+        let raw = quote_ident(&filter.column);
+        let col = format!("CAST({raw} AS nvarchar(max))");
+        let value = filter.value.as_deref().unwrap_or("");
+        let operator = filter.operator.as_str();
+        // Every pattern this builds escapes with a backslash, and SQL Server only knows that if the
+        // pattern says so.
+        let like = |negated: bool, p: String| {
+            let not = if negated { "NOT " } else { "" };
+            format!("{col} {not}LIKE {p} ESCAPE '\\'")
+        };
+
+        let clause = match operator {
+            "eq" => format!("{col} = {}", placeholder(&mut binds, value.to_string())),
+            "ne" => format!("{col} <> {}", placeholder(&mut binds, value.to_string())),
+            "gt" => format!("{raw} > {}", placeholder(&mut binds, value.to_string())),
+            "gte" => format!("{raw} >= {}", placeholder(&mut binds, value.to_string())),
+            "lt" => format!("{raw} < {}", placeholder(&mut binds, value.to_string())),
+            "lte" => format!("{raw} <= {}", placeholder(&mut binds, value.to_string())),
+            "contains" => like(
+                false,
+                placeholder(&mut binds, format!("%{}%", escape_like_mssql(value))),
+            ),
+            "notContains" => like(
+                true,
+                placeholder(&mut binds, format!("%{}%", escape_like_mssql(value))),
+            ),
+            "startsWith" => like(
+                false,
+                placeholder(&mut binds, format!("{}%", escape_like_mssql(value))),
+            ),
+            "endsWith" => like(
+                false,
+                placeholder(&mut binds, format!("%{}", escape_like_mssql(value))),
+            ),
+            // `like`/`notLike` hand the pattern over as the user wrote it — that is the point of
+            // the operator — so the value is not escaped. The `ESCAPE` clause still stands, which
+            // is how a pattern of their own can escape a wildcard too.
+            "like" => like(false, placeholder(&mut binds, value.to_string())),
+            "notLike" => like(true, placeholder(&mut binds, value.to_string())),
+            "in" | "notIn" => {
+                let items = split_list(value);
+                if items.is_empty() {
+                    continue;
+                }
+                let placeholders = items
+                    .into_iter()
+                    .map(|item| placeholder(&mut binds, item))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let sql_op = if operator == "in" { "IN" } else { "NOT IN" };
+                format!("{col} {sql_op} ({placeholders})")
+            }
+            "between" | "notBetween" => {
+                let items = split_list(value);
+                // Two bounds or nothing — one of them alone says nothing about a range.
+                if items.len() < 2 {
+                    continue;
+                }
+                let low = placeholder(&mut binds, items[0].clone());
+                let high = placeholder(&mut binds, items[1].clone());
+                let sql_op = if operator == "between" {
+                    "BETWEEN"
+                } else {
+                    "NOT BETWEEN"
+                };
+                format!("{raw} {sql_op} {low} AND {high}")
+            }
+            "isNull" => format!("{raw} IS NULL"),
+            "isNotNull" => format!("{raw} IS NOT NULL"),
+            "isEmpty" => format!("{col} = ''"),
+            "isNotEmpty" => format!("{col} <> ''"),
+            other => return Err(err!("error.unknownFilterOperator", operator = other)),
+        };
+
+        clauses.push(clause);
+    }
+
+    if clauses.is_empty() {
+        return Ok((String::new(), binds));
+    }
+    Ok((format!(" WHERE {}", clauses.join(" AND ")), binds))
+}
+
 /// One row as the grid reads it: every column by name, whatever the column holds.
 pub(super) fn row_to_json(row: &Row) -> Map<String, Value> {
     let mut obj = Map::new();
@@ -464,9 +617,10 @@ pub(super) fn column_value(data: &ColumnData<'static>) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{column_value, qualify, quote_ident, resolve};
+    use super::{build_where, column_value, escape_like_mssql, qualify, quote_ident, resolve, Filter};
     use serde_json::Value;
     use std::borrow::Cow;
+    use std::collections::BTreeMap;
     use tiberius::numeric::Numeric;
     use tiberius::time::{Date, DateTime, DateTime2, Time};
     use tiberius::ColumnData;
@@ -540,6 +694,100 @@ mod tests {
             Value::String("hello".into())
         );
         assert_eq!(column_value(&ColumnData::String(None)), Value::Null);
+    }
+
+    fn columns() -> BTreeMap<String, String> {
+        BTreeMap::from([
+            ("id".to_string(), "int".to_string()),
+            ("name".to_string(), "nvarchar(255)".to_string()),
+        ])
+    }
+
+    fn filter(column: &str, operator: &str, value: Option<&str>) -> Filter {
+        Filter {
+            column: column.to_string(),
+            operator: operator.to_string(),
+            value: value.map(str::to_string),
+        }
+    }
+
+    /// T-SQL's `LIKE` reads `[` as the start of a character set — `[0-9]` is a range, not three
+    /// characters — which no other engine here does. A `contains` filter for `a[0]` must find the
+    /// text `a[0]`, so the bracket is escaped along with the wildcards.
+    #[test]
+    fn like_escaping_covers_the_bracket_t_sql_treats_as_a_wildcard() {
+        assert_eq!(escape_like_mssql("a[0]"), "a\\[0]");
+        assert_eq!(escape_like_mssql("50%"), "50\\%");
+        assert_eq!(escape_like_mssql("a_b"), "a\\_b");
+        // The backslash first, or it would escape the escapes added after it.
+        assert_eq!(escape_like_mssql("a\\b"), "a\\\\b");
+    }
+
+    /// SQL Server has no default escape character in `LIKE`, so every pattern this builds has to
+    /// name one — without `ESCAPE '\'` the backslashes above would be matched literally.
+    #[test]
+    fn every_like_names_its_escape_character() {
+        let (clause, binds) = build_where(&[filter("name", "contains", Some("50%"))], &columns())
+            .expect("contains is a known operator");
+        assert_eq!(
+            clause,
+            " WHERE CAST([name] AS nvarchar(max)) LIKE @P1 ESCAPE '\\'"
+        );
+        assert_eq!(binds, ["%50\\%%"]);
+    }
+
+    /// The ordering operators compare the column as it is, so `10 > 9` stays true: casting the
+    /// column to text would sort them the other way round.
+    #[test]
+    fn ordering_compares_the_column_rather_than_its_text() {
+        let (clause, binds) = build_where(&[filter("id", "gt", Some("9"))], &columns())
+            .expect("gt is a known operator");
+        assert_eq!(clause, " WHERE [id] > @P1");
+        assert_eq!(binds, ["9"]);
+    }
+
+    /// Placeholders are numbered, not counted off at the end: `@P1` and `@P2` have to line up with
+    /// the order the values are bound in, and an `IN` list makes as many as it has items.
+    #[test]
+    fn placeholders_are_numbered_in_bind_order() {
+        let filters = [
+            filter("name", "eq", Some("a")),
+            filter("id", "in", Some("1,2")),
+        ];
+        let (clause, binds) = build_where(&filters, &columns()).expect("both are known");
+        assert_eq!(
+            clause,
+            " WHERE CAST([name] AS nvarchar(max)) = @P1 \
+             AND CAST([id] AS nvarchar(max)) IN (@P2, @P3)"
+        );
+        assert_eq!(binds, ["a", "1", "2"]);
+    }
+
+    /// No regex arm at all — see D12. The dialect closes the operator in the dropdown, and this is
+    /// the other half of that: a filter that reached here anyway is an error, not a silent pass.
+    #[test]
+    fn regexp_is_not_an_operator_this_engine_has() {
+        let error = build_where(&[filter("name", "regexp", Some("^a"))], &columns())
+            .expect_err("SQL Server has no regex operator");
+        assert_eq!(error.code, "error.unknownFilterOperator");
+    }
+
+    /// A column not on the table is refused rather than interpolated — the column name is the one
+    /// part of a filter that cannot be bound.
+    #[test]
+    fn a_column_the_table_does_not_have_is_refused() {
+        let error = build_where(&[filter("nope", "eq", Some("x"))], &columns())
+            .expect_err("unknown column");
+        assert_eq!(error.code, "error.unknownFilterColumn");
+    }
+
+    /// No filters is no clause — not `WHERE 1=1`, which would be a scan the planner has to see
+    /// through on every page.
+    #[test]
+    fn no_filters_is_no_clause() {
+        let (clause, binds) = build_where(&[], &columns()).expect("nothing to fail");
+        assert_eq!(clause, "");
+        assert!(binds.is_empty());
     }
 
     /// SQL Server brackets an identifier rather than quoting it, and the character doubled inside
