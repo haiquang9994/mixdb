@@ -6,13 +6,16 @@
 //! spell either. Closest in shape to `sqlite_dump.rs`, not `clickhouse_dump.rs`: both this file and
 //! SQLite's read rows one Rust value at a time through a normal driver, where ClickHouse's
 //! `FORMAT SQLInsert` has the server generate the `INSERT` text itself — so this file, like
-//! `sqlite_dump.rs`, writes its own value-to-literal conversion (see `sql_literal` in
-//! `dump_data.rs`'s sibling work, added in a later task of this plan).
+//! `sqlite_dump.rs`, writes its own value-to-literal conversion (see [`sql_literal`]).
 
 use super::dump::{self, Tracker};
-use super::mssql::{map_error, quote_ident, read_uncommitted, resolve, three_part, Pool};
+use super::mssql::{
+    column_value, is_binary_type, map_error, primary_key, quote_ident, read_uncommitted, resolve,
+    select_expr, table_columns, three_part, Pool,
+};
 use super::mssql_ddl::{
-    column_definition, comment_statement, create_index_statements, index_spec_from, ColumnSpec,
+    column_definition, comment_statement, create_index_statements, index_spec_from, quote_string,
+    ColumnSpec,
 };
 use super::mssql_structure::{self, StructureColumn};
 use crate::error::AppError;
@@ -312,6 +315,201 @@ async fn write_foreign_keys(
     Ok(())
 }
 
+/// Turns one value `mssql::column_value` already decoded to JSON into the literal `dump_data`
+/// writes into an `INSERT` — reusing that decode rather than matching on `tiberius::ColumnData` a
+/// second time, because `mssql::select_expr` (used for the `SELECT` list below, same as
+/// `mssql::table_data`) has already cast the awkward types — `money`, `xml`, `sql_variant`,
+/// `geography`/`geometry`, `hierarchyid` — to text on the server side, so there is nothing left
+/// here that needs the raw driver type.
+///
+/// `data_type` decides the quoting: a `mssql::is_binary_type` column comes back as base64 and is
+/// decoded and re-written as a `0x...` hex literal (SQL Server's own binary literal syntax, not
+/// base64 — base64 was only ever this app's wire format to the grid); a Unicode text type is
+/// prefixed `N'...'` so non-ASCII data restores intact even into a non-Unicode-default collation;
+/// everything else that is JSON `String` is a plain `'...'` literal, and a lone quote inside it is
+/// doubled the way `quote_string` doubles one everywhere else in this driver.
+fn sql_literal(value: &serde_json::Value, data_type: &str) -> String {
+    use serde_json::Value;
+    match value {
+        Value::Null => "NULL".to_string(),
+        Value::Bool(b) => if *b { "1" } else { "0" }.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => {
+            if is_binary_type(data_type) {
+                use base64::Engine;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(s)
+                    .unwrap_or_default();
+                let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+                format!("0x{hex}")
+            } else if is_unicode_text_type(data_type) {
+                format!("N{}", quote_string(s))
+            } else {
+                quote_string(s)
+            }
+        }
+        // An array or object never reaches here — no `ColumnData` arm produces one (D11).
+        _ => "NULL".to_string(),
+    }
+}
+
+/// Whether a column's text needs the `N` prefix to survive a restore intact. Mirrors the base-type
+/// check `mssql::is_binary_type` already does (strip a `(...)` length before comparing) rather than
+/// matching the full declared type, so `nvarchar(255)` and `nvarchar(max)` are both caught.
+fn is_unicode_text_type(data_type: &str) -> bool {
+    let base = data_type.split('(').next().unwrap_or(data_type).trim().to_ascii_lowercase();
+    matches!(base.as_str(), "nchar" | "nvarchar" | "ntext" | "xml")
+}
+
+/// The `ORDER BY` a dump's paged `SELECT` needs (`OFFSET`/`FETCH` requires one). Unlike
+/// `mssql::table_data`'s `(SELECT NULL)` fallback for "no order the user asked for", two pages of
+/// the *same* dump have to agree with each other — SQL Server does not promise the same physical
+/// order across two separate `OFFSET`/`FETCH` calls without one. The primary key sorts
+/// unambiguously when the table has one; every selected column is the fallback for a heap table
+/// without one, the same "no key at all, so use the whole row" trade `update_row`'s no-primary-key
+/// path already accepts.
+fn dump_order_by(primary_key: &[String], columns: &[String]) -> String {
+    let keys: &[String] = if primary_key.is_empty() { columns } else { primary_key };
+    keys.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ")
+}
+
+/// How many rows one `INSERT ... VALUES` statement carries: SQL Server's own grammar limit on a
+/// multi-row `VALUES` list, independent of column count since nothing here binds a parameter —
+/// every value is a literal.
+const INSERT_BATCH_ROWS: usize = 1000;
+/// How many rows one `SELECT ... OFFSET/FETCH` page reads at a time while dumping — independent of
+/// [`INSERT_BATCH_ROWS`], and larger, since a read page is chunked again into `INSERT` batches
+/// after it arrives.
+const READ_PAGE_ROWS: i64 = 5000;
+
+/// Streams every base table's rows into `path` as batched `INSERT` statements, wrapping a table
+/// that has an `IDENTITY` column in `SET IDENTITY_INSERT ... ON`/`OFF` so the original values
+/// restore rather than being renumbered (D10's own stated constraint) — one table at a time, since
+/// SQL Server allows only one table's `IDENTITY_INSERT` on per session.
+///
+/// `append`: `true` continues an `all`-mode dump onto the structure [`dump_structure`] already
+/// wrote; `false` owns the file from scratch (a `data`-only dump).
+pub async fn dump_data(
+    pool: &Pool,
+    database: &str,
+    path: &str,
+    append: bool,
+    watch: &dump::Watch<'_>,
+) -> Result<(), AppError> {
+    use tokio::io::AsyncWriteExt;
+
+    let tables = mssql_structure::table_stats(pool, database).await?;
+    let weights: Vec<(String, u64)> =
+        tables.iter().map(|t| (t.name.clone(), t.rows.max(1))).collect();
+    let mut tracker = Tracker::new(&weights, path, true);
+
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(append)
+        .truncate(!append)
+        .open(path)
+        .await
+        .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+
+    for table in &tables {
+        if (watch.cancel)() {
+            return Err(err!("error.transferCancelled", tool = "SQL Server dump"));
+        }
+        tracker.reached(&table.name);
+
+        let (schema, name) = resolve(&table.name);
+        let qualified = three_part(database, &schema, &name);
+        // Computed and rowversion/timestamp columns are never inserted — the server derives or
+        // assigns both — the same set `mssql::table_data`'s insert path already excludes.
+        let columns: Vec<_> = table_columns(pool, database, &schema, &name)
+            .await?
+            .into_iter()
+            .filter(|c| !c.is_computed && !c.is_rowversion)
+            .collect();
+        if columns.is_empty() {
+            (watch.report)(tracker.progress());
+            continue;
+        }
+        let has_identity = columns.iter().any(|c| c.is_identity);
+        let column_names: Vec<String> = columns.iter().map(|c| c.name.clone()).collect();
+        let column_list =
+            column_names.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+        let select_list = columns
+            .iter()
+            .map(|c| select_expr(&quote_ident(&c.name), &c.data_type))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let keys = primary_key(pool, database, &schema, &name).await?;
+        let order_by = dump_order_by(&keys, &column_names);
+
+        if has_identity {
+            let sql = format!("SET IDENTITY_INSERT {qualified} ON;\n");
+            file.write_all(sql.as_bytes())
+                .await
+                .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+        }
+
+        let mut offset: i64 = 0;
+        loop {
+            if (watch.cancel)() {
+                return Err(err!("error.transferCancelled", tool = "SQL Server dump"));
+            }
+            let sql = read_uncommitted(&format!(
+                "SELECT {select_list} FROM {qualified} ORDER BY {order_by} \
+                 OFFSET {offset} ROWS FETCH NEXT {READ_PAGE_ROWS} ROWS ONLY"
+            ));
+            let mut client = pool.get().await.map_err(|e| err!("error.mssql", message = e))?;
+            let rows = client
+                .query(sql, &[])
+                .await
+                .map_err(map_error)?
+                .into_first_result()
+                .await
+                .map_err(map_error)?;
+            let read = rows.len();
+            drop(client);
+
+            for chunk in rows.chunks(INSERT_BATCH_ROWS) {
+                let mut values_list = Vec::with_capacity(chunk.len());
+                for row in chunk {
+                    let literals: Vec<String> = row
+                        .cells()
+                        .enumerate()
+                        .map(|(i, (_, data))| sql_literal(&column_value(data), &columns[i].data_type))
+                        .collect();
+                    values_list.push(format!("({})", literals.join(", ")));
+                }
+                let statement = format!(
+                    "INSERT INTO {qualified} ({column_list}) VALUES\n{};\n",
+                    values_list.join(",\n")
+                );
+                file.write_all(statement.as_bytes())
+                    .await
+                    .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+            }
+            (watch.report)(tracker.progress());
+
+            if (read as i64) < READ_PAGE_ROWS {
+                break;
+            }
+            offset += READ_PAGE_ROWS;
+        }
+
+        if has_identity {
+            let sql = format!("SET IDENTITY_INSERT {qualified} OFF;\n\n");
+            file.write_all(sql.as_bytes())
+                .await
+                .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+        } else {
+            file.write_all(b"\n")
+                .await
+                .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,5 +591,43 @@ mod tests {
              REFERENCES [mixdb_agent_test].[dbo].[order] ([id], [line]) \
              ON DELETE CASCADE ON UPDATE NO ACTION"
         );
+    }
+
+    #[test]
+    fn sql_literal_covers_null_bool_and_number() {
+        assert_eq!(sql_literal(&serde_json::Value::Null, "int"), "NULL");
+        assert_eq!(sql_literal(&serde_json::json!(true), "bit"), "1");
+        assert_eq!(sql_literal(&serde_json::json!(false), "bit"), "0");
+        assert_eq!(sql_literal(&serde_json::json!(42), "int"), "42");
+    }
+
+    #[test]
+    fn sql_literal_prefixes_unicode_text_with_n() {
+        assert_eq!(sql_literal(&serde_json::json!("mới"), "nvarchar(50)"), "N'mới'");
+    }
+
+    #[test]
+    fn sql_literal_escapes_a_lone_quote_in_plain_text() {
+        assert_eq!(sql_literal(&serde_json::json!("it's"), "varchar(50)"), "'it''s'");
+    }
+
+    #[test]
+    fn sql_literal_writes_binary_as_a_hex_literal() {
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode([0x00, 0xff, 0x10]);
+        assert_eq!(sql_literal(&serde_json::json!(encoded), "varbinary(50)"), "0x00ff10");
+    }
+
+    #[test]
+    fn dump_order_by_prefers_the_primary_key() {
+        let pk = vec!["id".to_string()];
+        let cols = vec!["id".to_string(), "name".to_string()];
+        assert_eq!(dump_order_by(&pk, &cols), "[id]");
+    }
+
+    #[test]
+    fn dump_order_by_falls_back_to_every_column_without_one() {
+        let cols = vec!["a".to_string(), "b".to_string()];
+        assert_eq!(dump_order_by(&[], &cols), "[a], [b]");
     }
 }
