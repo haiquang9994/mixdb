@@ -8,6 +8,8 @@ import { sqliteApi } from "./sqlite/api";
 import { sqliteDialect } from "./sqlite/dialect";
 import { clickhouseApi } from "./clickhouse/api";
 import { clickhouseDialect } from "./clickhouse/dialect";
+import { mssqlApi } from "./mssql/api";
+import { mssqlDialect } from "./mssql/dialect";
 import type { DbKind } from "./types";
 
 /**
@@ -26,6 +28,7 @@ export const SQL_ENGINES = {
   postgres: { api: postgresApi, dialect: postgresDialect },
   sqlite: { api: sqliteApi, dialect: sqliteDialect },
   clickhouse: { api: clickhouseApi, dialect: clickhouseDialect },
+  mssql: { api: mssqlApi, dialect: mssqlDialect },
 } as const satisfies Partial<Record<DbKind, { api: SqlApi; dialect: SqlDialect }>>;
 
 export type SqlKind = keyof typeof SQL_ENGINES;

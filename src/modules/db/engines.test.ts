@@ -9,7 +9,7 @@ const ALL_KINDS = Object.keys(DEFAULT_PORTS) as DbKind[];
  * Kinds `DbTab` deliberately has no workspace for. Emptying this list is what finishing an engine
  * looks like; adding to it is what starting one looks like.
  */
-const NO_WORKSPACE: DbKind[] = ["mssql"];
+const NO_WORKSPACE: DbKind[] = [];
 
 /**
  * Which branch of `DbTab`'s dispatch claims a kind — mirroring the if-chain at the end of that
@@ -50,13 +50,14 @@ describe("which workspace a kind opens", () => {
     expect(unclaimed).toEqual(NO_WORKSPACE);
   });
 
-  /** The four SQL engines, and — until its table reads land — not SQL Server. */
+  /** The five SQL engines, SQL Server now among them — its table reads landed. */
   it("opens the SQL workspace for the engines that have one", () => {
     expect(ALL_KINDS.filter((kind) => workspaceFor(kind) === "sql")).toEqual([
       "mysql",
       "postgres",
       "sqlite",
       "clickhouse",
+      "mssql",
     ]);
   });
 });
