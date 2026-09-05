@@ -44,8 +44,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
-- SQL Server connections can be saved and connected. Browsing them is still being built, and the
-  tab says so instead of opening the wrong engine's workspace.
+- SQL Server connections can be saved and connected, and their tables read: data, structure and
+  statistics. Writing — rows, schema changes, hand-typed queries — is still being built.
 
 ### Changed
 
