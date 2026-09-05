@@ -88,10 +88,11 @@ database). Vì vậy `DbHandle::Mssql` chỉ cần bọc một pool duy nhất �
 (HashMap theo tên database) như `postgres::Pools`. `database` trong mọi lệnh MSSQL đóng vai trò y
 hệt MySQL's `database`: tên để `USE` hoặc để ghép vào câu SQL, không phải để chọn pool.
 
-Vì `tiberius` không có pool sẵn, `Pool` tự viết ở đây là một `deadpool` (crate `deadpool-tiberius`
-nếu đủ ổn định tại thời điểm code, hoặc một pool tối giản tự viết bọc `Vec<Mutex<Option<Client>>>`
-nếu không) thay vì `bb8`/`sqlx::Pool` — quyết định cụ thể để lúc code Plan 1, không chốt trước ở
-đây vì phụ thuộc crate nào build sẵn cho `tokio` runtime app đang dùng.
+Vì `tiberius` không có pool sẵn, `Pool` ở đây là một pool tự dựng. **Chốt lúc code Plan 1:
+`deadpool` 0.12.3 trần**, không phải `deadpool-tiberius` — `Manager` của deadpool 0.12 chỉ đòi
+`create` và `recycle`, nên bọc `tiberius::Client` là hai hàm chứ không đáng thêm một crate cầu nối
+nữa vào cây phụ thuộc. `recycle` chạy `SELECT 1`: một connection chết được bỏ đi và quay số lại,
+đó là thứ làm một tunnel rớt rồi lên lại dùng được tiếp mà không phải connect tay. `max_size = 8`.
 
 **D3 — Schema mặc định là `dbo`, tái dùng nguyên khuôn `qualify`/`resolve` của PostgreSQL.**
 SQL Server có `database > schema > table`, giống PostgreSQL và khác MySQL (chỉ có
@@ -164,9 +165,24 @@ Frontend:
 - `engines.ts`: `SQL_ENGINES.mssql = { api: mssqlApi, dialect: mssqlDialect }`.
 - `connectionForm.ts`: `KIND_LABEL.mssql`, `hasTls` thêm `"mssql"` (D6 — MSSQL có encryption
   option, box TLS có ý nghĩa).
-- `i18n/en.ts`, `i18n/vi.ts`: `connection.kindMssql`.
+- `i18n/en.ts`, `i18n/vi.ts`: `connection.kindMssql`, `error.mssql`.
 - `src/modules/db/mssql/`: `api.ts`, `dialect.ts`, `columns.ts`, `editing.ts`, `system.ts` — copy
   cấu trúc thư mục `postgres/`.
+
+**Ba chỗ nữa mà bản nháp đầu của checklist này bỏ sót** — `tsc` tìm ra lúc code Plan 1, nên chúng
+được ghi lại ở đây thay vì để plan sau lại vấp:
+
+- `src/modules/db/icons.tsx`: `BRAND_MARKS` là một `Record<DbKind, …>`, nên mỗi kind mới phải có
+  một mark. Có sẵn fallback `DatabaseGenericIcon` nhưng chỉ cho kind *lạ* đọc từ
+  `connections.json`, không phải cho một kind build này biết. Lưu ý tiền lệ trong chính file đó:
+  `sqlite` và `clickhouse` **không** phải brand mark mà là hình tự vẽ, có comment nói rõ — nên vẽ
+  một hình cho MSSQL là đúng quy ước, miễn là không giả làm logo Microsoft và nói thẳng điều đó.
+- `DatabaseActions.tsx` và `DatabaseStats.tsx` mỗi cái có một union `kind` **riêng**
+  (`"mysql" | "postgres" | "mongo" | "sqlite" | "clickhouse"`), không đọc `DbKind` — cả hai phải
+  thêm `"mssql"`.
+- Trong `DatabaseActions.tsx`, `const suite: ToolSuite | null = …` phải cho MSSQL về `null` cùng
+  nhóm với SQLite/ClickHouse (D10: dump tự thân, không có suite tool ngoài để đặt tên). Không làm
+  thì `ToolSuite` không nhận `"mssql"` và `tsc` chặn.
 
 Mỗi plan bên dưới nói rõ nó cần *bao nhiêu* trong checklist này để tự chạy được (Plan 1 cần gần hết
 để app build và connect được; các plan sau chỉ thêm method/lệnh mới, không đụng lại phần khung).
@@ -179,17 +195,28 @@ biến thể `ColumnData` tương ứng**), `rust_decimal` (hoặc `bigdecimal`)
 hiển thị xấu. TLS thì `tiberius` có sẵn `native-tls`, nên không cần ngoại lệ so với stack hiện có.
 
 **D6 — TLS/encryption: `use_ssl` giữ nguyên nghĩa, map sang `EncryptionLevel` của `tiberius`.**
-`tiberius::Config::encryption(EncryptionLevel)` nhận `Off`/`On`/`Required`. `use_ssl == Some(false)`
-→ `Off` (giữ đúng "đã tunnel qua SSH rồi thì khỏi TLS lần hai", giống cách Postgres/MySQL đang xử
-lý); còn lại (`None`/`Some(true)`) → `Required` — cứng hơn `Prefer` một chút so với Postgres,
-nhưng đúng thực tế: SQL Server mặc định *luôn* mã hoá gói đăng nhập dù server không bật TLS đầy đủ,
-nên "thử TLS rồi rơi về plaintext" không phải lựa chọn nhị phân sạch như hai engine kia — chọn
-`Required` là an toàn hơn và là mặc định chính `tiberius` khuyến nghị. Nếu server test không có
-certificate hợp lệ (rất thường với instance tự cài), `tiberius` cần `trust_cert()` được bật kèm
-theo — nghĩa là hộp TLS của MSSQL trong connection form nên hiểu ngầm "mã hoá, không xác minh
-certificate" chứ không phải "mã hoá và xác minh đầy đủ chuỗi CA", trừ khi có việc riêng thêm hộp
-"Trust server certificate" — **để ngỏ, quyết định lúc code Plan 1** sau khi thử thật với server
-test (`192.168.50.86:1433`, khả năng cao dùng self-signed cert mặc định của SQL Server).
+`tiberius::Config::encryption(EncryptionLevel)` nhận bốn giá trị, và **tên của chúng đánh lừa** —
+đọc trong `tiberius-0.12.3/src/tds.rs` lúc code Plan 1, không phải suy từ tên:
+
+| Giá trị | Nghĩa thật |
+| --- | --- |
+| `Off` | *Chỉ* mã hoá thủ tục đăng nhập |
+| `On` | Mã hoá tất cả nếu có thể |
+| `NotSupported` | **Không** mã hoá gì cả |
+| `Required` | Mã hoá tất cả, hỏng thì báo lỗi |
+
+Nghĩa là "tắt TLS" là `NotSupported` chứ không phải `Off`. Bản nháp đầu của spec này viết `Off` =
+bỏ TLS, và điều đó sai — nhưng `Off` **vẫn là lựa chọn đúng** cho `use_ssl == Some(false)`: ý của
+ô đó là "đã tunnel qua SSH rồi thì khỏi TLS lần hai", và gói đăng nhập vẫn được bảo vệ là điều tốt
+hơn chứ không phải điều phải bỏ. `None`/`Some(true)` → `Required` — cứng hơn `Prefer` của Postgres,
+nhưng đúng thực tế: SQL Server *luôn* mã hoá gói đăng nhập dù server không bật TLS đầy đủ, nên "thử
+TLS rồi rơi về plaintext" không phải lựa chọn nhị phân sạch như hai engine kia.
+
+**Chốt lúc code Plan 1: `trust_cert()` luôn bật, không thêm ô riêng.** Certificate tự ký là thứ
+một instance tự cài luôn có, và từ chối nó thì app không với tới được đúng loại server nó hay được
+chĩa vào nhất. Nghĩa là hộp TLS của MSSQL hiểu ngầm "mã hoá, **không** xác minh chuỗi CA" — khác
+với nghĩa của cùng cái hộp đó trên MySQL/PostgreSQL, và đó là lý do việc này được ghi vào doc
+comment của `mssql::connect` chứ không chỉ ở đây.
 
 **D7 — "Tự tăng" (auto-increment) = cột `IDENTITY(seed, increment)`.**
 Đọc từ `sys.identity_columns` (has columns `seed_value`, `increment_value`, `last_value`) join
@@ -701,17 +728,44 @@ autocomplete gợi ý tên bảng/cột đúng, chạy lại toàn bộ test sui
 
 ## Việc để ngỏ, cần chốt trong lúc code (không phải thiếu sót của spec — phụ thuộc thử với server thật)
 
-- D2: pool crate cụ thể cho `tiberius` (`deadpool-tiberius` hay tự viết).
-- D6: `trust_cert` mặc định bật hay thành một ô riêng trên form.
-- D8: `tiberius` có Attention/cancel API cấp-statement hay phải rơi về `KILL` cấp-session — và nếu
-  là `KILL` thì xử lý quyền `ALTER ANY CONNECTION` theo cách nào (đo lúc connect, hay để lỗi nổi
-  lên UI).
-- D10: `sqlcmd` (Go) có đưa vào `tools.rs` được không, hay restore cũng tự thân luôn.
-- D13: con số `LOCK_TIMEOUT` cụ thể (5s là đề xuất, đo lại với server thật).
+Mấy điểm này nằm ở lớp "chi tiết triển khai phụ thuộc crate/tool đang ở version nào tại thời điểm
+code", không đổi kiến trúc tổng thể nếu câu trả lời đi khác dự đoán. Câu trả lời quay về đây khi
+plan tương ứng xong.
 
-Năm điểm này đều nằm ở lớp "chi tiết triển khai phụ thuộc crate/tool đang ở version nào tại thời
-điểm code", không đổi kiến trúc tổng thể nếu câu trả lời đi khác dự đoán — nên không chặn việc bắt
-đầu Plan 1.
+### Đã chốt
+
+- **D2 — pool crate: `deadpool` 0.12.3 trần**, không phải `deadpool-tiberius`. `Manager` của
+  deadpool 0.12 chỉ đòi `create` + `recycle`, nên không đáng thêm một crate cầu nối. `max_size = 8`,
+  `recycle` chạy `SELECT 1`. (Plan 1)
+- **D6 — `trust_cert()` luôn bật**, không thêm ô "Trust server certificate" riêng. Kèm theo một
+  đính chính: `EncryptionLevel::Off` của `tiberius` nghĩa là *chỉ mã hoá lúc đăng nhập*, không phải
+  *không mã hoá* — cái đó là `NotSupported`. Xem bảng trong D6. (Plan 1)
+- **D5 — ba chỗ đăng ký kind mà checklist ban đầu bỏ sót** (`icons.tsx::BRAND_MARKS`, union `kind`
+  riêng của `DatabaseActions`/`DatabaseStats`, và vế `ToolSuite | null`). Đã ghi vào D5. (Plan 1)
+
+### Còn ngỏ
+
+- **D8** — `tiberius` có Attention/cancel API cấp-statement hay phải rơi về `KILL` cấp-session, và
+  nếu là `KILL` thì xử lý quyền `ALTER ANY CONNECTION` theo cách nào (đo lúc connect, hay để lỗi
+  nổi lên UI). Chốt ở **Plan 5**, và phải thử bằng một login **không phải `sa`**.
+- **D10** — `sqlcmd` (Go) có đưa vào `tools.rs` được không, hay restore cũng tự thân luôn. Chốt ở
+  **Plan 7**.
+- **D13** — con số `LOCK_TIMEOUT` cụ thể. Plan 1 đặt **5000 ms** trong `mssql::dial`, nhưng đó là
+  con số chọn trên giấy: server test tắt trước khi kiểm được, nên nó **chưa được đo với một bảng
+  đang thật sự bị khoá**. Còn ngỏ cho tới khi có phiên đo đó.
+
+### Chưa được xác minh với server thật (Plan 1)
+
+Server test `192.168.50.86:1433` tắt giữa chừng lúc chạy Plan 1 — cùng host, các cổng 3307/3308/
+5432/4306/27017 vẫn mở, nên là instance chứ không phải mạng. Những thứ sau **đã viết nhưng chưa
+chạy lần nào với server thật**, và là việc đầu tiên phải làm khi server lên lại:
+
+- `connect` qua `tiberius` + `trust_cert` với certificate tự ký.
+- `server_info` cắt `SERVERPROPERTY` + phần OS của `@@VERSION`.
+- `list_databases` với ba điều kiện `database_id > 4` / `state = 0` / `HAS_DBACCESS`.
+- `list_tables` đọc `sys.objects` — đặc biệt là **view có xuất hiện không** và thứ tự `dbo` trước.
+- Đường SSH tunnel.
+- `SET LOCK_TIMEOUT` có được server nhận trên connection mới không.
 
 ## Thứ tự plan, tóm tắt
 
