@@ -1100,6 +1100,7 @@ const dbEn = {
     cannotReadFile: "Cannot read {{path}}: {{message}}",
     cannotWriteFile: "Cannot write {{path}}: {{message}}",
     sqliteRestoreFailed: "The restore stopped at {{statement}} — {{message}}",
+    mssqlRestoreFailed: "The restore stopped at {{statement}} — {{message}}",
     sqliteRebuildParseFailed:
       "MixDB could not read {{table}}'s own CREATE TABLE text well enough to rebuild it — this is a syntax it does not recognise yet.",
     cannotRemoveDirectory: "Cannot remove {{path}}: {{message}}",

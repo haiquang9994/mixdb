@@ -19,10 +19,8 @@ import type { SqlApi, SqlPageQuery, SqlServerInfo } from "../sql/api";
  * the one connection, not a pool to pick. See `mssql_pool` in the backend.
  *
  * DDL is done too (Plan 6) — creating, renaming and dropping databases/tables/columns/indexes.
- * Everything still `notImplemented()` is dump/restore, and `mssqlDialect` closes those in the UI too,
- * so nothing routes to them yet. They land plan by plan, the same way ClickHouse shipped read-only,
- * then row-writes, before DDL; see
- * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`.
+ * Dump and restore are done as well (Plan 7), the driver's own — no external tool, see
+ * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`'s D10.
  */
 export const mssqlApi: SqlApi = {
   listDatabases(id) {
@@ -76,8 +74,13 @@ export const mssqlApi: SqlApi = {
     return invoke<SqlCollation[]>("mssql_collations", { id });
   },
 
-  dump: () => notImplemented(),
-  restore: () => notImplemented(),
+  dump(id, database, mode, path) {
+    return invoke<void>("mssql_dump", { id, database, mode, path });
+  },
+
+  restore(id, database, path) {
+    return invoke<void>("mssql_restore", { id, database, path });
+  },
 
   dropDatabase(id, database) {
     return invoke<void>("mssql_drop_database", { id, database });

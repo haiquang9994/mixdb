@@ -9,9 +9,9 @@ import { mssqlEditing } from "./editing";
 /**
  * SQL Server's side of {@link SqlDialect}. Rows can be read and written — data, structure,
  * statistics, and the Data tab's edit/add/delete — the Query tab runs a hand-typed script, multi-batch
- * `GO` scripts included, with Cancel and syntax checking as you type — and the Structure tab writes
- * too now: database/table/column/index create, change and drop. `dumpRestoreWritable` is the last
- * flag still `false`, waiting on Plan 7. See
+ * `GO` scripts included, with Cancel and syntax checking as you type — the Structure tab writes
+ * too: database/table/column/index create, change and drop — and a database can be dumped to a
+ * `.sql` file and restored back. Every write flag is `true`. See
  * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`.
  */
 export const mssqlDialect: SqlDialect = {
@@ -32,7 +32,7 @@ export const mssqlDialect: SqlDialect = {
   // own when the session it is asked to stop is already gone.
   cancellable: true,
   writable: true,
-  dumpRestoreWritable: false,
+  dumpRestoreWritable: true,
   ddlWritable: true,
   rowsWritable: true,
   // SQL Server has no regex operator before its 2025 release, so the dropdown does not offer one —

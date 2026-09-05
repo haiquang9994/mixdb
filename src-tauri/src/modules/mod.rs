@@ -184,6 +184,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         db::commands::mssql::mssql_add_index,
         db::commands::mssql::mssql_modify_index,
         db::commands::mssql::mssql_drop_index,
+        db::commands::mssql::mssql_dump,
+        db::commands::mssql::mssql_restore,
         db::commands::tools::dumptools_status,
         db::commands::tools::dumptools_ready,
         db::commands::tools::dumptools_downloadable,

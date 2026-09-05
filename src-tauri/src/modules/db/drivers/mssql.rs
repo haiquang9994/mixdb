@@ -943,7 +943,7 @@ pub(super) async fn table_columns(
 
 /// The primary key's columns, in the order the key declares them — not the table's order, and the
 /// order a composite key has to be written in.
-async fn primary_key(
+pub(super) async fn primary_key(
     pool: &Pool,
     database: &str,
     schema: &str,
