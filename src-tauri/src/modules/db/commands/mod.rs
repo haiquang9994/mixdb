@@ -315,7 +315,7 @@ pub async fn disconnect_db(state: State<'_, DbState>, id: String) -> Result<(), 
         // Mongo tự gom lại khi tay cầm cuối cùng đi, và Redis là một kết nối chứ không phải pool.
         // ClickHouse không giữ socket nào cả — mỗi lệnh là một HTTP request riêng, nên không có gì
         // để đóng ở đây.
-        DbHandle::Mongo(_) | DbHandle::Redis(_) | DbHandle::Clickhouse(_) => {}
+        DbHandle::Mongo(_) | DbHandle::Redis(_) | DbHandle::Clickhouse(_) | DbHandle::Mssql(_) => {}
     }
     drop(connection);
     Ok(())

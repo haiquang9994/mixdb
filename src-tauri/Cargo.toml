@@ -35,6 +35,19 @@ sqlx = { version = "0.9.0", features = ["mysql", "postgres", "sqlite", "uuid", "
 # the three release targets all get the same engine. The cost is a C compiler at build time, paid
 # twice for the universal macOS bundle.
 libsqlite3-sys = { version = "0.37", features = ["bundled"] }
+# SQL Server speaks TDS, which sqlx has no driver for. `tiberius` is pure Rust and talks TDS over
+# tokio, so nothing has to be installed on the user's machine — an ODBC driver manager plus
+# Microsoft's own driver is not something a packaged app should ask for, least of all on Linux and
+# macOS where neither ships by default. See
+# `docs/superpowers/specs/2026-09-05-mssql-support-design.md`'s D1.
+#
+# `native-tls` matches sqlx, reqwest and the updater rather than pulling a second TLS stack in.
+# `tds73` is not cosmetic: without it the connection negotiates an older protocol and `date`,
+# `time`, `datetime2` and `datetimeoffset` have no `ColumnData` variant to decode into.
+tiberius = { version = "0.12", default-features = false, features = ["tds73", "native-tls", "rust_decimal", "chrono"] }
+# tiberius ships no pool of its own, unlike sqlx. deadpool is the thin one: it recycles a client
+# and nothing more, which is all a TDS session needs.
+deadpool = "0.12"
 rust_decimal = "1.36"
 russh = { version = "0.62.5", default-features = false, features = ["ring", "flate2", "rsa"] }
 tauri-plugin-store = "2.4.4"
@@ -68,7 +81,7 @@ keyring = { version = "3.6", features = ["windows-native", "apple-native", "sync
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "multipart", "stream", "gzip", "brotli", "deflate", "http2"] }
 # `CancellationToken` for the Cancel button, and `ReaderStream` for sending a file without reading
 # all of it into memory first.
-tokio-util = { version = "0.7", features = ["io"] }
+tokio-util = { version = "0.7", features = ["io", "compat"] }
 
 # Pty cho phiên terminal cục bộ. Dùng ConPTY trên Windows và forkpty ở nơi khác, nên không
 # phải viết một nhánh cho mỗi hệ điều hành. Đây là thư viện WezTerm chạy thật.

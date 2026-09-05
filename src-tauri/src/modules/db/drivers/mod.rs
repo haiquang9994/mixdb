@@ -5,6 +5,7 @@ pub mod clickhouse_script;
 pub mod dump;
 pub mod filters;
 pub mod mongo;
+pub mod mssql;
 pub mod mysql;
 pub mod mysql_script;
 pub mod mysql_structure;
