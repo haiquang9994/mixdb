@@ -5,7 +5,7 @@
 
 use crate::error::AppError;
 use crate::modules::db::drivers::{mssql, mssql_script, mssql_structure};
-use crate::modules::db::models::{ServerInfo, StatementResult};
+use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::modules::db::state::DbState;
 use serde_json::{Map, Value};
 use tauri::State;
@@ -188,4 +188,16 @@ pub async fn mssql_cancel_query(
         return Ok(());
     };
     mssql_script::cancel(&mssql_pool(&state, &id).await?, session_id).await
+}
+
+/// Asks SQL Server to parse one statement without running it, for the editor's error checking.
+#[tauri::command]
+pub async fn mssql_validate_sql(
+    state: State<'_, DbState>,
+    id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<Option<SqlProblem>, AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_script::validate(&pool, &sql, database.as_deref()).await
 }

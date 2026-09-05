@@ -172,6 +172,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         db::commands::mssql::mssql_delete_rows,
         db::commands::mssql::mssql_run_script,
         db::commands::mssql::mssql_cancel_query,
+        db::commands::mssql::mssql_validate_sql,
         db::commands::tools::dumptools_status,
         db::commands::tools::dumptools_ready,
         db::commands::tools::dumptools_downloadable,

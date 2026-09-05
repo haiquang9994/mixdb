@@ -21,7 +21,7 @@
 
 use super::mssql::{column_value, map_error, quote_ident, Connection, Pool};
 use crate::error::AppError;
-use crate::modules::db::models::StatementResult;
+use crate::modules::db::models::{SqlProblem, StatementResult};
 use deadpool::managed::Object;
 use serde_json::Value;
 use std::time::Instant;
@@ -489,6 +489,67 @@ pub async fn cancel(pool: &Pool, session_id: u64) -> Result<(), AppError> {
         Err(tiberius::error::Error::Server(e)) if NO_SUCH_PROCESS.contains(&e.code()) => Ok(()),
         Err(e) => Err(map_error(e)),
     }
+}
+
+/// Asks SQL Server what it makes of one statement, **without running it**.
+///
+/// `SET PARSEONLY ON` makes every statement after it parse-only until `SET PARSEONLY OFF` — the
+/// closest T-SQL equivalent to MySQL's `PREPARE`/PostgreSQL's `Parse` message. It catches less than
+/// either: PARSEONLY does not resolve table or column names, only syntax — so unlike
+/// `mysql_script`/`postgres_script`, there is no "looks wrong now, might not be once a temp table
+/// exists" case to downgrade to a warning here. Everything this returns is a genuine syntax error.
+///
+/// Runs on a pooled connection kept for reuse across a debounce, like `mysql_script::validate` — not
+/// the session a script runs on, so `PARSEONLY` never leaks onto a connection [`run`] might later
+/// borrow (each call turns it back `OFF` before returning, on success or failure alike).
+pub async fn validate(
+    pool: &Pool,
+    sql: &str,
+    database: Option<&str>,
+) -> Result<Option<SqlProblem>, AppError> {
+    if sql.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let mut client = pool.get().await.map_err(|e| err!("error.mssql", message = e))?;
+
+    if let Some(db) = database.filter(|d| !d.is_empty()) {
+        // A database that cannot be entered ends the check rather than failing it: whatever is
+        // wrong is wrong with the header, not with the statement being asked about. Chained
+        // straight onto `.await` rather than kept in a named `Result` — the `QueryStream` an `Ok`
+        // would hold borrows `client`, and every branch here needs to call `simple_query` on it
+        // again next.
+        if client
+            .simple_query(format!("USE {}", quote_ident(db)))
+            .await
+            .is_err()
+        {
+            return Ok(None);
+        }
+    }
+
+    if client.simple_query("SET PARSEONLY ON").await.is_err() {
+        return Ok(None);
+    }
+
+    let outcome = match client.simple_query(sql.to_string()).await {
+        Ok(_) => None,
+        Err(tiberius::error::Error::Server(e)) => Some(SqlProblem {
+            message: e.message().to_string(),
+            number: e.code().try_into().unwrap_or(0),
+            line: Some(e.line()),
+            severity: "error".to_string(),
+        }),
+        Err(_) => None,
+    };
+
+    // Best-effort, like `mysql_script::validate`'s DEALLOCATE: the connection goes back to the pool
+    // either way, and a failure to turn PARSEONLY back off is not the user's statement's problem —
+    // `Manager::recycle`'s `SELECT 1` is what actually decides whether this connection is trustworthy
+    // enough to hand out again.
+    let _ = client.simple_query("SET PARSEONLY OFF").await;
+
+    Ok(outcome)
 }
 
 /// What the splitter has to get right is where one statement ends and one batch ends — a semicolon
