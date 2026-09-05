@@ -34,12 +34,10 @@ const MSSQL_SYNTAX_PROVISIONAL: SqlSyntax = {
 };
 
 /**
- * SQL Server's side of {@link SqlDialect}, read-only for now.
- *
- * Every write flag is false: tables can be read — data, structure, statistics — and nothing else,
- * the same way ClickHouse shipped read-only first. Row writes, the Query tab, DDL and dump/restore
- * each land in a plan of their own — see
- * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`.
+ * SQL Server's side of {@link SqlDialect}. Rows can be read and written now — data, structure,
+ * statistics, and the Data tab's edit/add/delete. The Query tab, DDL and dump/restore still close:
+ * `writable`, `ddlWritable` and `dumpRestoreWritable` stay false, and each lands in a plan of its
+ * own — see `docs/superpowers/specs/2026-09-05-mssql-support-design.md`.
  */
 export const mssqlDialect: SqlDialect = {
   kind: "mssql",
@@ -58,7 +56,7 @@ export const mssqlDialect: SqlDialect = {
   writable: false,
   dumpRestoreWritable: false,
   ddlWritable: false,
-  rowsWritable: false,
+  rowsWritable: true,
   // SQL Server has no regex operator before its 2025 release, so the dropdown does not offer one —
   // and `build_where` in `drivers/mssql.rs` has no arm for it either. See D12.
   regexpFilter: false,

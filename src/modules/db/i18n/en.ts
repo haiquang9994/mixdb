@@ -944,6 +944,11 @@ const dbEn = {
     /** Reaching one of `mssqlApi`'s unfinished methods. Nothing routes to them today — the api
      *  is not in `SQL_ENGINES` — so this showing up at all is a bug in the caller. */
     mssqlNotImplementedYet: "This is not available for SQL Server yet.",
+    /** A binary cell's text was not valid base64 — it did not come out of this app's own grid. */
+    mssqlInvalidBinary: "This value is not valid base64 and cannot be written: {{message}}",
+    /** SQL Server's string-to-money conversion silently drops a comma as a thousands separator
+     *  instead of erroring — '9,9999' becomes 99999.0000, not 9.9999 with a mistyped separator. */
+    mssqlAmbiguousMoney: "Use a period, not a comma, for the decimal point in a money value.",
     // Connections
     unknownConnection: "This connection is no longer open \u2014 connect again.",
     wrongConnectionKind: "This is not a {{kind}} connection.",

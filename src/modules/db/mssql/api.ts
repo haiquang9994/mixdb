@@ -9,15 +9,14 @@ import type {
 import type { SqlApi, SqlPageQuery, SqlServerInfo } from "../sql/api";
 
 /**
- * SQL Server's side of {@link SqlApi} — three methods of it, so far.
+ * SQL Server's side of {@link SqlApi} — reading is done, and so are the three row-write methods.
  *
  * `database` means what it means on MySQL rather than on PostgreSQL: a database to reach into over
  * the one connection, not a pool to pick. See `mssql_pool` in the backend.
  *
- * Reading is done: tables, their structure, their statistics, and the outline the Query tab's
- * completion works from. Everything that writes is still `notImplemented()` — rows, DDL,
- * dump/restore — and `mssqlDialect` closes each of them in the UI too, so nothing routes to one.
- * They land plan by plan, the same way ClickHouse shipped read-only before it shipped writes; see
+ * Everything else is still `notImplemented()` — DDL, dump/restore, hand-typed queries — and
+ * `mssqlDialect` closes each of them in the UI too, so nothing routes to one. They land plan by
+ * plan, the same way ClickHouse shipped read-only, then row-writes, before DDL; see
  * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`.
  */
 export const mssqlApi: SqlApi = {
@@ -41,9 +40,25 @@ export const mssqlApi: SqlApi = {
     return invoke<SqlTablePage>("mssql_table_data", { id, database, table, query });
   },
 
-  updateRow: () => notImplemented(),
-  insertRows: () => notImplemented(),
-  deleteRows: () => notImplemented(),
+  updateRow(id, database, table, updates, key) {
+    return invoke<void>("mssql_update_row", { id, database, table, updates, key });
+  },
+
+  insertRows(id, database, table, rows) {
+    return invoke<void>("mssql_insert_rows", { id, database, table, rows });
+  },
+
+  deleteRows(id, database, table, keys, all, resetAutoIncrement) {
+    return invoke<void>("mssql_delete_rows", {
+      id,
+      database,
+      table,
+      keys,
+      all,
+      resetAutoIncrement,
+    });
+  },
+
   tableStructure(id, database, table) {
     return invoke<SqlTableStructure>("mssql_table_structure", { id, database, table });
   },
