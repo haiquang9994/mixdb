@@ -151,13 +151,18 @@ export function tokenize(sql: string, syntax: SqlSyntax, offset = 0): Token[] {
       }
     }
 
-    if (c === "'" || c === '"' || c === syntax.identifierQuote) {
+    const openQuote = syntax.identifierQuote?.open;
+    if (c === "'" || c === '"' || c === openQuote) {
       const start = i;
       i += 1;
       let value = "";
       let closed = false;
+      const isIdentOpen = c === openQuote;
       // Which of the two this run is, which decides both how it escapes and what it means.
-      const isName = c === syntax.identifierQuote || (c === '"' && syntax.doubleQuoteIsIdentifier);
+      const isName = isIdentOpen || (c === '"' && syntax.doubleQuoteIsIdentifier);
+      // The character that ends this run — see `statements.ts`'s identical branch for why it can
+      // differ from the one that opened it.
+      const closeChar = isIdentOpen ? syntax.identifierQuote!.close : c;
       // And whether a backslash escapes inside it: always on MySQL, only in a PostgreSQL
       // `E'...'` — see `opensEscapeString`. Never inside a quoted name.
       const escapes =
@@ -174,9 +179,9 @@ export function tokenize(sql: string, syntax: SqlSyntax, offset = 0): Token[] {
           }
           continue;
         }
-        if (ch === c) {
-          if (sql[i] === c) {
-            value += c;
+        if (ch === closeChar) {
+          if (sql[i] === closeChar) {
+            value += closeChar;
             i += 1;
             continue;
           }
@@ -337,12 +342,17 @@ export interface TableRef {
 
 /** A suggested name, written the way the name it replaces was written. Swapping a quoted identifier
  *  for a bare one would be a fix that breaks anything needing the quotes — and quoting it with the
- *  wrong engine's quote would be a fix that does not parse, so the quote comes from the dialect:
- *  MySQL's backtick, PostgreSQL's `"`. Either is escaped inside a name by doubling it. */
+ *  wrong engine's quote would be a fix that does not parse, so the pair comes from the dialect:
+ *  MySQL's backtick, PostgreSQL's `"`, SQL Server's `[`/`]`. The close character is what escapes a
+ *  literal one inside the name, doubled — for a symmetric pair that is also what opens it, but for
+ *  SQL Server's it is only ever `]`. */
 function asWritten(original: Token, name: string, dialect: SqlDialect): string {
   if (original.kind !== "quoted") return name;
-  const quote = dialect.syntax.identifierQuote ?? '"';
-  return `${quote}${name.split(quote).join(quote + quote)}${quote}`;
+  // PostgreSQL's own `identifierQuote` is null — it reads `"` through `doubleQuoteIsIdentifier`
+  // instead — so a symmetric `"` pair stands in for "quote it the standard way" here, the same
+  // default the single-character version this replaces fell back to.
+  const { open, close } = dialect.syntax.identifierQuote ?? { open: '"', close: '"' };
+  return `${open}${name.split(close).join(close + close)}${close}`;
 }
 
 /** The token at `i` as an upper-cased keyword, or undefined when it is not a bare word. */

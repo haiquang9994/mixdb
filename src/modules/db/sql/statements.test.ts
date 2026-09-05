@@ -14,10 +14,13 @@
 
 import { describe, expect, it } from "vitest";
 import { splitStatements as split, statementAt } from "./statements";
-import { MYSQL_SYNTAX, POSTGRES_SYNTAX } from "./syntax";
+import { MSSQL_SYNTAX, MYSQL_SYNTAX, POSTGRES_SYNTAX } from "./syntax";
 
 /** The MySQL splitter, which is what the first half of this file holds the port against. */
 const splitStatements = (sql: string) => split(sql, MYSQL_SYNTAX);
+
+/** The MSSQL splitter — bracketed identifiers, and (further down) the `GO` batch separator. */
+const splitMssql = (sql: string) => split(sql, MSSQL_SYNTAX);
 
 const texts = (sql: string) => splitStatements(sql).map((statement) => statement.text);
 const verbs = (sql: string) => splitStatements(sql).map((statement) => statement.verb);
@@ -177,5 +180,92 @@ describe("splitStatements on PostgreSQL", () => {
   /** PostgreSQL needs no whitespace after `--`, unlike MySQL. */
   it("opens a comment on two dashes alone", () => {
     expect(pg("SELECT 1 --2; SELECT 3")).toEqual(["SELECT"]);
+  });
+});
+
+describe("splitStatements against MSSQL_SYNTAX", () => {
+  it("does not split on a semicolon inside a bracketed identifier", () => {
+    expect(splitMssql("SELECT * FROM [Order;Details]; SELECT 1").map((s) => s.text)).toEqual([
+      "SELECT * FROM [Order;Details]",
+      "SELECT 1",
+    ]);
+  });
+
+  it("does not end a bracketed name on a doubled close bracket", () => {
+    // `]]` inside `[...]` is one literal `]`, the same way MySQL doubles a backtick — but SQL
+    // Server's pair means the character that gets doubled is the *close*, never the open.
+    expect(splitMssql("SELECT * FROM [a]]b]").map((s) => s.text)).toEqual([
+      "SELECT * FROM [a]]b]",
+    ]);
+  });
+
+  it("still reads the standard double-quoted identifier, on top of the bracket form", () => {
+    expect(splitMssql(`SELECT * FROM "Order;Details"`).map((s) => s.text)).toEqual([
+      `SELECT * FROM "Order;Details"`,
+    ]);
+  });
+});
+
+describe("splitStatements' batch separator (SQL Server's GO)", () => {
+  it("ends the previous statement and starts a new one, without becoming one itself", () => {
+    expect(splitMssql("SELECT 1\nGO\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1",
+      "SELECT 2",
+    ]);
+  });
+
+  it("still splits on `;` inside each batch", () => {
+    expect(splitMssql("SELECT 1; SELECT 2\nGO\nSELECT 3").map((s) => s.text)).toEqual([
+      "SELECT 1",
+      "SELECT 2",
+      "SELECT 3",
+    ]);
+  });
+
+  it("accepts a repeat count", () => {
+    expect(splitMssql("SELECT 1\nGO 3\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1",
+      "SELECT 2",
+    ]);
+  });
+
+  it("is case-insensitive", () => {
+    expect(splitMssql("SELECT 1\ngo\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1",
+      "SELECT 2",
+    ]);
+  });
+
+  it("opens at the very start of the script too", () => {
+    expect(splitMssql("GO\nSELECT 1").map((s) => s.text)).toEqual(["SELECT 1"]);
+  });
+
+  it("two GOs in a row add no empty statement between them", () => {
+    expect(splitMssql("SELECT 1\nGO\nGO\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1",
+      "SELECT 2",
+    ]);
+  });
+
+  it("is not fooled by a comment that merely contains the word", () => {
+    expect(splitMssql("SELECT 1 -- go\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1 -- go\nSELECT 2",
+    ]);
+  });
+
+  it("is not fooled by a name that merely starts with the word", () => {
+    expect(splitMssql("SELECT good_column FROM t").map((s) => s.text)).toEqual([
+      "SELECT good_column FROM t",
+    ]);
+  });
+
+  it("requires GO to have the line to itself", () => {
+    expect(splitMssql("SELECT 1 GO\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1 GO\nSELECT 2",
+    ]);
+  });
+
+  it("does not fire when the dialect has no batch separator", () => {
+    expect(texts("SELECT 1\nGO\nSELECT 2")).toEqual(["SELECT 1\nGO\nSELECT 2"]);
   });
 });

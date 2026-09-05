@@ -44,8 +44,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
-- SQL Server connections can be saved and connected, and their tables read: data, structure and
-  statistics. Writing — rows, schema changes, hand-typed queries — is still being built.
+- SQL Server connections can be saved and connected, their tables read, and their rows edited,
+  added and deleted. Schema changes and hand-typed queries are still being built.
 
 ### Changed
 

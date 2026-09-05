@@ -34,6 +34,27 @@ function isWordChar(c: string): boolean {
   return /[\p{L}\p{N}_]/u.test(c);
 }
 
+/** A line holding nothing but `GO`, optionally with a repeat count — case-insensitive, and the
+ *  count may carry trailing spaces of its own. Anchored at the very start of what it is tested
+ *  against, since callers always slice from the candidate position. */
+const GO_SEPARATOR = /^go\b[ \t]*(?:[0-9]+[ \t]*)?\r?(?:\n|$)/i;
+
+/**
+ * If a `GO` batch separator begins at `sql[i]`, the index right after its line — so the caller can
+ * skip straight past it, delimiter and all. Null when this is not one.
+ *
+ * A separator needs the whole of its line to itself but for whitespace, checked on both sides:
+ * `\bgo\b` alone rejects `GOOD` and `GO3` (no true word boundary either side of the run), but not
+ * `SELECT 1 GO` — something other than whitespace already sits between the last newline and here,
+ * which is checked separately since a regex anchored at `i` cannot see backwards.
+ */
+function matchBatchSeparator(sql: string, i: number): number | null {
+  const lineStart = sql.lastIndexOf("\n", i - 1) + 1;
+  if (/\S/.test(sql.slice(lineStart, i))) return null;
+  const m = GO_SEPARATOR.exec(sql.slice(i));
+  return m ? i + m[0].length : null;
+}
+
 /**
  * Splits a script into its statements.
  *
@@ -51,15 +72,13 @@ export function splitStatements(sql: string, syntax: SqlSyntax): SqlStatement[] 
   let verbDone = false;
   let i = 0;
 
-  function push(end: number) {
+  function closeChunk(end: number) {
     const start = chunkStart;
-    // The next chunk opens after the semicolon this one ended on.
-    chunkStart = end + 1;
     const opening = verb;
     verb = "";
     verbDone = false;
     // No opening keyword means there was no statement here — only whitespace, or a comment
-    // sitting between two semicolons.
+    // sitting between two separators.
     if (opening === "") return;
     const raw = sql.slice(start, end);
     const leading = raw.length - raw.trimStart().length;
@@ -70,6 +89,12 @@ export function splitStatements(sql: string, syntax: SqlSyntax): SqlStatement[] 
       from: start + leading,
       to: start + leading + trimmed.length,
     });
+  }
+
+  function push(end: number) {
+    closeChunk(end);
+    // The next chunk opens after the delimiter this one ended on — a single character, `;`.
+    chunkStart = end + 1;
   }
 
   while (i < sql.length) {
@@ -123,12 +148,17 @@ export function splitStatements(sql: string, syntax: SqlSyntax): SqlStatement[] 
       }
     }
 
-    if (c === "'" || c === '"' || c === syntax.identifierQuote) {
+    const openQuote = syntax.identifierQuote?.open;
+    if (c === "'" || c === '"' || c === openQuote) {
+      const isIdent = c === openQuote;
+      // The character that closes this run — the same one it opened with, unless it opened an
+      // identifier quote whose close differs, like SQL Server's `[` ... `]`.
+      const closeChar = isIdent ? syntax.identifierQuote!.close : c;
       /* Whether a backslash escapes inside *this* literal. On MySQL it always does; on PostgreSQL
          only in an `E'...'`, whose backslashes are the reason the split has to know. Inside a
          quoted identifier it never does on either — there, doubling is the only escape. */
       const escapes =
-        c !== syntax.identifierQuote &&
+        !isIdent &&
         (syntax.backslashEscapes ||
           (syntax.escapeStringPrefix && c === "'" && opensEscapeString(sql, i)));
       i += 1;
@@ -139,9 +169,9 @@ export function splitStatements(sql: string, syntax: SqlSyntax): SqlStatement[] 
           i += 1;
           continue;
         }
-        if (ch === c) {
-          // Two of the quote in a row are an escaped quote, not the end of the literal.
-          if (sql[i] === c) {
+        if (ch === closeChar) {
+          // Two of the close quote in a row are an escaped one, not the end of the literal.
+          if (sql[i] === closeChar) {
             i += 1;
             continue;
           }
@@ -155,6 +185,19 @@ export function splitStatements(sql: string, syntax: SqlSyntax): SqlStatement[] 
       push(i);
       i += 1;
       continue;
+    }
+
+    // SQL Server's `GO` — a client-side batch separator, never sent to the server as text.
+    // Checked only when the dialect has one at all, and only on the character it could possibly
+    // start with, so this never touches the four engines without one.
+    if (syntax.batchSeparator && (c === "g" || c === "G")) {
+      const end = matchBatchSeparator(sql, i);
+      if (end !== null) {
+        closeChunk(i);
+        chunkStart = end;
+        i = end;
+        continue;
+      }
     }
 
     // Plain code: the first word of it is the statement's keyword.

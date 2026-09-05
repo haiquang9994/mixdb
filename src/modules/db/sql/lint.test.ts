@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { tokenize, type Token } from "./lint";
-import { MYSQL_SYNTAX, POSTGRES_SYNTAX } from "./syntax";
+import { MSSQL_SYNTAX, MYSQL_SYNTAX, POSTGRES_SYNTAX } from "./syntax";
 
 /** `kind:value` per token, which is short enough to write a whole statement's worth of. */
 const of = (sql: string, syntax = MYSQL_SYNTAX) =>
@@ -207,5 +207,26 @@ describe("tokenize: the rest", () => {
 
   it("emits comments for the callers that want them and no others", () => {
     expect(code("SELECT /* c */ 1").map((t) => t.value)).toEqual(["SELECT", "1"]);
+  });
+});
+
+describe("tokenize against MSSQL_SYNTAX", () => {
+  const ofMssql = (sql: string) => of(sql, MSSQL_SYNTAX);
+
+  it("reads a bracketed run as a name, with its brackets stripped from value", () => {
+    expect(ofMssql("[my col]")).toEqual(["quoted:my col"]);
+  });
+
+  it("undoes a doubled close bracket inside the name", () => {
+    expect(ofMssql("[a]]b]")).toEqual(["quoted:a]b"]);
+  });
+
+  it("still reads the standard double quote as a name, per doubleQuoteIsIdentifier", () => {
+    expect(ofMssql('"my col"')).toEqual(["quoted:my col"]);
+  });
+
+  it("marks a bracketed run that never closes", () => {
+    const [token] = tokenize("[unterminated", MSSQL_SYNTAX);
+    expect(token).toMatchObject({ kind: "quoted", value: "unterminated", open: true });
   });
 });
