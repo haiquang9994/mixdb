@@ -541,22 +541,32 @@ async fn drop_index_statement(
     name: &str,
 ) -> Result<String, AppError> {
     let db = quote_ident(database);
+    // The two flags read separately and OR'd in Rust, not folded into one `CASE WHEN ... THEN 1
+    // ELSE 0 END` column: SQL Server infers that expression's type from its integer literals as
+    // `int`, not `bit` — so the two real `bit` columns underneath it come back as `I32`, and
+    // `Row::get::<bool, _>` panics on the mismatch instead of erroring gracefully. Confirmed by
+    // reproducing the user's report of the Structure tab hanging on "edit index to unique": the
+    // panic inside this Tauri command's future left its IPC promise unresolved forever, which is
+    // what showed up as a hang rather than an error dialog.
     let sql = format!(
-        "SELECT CASE WHEN i.is_primary_key = 1 OR i.is_unique_constraint = 1 THEN 1 ELSE 0 END
+        "SELECT i.is_primary_key, i.is_unique_constraint
          FROM {db}.sys.indexes i
          JOIN {db}.sys.objects o ON o.object_id = i.object_id
          JOIN {db}.sys.schemas s ON s.schema_id = o.schema_id
          WHERE s.name = @P1 AND o.name = @P2 AND i.name = @P3"
     );
     let mut client = pool.get().await.map_err(|e| err!("error.mssql", message = e))?;
-    let is_constraint = client
+    let row = client
         .query(sql, &[&schema, &table, &name])
         .await
         .map_err(map_error)?
         .into_row()
         .await
-        .map_err(map_error)?
-        .and_then(|row| row.get::<bool, _>(0))
+        .map_err(map_error)?;
+    let is_constraint = row
+        .map(|row| {
+            row.get::<bool, _>(0).unwrap_or(false) || row.get::<bool, _>(1).unwrap_or(false)
+        })
         .unwrap_or(false);
 
     let qualified = three_part(database, schema, table);
