@@ -163,6 +163,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         db::commands::mssql::mssql_server_info,
         db::commands::mssql::mssql_list_tables,
         db::commands::mssql::mssql_table_data,
+        db::commands::mssql::mssql_table_structure,
         db::commands::tools::dumptools_status,
         db::commands::tools::dumptools_ready,
         db::commands::tools::dumptools_downloadable,
