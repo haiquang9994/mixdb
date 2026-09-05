@@ -7,11 +7,12 @@ import { isMssqlSystemDatabase } from "./system";
 import { mssqlEditing } from "./editing";
 
 /**
- * SQL Server's side of {@link SqlDialect}. Rows can be read and written now — data, structure,
- * statistics, and the Data tab's edit/add/delete. `syntax` is real as of this plan too: bracketed
- * identifiers and `GO` batches split correctly, which the Query tab (Plan 5) needs before it can
- * run anything against a script it did not write itself. `writable`, `ddlWritable` and
- * `dumpRestoreWritable` stay false, and each lands in a plan of its own — see
+ * SQL Server's side of {@link SqlDialect}. Rows can be read and written — data, structure,
+ * statistics, and the Data tab's edit/add/delete — and the Query tab runs a hand-typed script now
+ * too: multi-batch `GO` scripts, Cancel, and syntax checking as you type. `writable` and
+ * `ddlWritable` stay false — a script that only reads or writes rows runs through the Query tab
+ * despite that, `guard.ts` blocks only DDL/other writes gated on `writable` — and
+ * `dumpRestoreWritable` stays false too. Each lands in a plan of its own — see
  * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`.
  */
 export const mssqlDialect: SqlDialect = {
@@ -25,9 +26,12 @@ export const mssqlDialect: SqlDialect = {
   isGenerated,
   isServerAssigned,
   isBinary,
-  // There is a session to reach in and `KILL`, but nothing runs long enough to need it until the
-  // Query tab opens — and the button is closed rather than left to press and do nothing.
-  cancellable: false,
+  // `KILL <spid>` is the only cancel this engine has (D8) — heavier than MySQL's `KILL QUERY` or
+  // PostgreSQL's `pg_cancel_backend`, since it ends the whole session, not just the statement in
+  // flight. Left open rather than gated on an untested `ALTER ANY CONNECTION` permission probe —
+  // see `mssql_script::cancel`'s doc comment for why, and for the two error numbers it swallows on
+  // its own when the session it is asked to stop is already gone.
+  cancellable: true,
   writable: false,
   dumpRestoreWritable: false,
   ddlWritable: false,
