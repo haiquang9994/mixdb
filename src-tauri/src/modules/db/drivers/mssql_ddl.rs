@@ -512,10 +512,10 @@ pub async fn drop_column(pool: &Pool, database: &str, table: &str, name: &str) -
     execute_all(pool, database, statements).await
 }
 
-/// Forward-declared here, defined in Task 6 alongside `add_index`/`modify_index`/`drop_index` — this
-/// file grows in the order the plan's tasks land, and `drop_column`/`modify_column` (Task 5) both
-/// need it before that section exists.
-#[allow(unused_variables)]
+/// The statement that removes an index by name — `DROP CONSTRAINT` for one backing a primary key or
+/// a unique constraint, `DROP INDEX ... ON ...` for a plain or unique index. `sys.indexes` carries
+/// both flags directly (`is_primary_key`, `is_unique_constraint`), unlike PostgreSQL, where the same
+/// question needs a join out to `pg_constraint` (see `postgres_ddl::drop_index_statement`).
 async fn drop_index_statement(
     pool: &Pool,
     database: &str,
@@ -523,20 +523,126 @@ async fn drop_index_statement(
     table: &str,
     name: &str,
 ) -> Result<String, AppError> {
-    unimplemented!("added in Task 6")
+    let db = quote_ident(database);
+    let sql = format!(
+        "SELECT CASE WHEN i.is_primary_key = 1 OR i.is_unique_constraint = 1 THEN 1 ELSE 0 END
+         FROM {db}.sys.indexes i
+         JOIN {db}.sys.objects o ON o.object_id = i.object_id
+         JOIN {db}.sys.schemas s ON s.schema_id = o.schema_id
+         WHERE s.name = @P1 AND o.name = @P2 AND i.name = @P3"
+    );
+    let mut client = pool.get().await.map_err(|e| err!("error.mssql", message = e))?;
+    let is_constraint = client
+        .query(sql, &[&schema, &table, &name])
+        .await
+        .map_err(map_error)?
+        .into_row()
+        .await
+        .map_err(map_error)?
+        .and_then(|row| row.get::<bool, _>(0))
+        .unwrap_or(false);
+
+    let qualified = three_part(database, schema, table);
+    Ok(if is_constraint {
+        format!(
+            "ALTER TABLE {qualified} DROP CONSTRAINT {}",
+            quote_ident(name)
+        )
+    } else {
+        format!("DROP INDEX {} ON {qualified}", quote_ident(name))
+    })
 }
 
-/// Forward-declared here, defined in Task 6 alongside `add_index`/`modify_index`/`drop_index` — this
-/// file grows in the order the plan's tasks land, and `modify_column` needs it before that section
-/// exists.
-#[allow(unused_variables)]
+/// SQL Server's own two — a physical row order, not an access-method choice the way PostgreSQL's
+/// `USING gin`/`USING gist` is. `None` leaves the server to decide, which means NONCLUSTERED for
+/// `CREATE INDEX` and CLUSTERED for `ADD CONSTRAINT ... PRIMARY KEY` unless the table already has one.
+fn validated_index_type(index_type: Option<&str>) -> Result<Option<&'static str>, AppError> {
+    let Some(index_type) = index_type.map(str::trim).filter(|t| !t.is_empty()) else {
+        return Ok(None);
+    };
+    match index_type.to_uppercase().as_str() {
+        "CLUSTERED" => Ok(Some("CLUSTERED")),
+        "NONCLUSTERED" => Ok(Some("NONCLUSTERED")),
+        other => Err(err!("error.unknownIndexType", type = other)),
+    }
+}
+
+/// An index name short enough for SQL Server's 128-character identifier limit — `CREATE INDEX` has
+/// no unnamed form the way PostgreSQL's does, so a client leaving the name box empty needs one made
+/// up on its behalf, the way it would have had to itself.
+fn generated_index_name(table: &str, columns: &[IndexColumnSpec]) -> String {
+    let mut name = format!(
+        "IX_{table}_{}",
+        columns
+            .iter()
+            .map(|c| c.name.trim())
+            .collect::<Vec<_>>()
+            .join("_")
+    );
+    name.truncate(128);
+    name
+}
+
+/// The statement that creates one index — an `ALTER TABLE ... ADD [CONSTRAINT] ... PRIMARY KEY` for
+/// a primary key, a `CREATE INDEX` for everything else.
 fn create_index_statements(
     database: &str,
     schema: &str,
     table: &str,
     spec: &IndexSpec,
 ) -> Result<Vec<String>, AppError> {
-    unimplemented!("added in Task 6")
+    if spec.columns.is_empty() {
+        return Err(err!("error.indexNeedsColumn"));
+    }
+    let columns = spec
+        .columns
+        .iter()
+        .map(|column| {
+            if column.name.trim().is_empty() {
+                return Err(err!("error.indexColumnNameRequired"));
+            }
+            Ok(quote_ident(column.name.trim()))
+        })
+        .collect::<Result<Vec<_>, AppError>>()?
+        .join(", ");
+
+    let qualified = three_part(database, schema, table);
+    let kind = spec.kind.to_lowercase();
+    let using = validated_index_type(spec.index_type.as_deref())?
+        .map(|method| format!("{method} "))
+        .unwrap_or_default();
+
+    if kind == "primary" {
+        // `ADD CONSTRAINT name` may be left off entirely — the one place T-SQL's grammar lets a
+        // constraint go unnamed.
+        let name = spec.name.trim();
+        let named = if name.is_empty() {
+            String::new()
+        } else {
+            format!("CONSTRAINT {} ", quote_ident(name))
+        };
+        return Ok(vec![format!(
+            "ALTER TABLE {qualified} ADD {named}PRIMARY KEY {using}({columns})"
+        )]);
+    }
+
+    let unique = match kind.as_str() {
+        "index" => "",
+        "unique" => "UNIQUE ",
+        other => return Err(err!("error.unknownIndexKind", kind = other)),
+    };
+    let name = spec.name.trim();
+    let name = if name.is_empty() {
+        generated_index_name(table, &spec.columns)
+    } else {
+        name.to_string()
+    };
+    Ok(vec![format!(
+        "CREATE {unique}{using}INDEX {} ON {qualified} ({columns})",
+        quote_ident(&name)
+    )])
+    // No comment statement: SQL Server keeps no comment on an index — see
+    // `mssql_structure::TableIndex.comment`.
 }
 
 /// Turns one read-back `TableIndex` into the `IndexSpec` that recreates it — used only to put an
@@ -675,6 +781,43 @@ pub async fn modify_column(
     execute_all(pool, database, statements).await
 }
 
+pub async fn add_index(pool: &Pool, database: &str, table: &str, spec: &IndexSpec) -> Result<(), AppError> {
+    let (schema, name) = resolve(table);
+    let statements = create_index_statements(database, &schema, &name, spec)?;
+    execute_all(pool, database, statements).await
+}
+
+/// Replaces an index: SQL Server cannot alter one in place, so the old one is dropped and the new one
+/// created — both inside the one transaction `execute_all` wraps everything in, which is what keeps
+/// the table from spending any time without an index at all.
+pub async fn modify_index(
+    pool: &Pool,
+    database: &str,
+    table: &str,
+    name: &str,
+    spec: &IndexSpec,
+) -> Result<(), AppError> {
+    let old_name = name.trim();
+    if old_name.is_empty() {
+        return Err(err!("error.indexNameRequired"));
+    }
+    let (schema, table_name) = resolve(table);
+    let drop_stmt = drop_index_statement(pool, database, &schema, &table_name, old_name).await?;
+    let mut statements = vec![drop_stmt];
+    statements.extend(create_index_statements(database, &schema, &table_name, spec)?);
+    execute_all(pool, database, statements).await
+}
+
+pub async fn drop_index(pool: &Pool, database: &str, table: &str, name: &str) -> Result<(), AppError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(err!("error.indexNameRequired"));
+    }
+    let (schema, table_name) = resolve(table);
+    let statement = drop_index_statement(pool, database, &schema, &table_name, name).await?;
+    execute_all(pool, database, vec![statement]).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -764,5 +907,86 @@ mod tests {
     #[test]
     fn no_comment_and_none_before_writes_nothing() {
         assert_eq!(comment_statement("dbo", "t", "c", "", false), None);
+    }
+}
+
+#[cfg(test)]
+mod index_tests {
+    use super::*;
+
+    fn column(name: &str) -> IndexColumnSpec {
+        IndexColumnSpec { name: name.to_string() }
+    }
+
+    #[test]
+    fn a_unique_index_names_its_method_and_columns() {
+        let spec = IndexSpec {
+            name: "orders_customer".to_string(),
+            kind: "unique".to_string(),
+            index_type: Some("nonclustered".to_string()),
+            columns: vec![column("customer"), column("placed")],
+            comment: String::new(),
+        };
+        assert_eq!(
+            create_index_statements("mixdb_agent_test", "sales", "orders", &spec).unwrap(),
+            vec![
+                "CREATE UNIQUE NONCLUSTERED INDEX [orders_customer] ON [mixdb_agent_test].[sales].[orders] ([customer], [placed])"
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unnamed_index_gets_one_generated_from_its_table_and_columns() {
+        let spec = IndexSpec {
+            name: String::new(),
+            kind: "index".to_string(),
+            index_type: None,
+            columns: vec![column("email")],
+            comment: String::new(),
+        };
+        assert_eq!(
+            create_index_statements("db", "dbo", "users", &spec).unwrap(),
+            vec!["CREATE INDEX [IX_users_email] ON [db].[dbo].[users] ([email])"]
+        );
+    }
+
+    #[test]
+    fn a_primary_key_may_go_unnamed_unlike_a_plain_index() {
+        let spec = IndexSpec {
+            name: String::new(),
+            kind: "primary".to_string(),
+            index_type: Some("CLUSTERED".to_string()),
+            columns: vec![column("id")],
+            comment: String::new(),
+        };
+        assert_eq!(
+            create_index_statements("db", "dbo", "t", &spec).unwrap(),
+            vec!["ALTER TABLE [db].[dbo].[t] ADD PRIMARY KEY CLUSTERED ([id])"]
+        );
+    }
+
+    #[test]
+    fn an_index_kind_mssql_has_not_is_refused() {
+        let spec = IndexSpec {
+            name: String::new(),
+            kind: "fulltext".to_string(),
+            index_type: None,
+            columns: vec![column("body")],
+            comment: String::new(),
+        };
+        assert!(create_index_statements("db", "dbo", "t", &spec).is_err());
+    }
+
+    #[test]
+    fn only_clustered_or_nonclustered_reach_the_sql() {
+        assert_eq!(validated_index_type(Some("clustered")).unwrap(), Some("CLUSTERED"));
+        assert_eq!(validated_index_type(Some("  ")).unwrap(), None);
+        assert!(validated_index_type(Some("btree")).is_err());
+    }
+
+    #[test]
+    fn a_generated_name_is_never_longer_than_the_identifier_limit() {
+        let many_columns: Vec<IndexColumnSpec> = (0..40).map(|i| column(&format!("column_{i}"))).collect();
+        assert!(generated_index_name("a_very_long_table_name_indeed", &many_columns).len() <= 128);
     }
 }

@@ -294,3 +294,40 @@ pub async fn mssql_modify_column(
     let pool = mssql_pool(&state, &id).await?;
     mssql_ddl::modify_column(&pool, &database, &table, &name, &spec).await
 }
+
+#[tauri::command]
+pub async fn mssql_add_index(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    spec: mssql_ddl::IndexSpec,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::add_index(&pool, &database, &table, &spec).await
+}
+
+#[tauri::command]
+pub async fn mssql_modify_index(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+    spec: mssql_ddl::IndexSpec,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::modify_index(&pool, &database, &table, &name, &spec).await
+}
+
+#[tauri::command]
+pub async fn mssql_drop_index(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::drop_index(&pool, &database, &table, &name).await
+}
