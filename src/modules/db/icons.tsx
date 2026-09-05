@@ -14,16 +14,8 @@ import styles from "../../icons/Icon.module.css";
  * can shift for the dark theme, which a full-colour logo could not do.
  *
  * Each carries its own `viewBox` because the marks aren't drawn to one frame, and its own
- * `strokeWidth` because they aren't drawn at one weight either — see MySQL below for both.
- *
- * `Partial`, not `Record`: a kind may be here before its mark is, and drawing one by hand rather
- * than pasting the official outline is exactly what the paragraph above rules out. SQL Server is
- * the one in that state today — it falls to {@link DatabaseGenericIcon} below, the same way a kind
- * this build has never heard of does. The lookup already handled a missing mark; the type just
- * agrees with it now. */
-const BRAND_MARKS: Partial<
-  Record<DbKind, { viewBox: string; path: string; strokeWidth?: number }>
-> = {
+ * `strokeWidth` because they aren't drawn at one weight either — see MySQL below for both. */
+const BRAND_MARKS: Record<DbKind, { viewBox: string; path: string; strokeWidth?: number }> = {
   /* The dolphin alone, lifted out of the logo Simple Icons ships — that one is the full lockup,
      dolphin above the word "MySQL", and at the size a list row gives it the word would be a smear.
      The remaining subpaths sit in the top-right corner of the original 24×24 frame, hence the
@@ -69,6 +61,23 @@ const BRAND_MARKS: Partial<
   clickhouse: {
     viewBox: "0 0 24 24",
     path: "M3 4h3v16H3V4zm5 4h3v12H8V8zm5-3h3v15h-3V5zm5 6h3v9h-3v-9z",
+  },
+  /* NOT a brand mark either, and deliberately not an attempt at one: two rack units, each with a
+     drive bay cut out of it, standing in for SQL Server's own logo. Microsoft's mark is a tilted
+     drum, and the first draft of this was exactly that — a tilted cylinder. It was thrown away
+     after being looked at: at the twenty pixels a tab actually gives it, the tilt disappears and
+     it is SQLite's cylinder with a lean, which is worse than no logo. A shape from a different
+     family reads as a different engine at a glance, which is the whole job at this size, and
+     "server" is the half of the name the other six do not share.
+
+     The bays are holes rather than a second colour: each is wound anti-clockwise inside its
+     clockwise unit, so the default non-zero fill rule punches them out of the one path this
+     module draws. */
+  mssql: {
+    viewBox: "0 0 24 24",
+    path:
+      "M5.1 3.5H18.9A1.6 1.6 0 0 1 20.5 5.1V9.4A1.6 1.6 0 0 1 18.9 11H5.1A1.6 1.6 0 0 1 3.5 9.4V5.1A1.6 1.6 0 0 1 5.1 3.5ZM15.2 5.85V9.05H18V5.85Z" +
+      "M5.1 13H18.9A1.6 1.6 0 0 1 20.5 14.6V18.9A1.6 1.6 0 0 1 18.9 20.5H5.1A1.6 1.6 0 0 1 3.5 18.9V14.6A1.6 1.6 0 0 1 5.1 13ZM15.2 15.35V18.55H18V15.35Z",
   },
 };
 
