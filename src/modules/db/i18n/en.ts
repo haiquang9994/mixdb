@@ -928,13 +928,14 @@ const dbEn = {
   // src-tauri/src/error.rs \u2014 and `{{message}}` is where a driver's own words go, untranslated
   // because they are the server talking and the part worth searching for.
   error: {
-    // The six drivers, when what went wrong is what the server said.
+    // The seven drivers, when what went wrong is what the server said.
     mysql: "MySQL: {{message}}",
     postgres: "PostgreSQL: {{message}}",
     mongo: "MongoDB: {{message}}",
     redis: "Redis: {{message}}",
     sqlite: "SQLite: {{message}}",
     clickhouse: "ClickHouse: {{message}}",
+    mssql: "SQL Server: {{message}}",
     // Connections
     unknownConnection: "This connection is no longer open \u2014 connect again.",
     wrongConnectionKind: "This is not a {{kind}} connection.",

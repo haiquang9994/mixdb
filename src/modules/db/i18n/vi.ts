@@ -916,6 +916,7 @@ const dbVi: DbDict = {
     redis: "Redis: {{message}}",
     sqlite: "SQLite: {{message}}",
     clickhouse: "ClickHouse: {{message}}",
+    mssql: "SQL Server: {{message}}",
     // Kết nối
     unknownConnection: "Kết nối này không còn mở — hãy kết nối lại.",
     wrongConnectionKind: "Đây không phải kết nối {{kind}}.",

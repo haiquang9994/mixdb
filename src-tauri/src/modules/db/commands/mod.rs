@@ -273,6 +273,9 @@ pub async fn connect_db(
             .await?;
             (DbHandle::Clickhouse(conn), Some((host, port)), tunnel)
         }
+        // The driver lands in the next task; until then this kind is registered but not dialable,
+        // so that every `match DbKind` in the tree compiles while the driver is written.
+        DbKind::Mssql => return Err(err!("error.mssql", message = "driver not wired yet")),
     };
 
     state.connections.lock().await.insert(
@@ -465,7 +468,7 @@ async fn sql_endpoint(
     let matches = match kind {
         DbKind::Mysql => matches!(connection.handle, DbHandle::Mysql { .. }),
         DbKind::Postgres => matches!(connection.handle, DbHandle::Postgres(_)),
-        DbKind::Mongo | DbKind::Redis | DbKind::Sqlite | DbKind::Clickhouse => false,
+        DbKind::Mongo | DbKind::Redis | DbKind::Sqlite | DbKind::Clickhouse | DbKind::Mssql => false,
     };
     if !matches {
         let name = if kind == DbKind::Postgres { "PostgreSQL" } else { "MySQL" };
