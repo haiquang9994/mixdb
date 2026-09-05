@@ -70,7 +70,7 @@ export interface SqlEditing {
  */
 export interface SqlDialect {
   /** Which engine this is, for the few places that have to name it — a label, an icon, a wording. */
-  kind: "mysql" | "postgres" | "sqlite" | "clickhouse";
+  kind: "mysql" | "postgres" | "sqlite" | "clickhouse" | "mssql";
 
   /** How SQL text is read: which quotes, comments and escapes this engine has. What the statement
    *  splitter and the editor's tokenizer work from — see {@link SqlSyntax}. */

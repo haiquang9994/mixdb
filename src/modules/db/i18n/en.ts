@@ -34,6 +34,7 @@ const dbEn = {
     kindRedis: "Redis",
     kindSqlite: "SQLite",
     kindClickhouse: "ClickHouse",
+    kindMssql: "SQL Server",
     /** A `kind` this build doesn't list in `KIND_LABEL` — a connection saved by a newer version,
      *  read back by this one. See `kindLabel` in connectionForm.ts. */
     kindUnknown: "Unknown",
@@ -928,13 +929,17 @@ const dbEn = {
   // src-tauri/src/error.rs \u2014 and `{{message}}` is where a driver's own words go, untranslated
   // because they are the server talking and the part worth searching for.
   error: {
-    // The six drivers, when what went wrong is what the server said.
+    // The seven drivers, when what went wrong is what the server said.
     mysql: "MySQL: {{message}}",
     postgres: "PostgreSQL: {{message}}",
     mongo: "MongoDB: {{message}}",
     redis: "Redis: {{message}}",
     sqlite: "SQLite: {{message}}",
     clickhouse: "ClickHouse: {{message}}",
+    mssql: "SQL Server: {{message}}",
+    /** Reaching one of `mssqlApi`'s unfinished methods. Nothing routes to them today — the api
+     *  is not in `SQL_ENGINES` — so this showing up at all is a bug in the caller. */
+    mssqlNotImplementedYet: "This is not available for SQL Server yet.",
     // Connections
     unknownConnection: "This connection is no longer open \u2014 connect again.",
     wrongConnectionKind: "This is not a {{kind}} connection.",

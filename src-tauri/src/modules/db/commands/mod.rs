@@ -47,6 +47,7 @@ macro_rules! retry_read {
 pub mod clickhouse;
 pub mod handoff;
 pub mod mongo;
+pub mod mssql;
 pub mod mysql;
 pub mod postgres;
 pub mod redis;
@@ -273,6 +274,25 @@ pub async fn connect_db(
             .await?;
             (DbHandle::Clickhouse(conn), Some((host, port)), tunnel)
         }
+        DbKind::Mssql => {
+            let (host, port, tunnel) =
+                resolve_endpoint(&config, &app_data, Arc::clone(&notify)).await?;
+            let username = config.username.clone().unwrap_or_default();
+            let password = config.password.clone().unwrap_or_default();
+            let pool = with_timeout(
+                drivers::mssql::connect(
+                    &host,
+                    port,
+                    &username,
+                    &password,
+                    config.database.as_deref(),
+                    config.use_ssl,
+                ),
+                "SQL Server",
+            )
+            .await?;
+            (DbHandle::Mssql(pool), Some((host, port)), tunnel)
+        }
     };
 
     state.connections.lock().await.insert(
@@ -312,7 +332,7 @@ pub async fn disconnect_db(state: State<'_, DbState>, id: String) -> Result<(), 
         // Mongo tự gom lại khi tay cầm cuối cùng đi, và Redis là một kết nối chứ không phải pool.
         // ClickHouse không giữ socket nào cả — mỗi lệnh là một HTTP request riêng, nên không có gì
         // để đóng ở đây.
-        DbHandle::Mongo(_) | DbHandle::Redis(_) | DbHandle::Clickhouse(_) => {}
+        DbHandle::Mongo(_) | DbHandle::Redis(_) | DbHandle::Clickhouse(_) | DbHandle::Mssql(_) => {}
     }
     drop(connection);
     Ok(())
@@ -413,6 +433,18 @@ async fn mongo_client(state: &State<'_, DbState>, id: &str) -> Result<mongodb::C
     }
 }
 
+/// The pool for `id`. One for the whole server, so unlike `postgres_pool` there is no database to
+/// choose between — every command writes the database it wants into its own SQL instead.
+async fn mssql_pool(
+    state: &State<'_, DbState>,
+    id: &str,
+) -> Result<drivers::mssql::Pool, AppError> {
+    match handle(state, id).await? {
+        DbHandle::Mssql(pool) => Ok(pool),
+        _ => Err(err!("error.wrongConnectionKind", kind = "SQL Server")),
+    }
+}
+
 async fn clickhouse_connection(
     state: &State<'_, DbState>,
     id: &str,
@@ -465,7 +497,7 @@ async fn sql_endpoint(
     let matches = match kind {
         DbKind::Mysql => matches!(connection.handle, DbHandle::Mysql { .. }),
         DbKind::Postgres => matches!(connection.handle, DbHandle::Postgres(_)),
-        DbKind::Mongo | DbKind::Redis | DbKind::Sqlite | DbKind::Clickhouse => false,
+        DbKind::Mongo | DbKind::Redis | DbKind::Sqlite | DbKind::Clickhouse | DbKind::Mssql => false,
     };
     if !matches {
         let name = if kind == DbKind::Postgres { "PostgreSQL" } else { "MySQL" };

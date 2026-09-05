@@ -12,6 +12,7 @@ pub enum DbKind {
     Redis,
     Sqlite,
     Clickhouse,
+    Mssql,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

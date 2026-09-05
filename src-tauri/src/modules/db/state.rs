@@ -35,6 +35,10 @@ pub enum DbHandle {
     /// A base URL and a set of credentials, not a socket — every call is its own HTTP request, so
     /// there is nothing here for `disconnect_db` to close.
     Clickhouse(crate::modules::db::drivers::clickhouse::Connection),
+    /// One pool for the whole server, like MySQL and unlike PostgreSQL: a TDS session moves
+    /// between databases with `USE` or a three-part name, so `database` in a command names a
+    /// database to reach into rather than a pool to pick.
+    Mssql(crate::modules::db::drivers::mssql::Pool),
 }
 
 pub struct ActiveConnection {

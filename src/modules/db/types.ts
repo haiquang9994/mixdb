@@ -1,4 +1,11 @@
-export type DbKind = "mysql" | "postgres" | "mongo" | "redis" | "sqlite" | "clickhouse";
+export type DbKind =
+  | "mysql"
+  | "postgres"
+  | "mongo"
+  | "redis"
+  | "sqlite"
+  | "clickhouse"
+  | "mssql";
 
 /* The SSH server is `core/ssh.ts`'s, not this module's: the backend has one `SshConfig` for both
    a tunnelled connection and a terminal session, and this was one of two mirrors of it. Re-exported
@@ -70,6 +77,7 @@ export const DEFAULT_PORTS: Record<DbKind, number> = {
      there. */
   sqlite: 0,
   clickhouse: 8123,
+  mssql: 1433,
 };
 
 /** The row a foreign key column points at: what it references, not what it is declared as. */
