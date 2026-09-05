@@ -14,8 +14,16 @@ import styles from "../../icons/Icon.module.css";
  * can shift for the dark theme, which a full-colour logo could not do.
  *
  * Each carries its own `viewBox` because the marks aren't drawn to one frame, and its own
- * `strokeWidth` because they aren't drawn at one weight either — see MySQL below for both. */
-const BRAND_MARKS: Record<DbKind, { viewBox: string; path: string; strokeWidth?: number }> = {
+ * `strokeWidth` because they aren't drawn at one weight either — see MySQL below for both.
+ *
+ * `Partial`, not `Record`: a kind may be here before its mark is, and drawing one by hand rather
+ * than pasting the official outline is exactly what the paragraph above rules out. SQL Server is
+ * the one in that state today — it falls to {@link DatabaseGenericIcon} below, the same way a kind
+ * this build has never heard of does. The lookup already handled a missing mark; the type just
+ * agrees with it now. */
+const BRAND_MARKS: Partial<
+  Record<DbKind, { viewBox: string; path: string; strokeWidth?: number }>
+> = {
   /* The dolphin alone, lifted out of the logo Simple Icons ships — that one is the full lockup,
      dolphin above the word "MySQL", and at the size a list row gives it the word would be a smear.
      The remaining subpaths sit in the top-right corner of the original 24×24 frame, hence the

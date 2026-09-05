@@ -34,6 +34,7 @@ const dbEn = {
     kindRedis: "Redis",
     kindSqlite: "SQLite",
     kindClickhouse: "ClickHouse",
+    kindMssql: "SQL Server",
     /** A `kind` this build doesn't list in `KIND_LABEL` — a connection saved by a newer version,
      *  read back by this one. See `kindLabel` in connectionForm.ts. */
     kindUnknown: "Unknown",

@@ -17,7 +17,7 @@ import type { SqlDumpMode } from "../../sql/api";
 export type DatabaseChange = "restored" | "dropped";
 
 interface Props {
-  kind: "mysql" | "postgres" | "mongo" | "sqlite" | "clickhouse";
+  kind: "mysql" | "postgres" | "mongo" | "sqlite" | "clickhouse" | "mssql";
   connectionId: string;
   /** The database the three actions act on; empty when none is selected, which disables them. */
   database: string;
@@ -70,8 +70,13 @@ function DatabaseActions({
    *  ClickHouse is `null` too, for the same shape of reason: dump/restore runs entirely over the
    *  HTTP interface every other ClickHouse call already uses — see
    *  `docs/superpowers/specs/2026-09-04-clickhouse-dump-restore-design.md` — so there is no tool
-   *  suite to name, not because the buttons are closed. */
-  const suite: ToolSuite | null = kind === "sqlite" || kind === "clickhouse" ? null : kind;
+   *  suite to name, not because the buttons are closed.
+   *
+   *  SQL Server is `null` on the same grounds: Microsoft ships no free, pinnable equivalent of
+   *  `pg_dump`/`mysqldump`, so the dump is written against the driver instead — see
+   *  `docs/superpowers/specs/2026-09-05-mssql-support-design.md`'s D10. */
+  const suite: ToolSuite | null =
+    kind === "sqlite" || kind === "clickhouse" || kind === "mssql" ? null : kind;
 
   /** Whether databases are objects on a server that can be created and dropped.
    *

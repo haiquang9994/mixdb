@@ -181,6 +181,7 @@ export const KIND_LABEL: Record<DbKind, TranslationKey> = {
   redis: "connection.kindRedis",
   sqlite: "connection.kindSqlite",
   clickhouse: "connection.kindClickhouse",
+  mssql: "connection.kindMssql",
 };
 
 /**

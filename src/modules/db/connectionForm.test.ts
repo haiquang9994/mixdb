@@ -166,6 +166,12 @@ describe("withKind", () => {
     expect(withKind(formFrom(null), "redis").port).toBe(DEFAULT_PORTS.redis);
   });
 
+  it("moves the port to 1433 for SQL Server", () => {
+    // 1433 is the port a default SQL Server install listens on, and the one the form has to
+    // suggest so that a user who types only a host connects.
+    expect(withKind(formFrom(null), "mssql").port).toBe(1433);
+  });
+
   it("changes nothing else", () => {
     const form = { ...formFrom(null), username: "root", sshHost: "bastion" };
     const next = withKind(form, "postgres");

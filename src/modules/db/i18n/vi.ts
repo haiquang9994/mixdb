@@ -25,6 +25,7 @@ const dbVi: DbDict = {
     kindRedis: "Redis",
     kindSqlite: "SQLite",
     kindClickhouse: "ClickHouse",
+    kindMssql: "SQL Server",
     kindUnknown: "Không rõ",
     sqlitePathLabel: "File database",
     sqlitePathPlaceholder: "Đường dẫn tới file .db hoặc .sqlite",
