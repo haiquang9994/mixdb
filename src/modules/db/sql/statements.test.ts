@@ -14,10 +14,13 @@
 
 import { describe, expect, it } from "vitest";
 import { splitStatements as split, statementAt } from "./statements";
-import { MYSQL_SYNTAX, POSTGRES_SYNTAX } from "./syntax";
+import { MSSQL_SYNTAX, MYSQL_SYNTAX, POSTGRES_SYNTAX } from "./syntax";
 
 /** The MySQL splitter, which is what the first half of this file holds the port against. */
 const splitStatements = (sql: string) => split(sql, MYSQL_SYNTAX);
+
+/** The MSSQL splitter — bracketed identifiers, and (further down) the `GO` batch separator. */
+const splitMssql = (sql: string) => split(sql, MSSQL_SYNTAX);
 
 const texts = (sql: string) => splitStatements(sql).map((statement) => statement.text);
 const verbs = (sql: string) => splitStatements(sql).map((statement) => statement.verb);
@@ -177,5 +180,28 @@ describe("splitStatements on PostgreSQL", () => {
   /** PostgreSQL needs no whitespace after `--`, unlike MySQL. */
   it("opens a comment on two dashes alone", () => {
     expect(pg("SELECT 1 --2; SELECT 3")).toEqual(["SELECT"]);
+  });
+});
+
+describe("splitStatements against MSSQL_SYNTAX", () => {
+  it("does not split on a semicolon inside a bracketed identifier", () => {
+    expect(splitMssql("SELECT * FROM [Order;Details]; SELECT 1").map((s) => s.text)).toEqual([
+      "SELECT * FROM [Order;Details]",
+      "SELECT 1",
+    ]);
+  });
+
+  it("does not end a bracketed name on a doubled close bracket", () => {
+    // `]]` inside `[...]` is one literal `]`, the same way MySQL doubles a backtick — but SQL
+    // Server's pair means the character that gets doubled is the *close*, never the open.
+    expect(splitMssql("SELECT * FROM [a]]b]").map((s) => s.text)).toEqual([
+      "SELECT * FROM [a]]b]",
+    ]);
+  });
+
+  it("still reads the standard double-quoted identifier, on top of the bracket form", () => {
+    expect(splitMssql(`SELECT * FROM "Order;Details"`).map((s) => s.text)).toEqual([
+      `SELECT * FROM "Order;Details"`,
+    ]);
   });
 });

@@ -123,12 +123,17 @@ export function splitStatements(sql: string, syntax: SqlSyntax): SqlStatement[] 
       }
     }
 
-    if (c === "'" || c === '"' || c === syntax.identifierQuote) {
+    const openQuote = syntax.identifierQuote?.open;
+    if (c === "'" || c === '"' || c === openQuote) {
+      const isIdent = c === openQuote;
+      // The character that closes this run — the same one it opened with, unless it opened an
+      // identifier quote whose close differs, like SQL Server's `[` ... `]`.
+      const closeChar = isIdent ? syntax.identifierQuote!.close : c;
       /* Whether a backslash escapes inside *this* literal. On MySQL it always does; on PostgreSQL
          only in an `E'...'`, whose backslashes are the reason the split has to know. Inside a
          quoted identifier it never does on either — there, doubling is the only escape. */
       const escapes =
-        c !== syntax.identifierQuote &&
+        !isIdent &&
         (syntax.backslashEscapes ||
           (syntax.escapeStringPrefix && c === "'" && opensEscapeString(sql, i)));
       i += 1;
@@ -139,9 +144,9 @@ export function splitStatements(sql: string, syntax: SqlSyntax): SqlStatement[] 
           i += 1;
           continue;
         }
-        if (ch === c) {
-          // Two of the quote in a row are an escaped quote, not the end of the literal.
-          if (sql[i] === c) {
+        if (ch === closeChar) {
+          // Two of the close quote in a row are an escaped one, not the end of the literal.
+          if (sql[i] === closeChar) {
             i += 1;
             continue;
           }
