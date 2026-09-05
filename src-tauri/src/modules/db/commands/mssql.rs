@@ -4,7 +4,7 @@
 //! reach into over the one pool, never a pool to pick. See `mssql_pool`.
 
 use crate::error::AppError;
-use crate::modules::db::drivers::{mssql, mssql_script, mssql_structure};
+use crate::modules::db::drivers::{mssql, mssql_ddl, mssql_script, mssql_structure};
 use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::modules::db::state::DbState;
 use serde_json::{Map, Value};
@@ -200,4 +200,25 @@ pub async fn mssql_validate_sql(
 ) -> Result<Option<SqlProblem>, AppError> {
     let pool = mssql_pool(&state, &id).await?;
     mssql_script::validate(&pool, &sql, database.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn mssql_create_database(
+    state: State<'_, DbState>,
+    id: String,
+    name: String,
+    collation: Option<String>,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::create_database(&pool, &name, collation.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn mssql_drop_database(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::drop_database(&pool, &database).await
 }

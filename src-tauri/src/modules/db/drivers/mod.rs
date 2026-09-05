@@ -6,6 +6,7 @@ pub mod dump;
 pub mod filters;
 pub mod mongo;
 pub mod mssql;
+pub mod mssql_ddl;
 pub mod mssql_script;
 pub mod mssql_structure;
 pub mod mysql;

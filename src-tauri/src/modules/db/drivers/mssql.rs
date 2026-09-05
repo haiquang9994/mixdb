@@ -195,7 +195,7 @@ pub(super) fn map_error(e: tiberius::error::Error) -> AppError {
 /// `BEGIN` and `COMMIT` to leave the connection how it found it, is what stands in for that: a
 /// connection handed back to the pool mid-transaction would hold whatever locks that transaction
 /// holds until something eventually closes it.
-async fn end_transaction<T>(
+pub(super) async fn end_transaction<T>(
     client: &mut Connection,
     result: Result<T, AppError>,
 ) -> Result<T, AppError> {
