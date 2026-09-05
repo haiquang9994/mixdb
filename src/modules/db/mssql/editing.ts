@@ -38,11 +38,6 @@ const TYPES: SqlTypeSpec[] = [
 /**
  * What the Structure tab's dialogs offer on SQL Server.
  *
- * Nothing reads this yet: `ddlWritable` is false while SQL Server is read-only, so neither dialog
- * opens. It is written properly rather than left empty because an empty list would be a lie the
- * moment DDL lands, and because the type list is what the column grid matches a declared type
- * against.
- *
  * SQL Server sits between the two answers `databaseCollation`/`tableCollation` split apart (D14): a
  * database carries a collation and a table does not, so `databaseCollation: true` opens the box
  * `DatabaseDialog` offers and `tableCollation: false` keeps `TableDialog` from offering one

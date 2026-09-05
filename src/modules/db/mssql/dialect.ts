@@ -8,11 +8,10 @@ import { mssqlEditing } from "./editing";
 
 /**
  * SQL Server's side of {@link SqlDialect}. Rows can be read and written — data, structure,
- * statistics, and the Data tab's edit/add/delete — and the Query tab runs a hand-typed script now
- * too: multi-batch `GO` scripts, Cancel, and syntax checking as you type. `writable` and
- * `ddlWritable` stay false — a script that only reads or writes rows runs through the Query tab
- * despite that, `guard.ts` blocks only DDL/other writes gated on `writable` — and
- * `dumpRestoreWritable` stays false too. Each lands in a plan of its own — see
+ * statistics, and the Data tab's edit/add/delete — the Query tab runs a hand-typed script, multi-batch
+ * `GO` scripts included, with Cancel and syntax checking as you type — and the Structure tab writes
+ * too now: database/table/column/index create, change and drop. `dumpRestoreWritable` is the last
+ * flag still `false`, waiting on Plan 7. See
  * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`.
  */
 export const mssqlDialect: SqlDialect = {
@@ -32,9 +31,9 @@ export const mssqlDialect: SqlDialect = {
   // see `mssql_script::cancel`'s doc comment for why, and for the error numbers it swallows on its
   // own when the session it is asked to stop is already gone.
   cancellable: true,
-  writable: false,
+  writable: true,
   dumpRestoreWritable: false,
-  ddlWritable: false,
+  ddlWritable: true,
   rowsWritable: true,
   // SQL Server has no regex operator before its 2025 release, so the dropdown does not offer one —
   // and `build_where` in `drivers/mssql.rs` has no arm for it either. See D12.
