@@ -241,6 +241,39 @@ fn statement_error(e: tiberius::error::Error) -> String {
     }
 }
 
+/// Whether `text` is a `CREATE`/`ALTER`/`CREATE OR ALTER` `VIEW`/`PROCEDURE`/`PROC`/`FUNCTION`/
+/// `TRIGGER` — the class of statement SQL Server refuses to run unless it is the *only* statement in
+/// its batch. [`run_statement`] otherwise appends `;SELECT @@ROWCOUNT AS n` to every statement it
+/// sends, which is itself a second statement in the same batch — a rule broken by the very technique
+/// that reads back a row count. Found live: restoring a dump whose structure included a view
+/// (`CREATE VIEW ... AS SELECT ...`) failed with a bare "Incorrect syntax near the keyword 'SELECT'"
+/// rather than the clearer "must be the first statement in a query batch" message SSMS shows for the
+/// same mistake — the appended text lands mid-parse of the view's own body, not after it.
+///
+/// Checked on the statement text rather than `Statement.verb`, which is only the first word
+/// (`"CREATE"` for both `CREATE TABLE` and `CREATE VIEW` alike) — telling them apart needs the
+/// second word too.
+fn requires_own_batch(text: &str) -> bool {
+    let mut words = text.split_whitespace();
+    let Some(first) = words.next() else {
+        return false;
+    };
+    if !first.eq_ignore_ascii_case("create") && !first.eq_ignore_ascii_case("alter") {
+        return false;
+    }
+    let mut next = words.next().unwrap_or("");
+    if next.eq_ignore_ascii_case("or") {
+        if !words.next().unwrap_or("").eq_ignore_ascii_case("alter") {
+            return false;
+        }
+        next = words.next().unwrap_or("");
+    }
+    matches!(
+        next.to_ascii_uppercase().as_str(),
+        "VIEW" | "PROCEDURE" | "PROC" | "FUNCTION" | "TRIGGER"
+    )
+}
+
 fn failed(statement: &Statement, started: Instant, message: String) -> StatementResult {
     StatementResult {
         statement: statement.text.clone(),
@@ -286,6 +319,27 @@ fn failed(statement: &Statement, started: Instant, message: String) -> Statement
 /// and driving the stream by hand across two result sets, and no query this app runs today is
 /// expected to be both column-bearing and empty.
 async fn run_statement(client: &mut Connection, statement: &Statement, started: Instant) -> StatementResult {
+    if requires_own_batch(&statement.text) {
+        return match client.simple_query(statement.text.clone()).await {
+            Ok(stream) => match stream.into_results().await {
+                Ok(_) => StatementResult {
+                    statement: statement.text.clone(),
+                    verb: statement.verb.clone(),
+                    kind: "ok".to_string(),
+                    columns: Vec::new(),
+                    rows: Vec::new(),
+                    truncated: false,
+                    rows_affected: 0,
+                    last_insert_id: None,
+                    duration_ms: started.elapsed().as_millis() as u64,
+                    error: None,
+                },
+                Err(e) => failed(statement, started, statement_error(e)),
+            },
+            Err(e) => failed(statement, started, statement_error(e)),
+        };
+    }
+
     let combined = format!("{}\n;SELECT @@ROWCOUNT AS n", statement.text);
     let mut results = match client.simple_query(combined).await {
         Ok(stream) => match stream.into_results().await {
@@ -524,7 +578,7 @@ pub async fn validate(
 /// test suite" note.
 #[cfg(test)]
 mod tests {
-    use super::split_script;
+    use super::{requires_own_batch, split_script};
 
     fn verbs(sql: &str) -> Vec<String> {
         split_script(sql).into_iter().map(|s| s.verb).collect()
@@ -532,6 +586,26 @@ mod tests {
 
     fn texts(sql: &str) -> Vec<String> {
         split_script(sql).into_iter().map(|s| s.text).collect()
+    }
+
+    #[test]
+    fn requires_own_batch_covers_create_and_alter_of_the_batch_alone_kinds() {
+        assert!(requires_own_batch("CREATE VIEW v AS SELECT 1"));
+        assert!(requires_own_batch("ALTER VIEW v AS SELECT 1"));
+        assert!(requires_own_batch("CREATE PROCEDURE p AS SELECT 1"));
+        assert!(requires_own_batch("CREATE PROC p AS SELECT 1"));
+        assert!(requires_own_batch("CREATE FUNCTION f() RETURNS int AS BEGIN RETURN 1 END"));
+        assert!(requires_own_batch("CREATE TRIGGER t ON a AFTER INSERT AS BEGIN END"));
+        assert!(requires_own_batch("CREATE OR ALTER VIEW v AS SELECT 1"));
+    }
+
+    #[test]
+    fn requires_own_batch_leaves_every_other_statement_alone() {
+        assert!(!requires_own_batch("CREATE TABLE t (id int)"));
+        assert!(!requires_own_batch("ALTER TABLE t ADD c int"));
+        assert!(!requires_own_batch("SELECT * FROM v"));
+        assert!(!requires_own_batch("INSERT INTO t VALUES (1)"));
+        assert!(!requires_own_batch(""));
     }
 
     #[test]

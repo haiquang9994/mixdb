@@ -246,7 +246,66 @@ pub async fn dump_structure(
         (watch.report)(tracker.progress());
     }
 
+    write_views(pool, database, &mut file, path, watch).await?;
     write_foreign_keys(pool, database, &mut file, path).await
+}
+
+/// Every view's original `CREATE VIEW` text, oldest first — a view built on top of another one the
+/// same session created earlier is the common case for nesting, and `create_date` approximates that
+/// dependency order the same way `sqlite_dump::dump_structure` relies on `sqlite_master`'s `rowid`
+/// (creation order) rather than trying to parse real dependencies out of the view's own SQL text.
+async fn view_definitions(pool: &Pool, database: &str) -> Result<Vec<String>, AppError> {
+    let db = quote_ident(database);
+    let sql = read_uncommitted(&format!(
+        "SELECT m.definition
+         FROM {db}.sys.views v
+         JOIN {db}.sys.sql_modules m ON m.object_id = v.object_id
+         ORDER BY v.create_date"
+    ));
+    let mut client = pool.get().await.map_err(|e| err!("error.mssql", message = e))?;
+    let rows = client
+        .query(sql, &[])
+        .await
+        .map_err(map_error)?
+        .into_first_result()
+        .await
+        .map_err(map_error)?;
+
+    Ok(rows
+        .iter()
+        .filter_map(|row| row.get::<&str, _>("definition"))
+        .map(str::to_string)
+        .collect())
+}
+
+/// Writes every view's `CREATE VIEW` text verbatim, after every table so a view selecting from one
+/// has something to select from. Not part of [`mssql_structure::table_stats`]'s table list — that
+/// list is exactly what the Statistics tab shows, which leaves views out on every engine here
+/// because a view stores nothing of its own to weigh — but a dump's job is different: a database
+/// dumped and restored is missing part of its schema if a view silently drops out, which is what
+/// happened before this was added (see this plan's Task 9).
+///
+/// Copied as-is rather than regenerated, the same choice `sqlite_dump.rs` makes for every `CREATE`
+/// it writes: `sys.sql_modules.definition` is the view's own original text, so whatever schema
+/// qualification (or lack of it) the author wrote is what comes back out. No `data_size`/`rows`
+/// weight applies to a view (it holds none), so this does not update `dump_structure`'s `Tracker`.
+async fn write_views(
+    pool: &Pool,
+    database: &str,
+    file: &mut std::fs::File,
+    path: &str,
+    watch: &dump::Watch<'_>,
+) -> Result<(), AppError> {
+    use std::io::Write;
+
+    for definition in view_definitions(pool, database).await? {
+        if (watch.cancel)() {
+            return Err(err!("error.transferCancelled", tool = "SQL Server dump"));
+        }
+        write!(file, "{};\n\n", definition.trim())
+            .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+    }
+    Ok(())
 }
 
 /// One foreign key constraint in full — every column of a composite key, and the referential
