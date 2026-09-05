@@ -943,9 +943,6 @@ const dbEn = {
     sqlite: "SQLite: {{message}}",
     clickhouse: "ClickHouse: {{message}}",
     mssql: "SQL Server: {{message}}",
-    /** Reaching one of `mssqlApi`'s unfinished methods. Nothing routes to them today — the api
-     *  is not in `SQL_ENGINES` — so this showing up at all is a bug in the caller. */
-    mssqlNotImplementedYet: "This is not available for SQL Server yet.",
     /** A binary cell's text was not valid base64 — it did not come out of this app's own grid. */
     mssqlInvalidBinary: "This value is not valid base64 and cannot be written: {{message}}",
     /** SQL Server's string-to-money conversion silently drops a comma as a thousands separator

@@ -922,7 +922,6 @@ const dbVi: DbDict = {
     sqlite: "SQLite: {{message}}",
     clickhouse: "ClickHouse: {{message}}",
     mssql: "SQL Server: {{message}}",
-    mssqlNotImplementedYet: "Tính năng này chưa có cho SQL Server.",
     mssqlInvalidBinary: "Giá trị này không phải base64 hợp lệ, không ghi được: {{message}}",
     mssqlAmbiguousMoney: "Dùng dấu chấm, không dùng dấu phẩy, cho phần thập phân của giá trị tiền tệ.",
     // Kết nối

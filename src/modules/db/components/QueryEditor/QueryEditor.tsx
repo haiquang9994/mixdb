@@ -188,7 +188,7 @@ function QueryEditor({
   }, [active]);
 
   const outline = useSchemaOutline(api, connectionId, database, active);
-  const schema = useMemo(() => completionSchema(outline), [outline]);
+  const schema = useMemo(() => completionSchema(outline, dialect), [outline, dialect]);
 
   /** The saved queries, as something the editor can offer. The detail is the query itself on one
    *  line: a name alone says what someone called it, not what it does. */

@@ -20,7 +20,9 @@ import type { SqlApi, SqlPageQuery, SqlServerInfo } from "../sql/api";
  *
  * DDL is done too (Plan 6) — creating, renaming and dropping databases/tables/columns/indexes.
  * Dump and restore are done as well (Plan 7), the driver's own — no external tool, see
- * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`'s D10.
+ * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`'s D10. The five methods still
+ * rejecting below are not on their way in a later plan — they are ClickHouse-only, the same as on
+ * `postgresApi`/`mysqlApi`/`sqliteApi`, and SQL Server never gets them.
  */
 export const mssqlApi: SqlApi = {
   listDatabases(id) {
@@ -126,11 +128,11 @@ export const mssqlApi: SqlApi = {
     return invoke<void>("mssql_drop_index", { id, database, table, name });
   },
 
-  addSkipIndex: () => notImplemented(),
-  modifySkipIndex: () => notImplemented(),
-  dropSkipIndex: () => notImplemented(),
-  rebuildOrderBy: () => notImplemented(),
-  rowCount: () => notImplemented(),
+  addSkipIndex: () => notSupported(),
+  modifySkipIndex: () => notSupported(),
+  dropSkipIndex: () => notSupported(),
+  rebuildOrderBy: () => notSupported(),
+  rowCount: () => notSupported(),
   runScript(id, runId, sql, database) {
     return invoke<SqlStatementResult[]>("mssql_run_script", { id, runId, sql, database });
   },
@@ -144,9 +146,9 @@ export const mssqlApi: SqlApi = {
   },
 };
 
-/** Not `notSupported`, the way the other engines spell it: those name features one engine has and
- *  another never will, whereas every one of these is on its way in a later plan. Nothing can reach
- *  one today — this api is not in `SQL_ENGINES`, so no tab is ever handed it. */
-function notImplemented(): Promise<never> {
-  return Promise.reject(new Error("error.mssqlNotImplementedYet"));
+/** These five only mean anything on ClickHouse — see `clickhouseApi`. Reaching one here would be a
+ *  bug in the caller: every dialog and panel that calls them is gated on
+ *  `dialect.kind === "clickhouse"`. */
+function notSupported(): Promise<never> {
+  return Promise.reject(new Error("error.clickhouseOnlyFeature"));
 }
