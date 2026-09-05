@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   SqlCollation,
+  SqlProblem,
   SqlSchemaOutline,
+  SqlStatementResult,
   SqlTablePage,
   SqlTableStructure,
   TableStats,
@@ -14,9 +16,9 @@ import type { SqlApi, SqlPageQuery, SqlServerInfo } from "../sql/api";
  * `database` means what it means on MySQL rather than on PostgreSQL: a database to reach into over
  * the one connection, not a pool to pick. See `mssql_pool` in the backend.
  *
- * Everything else is still `notImplemented()` — DDL, dump/restore, hand-typed queries — and
- * `mssqlDialect` closes each of them in the UI too, so nothing routes to one. They land plan by
- * plan, the same way ClickHouse shipped read-only, then row-writes, before DDL; see
+ * Everything else is still `notImplemented()` — DDL, dump/restore — and `mssqlDialect` closes each
+ * of them in the UI too, so nothing routes to one. They land plan by plan, the same way ClickHouse
+ * shipped read-only, then row-writes, before DDL; see
  * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`.
  */
 export const mssqlApi: SqlApi = {
@@ -89,16 +91,17 @@ export const mssqlApi: SqlApi = {
   dropSkipIndex: () => notImplemented(),
   rebuildOrderBy: () => notImplemented(),
   rowCount: () => notImplemented(),
-  runScript: () => notImplemented(),
-  /** Nothing can be running to cancel: `runScript` is still `notImplemented`, and the Cancel button
-   *  is closed by `mssqlDialect.cancellable` anyway. */
-  cancelQuery: () => Promise.resolve(),
+  runScript(id, runId, sql, database) {
+    return invoke<SqlStatementResult[]>("mssql_run_script", { id, runId, sql, database });
+  },
 
-  /** The editor asks the server for an opinion on the statement under the cursor as it is typed.
-   *  There is nothing to ask yet — `mssql_validate_sql` lands with the Query tab — and a rejection
-   *  here would surface as a lint error on every keystroke. No opinion is the honest answer, and a
-   *  null is how the linter spells one. */
-  validateSql: () => Promise.resolve(null),
+  cancelQuery(id, runId) {
+    return invoke<void>("mssql_cancel_query", { id, runId });
+  },
+
+  validateSql(id, sql, database) {
+    return invoke<SqlProblem | null>("mssql_validate_sql", { id, sql, database });
+  },
 };
 
 /** Not `notSupported`, the way the other engines spell it: those name features one engine has and

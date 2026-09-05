@@ -311,16 +311,42 @@ export function unguardedWrites(
 export const AUTO_LIMIT = 10_000;
 
 /**
- * The same `SELECT` with a `LIMIT` on the end, or null when it needs none.
+ * The same `SELECT`, but with `TOP (n)` inserted right after its `SELECT` (and its `DISTINCT`/`ALL`,
+ * when it has one) — SQL Server's own spelling of the ceiling {@link withLimit} appends everywhere
+ * else. There is no `LIMIT` on this engine, and `OFFSET ... FETCH` cannot be appended blind either:
+ * it demands an `ORDER BY` of its own, which most ad hoc reads do not carry (see the note on
+ * `ORDER BY (SELECT NULL)` in `drivers/mssql.rs::table_data`) — `TOP` is the one ceiling that never
+ * needs one.
+ *
+ * `at` is the offset right after that keyword — `words[i].token.to`, which {@link topLevelWords}
+ * reports against the *whole script* (`statement.from` is folded into every token's position, since
+ * `tokenize` is called with it as a base), so it is turned back into an offset into `statement.text`
+ * by subtracting `statement.from` before slicing.
+ */
+function withTop(statement: SqlStatement, limit: number, words: readonly TopWord[]): string {
+  const selectAt = words.findIndex(({ word }) => word === "SELECT");
+  const next = words[selectAt + 1];
+  const after = next && (next.word === "DISTINCT" || next.word === "ALL") ? next : words[selectAt];
+  const at = after.token.to - statement.from;
+  return `${statement.text.slice(0, at)} TOP (${limit})${statement.text.slice(at)}`;
+}
+
+/**
+ * The same `SELECT` with a ceiling on how many rows it can name, or null when it needs none.
  *
  * Only a statement that reads from somewhere and sets no ceiling of its own is touched: `SELECT 1`
- * gets nothing, and a `SELECT ... LIMIT 10` is already saying what it wants. The limit goes on a
- * line of its own because the statement may well end in a `-- comment`, and a `LIMIT` appended to
- * that line would be part of the comment rather than part of the statement.
+ * gets nothing, and a `SELECT ... LIMIT 10` (or SQL Server's `SELECT TOP 10 ...`) is already saying
+ * what it wants. Everywhere but SQL Server the ceiling is `LIMIT n` appended on a line of its own —
+ * the statement may well end in a `-- comment`, and a `LIMIT` appended to that line would be part of
+ * the comment rather than part of the statement. SQL Server has no `LIMIT` at all, so
+ * {@link withTop} inserts `TOP (n)` at the front instead — see its own doc comment for why appending
+ * is not an option there.
  *
  * A `WITH` counts as a read, since a common table expression is most often written to be selected
- * from — but only until it turns out to lead into a write, where a `LIMIT` would not page a result
- * but cap how many rows the statement changes.
+ * from — but only until it turns out to lead into a write, where a ceiling would not page a result
+ * but cap how many rows the statement changes. The CTE's own body sits inside parentheses, which
+ * {@link topLevelWords} does not descend into, so the `SELECT` {@link withTop} finds is always the
+ * one the CTE is read from — never one buried inside its definition.
  */
 export function withLimit(
   statement: SqlStatement,
@@ -332,17 +358,23 @@ export function withLimit(
   if (statement.verb === "WITH" && words.some(({ word }) => WRITING_WORDS.has(word))) return null;
   if (!words.some(({ word }) => word === "FROM")) return null;
   if (words.some(({ word }) => word === "LIMIT")) return null;
-  // `FETCH FIRST n ROWS ONLY` is the standard's spelling of the same ceiling, and what PostgreSQL
-  // accepts alongside `OFFSET`. A statement that has one cannot also carry a `LIMIT`: appending one
-  // is a syntax error rather than a narrower page.
+  // `FETCH FIRST n ROWS ONLY` is the standard's spelling of the same ceiling — SQL Server has it
+  // too, alongside `OFFSET`, and unlike `TOP` it does demand an `ORDER BY` of its own. A statement
+  // that has one cannot also carry a `LIMIT`/`TOP`: appending one is a syntax error rather than a
+  // narrower page.
   if (words.some(({ word }) => word === "FETCH")) return null;
-  // `SELECT ... INTO OUTFILE` and `INTO @var` are not result sets to be paged through.
+  // SQL Server's own ceiling, already set — never doubled up.
+  if (words.some(({ word }) => word === "TOP")) return null;
+  // `SELECT ... INTO OUTFILE` and `INTO @var` are not result sets to be paged through — nor is SQL
+  // Server's `SELECT ... INTO newtable`, which a `TOP` would silently turn into "copy only the first
+  // n rows" rather than leaving it alone the way this function does for every other kind of `INTO`.
   if (words.some(({ word }) => word === "INTO")) return null;
   // A locking clause — `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE` — has to come *after* the
   // `LIMIT` in MySQL's grammar, so one appended here lands on the wrong side of it and the whole
   // statement stops parsing (1064, checked on 5.7.44 and on 8.4.8). A locking read is deliberate
   // and rarely unbounded, so it is left exactly as it was written rather than rewritten around.
   if (words.some(({ word }) => word === "FOR" || word === "LOCK")) return null;
+  if (dialect.kind === "mssql") return withTop(statement, limit, words);
   return `${statement.text}\nLIMIT ${limit}`;
 }
 

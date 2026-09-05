@@ -4,13 +4,13 @@
 //! reach into over the one pool, never a pool to pick. See `mssql_pool`.
 
 use crate::error::AppError;
-use crate::modules::db::drivers::{mssql, mssql_structure};
-use crate::modules::db::models::ServerInfo;
+use crate::modules::db::drivers::{mssql, mssql_script, mssql_structure};
+use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::modules::db::state::DbState;
 use serde_json::{Map, Value};
 use tauri::State;
 
-use super::mssql_pool;
+use super::{mssql_pool, RunningQuery};
 
 #[tauri::command]
 pub async fn mssql_list_databases(
@@ -150,4 +150,54 @@ pub async fn mssql_schema_outline(
         let pool = mssql_pool(&state, &id).await?;
         mssql_structure::schema_outline(&pool, &database).await
     })
+}
+
+/// Runs the Query tab's text against SQL Server, batch by batch and statement by statement within
+/// each — see `mssql_script::run`. `USE database` runs before the first statement so an unqualified
+/// table name resolves the way it does everywhere else in the workspace, matching MySQL's connection
+/// model (D2): one pool for the whole server, not one per database.
+#[tauri::command]
+pub async fn mssql_run_script(
+    state: State<'_, DbState>,
+    id: String,
+    run_id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<Vec<StatementResult>, AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    // However it ended — finished, failed, or killed from `mssql_cancel_query` — dropping this is
+    // what forgets the SPID.
+    let _running = RunningQuery::start(&state, &run_id);
+    mssql_script::run(&pool, &sql, database.as_deref(), |spid| {
+        state.running_queries.lock().unwrap().insert(run_id.clone(), spid);
+    })
+    .await
+}
+
+/// Stops the run named by `run_id`, if it is still running — see `mssql_script::cancel` for why
+/// this ends the whole session rather than just the statement (D8), and `DbState::running_queries`
+/// for the map this reads.
+#[tauri::command]
+pub async fn mssql_cancel_query(
+    state: State<'_, DbState>,
+    id: String,
+    run_id: String,
+) -> Result<(), AppError> {
+    let session_id = state.running_queries.lock().unwrap().get(&run_id).copied();
+    let Some(session_id) = session_id else {
+        return Ok(());
+    };
+    mssql_script::cancel(&mssql_pool(&state, &id).await?, session_id).await
+}
+
+/// Asks SQL Server to parse one statement without running it, for the editor's error checking.
+#[tauri::command]
+pub async fn mssql_validate_sql(
+    state: State<'_, DbState>,
+    id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<Option<SqlProblem>, AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_script::validate(&pool, &sql, database.as_deref()).await
 }
