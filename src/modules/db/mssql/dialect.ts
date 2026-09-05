@@ -1,5 +1,5 @@
 import type { SqlDialect } from "../sql/dialect";
-import type { SqlSyntax } from "../sql/syntax";
+import { MSSQL_SYNTAX } from "../sql/syntax";
 import { isAutoIncrement, isBinary, isGenerated, isServerAssigned } from "./columns";
 import { MSSQL } from "@codemirror/lang-sql";
 import { reservedWords } from "../sql/lint";
@@ -7,41 +7,16 @@ import { isMssqlSystemDatabase } from "./system";
 import { mssqlEditing } from "./editing";
 
 /**
- * T-SQL's lexical rules, as much of them as the current {@link SqlSyntax} can hold.
- *
- * `identifierQuote` is null rather than `[`, and that is deliberate: SQL Server's own identifier
- * quote is a **pair** — `[name]`, closed with `]]` doubled inside — and this field holds a single
- * character that opens and closes. Naming `[` here would leave the tokenizer looking for a second
- * `[` to close on and swallowing the rest of the statement. Null costs a bracketed name its
- * highlighting and nothing else, since the Query tab cannot run anything yet.
- *
- * Splitting this field into an open/close pair is the syntax plan, which is also where this moves
- * into `sql/syntax.ts` beside the other engines' as `MSSQL_SYNTAX`. See
- * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`'s D4.
- */
-const MSSQL_SYNTAX_PROVISIONAL: SqlSyntax = {
-  // `#` opens a temporary table's name here, not a comment.
-  hashComments: false,
-  dashCommentNeedsSpace: false,
-  nestedBlockComments: false,
-  identifierQuote: null,
-  // With QUOTED_IDENTIFIER ON — which every client driver sets, tiberius included — a double-quoted
-  // run is a name.
-  doubleQuoteIsIdentifier: true,
-  backslashEscapes: false,
-  escapeStringPrefix: false,
-  dollarQuoting: false,
-};
-
-/**
  * SQL Server's side of {@link SqlDialect}. Rows can be read and written now — data, structure,
- * statistics, and the Data tab's edit/add/delete. The Query tab, DDL and dump/restore still close:
- * `writable`, `ddlWritable` and `dumpRestoreWritable` stay false, and each lands in a plan of its
- * own — see `docs/superpowers/specs/2026-09-05-mssql-support-design.md`.
+ * statistics, and the Data tab's edit/add/delete. `syntax` is real as of this plan too: bracketed
+ * identifiers and `GO` batches split correctly, which the Query tab (Plan 5) needs before it can
+ * run anything against a script it did not write itself. `writable`, `ddlWritable` and
+ * `dumpRestoreWritable` stay false, and each lands in a plan of its own — see
+ * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`.
  */
 export const mssqlDialect: SqlDialect = {
   kind: "mssql",
-  syntax: MSSQL_SYNTAX_PROVISIONAL,
+  syntax: MSSQL_SYNTAX,
   cmDialect: MSSQL,
   reserved: reservedWords(MSSQL),
   editing: mssqlEditing,
