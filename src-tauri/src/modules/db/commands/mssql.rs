@@ -71,3 +71,26 @@ pub async fn mssql_table_structure(
         mssql_structure::table_structure(&pool, &database, &table).await
     })
 }
+
+#[tauri::command]
+pub async fn mssql_table_stats(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+) -> Result<Vec<mssql_structure::TableStats>, AppError> {
+    retry_read!({
+        let pool = mssql_pool(&state, &id).await?;
+        mssql_structure::table_stats(&pool, &database).await
+    })
+}
+
+#[tauri::command]
+pub async fn mssql_collations(
+    state: State<'_, DbState>,
+    id: String,
+) -> Result<Vec<mssql_structure::Collation>, AppError> {
+    retry_read!({
+        let pool = mssql_pool(&state, &id).await?;
+        mssql_structure::collations(&pool).await
+    })
+}

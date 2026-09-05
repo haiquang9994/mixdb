@@ -7,8 +7,8 @@
 //! `prefix_length` an index feature SQL Server does not have.
 
 use super::mssql::{
-    display_type, extra_tokens, is_rowversion_type, map_error, quote_ident, read_uncommitted,
-    resolve, strip_default_parens, Pool,
+    display_type, extra_tokens, is_rowversion_type, map_error, qualify, quote_ident,
+    read_uncommitted, resolve, strip_default_parens, Pool, DEFAULT_SCHEMA,
 };
 use crate::error::AppError;
 use serde::Serialize;
@@ -290,9 +290,144 @@ async fn table_indexes(
     Ok(indexes)
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableStats {
+    /// Qualified the way the sidebar names it — see `mssql::qualify`.
+    pub name: String,
+    /// The catalogue's own count, kept per partition and updated as rows are written. Not a
+    /// `COUNT(*)`: this costs nothing whatever the table holds, which is the trade every engine
+    /// here makes on this tab.
+    pub rows: u64,
+    pub data_size: u64,
+    pub index_size: u64,
+    /// Derived rather than reported — see [`average_record_size`].
+    pub avg_record_size: u64,
+}
+
+/// The data size over the rows, and zero where there are no rows to divide by.
+pub(super) fn average_record_size(data_size: u64, rows: u64) -> u64 {
+    if rows == 0 {
+        0
+    } else {
+        data_size / rows
+    }
+}
+
+/// What every table in `database` weighs.
+///
+/// Views are left out, as they are on MySQL and PostgreSQL: a view stores nothing of its own and
+/// would read here as an empty table.
+///
+/// `index_id IN (0, 1)` is the table's own data — 0 is a heap, 1 a clustered index, and a table has
+/// one or the other, never both. Everything else is a nonclustered index, which is what makes the
+/// two sums a split of the same rows rather than two reads. Pages are 8 KB, which is fixed for
+/// every edition SQL Server has shipped.
+///
+/// Reading `sys.dm_db_partition_stats` needs `VIEW DATABASE STATE`, which a login with rights to
+/// read the data usually has; without it this comes back as the server's own error rather than as
+/// zeroes, and the Statistics tab shows it.
+pub async fn table_stats(pool: &Pool, database: &str) -> Result<Vec<TableStats>, AppError> {
+    let db = quote_ident(database);
+    let sql = read_uncommitted(&format!(
+        "SELECT s.name AS schema_name, t.name AS table_name,
+                SUM(CASE WHEN p.index_id IN (0, 1) THEN p.row_count ELSE 0 END) AS row_count,
+                SUM(CASE WHEN p.index_id IN (0, 1) THEN p.used_page_count ELSE 0 END) * 8192
+                    AS data_size,
+                SUM(CASE WHEN p.index_id NOT IN (0, 1) THEN p.used_page_count ELSE 0 END) * 8192
+                    AS index_size
+         FROM {db}.sys.dm_db_partition_stats p
+         JOIN {db}.sys.tables t ON t.object_id = p.object_id
+         JOIN {db}.sys.schemas s ON s.schema_id = t.schema_id
+         GROUP BY s.name, t.name
+         ORDER BY CASE WHEN s.name = '{DEFAULT_SCHEMA}' THEN 0 ELSE 1 END, s.name, t.name"
+    ));
+
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+    let rows = client
+        .query(sql, &[])
+        .await
+        .map_err(map_error)?
+        .into_first_result()
+        .await
+        .map_err(map_error)?;
+
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            let schema: &str = row.get("schema_name")?;
+            let table: &str = row.get("table_name")?;
+            // Every one of these is a bigint on the wire; a negative can only come of a catalogue
+            // mid-update, and reads here as the zero it is indistinguishable from.
+            let rows_count = row.get::<i64, _>("row_count").unwrap_or(0).max(0) as u64;
+            let data_size = row.get::<i64, _>("data_size").unwrap_or(0).max(0) as u64;
+            let index_size = row.get::<i64, _>("index_size").unwrap_or(0).max(0) as u64;
+            Some(TableStats {
+                name: qualify(schema, table),
+                rows: rows_count,
+                data_size,
+                index_size,
+                avg_record_size: average_record_size(data_size, rows_count),
+            })
+        })
+        .collect())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Collation {
+    pub name: String,
+    /// Always empty. A SQL Server collation names a code page rather than belonging to a character
+    /// set the way MySQL's do, and `CollationSelect` reads an empty one as "any character set" —
+    /// which is the honest answer here, not a missing one.
+    pub charset: String,
+    /// Whether this is the server's own collation, which is what a database inherits when it is
+    /// created without a `COLLATE` clause.
+    pub is_default: bool,
+}
+
+/// Every collation this server supports, the server's own marked.
+///
+/// `sys.fn_helpcollations()` is the list SQL Server offers about itself; it is long — a few thousand
+/// rows — and is read once per connection by whoever opens a dialog that declares one.
+pub async fn collations(pool: &Pool) -> Result<Vec<Collation>, AppError> {
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+    let rows = client
+        .query(
+            "SELECT name, CAST(SERVERPROPERTY('Collation') AS nvarchar(128)) AS server_collation
+             FROM sys.fn_helpcollations()
+             ORDER BY name",
+            &[],
+        )
+        .await
+        .map_err(map_error)?
+        .into_first_result()
+        .await
+        .map_err(map_error)?;
+
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            let name: &str = row.get("name")?;
+            let server: &str = row.get("server_collation").unwrap_or("");
+            Some(Collation {
+                name: name.to_string(),
+                charset: String::new(),
+                is_default: name.eq_ignore_ascii_case(server),
+            })
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{is_expression_default, key_marker};
+    use super::{average_record_size, is_expression_default, key_marker};
 
     /// The three markers in the order they win: a primary key column is `PRI` even though it is
     /// also unique and also indexed, which is what keeps one column from carrying two claims.
@@ -315,5 +450,14 @@ mod tests {
         assert!(!is_expression_default("'new'"));
         assert!(!is_expression_default("N'mới'"));
         assert!(!is_expression_default(""));
+    }
+
+    /// SQL Server keeps no average row width, so it is derived — and an empty table has to divide
+    /// by nothing rather than panic.
+    #[test]
+    fn an_empty_table_has_no_average_row_to_divide_by() {
+        assert_eq!(average_record_size(8192, 100), 81);
+        assert_eq!(average_record_size(8192, 0), 0);
+        assert_eq!(average_record_size(0, 10), 0);
     }
 }
