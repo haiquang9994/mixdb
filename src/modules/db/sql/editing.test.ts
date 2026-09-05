@@ -75,12 +75,14 @@ describe("what the two engines do not share", () => {
     expect(postgresEditing.unsigned).toBe(false);
     expect(postgresEditing.columnPosition).toBe(false);
     expect(postgresEditing.onUpdateCurrentTimestamp).toBe(false);
-    expect(postgresEditing.objectCollation).toBe(false);
+    expect(postgresEditing.databaseCollation).toBe(false);
+    expect(postgresEditing.tableCollation).toBe(false);
 
     expect(mysqlEditing.unsigned).toBe(true);
     expect(mysqlEditing.columnPosition).toBe(true);
     expect(mysqlEditing.onUpdateCurrentTimestamp).toBe(true);
-    expect(mysqlEditing.objectCollation).toBe(true);
+    expect(mysqlEditing.databaseCollation).toBe(true);
+    expect(mysqlEditing.tableCollation).toBe(true);
   });
 
   it("keeps each engine's own index kinds to itself", () => {
@@ -99,6 +101,15 @@ describe("what the two engines do not share", () => {
   it("offers a prefix length only where an index can have one", () => {
     expect(mysqlEditing.indexPrefix).toBe(true);
     expect(postgresEditing.indexPrefix).toBe(false);
+  });
+});
+
+describe("D14 — database vs table collation", () => {
+  it("keeps the two independent, MySQL having both and PostgreSQL neither", () => {
+    expect(mysqlEditing.databaseCollation).toBe(true);
+    expect(mysqlEditing.tableCollation).toBe(true);
+    expect(postgresEditing.databaseCollation).toBe(false);
+    expect(postgresEditing.tableCollation).toBe(false);
   });
 });
 

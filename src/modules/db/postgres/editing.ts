@@ -58,7 +58,8 @@ const TYPES: SqlTypeSpec[] = [
  * Four of MySQL's controls are gone rather than disabled. `UNSIGNED` does not exist; a column
  * cannot be put anywhere in particular, since PostgreSQL appends and has no statement that moves
  * one; `ON UPDATE CURRENT_TIMESTAMP` is a trigger here rather than a property of a column; and
- * neither a database nor a table carries a collation of its own — only its text columns do.
+ * neither a database nor a table carries a collation of its own (`databaseCollation`/
+ * `tableCollation` both `false`) — only its text columns do.
  *
  * What PostgreSQL has more of is access methods: `gin` for a `jsonb` or a `tsvector` column and
  * `brin` for a large table ordered by its key are both worth reaching for, and neither has a MySQL
@@ -71,7 +72,8 @@ export const postgresEditing: SqlEditing = {
   columnPosition: false,
   onUpdateCurrentTimestamp: false,
   autoIncrement: true,
-  objectCollation: false,
+  databaseCollation: false,
+  tableCollation: false,
   markExpressionDefaults: false,
   indexKinds: ["index", "unique", "primary"],
   indexMethods: ["BTREE", "HASH", "GIN", "GIST", "SPGIST", "BRIN"],

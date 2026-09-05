@@ -41,9 +41,16 @@ export interface SqlEditing {
    *  `AUTOINCREMENT`. False on ClickHouse, which has no counterpart at all, so the checkbox is
    *  absent there rather than disabled — the same way `onUpdateCurrentTimestamp` is elsewhere. */
   autoIncrement: boolean;
-  /** A database or a table carries a collation of its own. On PostgreSQL only a column does: a
-   *  database's is a locale of the host rather than a name off a list, and a table has none. */
-  objectCollation: boolean;
+  /** A database carries a collation of its own — the default every table created in it inherits
+   *  unless it says otherwise. False on PostgreSQL: there a database's collation is a locale of the
+   *  host operating system rather than a name off a list, so `CREATE DATABASE`'s own `collation`
+   *  parameter is accepted and ignored (see `postgres_ddl::create_database`). */
+  databaseCollation: boolean;
+  /** A table carries a collation of its own, independent of its columns' — MySQL only. Split off
+   *  `databaseCollation` because SQL Server sits between the two answers that one flag used to
+   *  conflate: a SQL Server database has a collation and a SQL Server table does not, so one boolean
+   *  could not say both without lying to one of `DatabaseDialog`/`TableDialog`. */
+  tableCollation: boolean;
   /** A default is either an expression or a literal, and which one it is is worth saying in the
    *  column grid: `uuid()` and the text `uuid()` are stored the same way there and read alike.
    *  PostgreSQL keeps every default as an expression and reports it cast — `'new'::text` — so
