@@ -222,3 +222,38 @@ pub async fn mssql_drop_database(
     let pool = mssql_pool(&state, &id).await?;
     mssql_ddl::drop_database(&pool, &database).await
 }
+
+#[tauri::command]
+pub async fn mssql_create_table(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    #[allow(unused_variables)] collation: Option<String>,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::create_table(&pool, &database, &table).await
+}
+
+#[tauri::command]
+pub async fn mssql_rename_table(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    new_name: String,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::rename_table(&pool, &database, &table, &new_name).await
+}
+
+#[tauri::command]
+pub async fn mssql_drop_table(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::drop_table(&pool, &database, &table).await
+}

@@ -171,6 +171,70 @@ pub async fn drop_database(pool: &Pool, name: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Creates an empty table with one column: an `int` `id` the server numbers itself, primary key —
+/// the same shape MySQL and PostgreSQL create theirs with. The rest is added from the Structure tab.
+///
+/// The name may carry a schema, exactly as the sidebar writes one — `sales.orders` creates the table
+/// in `sales`, and a bare name creates it in `dbo` (D3). The schema itself is not created if it does
+/// not exist; neither does PostgreSQL's `create_table` attempt that for `public`'s siblings.
+pub async fn create_table(pool: &Pool, database: &str, table: &str) -> Result<(), AppError> {
+    if table.trim().is_empty() {
+        return Err(err!("error.tableNameRequired"));
+    }
+    let (schema, name) = resolve(table.trim());
+    let qualified = three_part(database, &schema, &name);
+    let sql = format!(
+        "CREATE TABLE {qualified} ({} int IDENTITY(1,1) PRIMARY KEY)",
+        quote_ident("id")
+    );
+    execute_all(pool, database, vec![sql]).await
+}
+
+/// Renames a table within its schema.
+///
+/// `sp_rename` is the only way SQL Server renames a table — there is no ANSI `RENAME TO`. Its object
+/// name is a **string**, not an identifier (the same stored-procedure convention `mssql::reset_identity`
+/// already relies on for `DBCC CHECKIDENT`), and it cannot move a table to a different schema: unlike
+/// PostgreSQL's two-statement rename-then-`SET SCHEMA`, T-SQL has no schema-moving DDL for a table at
+/// all short of dropping and recreating it. A `new_name` that names a different schema is refused
+/// outright rather than silently kept in the old one — that would be the one outcome a rename can
+/// produce that looks like success and is not.
+pub async fn rename_table(
+    pool: &Pool,
+    database: &str,
+    table: &str,
+    new_name: &str,
+) -> Result<(), AppError> {
+    let old = table.trim();
+    let new_name = new_name.trim();
+    if old.is_empty() || new_name.is_empty() {
+        return Err(err!("error.tableNameRequired"));
+    }
+    let (schema, name) = resolve(old);
+    let (new_schema, new_bare) = resolve(new_name);
+    if new_schema != schema {
+        return Err(err!("error.mssqlRenameCannotChangeSchema"));
+    }
+    let sql = format!(
+        "EXEC sp_rename {}, {}",
+        quote_string(&format!("{schema}.{name}")),
+        quote_string(&new_bare)
+    );
+    execute_all(pool, database, vec![sql]).await
+}
+
+/// Drops a table and everything in it. Plain `DROP TABLE`, not `IF EXISTS` — the same choice
+/// `postgres_ddl::drop_table` makes, for the same reason: asking to drop something not there is worth
+/// being told about.
+pub async fn drop_table(pool: &Pool, database: &str, table: &str) -> Result<(), AppError> {
+    if table.trim().is_empty() {
+        return Err(err!("error.tableNameRequired"));
+    }
+    let (schema, name) = resolve(table.trim());
+    let qualified = three_part(database, &schema, &name);
+    execute_all(pool, database, vec![format!("DROP TABLE {qualified}")]).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

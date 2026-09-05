@@ -1031,6 +1031,8 @@ const dbEn = {
     sqliteRebuildForeignKeyViolation:
       "Rebuilding {{table}} would leave a foreign key pointing at a row that no longer matches — nothing was changed.",
     unknownIndexType: "Unknown index type {{type}}.",
+    mssqlRenameCannotChangeSchema:
+      "SQL Server cannot move a table to another schema by renaming it — rename it within {{schema}}, or drop and recreate it in the new one.",
     noVisibleColumns:
       "No columns of {{database}}.{{table}} are visible \u2014 the table may not exist, or your user may have no privileges on it.",
     unknownColumn: "{{table}} no longer has a column called {{name}}.",

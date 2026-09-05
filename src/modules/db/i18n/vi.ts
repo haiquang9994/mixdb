@@ -998,6 +998,8 @@ const dbVi: DbDict = {
     sqliteRebuildForeignKeyViolation:
       "Dựng lại {{table}} sẽ để lại một khoá ngoại trỏ vào một dòng không còn khớp — chưa có gì bị đổi.",
     unknownIndexType: "Kiểu index {{type}} không hợp lệ.",
+    mssqlRenameCannotChangeSchema:
+      "SQL Server không thể chuyển bảng sang schema khác bằng cách đổi tên — đổi tên trong {{schema}}, hoặc xoá và tạo lại ở schema mới.",
     noVisibleColumns:
       "Không thấy cột nào của {{database}}.{{table}} — có thể bảng không tồn tại, hoặc tài khoản của bạn không có quyền trên bảng đó.",
     unknownColumn: "{{table}} không còn cột nào tên {{name}}.",
