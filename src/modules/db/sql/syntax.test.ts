@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { dollarTag, MYSQL_SYNTAX, opensEscapeString, POSTGRES_SYNTAX } from "./syntax";
+import {
+  CLICKHOUSE_SYNTAX,
+  dollarTag,
+  MSSQL_SYNTAX,
+  MYSQL_SYNTAX,
+  opensEscapeString,
+  POSTGRES_SYNTAX,
+  SQLITE_SYNTAX,
+} from "./syntax";
 
 describe("the two syntax tables", () => {
   it("disagree on every rule but batchSeparator, which is what they are for", () => {
@@ -111,5 +119,19 @@ describe("dollarTag", () => {
   it("refuses a run that never closes its tag", () => {
     expect(dollarTag("$body", 0)).toBeNull();
     expect(dollarTag("$", 0)).toBeNull();
+  });
+});
+
+describe("MSSQL_SYNTAX", () => {
+  it("quotes an identifier with an unlike pair, unlike every other engine here", () => {
+    expect(MSSQL_SYNTAX.identifierQuote).toEqual({ open: "[", close: "]" });
+  });
+
+  it("is the only syntax table with a batch separator", () => {
+    expect(MSSQL_SYNTAX.batchSeparator).toBe(true);
+    expect(MYSQL_SYNTAX.batchSeparator).toBe(false);
+    expect(POSTGRES_SYNTAX.batchSeparator).toBe(false);
+    expect(SQLITE_SYNTAX.batchSeparator).toBe(false);
+    expect(CLICKHOUSE_SYNTAX.batchSeparator).toBe(false);
   });
 });

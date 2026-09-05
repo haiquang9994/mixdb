@@ -128,6 +128,30 @@ export const CLICKHOUSE_SYNTAX: SqlSyntax = {
   batchSeparator: false,
 };
 
+/**
+ * T-SQL's lexical rules, read off the SQL Server docs and `tiberius`'s default session settings
+ * rather than ported from a running Rust splitter the way the other four are: there is no
+ * `mssql_script.rs` yet for this to mirror — that is Plan 5, and it keeps in step with this one by
+ * a parallel test suite, not a shared shape (see D4/D9 of
+ * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`).
+ */
+export const MSSQL_SYNTAX: SqlSyntax = {
+  // `#` opens a temporary table's name here (`#t`, `##t`), not a comment.
+  hashComments: false,
+  dashCommentNeedsSpace: false,
+  // T-SQL's `/* */` does not nest: a second `/*` inside one is just text, and the first `*/`
+  // closes the whole thing.
+  nestedBlockComments: false,
+  identifierQuote: { open: "[", close: "]" },
+  // QUOTED_IDENTIFIER is ON by default, and every client driver — tiberius included — sets it: a
+  // double-quoted run is a name, not a string.
+  doubleQuoteIsIdentifier: true,
+  backslashEscapes: false,
+  escapeStringPrefix: false,
+  dollarQuoting: false,
+  batchSeparator: true,
+};
+
 /** What may sit inside a PostgreSQL identifier after its first character — `$` included. */
 const IDENT_CHAR = /[\p{L}\p{N}_$]/u;
 
