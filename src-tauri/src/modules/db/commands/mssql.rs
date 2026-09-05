@@ -4,7 +4,7 @@
 //! reach into over the one pool, never a pool to pick. See `mssql_pool`.
 
 use crate::error::AppError;
-use crate::modules::db::drivers::{mssql, mssql_script, mssql_structure};
+use crate::modules::db::drivers::{mssql, mssql_ddl, mssql_script, mssql_structure};
 use crate::modules::db::models::{ServerInfo, SqlProblem, StatementResult};
 use crate::modules::db::state::DbState;
 use serde_json::{Map, Value};
@@ -200,4 +200,134 @@ pub async fn mssql_validate_sql(
 ) -> Result<Option<SqlProblem>, AppError> {
     let pool = mssql_pool(&state, &id).await?;
     mssql_script::validate(&pool, &sql, database.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn mssql_create_database(
+    state: State<'_, DbState>,
+    id: String,
+    name: String,
+    collation: Option<String>,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::create_database(&pool, &name, collation.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn mssql_drop_database(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::drop_database(&pool, &database).await
+}
+
+#[tauri::command]
+pub async fn mssql_create_table(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    #[allow(unused_variables)] collation: Option<String>,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::create_table(&pool, &database, &table).await
+}
+
+#[tauri::command]
+pub async fn mssql_rename_table(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    new_name: String,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::rename_table(&pool, &database, &table, &new_name).await
+}
+
+#[tauri::command]
+pub async fn mssql_drop_table(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::drop_table(&pool, &database, &table).await
+}
+
+#[tauri::command]
+pub async fn mssql_add_column(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    spec: mssql_ddl::ColumnSpec,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::add_column(&pool, &database, &table, &spec).await
+}
+
+#[tauri::command]
+pub async fn mssql_drop_column(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::drop_column(&pool, &database, &table, &name).await
+}
+
+#[tauri::command]
+pub async fn mssql_modify_column(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+    spec: mssql_ddl::ColumnSpec,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::modify_column(&pool, &database, &table, &name, &spec).await
+}
+
+#[tauri::command]
+pub async fn mssql_add_index(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    spec: mssql_ddl::IndexSpec,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::add_index(&pool, &database, &table, &spec).await
+}
+
+#[tauri::command]
+pub async fn mssql_modify_index(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+    spec: mssql_ddl::IndexSpec,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::modify_index(&pool, &database, &table, &name, &spec).await
+}
+
+#[tauri::command]
+pub async fn mssql_drop_index(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::drop_index(&pool, &database, &table, &name).await
 }

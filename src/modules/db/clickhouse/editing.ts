@@ -51,7 +51,8 @@ export const clickhouseEditing: SqlEditing = {
   columnPosition: false,
   onUpdateCurrentTimestamp: false,
   autoIncrement: false,
-  objectCollation: false,
+  databaseCollation: false,
+  tableCollation: false,
   // `system.columns.default_expression` writes a literal with quotes and an expression without, so
   // the two can be told apart — checked against the test server, and the same distinction MySQL
   // makes. See `clickhouse_ddl::read_default`.

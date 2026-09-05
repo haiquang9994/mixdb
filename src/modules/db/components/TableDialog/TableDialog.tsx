@@ -61,7 +61,7 @@ function TableDialog({ database, collations, onCancel, onSubmit }: Props) {
       )}
       extraFields={
         /* Gated on `kind` rather than on a flag of its own: only one dialect has this field, unlike
-           collation, which MySQL reaches through the shared `objectCollation`. */
+           collation, which MySQL reaches through `tableCollation`. */
         kind === "clickhouse"
           ? (saving) => (
               <label className={fieldClassName}>
@@ -81,7 +81,7 @@ function TableDialog({ database, collations, onCancel, onSubmit }: Props) {
                 <span className="muted">{t("tableDialog.engineHint")}</span>
               </label>
             )
-          : offers.objectCollation
+          : offers.tableCollation
             ? (saving) => (
                 <label className={fieldClassName}>
                   {t("tableDialog.collation")}

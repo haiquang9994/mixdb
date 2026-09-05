@@ -35,7 +35,7 @@ function DatabaseDialog({ collations, onCancel, onSubmit }: Props) {
       submitLabel={t("databaseDialog.submit")}
       savingLabel={t("databaseDialog.saving")}
       extraFields={
-        offers.objectCollation
+        offers.databaseCollation
           ? (saving) => (
               <label className={fieldClassName}>
                 {t("databaseDialog.collation")}

@@ -283,6 +283,8 @@ const dbEn = {
     defaultIsExpression: "Read the default as an expression, not as text",
     defaultExpressionHint:
       "CURRENT_TIMESTAMP and NOW() are recognised on their own; tick this for any other expression, e.g. uuid().",
+    identityLockedMssql:
+      "SQL Server can't change an IDENTITY column's type, nullability or collation — only its name and comment. Drop and re-add the column to change the rest.",
     errorName: "The column needs a name.",
     errorType: "The column needs a type.",
     errorTypeArg: "{{type}} needs a list of values, e.g. 'a','b'.",
@@ -1031,6 +1033,10 @@ const dbEn = {
     sqliteRebuildForeignKeyViolation:
       "Rebuilding {{table}} would leave a foreign key pointing at a row that no longer matches — nothing was changed.",
     unknownIndexType: "Unknown index type {{type}}.",
+    mssqlRenameCannotChangeSchema:
+      "SQL Server cannot move a table to another schema by renaming it — rename it within {{schema}}, or drop and recreate it in the new one.",
+    mssqlIdentityToggleNotSupported:
+      "SQL Server can't turn IDENTITY on or off through ALTER COLUMN — drop the column and add it again to change that.",
     noVisibleColumns:
       "No columns of {{database}}.{{table}} are visible \u2014 the table may not exist, or your user may have no privileges on it.",
     unknownColumn: "{{table}} no longer has a column called {{name}}.",

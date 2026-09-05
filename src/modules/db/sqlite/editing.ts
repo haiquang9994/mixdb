@@ -45,7 +45,8 @@ export const sqliteEditing: SqlEditing = {
   columnPosition: false,
   onUpdateCurrentTimestamp: false,
   autoIncrement: true,
-  objectCollation: false,
+  databaseCollation: false,
+  tableCollation: false,
   /* SQLite reports a default exactly as it was written in the DDL, so `CURRENT_TIMESTAMP` and the
      string `'CURRENT_TIMESTAMP'` arrive different — quoted and unquoted — and the mark tells them
      apart the way it does on MySQL. */

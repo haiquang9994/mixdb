@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   SqlCollation,
+  SqlColumnSpec,
+  SqlIndexSpec,
   SqlProblem,
   SqlSchemaOutline,
   SqlStatementResult,
@@ -16,9 +18,10 @@ import type { SqlApi, SqlPageQuery, SqlServerInfo } from "../sql/api";
  * `database` means what it means on MySQL rather than on PostgreSQL: a database to reach into over
  * the one connection, not a pool to pick. See `mssql_pool` in the backend.
  *
- * Everything else is still `notImplemented()` — DDL, dump/restore — and `mssqlDialect` closes each
- * of them in the UI too, so nothing routes to one. They land plan by plan, the same way ClickHouse
- * shipped read-only, then row-writes, before DDL; see
+ * DDL is done too (Plan 6) — creating, renaming and dropping databases/tables/columns/indexes.
+ * Everything still `notImplemented()` is dump/restore, and `mssqlDialect` closes those in the UI too,
+ * so nothing routes to them yet. They land plan by plan, the same way ClickHouse shipped read-only,
+ * then row-writes, before DDL; see
  * `docs/superpowers/specs/2026-09-05-mssql-support-design.md`.
  */
 export const mssqlApi: SqlApi = {
@@ -75,17 +78,51 @@ export const mssqlApi: SqlApi = {
 
   dump: () => notImplemented(),
   restore: () => notImplemented(),
-  dropDatabase: () => notImplemented(),
-  createDatabase: () => notImplemented(),
-  createTable: () => notImplemented(),
-  renameTable: () => notImplemented(),
-  dropTable: () => notImplemented(),
-  addColumn: () => notImplemented(),
-  modifyColumn: () => notImplemented(),
-  dropColumn: () => notImplemented(),
-  addIndex: () => notImplemented(),
-  modifyIndex: () => notImplemented(),
-  dropIndex: () => notImplemented(),
+
+  dropDatabase(id, database) {
+    return invoke<void>("mssql_drop_database", { id, database });
+  },
+
+  createDatabase(id, name, collation) {
+    return invoke<void>("mssql_create_database", { id, name, collation });
+  },
+
+  createTable(id, database, table, collation, engine) {
+    return invoke<void>("mssql_create_table", { id, database, table, collation, engine });
+  },
+
+  renameTable(id, database, table, newName) {
+    return invoke<void>("mssql_rename_table", { id, database, table, newName });
+  },
+
+  dropTable(id, database, table) {
+    return invoke<void>("mssql_drop_table", { id, database, table });
+  },
+
+  addColumn(id, database, table, spec: SqlColumnSpec) {
+    return invoke<void>("mssql_add_column", { id, database, table, spec });
+  },
+
+  modifyColumn(id, database, table, name, spec: SqlColumnSpec) {
+    return invoke<void>("mssql_modify_column", { id, database, table, name, spec });
+  },
+
+  dropColumn(id, database, table, name) {
+    return invoke<void>("mssql_drop_column", { id, database, table, name });
+  },
+
+  addIndex(id, database, table, spec: SqlIndexSpec) {
+    return invoke<void>("mssql_add_index", { id, database, table, spec });
+  },
+
+  modifyIndex(id, database, table, name, spec: SqlIndexSpec) {
+    return invoke<void>("mssql_modify_index", { id, database, table, name, spec });
+  },
+
+  dropIndex(id, database, table, name) {
+    return invoke<void>("mssql_drop_index", { id, database, table, name });
+  },
+
   addSkipIndex: () => notImplemented(),
   modifySkipIndex: () => notImplemented(),
   dropSkipIndex: () => notImplemented(),

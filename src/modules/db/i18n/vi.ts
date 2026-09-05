@@ -267,6 +267,8 @@ const dbVi: DbDict = {
     defaultIsExpression: "Hiểu giá trị mặc định là biểu thức, không phải chuỗi",
     defaultExpressionHint:
       "CURRENT_TIMESTAMP và NOW() được nhận ra sẵn; tích vào đây cho các biểu thức khác, ví dụ uuid().",
+    identityLockedMssql:
+      "SQL Server không thể đổi type, nullable hay collation của cột IDENTITY — chỉ đổi được tên và comment. Xoá rồi thêm lại cột nếu cần đổi phần còn lại.",
     errorName: "Cột cần có tên.",
     errorType: "Cột cần có kiểu dữ liệu.",
     errorTypeArg: "{{type}} cần có danh sách giá trị, ví dụ 'a','b'.",
@@ -998,6 +1000,10 @@ const dbVi: DbDict = {
     sqliteRebuildForeignKeyViolation:
       "Dựng lại {{table}} sẽ để lại một khoá ngoại trỏ vào một dòng không còn khớp — chưa có gì bị đổi.",
     unknownIndexType: "Kiểu index {{type}} không hợp lệ.",
+    mssqlRenameCannotChangeSchema:
+      "SQL Server không thể chuyển bảng sang schema khác bằng cách đổi tên — đổi tên trong {{schema}}, hoặc xoá và tạo lại ở schema mới.",
+    mssqlIdentityToggleNotSupported:
+      "SQL Server không thể bật/tắt IDENTITY qua ALTER COLUMN — xoá cột rồi thêm lại nếu cần đổi.",
     noVisibleColumns:
       "Không thấy cột nào của {{database}}.{{table}} — có thể bảng không tồn tại, hoặc tài khoản của bạn không có quyền trên bảng đó.",
     unknownColumn: "{{table}} không còn cột nào tên {{name}}.",

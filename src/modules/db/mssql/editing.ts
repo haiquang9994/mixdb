@@ -38,15 +38,10 @@ const TYPES: SqlTypeSpec[] = [
 /**
  * What the Structure tab's dialogs offer on SQL Server.
  *
- * Nothing reads this yet: `ddlWritable` is false while SQL Server is read-only, so neither dialog
- * opens. It is written properly rather than left empty because an empty list would be a lie the
- * moment DDL lands, and because the type list is what the column grid matches a declared type
- * against.
- *
- * `objectCollation` is false for now. SQL Server sits between the two answers that flag has — a
- * database carries a collation and a table does not — which is why the DDL plan splits it in two
- * (D14). False is the safe half of the split: it offers no box that `create_table` would have
- * nowhere to put.
+ * SQL Server sits between the two answers `databaseCollation`/`tableCollation` split apart (D14): a
+ * database carries a collation and a table does not, so `databaseCollation: true` opens the box
+ * `DatabaseDialog` offers and `tableCollation: false` keeps `TableDialog` from offering one
+ * `create_table` would have nowhere to put.
  */
 export const mssqlEditing: SqlEditing = {
   columnTypes: TYPES,
@@ -54,7 +49,8 @@ export const mssqlEditing: SqlEditing = {
   columnPosition: false,
   onUpdateCurrentTimestamp: false,
   autoIncrement: true,
-  objectCollation: false,
+  databaseCollation: true,
+  tableCollation: false,
   markExpressionDefaults: true,
   indexKinds: ["index", "unique", "primary"],
   indexMethods: ["CLUSTERED", "NONCLUSTERED"],
