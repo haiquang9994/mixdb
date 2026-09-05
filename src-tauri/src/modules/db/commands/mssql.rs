@@ -281,3 +281,16 @@ pub async fn mssql_drop_column(
     let pool = mssql_pool(&state, &id).await?;
     mssql_ddl::drop_column(&pool, &database, &table, &name).await
 }
+
+#[tauri::command]
+pub async fn mssql_modify_column(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    name: String,
+    spec: mssql_ddl::ColumnSpec,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql_ddl::modify_column(&pool, &database, &table, &name, &spec).await
+}

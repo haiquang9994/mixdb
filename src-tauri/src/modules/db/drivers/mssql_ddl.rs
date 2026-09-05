@@ -526,6 +526,155 @@ async fn drop_index_statement(
     unimplemented!("added in Task 6")
 }
 
+/// Forward-declared here, defined in Task 6 alongside `add_index`/`modify_index`/`drop_index` — this
+/// file grows in the order the plan's tasks land, and `modify_column` needs it before that section
+/// exists.
+#[allow(unused_variables)]
+fn create_index_statements(
+    database: &str,
+    schema: &str,
+    table: &str,
+    spec: &IndexSpec,
+) -> Result<Vec<String>, AppError> {
+    unimplemented!("added in Task 6")
+}
+
+/// Turns one read-back `TableIndex` into the `IndexSpec` that recreates it — used only to put an
+/// index back after [`modify_column`] has had to drop it out of `ALTER COLUMN`'s way.
+fn index_spec_from(index: &TableIndex) -> IndexSpec {
+    IndexSpec {
+        name: index.name.clone(),
+        kind: if index.primary {
+            "primary".to_string()
+        } else if index.unique {
+            "unique".to_string()
+        } else {
+            "index".to_string()
+        },
+        index_type: Some(index.index_type.to_uppercase()),
+        columns: index
+            .columns
+            .iter()
+            .filter_map(|c| c.name.clone())
+            .map(|name| IndexColumnSpec { name })
+            .collect(),
+        comment: String::new(),
+    }
+}
+
+/// Redefines an existing column, `name` being what it is called now — so this is also how a column
+/// is renamed.
+///
+/// SQL Server has no statement that restates a column whole the way MySQL's `CHANGE COLUMN` does, and
+/// unlike PostgreSQL's incremental `ALTER COLUMN` clauses, its single `ALTER COLUMN` **replaces the
+/// whole declaration** and is blocked outright by a default constraint or an index on the column
+/// (D15). So this reads what is in the way first, clears it, redeclares the column in full — type,
+/// nullable and collation together, whether or not each one changed, since leaving `NOT NULL` off
+/// `ALTER COLUMN` silently makes the column nullable — then puts back what it cleared.
+///
+/// An `IDENTITY` column is locked further still: `ALTER COLUMN` is refused outright on one, full
+/// stop, not merely for its identity property — so `current.identity` skips the `ALTER COLUMN`
+/// statement entirely and only a rename or a comment change can still land. The Structure tab locks
+/// type/nullable/collation on such a column (Task 9), so this has nothing to disagree with in the
+/// ordinary path; `auto_increment` toggling either way is refused outright since there is no
+/// statement that does it (D15's explicit non-goal).
+pub async fn modify_column(
+    pool: &Pool,
+    database: &str,
+    table: &str,
+    name: &str,
+    spec: &ColumnSpec,
+) -> Result<(), AppError> {
+    let old_name = name.trim();
+    let new_name = spec.name.trim();
+    if old_name.is_empty() || new_name.is_empty() {
+        return Err(err!("error.columnNameRequired"));
+    }
+    let data_type = spec.data_type.trim();
+    if data_type.is_empty() {
+        return Err(err!("error.columnTypeRequired"));
+    }
+
+    let (schema, table_name) = resolve(table);
+    let qualified = three_part(database, &schema, &table_name);
+    let current = current_column(pool, database, &schema, &table_name, old_name).await?;
+
+    if spec.auto_increment != current.identity {
+        return Err(err!("error.mssqlIdentityToggleNotSupported"));
+    }
+
+    let dependent = if current.identity {
+        Vec::new()
+    } else {
+        dependent_indexes(pool, database, current.object_id, current.column_id).await?
+    };
+
+    let mut statements = Vec::new();
+    for index in &dependent {
+        statements.push(
+            drop_index_statement(pool, database, &schema, &table_name, &index.name).await?,
+        );
+    }
+    if let Some(default_name) = &current.default_name {
+        statements.push(format!(
+            "ALTER TABLE {qualified} DROP CONSTRAINT {}",
+            quote_ident(default_name)
+        ));
+    }
+    if new_name != old_name {
+        statements.push(format!(
+            "EXEC sp_rename {}, {}, 'COLUMN'",
+            quote_string(&format!("{schema}.{table_name}.{old_name}")),
+            quote_string(new_name)
+        ));
+    }
+
+    if !current.identity {
+        let collation = spec
+            .collation
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty());
+        statements.push(format!(
+            "ALTER TABLE {qualified} ALTER COLUMN {} {data_type}{} {}",
+            quote_ident(new_name),
+            collate_clause(collation),
+            if spec.nullable { "NULL" } else { "NOT NULL" }
+        ));
+    }
+
+    if let Some(default_value) = &spec.default_value {
+        statements.push(format!(
+            "ALTER TABLE {qualified} ADD DEFAULT {} FOR {}",
+            default_clause(default_value, spec.default_is_expression),
+            quote_ident(new_name)
+        ));
+    }
+
+    for index in &dependent {
+        statements.extend(create_index_statements(
+            database,
+            &schema,
+            &table_name,
+            &index_spec_from(index),
+        )?);
+    }
+
+    if spec.comment.trim() != current.comment {
+        if let Some(sql) = comment_statement(
+            &schema,
+            &table_name,
+            new_name,
+            &spec.comment,
+            !current.comment.is_empty(),
+        ) {
+            statements.push(sql);
+        }
+    }
+
+    execute_all(pool, database, statements).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

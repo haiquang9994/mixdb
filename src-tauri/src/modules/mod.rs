@@ -180,6 +180,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         db::commands::mssql::mssql_drop_table,
         db::commands::mssql::mssql_add_column,
         db::commands::mssql::mssql_drop_column,
+        db::commands::mssql::mssql_modify_column,
         db::commands::tools::dumptools_status,
         db::commands::tools::dumptools_ready,
         db::commands::tools::dumptools_downloadable,

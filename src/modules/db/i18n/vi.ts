@@ -1000,6 +1000,8 @@ const dbVi: DbDict = {
     unknownIndexType: "Kiểu index {{type}} không hợp lệ.",
     mssqlRenameCannotChangeSchema:
       "SQL Server không thể chuyển bảng sang schema khác bằng cách đổi tên — đổi tên trong {{schema}}, hoặc xoá và tạo lại ở schema mới.",
+    mssqlIdentityToggleNotSupported:
+      "SQL Server không thể bật/tắt IDENTITY qua ALTER COLUMN — xoá cột rồi thêm lại nếu cần đổi.",
     noVisibleColumns:
       "Không thấy cột nào của {{database}}.{{table}} — có thể bảng không tồn tại, hoặc tài khoản của bạn không có quyền trên bảng đó.",
     unknownColumn: "{{table}} không còn cột nào tên {{name}}.",

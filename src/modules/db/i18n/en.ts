@@ -1033,6 +1033,8 @@ const dbEn = {
     unknownIndexType: "Unknown index type {{type}}.",
     mssqlRenameCannotChangeSchema:
       "SQL Server cannot move a table to another schema by renaming it — rename it within {{schema}}, or drop and recreate it in the new one.",
+    mssqlIdentityToggleNotSupported:
+      "SQL Server can't turn IDENTITY on or off through ALTER COLUMN — drop the column and add it again to change that.",
     noVisibleColumns:
       "No columns of {{database}}.{{table}} are visible \u2014 the table may not exist, or your user may have no privileges on it.",
     unknownColumn: "{{table}} no longer has a column called {{name}}.",
