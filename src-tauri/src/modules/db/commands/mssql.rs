@@ -4,13 +4,13 @@
 //! reach into over the one pool, never a pool to pick. See `mssql_pool`.
 
 use crate::error::AppError;
-use crate::modules::db::drivers::{mssql, mssql_structure};
-use crate::modules::db::models::ServerInfo;
+use crate::modules::db::drivers::{mssql, mssql_script, mssql_structure};
+use crate::modules::db::models::{ServerInfo, StatementResult};
 use crate::modules::db::state::DbState;
 use serde_json::{Map, Value};
 use tauri::State;
 
-use super::mssql_pool;
+use super::{mssql_pool, RunningQuery};
 
 #[tauri::command]
 pub async fn mssql_list_databases(
@@ -150,4 +150,26 @@ pub async fn mssql_schema_outline(
         let pool = mssql_pool(&state, &id).await?;
         mssql_structure::schema_outline(&pool, &database).await
     })
+}
+
+/// Runs the Query tab's text against SQL Server, batch by batch and statement by statement within
+/// each — see `mssql_script::run`. `USE database` runs before the first statement so an unqualified
+/// table name resolves the way it does everywhere else in the workspace, matching MySQL's connection
+/// model (D2): one pool for the whole server, not one per database.
+#[tauri::command]
+pub async fn mssql_run_script(
+    state: State<'_, DbState>,
+    id: String,
+    run_id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<Vec<StatementResult>, AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    // However it ended — finished, failed, or killed from `mssql_cancel_query` — dropping this is
+    // what forgets the SPID.
+    let _running = RunningQuery::start(&state, &run_id);
+    mssql_script::run(&pool, &sql, database.as_deref(), |spid| {
+        state.running_queries.lock().unwrap().insert(run_id.clone(), spid);
+    })
+    .await
 }
