@@ -11,6 +11,7 @@ import {
 import Select from "../../../components/Select";
 import ErrorBanner from "../../../components/ErrorBanner";
 import DisconnectTab from "../components/DisconnectTab";
+import ServerInfoLabel from "../components/ServerInfoLabel";
 import TunnelBanner from "../components/TunnelBanner";
 import { useWorkspaceError } from "../workspaceError";
 import Input from "../../../components/Input";
@@ -424,9 +425,7 @@ function RedisWorkspace({
       <div className="redis-header">
         <div className="redis-header-left">
           {serverInfo && (
-            <span className="redis-server-info">
-              {t("redis.serverInfo", { os: serverInfo.os, version: serverInfo.version })}
-            </span>
+            <ServerInfoLabel text={t("redis.serverInfo", { os: serverInfo.os, version: serverInfo.version })} />
           )}
         </div>
         <label className="redis-db-select">

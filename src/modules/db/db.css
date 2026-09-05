@@ -828,12 +828,6 @@ fieldset .row label.field-file-path {
   gap: 0.75rem;
 }
 
-.sql-server-info {
-  opacity: 0.6;
-  font-size: var(--text-md);
-  white-space: nowrap;
-}
-
 .sql-db-select {
   display: flex;
   align-items: center;
@@ -939,12 +933,6 @@ fieldset .row label.field-file-path {
   gap: 0.75rem;
 }
 
-.mongo-server-info {
-  opacity: 0.6;
-  font-size: var(--text-md);
-  white-space: nowrap;
-}
-
 .mongo-db-select {
   display: flex;
   align-items: center;
@@ -1044,12 +1032,6 @@ fieldset .row label.field-file-path {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-}
-
-.redis-server-info {
-  opacity: 0.6;
-  font-size: var(--text-md);
-  white-space: nowrap;
 }
 
 .redis-db-select {

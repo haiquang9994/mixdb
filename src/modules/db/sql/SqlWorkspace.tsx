@@ -13,6 +13,7 @@ import type { DatabaseChange } from "../components/DatabaseActions";
 import DatabaseDialog from "../components/DatabaseDialog";
 import DatabaseStats from "../components/DatabaseStats";
 import type { StatsCache } from "../components/DatabaseStats";
+import ServerInfoLabel from "../components/ServerInfoLabel";
 import TransferOverlay from "../components/TransferOverlay";
 import ErrorBanner from "../../../components/ErrorBanner";
 import DisconnectTab from "../components/DisconnectTab";
@@ -547,8 +548,8 @@ function SqlWorkspace({
       <div className="sql-header">
         <div className="sql-header-left">
           {serverInfo && (
-            <span className="sql-server-info">
-              {t("sql.serverInfo", {
+            <ServerInfoLabel
+              text={t("sql.serverInfo", {
                 os: serverInfo.os,
                 // Named rather than assumed: the header used to read "MySQL" whatever it was
                 // connected to. Looked up rather than branched on, so an engine added later is
@@ -556,7 +557,7 @@ function SqlWorkspace({
                 engine: t(kindLabel(dialect.kind)),
                 version: serverInfo.version,
               })}
-            </span>
+            />
           )}
         </div>
         <label className="sql-db-select">

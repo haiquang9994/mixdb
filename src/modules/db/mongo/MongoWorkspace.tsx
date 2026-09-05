@@ -16,6 +16,7 @@ import DatabaseActions from "../components/DatabaseActions";
 import type { DatabaseChange } from "../components/DatabaseActions";
 import DatabaseStats from "../components/DatabaseStats";
 import type { StatsCache } from "../components/DatabaseStats";
+import ServerInfoLabel from "../components/ServerInfoLabel";
 import TransferOverlay from "../components/TransferOverlay";
 import ErrorBanner from "../../../components/ErrorBanner";
 import DisconnectTab from "../components/DisconnectTab";
@@ -414,9 +415,7 @@ function MongoWorkspace({
       <div className="mongo-header">
         <div className="mongo-header-left">
           {serverInfo && (
-            <span className="mongo-server-info">
-              {t("mongo.serverInfo", { os: serverInfo.os, version: serverInfo.version })}
-            </span>
+            <ServerInfoLabel text={t("mongo.serverInfo", { os: serverInfo.os, version: serverInfo.version })} />
           )}
         </div>
         <label className="mongo-db-select">
