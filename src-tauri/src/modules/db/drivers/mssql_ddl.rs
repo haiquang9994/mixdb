@@ -592,7 +592,7 @@ fn generated_index_name(table: &str, columns: &[IndexColumnSpec]) -> String {
 
 /// The statement that creates one index — an `ALTER TABLE ... ADD [CONSTRAINT] ... PRIMARY KEY` for
 /// a primary key, a `CREATE INDEX` for everything else.
-pub(super) fn create_index_statements(
+fn create_index_statements(
     database: &str,
     schema: &str,
     table: &str,
@@ -654,7 +654,7 @@ pub(super) fn create_index_statements(
 
 /// Turns one read-back `TableIndex` into the `IndexSpec` that recreates it — used only to put an
 /// index back after [`modify_column`] has had to drop it out of `ALTER COLUMN`'s way.
-pub(super) fn index_spec_from(index: &TableIndex) -> IndexSpec {
+fn index_spec_from(index: &TableIndex) -> IndexSpec {
     IndexSpec {
         name: index.name.clone(),
         kind: if index.primary {

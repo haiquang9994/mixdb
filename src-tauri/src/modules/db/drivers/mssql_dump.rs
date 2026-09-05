@@ -11,16 +11,74 @@
 use super::dump::{self, Tracker};
 use super::mssql::{
     column_value, is_binary_type, map_error, primary_key, quote_ident, read_uncommitted, resolve,
-    select_expr, table_columns, three_part, Pool,
+    select_expr, table_columns, Pool, DEFAULT_SCHEMA,
 };
-use super::mssql_ddl::{
-    column_definition, comment_statement, create_index_statements, index_spec_from, quote_string,
-    ColumnSpec,
-};
+use super::mssql_ddl::{column_definition, comment_statement, quote_string, ColumnSpec};
 use super::mssql_script;
-use super::mssql_structure::{self, StructureColumn};
+use super::mssql_structure::{self, StructureColumn, TableIndex};
 use crate::error::AppError;
 use std::collections::HashMap;
+
+/// A table named `schema.table` for the *text this file writes into the dump*, deliberately not
+/// `mssql::three_part` — that helper bakes in a specific database name, which is exactly right for
+/// live Structure-tab DDL (always run against the database currently open) and exactly wrong for a
+/// dump file, which restores under `mssql_script::run`'s own `USE {target}` and must not fight it
+/// with a hardcoded reference back to the database it was dumped from. Confirmed against the live
+/// test server (see this plan's Task 7): a first cut of this file used `three_part` here, and a
+/// restore into a fresh database silently re-ran every `CREATE TABLE`/`INSERT` against the
+/// *original* source database instead — no error until a table happened to already exist there.
+/// Every table this file names is written this way; only the catalogue reads below (`{db}.sys.*`)
+/// still carry a database, because those really do cross databases from one pooled connection.
+fn qualified_ident(schema: &str, table: &str) -> String {
+    format!("{}.{}", quote_ident(schema), quote_ident(table))
+}
+
+/// The statement that recreates one already-existing index verbatim, from what
+/// `mssql_structure::table_structure` read back — not `mssql_ddl::create_index_statements`, which
+/// is built for a dialog's freshly-typed `IndexSpec` (an empty name still to be generated, an index
+/// type that still needs validating) and, more importantly, always qualifies through a specific
+/// database name (the same [`qualified_ident`] problem this file works around everywhere else).
+/// Every field read off a real index already has a name and a concrete `CLUSTERED`/`NONCLUSTERED`
+/// type — SQL Server never leaves either blank on an existing one — so none of that dialog-facing
+/// machinery is needed to just spell it back out.
+/// A `CREATE SCHEMA`, guarded to run only when the schema is not already there. Found necessary by
+/// the live verification in this plan's Task 7, not anticipated by the plan itself: the plan's
+/// draft treated "restores only into a database where the schema already exists" as an accepted
+/// non-goal, on the assumption the test database used only `dbo` — which turned out to be wrong, so
+/// the limitation is fixed here instead of left in.
+///
+/// `EXEC('...')` rather than a plain `CREATE SCHEMA`: T-SQL only allows `CREATE SCHEMA` as the sole
+/// statement of a batch, and every other line in this file's output sits one-per-line inside a
+/// single batch `mssql_script::run` (Task 5) splits on `;` — wrapping it as dynamic SQL runs it as a
+/// batch of its own inline, without this file needing to know anything about batch boundaries.
+fn create_schema_statement(schema: &str) -> String {
+    let literal = format!("N{}", quote_string(schema));
+    let create = format!("CREATE SCHEMA {}", quote_ident(schema)).replace('\'', "''");
+    format!("IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = {literal}) EXEC('{create}')")
+}
+
+fn dump_index_statement(schema: &str, table: &str, index: &TableIndex) -> String {
+    let qualified = qualified_ident(schema, table);
+    let columns = index
+        .columns
+        .iter()
+        .filter_map(|c| c.name.as_deref())
+        .map(quote_ident)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let using = format!("{} ", index.index_type.to_uppercase());
+    if index.primary {
+        return format!(
+            "ALTER TABLE {qualified} ADD CONSTRAINT {} PRIMARY KEY {using}({columns})",
+            quote_ident(&index.name)
+        );
+    }
+    let unique = if index.unique { "UNIQUE " } else { "" };
+    format!(
+        "CREATE {unique}{using}INDEX {} ON {qualified} ({columns})",
+        quote_ident(&index.name)
+    )
+}
 
 /// Turns a read-back [`StructureColumn`] into the [`ColumnSpec`] shape `column_definition` (Plan 6)
 /// was written for — the two structs carry the same fields under the same names by construction
@@ -110,9 +168,9 @@ fn computed_column_definition(name: &str, computed: &ComputedDefinition) -> Stri
 /// later task in this plan fills [`write_foreign_keys`] in; this task leaves the call site for it).
 ///
 /// Base tables only (`sys.objects.type = 'U'`, via [`mssql_structure::table_stats`], which already
-/// excludes views for the same reason the Statistics tab does) — and no `CREATE SCHEMA`: a table
-/// outside `dbo` restores only into a database where that schema already exists, matching
-/// `mssql_ddl::create_table`'s own documented limit.
+/// excludes views for the same reason the Statistics tab does). Every non-`dbo` schema a dumped
+/// table lives in gets a guarded `CREATE SCHEMA` up front (see [`create_schema_statement`]) — a
+/// restore into a fresh database otherwise fails outright the first time a table sits outside `dbo`.
 pub async fn dump_structure(
     pool: &Pool,
     database: &str,
@@ -130,12 +188,26 @@ pub async fn dump_structure(
     write!(file, "-- MixDB structure dump\n\n")
         .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
 
+    let mut schemas: Vec<String> = tables.iter().map(|t| resolve(&t.name).0).collect();
+    schemas.sort();
+    schemas.dedup();
+    for schema in &schemas {
+        if schema == DEFAULT_SCHEMA {
+            continue;
+        }
+        write!(file, "{};\n", create_schema_statement(schema))
+            .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+    }
+    if schemas.iter().any(|s| s != DEFAULT_SCHEMA) {
+        write!(file, "\n").map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
+    }
+
     for table in &tables {
         if (watch.cancel)() {
             return Err(err!("error.transferCancelled", tool = "SQL Server dump"));
         }
         let (schema, name) = resolve(&table.name);
-        let qualified = three_part(database, &schema, &name);
+        let qualified = qualified_ident(&schema, &name);
         let structure = mssql_structure::table_structure(pool, database, &table.name).await?;
         let computed = computed_definitions(pool, database, &schema, &name).await?;
 
@@ -165,11 +237,8 @@ pub async fn dump_structure(
             }
         }
         for index in &structure.indexes {
-            let spec = index_spec_from(index);
-            for stmt in create_index_statements(database, &schema, &name, &spec)? {
-                write!(file, "{stmt};\n")
-                    .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
-            }
+            write!(file, "{};\n", dump_index_statement(&schema, &name, index))
+                .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
         }
         write!(file, "\n").map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
 
@@ -277,9 +346,9 @@ fn referential_action(desc: &str) -> &'static str {
     }
 }
 
-fn foreign_key_statement(database: &str, fk: &ForeignKeyConstraint) -> String {
-    let qualified = three_part(database, &fk.schema, &fk.table);
-    let ref_qualified = three_part(database, &fk.ref_schema, &fk.ref_table);
+fn foreign_key_statement(fk: &ForeignKeyConstraint) -> String {
+    let qualified = qualified_ident(&fk.schema, &fk.table);
+    let ref_qualified = qualified_ident(&fk.ref_schema, &fk.ref_table);
     let columns = fk.columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
     let ref_columns = fk.ref_columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
     format!(
@@ -310,7 +379,7 @@ async fn write_foreign_keys(
     write!(file, "-- Foreign keys\n\n")
         .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
     for fk in &constraints {
-        write!(file, "{};\n", foreign_key_statement(database, fk))
+        write!(file, "{};\n", foreign_key_statement(fk))
             .map_err(|e| err!("error.cannotWriteFile", path = path, message = e))?;
     }
     Ok(())
@@ -420,7 +489,7 @@ pub async fn dump_data(
         tracker.reached(&table.name);
 
         let (schema, name) = resolve(&table.name);
-        let qualified = three_part(database, &schema, &name);
+        let qualified = qualified_ident(&schema, &name);
         // Computed and rowversion/timestamp columns are never inserted — the server derives or
         // assigns both — the same set `mssql::table_data`'s insert path already excludes.
         let columns: Vec<_> = table_columns(pool, database, &schema, &name)
@@ -610,10 +679,10 @@ mod tests {
             on_update: "NO_ACTION".to_string(),
         };
         assert_eq!(
-            foreign_key_statement("mixdb_agent_test", &fk),
-            "ALTER TABLE [mixdb_agent_test].[dbo].[order_item] \
+            foreign_key_statement(&fk),
+            "ALTER TABLE [dbo].[order_item] \
              ADD CONSTRAINT [FK_order_item_order] FOREIGN KEY ([order_id], [order_line]) \
-             REFERENCES [mixdb_agent_test].[dbo].[order] ([id], [line]) \
+             REFERENCES [dbo].[order] ([id], [line]) \
              ON DELETE CASCADE ON UPDATE NO ACTION"
         );
     }
@@ -654,5 +723,59 @@ mod tests {
     fn dump_order_by_falls_back_to_every_column_without_one() {
         let cols = vec!["a".to_string(), "b".to_string()];
         assert_eq!(dump_order_by(&[], &cols), "[a], [b]");
+    }
+
+    fn index(name: &str, primary: bool, unique: bool, index_type: &str, columns: &[&str]) -> TableIndex {
+        TableIndex {
+            name: name.to_string(),
+            primary,
+            unique,
+            index_type: index_type.to_string(),
+            columns: columns
+                .iter()
+                .map(|c| super::super::mssql_structure::IndexColumn {
+                    name: Some(c.to_string()),
+                    prefix_length: None,
+                })
+                .collect(),
+            comment: String::new(),
+        }
+    }
+
+    #[test]
+    fn dump_index_statement_never_names_a_database() {
+        let idx = index("PK__customer__1", true, false, "clustered", &["id"]);
+        assert_eq!(
+            dump_index_statement("dbo", "customers", &idx),
+            "ALTER TABLE [dbo].[customers] ADD CONSTRAINT [PK__customer__1] \
+             PRIMARY KEY CLUSTERED ([id])"
+        );
+    }
+
+    #[test]
+    fn dump_index_statement_covers_a_plain_nonclustered_index() {
+        let idx = index("ix_customers_code", false, false, "nonclustered", &["code"]);
+        assert_eq!(
+            dump_index_statement("dbo", "customers", &idx),
+            "CREATE NONCLUSTERED INDEX [ix_customers_code] ON [dbo].[customers] ([code])"
+        );
+    }
+
+    #[test]
+    fn create_schema_statement_is_guarded_and_uses_dynamic_sql() {
+        assert_eq!(
+            create_schema_statement("sales"),
+            "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'sales') \
+             EXEC('CREATE SCHEMA [sales]')"
+        );
+    }
+
+    #[test]
+    fn dump_index_statement_marks_a_unique_index() {
+        let idx = index("ux_users_email", false, true, "nonclustered", &["email"]);
+        assert_eq!(
+            dump_index_statement("dbo", "users", &idx),
+            "CREATE UNIQUE NONCLUSTERED INDEX [ux_users_email] ON [dbo].[users] ([email])"
+        );
     }
 }
