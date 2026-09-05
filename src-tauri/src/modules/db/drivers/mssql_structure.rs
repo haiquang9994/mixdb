@@ -308,11 +308,7 @@ pub struct TableStats {
 
 /// The data size over the rows, and zero where there are no rows to divide by.
 pub(super) fn average_record_size(data_size: u64, rows: u64) -> u64 {
-    if rows == 0 {
-        0
-    } else {
-        data_size / rows
-    }
+    data_size.checked_div(rows).unwrap_or(0)
 }
 
 /// What every table in `database` weighs.
