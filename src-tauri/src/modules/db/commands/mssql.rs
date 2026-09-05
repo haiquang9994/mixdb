@@ -44,3 +44,17 @@ pub async fn mssql_list_tables(
         mssql::list_tables(&pool, &database).await
     })
 }
+
+#[tauri::command]
+pub async fn mssql_table_data(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    query: mssql::PageQuery,
+) -> Result<mssql::TablePage, AppError> {
+    retry_read!({
+        let pool = mssql_pool(&state, &id).await?;
+        mssql::table_data(&pool, &database, &table, &query).await
+    })
+}

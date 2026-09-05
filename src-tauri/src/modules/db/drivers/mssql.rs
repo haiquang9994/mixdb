@@ -666,6 +666,89 @@ fn build_where(
     Ok((format!(" WHERE {}", clauses.join(" AND ")), binds))
 }
 
+/// The types read as text rather than decoded, and why each one is on the list.
+///
+/// `money`/`smallmoney` arrive through tiberius as an f64 — four decimal places of a fixed-point
+/// type put through a binary float, which is the same reason `Numeric` is rendered as text in
+/// [`column_value`]. `xml` and `sql_variant` have no shape the grid could draw. The three CLR types
+/// are read with `.ToString()` instead, having no `CAST` to text at all.
+const TEXT_CAST_TYPES: [&str; 4] = ["money", "smallmoney", "xml", "sql_variant"];
+const CLR_TYPES: [&str; 3] = ["geography", "geometry", "hierarchyid"];
+
+/// How one column is named in the SELECT list.
+///
+/// Named one by one rather than `SELECT *`, so a column of a type with no useful decoding can be
+/// asked for as text — the same trade `postgres::table_data` makes with its `is_decodable`. The
+/// alias keeps the name the cast would otherwise replace.
+pub(super) fn select_expr(column: &str, data_type: &str) -> String {
+    let base = data_type
+        .split('(')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if CLR_TYPES.contains(&base.as_str()) {
+        return format!("{column}.ToString() AS {column}");
+    }
+    if TEXT_CAST_TYPES.contains(&base.as_str()) {
+        return format!("CAST({column} AS nvarchar(max)) AS {column}");
+    }
+    column.to_string()
+}
+
+/// The ORDER BY a page is cut out of.
+///
+/// Always present, because `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY` is grammatically part of
+/// `ORDER BY` and SQL Server refuses the one without the other. `(SELECT NULL)` is what "no order
+/// was asked for" is spelled as: it satisfies the grammar and asks the server to sort nothing,
+/// which is the semantics `postgres::table_data` gets by leaving the clause out entirely. Ordering
+/// by the first column instead would sort the whole table on every page turn.
+pub(super) fn order_by_clause(
+    sort_column: Option<&str>,
+    sort_desc: bool,
+    columns: &[String],
+) -> String {
+    sort_column
+        .filter(|c| columns.iter().any(|existing| existing == c))
+        .map(|c| {
+            format!(
+                " ORDER BY {} {}",
+                quote_ident(c),
+                if sort_desc { "DESC" } else { "ASC" }
+            )
+        })
+        .unwrap_or_else(|| " ORDER BY (SELECT NULL)".to_string())
+}
+
+/// Which page of a table is wanted, and what it is cut out of.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageQuery {
+    pub page: i64,
+    pub page_size: i64,
+    /// Ignored unless it names a real column of this table.
+    #[serde(default)]
+    pub sort_column: Option<String>,
+    #[serde(default)]
+    pub sort_desc: bool,
+    /// ANDed together; `total` counts what is left after them.
+    #[serde(default)]
+    pub filters: Vec<Filter>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TablePage {
+    pub columns: Vec<String>,
+    pub column_meta: BTreeMap<String, ColumnMeta>,
+    pub primary_key: Vec<String>,
+    /// The IDENTITY column, if the table has one — the only kind with a counter worth offering to
+    /// reset after a delete.
+    pub auto_increment_column: Option<String>,
+    pub rows: Vec<Map<String, Value>>,
+    pub total: i64,
+}
+
 /// The row a foreign key column points at.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -852,6 +935,118 @@ async fn foreign_keys(
     Ok(keys)
 }
 
+/// Reads one page of a table, and how many rows the filters leave to page through.
+///
+/// `table` arrives as the sidebar names it — bare for a table of `dbo`, `schema.table` otherwise —
+/// and [`resolve`] turns it back into the two parts. `database` is named in the SQL rather than
+/// switched to with `USE`: the pooled session may be sitting on any database at all, and a `USE`
+/// would leave it somewhere else for whoever borrows the connection next (D2).
+pub async fn table_data(
+    pool: &Pool,
+    database: &str,
+    table: &str,
+    query: &PageQuery,
+) -> Result<TablePage, AppError> {
+    let (schema, name) = resolve(table);
+    let qualified = three_part(database, &schema, &name);
+
+    let column_rows = table_columns(pool, database, &schema, &name).await?;
+    let columns: Vec<String> = column_rows.iter().map(|c| c.name.clone()).collect();
+    let mut keys = foreign_keys(pool, database, &schema, &name)
+        .await
+        .unwrap_or_default();
+
+    let column_meta: BTreeMap<String, ColumnMeta> = column_rows
+        .iter()
+        .map(|c| {
+            (
+                c.name.clone(),
+                ColumnMeta {
+                    data_type: c.data_type.clone(),
+                    nullable: c.nullable,
+                    default_value: c.default_value.clone(),
+                    extra: extra_tokens(c.is_identity, c.is_computed, c.is_rowversion),
+                    foreign_key: keys.remove(&c.name),
+                },
+            )
+        })
+        .collect();
+
+    let primary_key = primary_key(pool, database, &schema, &name)
+        .await
+        .unwrap_or_default();
+    let auto_increment_column = column_rows
+        .iter()
+        .find(|c| c.is_identity)
+        .map(|c| c.name.clone());
+
+    // `build_where` only needs to know a column exists; unlike PostgreSQL, SQL Server converts a
+    // bound string to the column's type in a comparison itself, so nothing here casts the value.
+    let column_types: BTreeMap<String, String> = column_rows
+        .iter()
+        .map(|c| (c.name.clone(), c.data_type.clone()))
+        .collect();
+    let (where_clause, binds) = build_where(&query.filters, &column_types)?;
+
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+
+    // `COUNT_BIG` rather than `COUNT`, which answers as an `int` and overflows — with an error from
+    // the server, not a wrong number — somewhere past two billion rows.
+    let count_sql = read_uncommitted(&format!(
+        "SELECT COUNT_BIG(*) FROM {qualified}{where_clause}"
+    ));
+    let mut count_query = tiberius::Query::new(count_sql);
+    for value in &binds {
+        count_query.bind(value.as_str());
+    }
+    let total: i64 = count_query
+        .query(&mut client)
+        .await
+        .map_err(map_error)?
+        .into_row()
+        .await
+        .map_err(map_error)?
+        .and_then(|row| row.get::<i64, _>(0))
+        .unwrap_or(0);
+
+    // The ceiling is the largest page size the grid offers; see `mysql::table_data`.
+    let page_size = query.page_size.clamp(1, 5000);
+    let offset = query.page.max(0).saturating_mul(page_size);
+    let order_by = order_by_clause(query.sort_column.as_deref(), query.sort_desc, &columns);
+    let select_list = column_rows
+        .iter()
+        .map(|c| select_expr(&quote_ident(&c.name), &c.data_type))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let data_sql = read_uncommitted(&format!(
+        "SELECT {select_list} FROM {qualified}{where_clause}{order_by} \
+         OFFSET {offset} ROWS FETCH NEXT {page_size} ROWS ONLY"
+    ));
+    let mut data_query = tiberius::Query::new(data_sql);
+    for value in &binds {
+        data_query.bind(value.as_str());
+    }
+    let rows = data_query
+        .query(&mut client)
+        .await
+        .map_err(map_error)?
+        .into_first_result()
+        .await
+        .map_err(map_error)?;
+
+    Ok(TablePage {
+        columns,
+        column_meta,
+        primary_key,
+        auto_increment_column,
+        rows: rows.iter().map(row_to_json).collect(),
+        total,
+    })
+}
+
 /// One row as the grid reads it: every column by name, whatever the column holds.
 pub(super) fn row_to_json(row: &Row) -> Map<String, Value> {
     let mut obj = Map::new();
@@ -954,8 +1149,8 @@ pub(super) fn column_value(data: &ColumnData<'static>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_where, column_value, display_type, escape_like_mssql, extra_tokens, qualify,
-        quote_ident, resolve, strip_default_parens, three_part, Filter,
+        build_where, column_value, display_type, escape_like_mssql, extra_tokens, order_by_clause,
+        qualify, quote_ident, resolve, select_expr, strip_default_parens, three_part, Filter,
     };
     use serde_json::Value;
     use std::borrow::Cow;
@@ -1189,6 +1384,48 @@ mod tests {
     fn a_read_names_its_database_rather_than_switching_to_it() {
         assert_eq!(three_part("shop", "dbo", "users"), "[shop].[dbo].[users]");
         assert_eq!(three_part("a b", "sales", "Order"), "[a b].[sales].[Order]");
+    }
+
+    /// Most columns are asked for as they are. The ones that are not are the ones tiberius would
+    /// decode into something lossy or into nothing at all — `money` through an f64 loses its fourth
+    /// decimal place, and the three CLR types have no `ColumnData` of their own.
+    #[test]
+    fn a_lossy_column_is_asked_for_as_text_instead() {
+        assert_eq!(select_expr("[id]", "int"), "[id]");
+        assert_eq!(select_expr("[name]", "nvarchar(255)"), "[name]");
+        assert_eq!(
+            select_expr("[price]", "money"),
+            "CAST([price] AS nvarchar(max)) AS [price]"
+        );
+        assert_eq!(
+            select_expr("[doc]", "xml"),
+            "CAST([doc] AS nvarchar(max)) AS [doc]"
+        );
+        // A CLR type has no CAST to text at all - the method is how it is read.
+        assert_eq!(
+            select_expr("[area]", "geography"),
+            "[area].ToString() AS [area]"
+        );
+    }
+
+    /// `OFFSET ... FETCH` is a clause of `ORDER BY`, so SQL Server refuses a page without one —
+    /// unlike `LIMIT`, which stands alone on MySQL and PostgreSQL. With no column chosen the order
+    /// asked for is `(SELECT NULL)`: it satisfies the syntax without making the server sort
+    /// anything, where ordering by "the first column" would sort the whole table on every page turn
+    /// of an unindexed column.
+    #[test]
+    fn a_page_with_no_sort_column_still_names_an_order() {
+        let columns = ["id".to_string(), "name".to_string()];
+        assert_eq!(order_by_clause(None, false, &columns), " ORDER BY (SELECT NULL)");
+        assert_eq!(
+            order_by_clause(Some("name"), true, &columns),
+            " ORDER BY [name] DESC"
+        );
+        // A sort column that is not a column of this table is ignored rather than interpolated.
+        assert_eq!(
+            order_by_clause(Some("; DROP TABLE users"), false, &columns),
+            " ORDER BY (SELECT NULL)"
+        );
     }
 
     /// SQL Server brackets an identifier rather than quoting it, and the character doubled inside
