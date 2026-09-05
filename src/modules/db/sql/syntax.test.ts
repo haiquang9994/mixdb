@@ -2,13 +2,19 @@ import { describe, expect, it } from "vitest";
 import { dollarTag, MYSQL_SYNTAX, opensEscapeString, POSTGRES_SYNTAX } from "./syntax";
 
 describe("the two syntax tables", () => {
-  it("disagree on every rule, which is what they are for", () => {
+  it("disagree on every rule but batchSeparator, which is what they are for", () => {
     // Each field is a lexical rule the two engines answer differently. One they agreed on would
     // belong in the splitter rather than here — and one that had drifted into agreement by
-    // accident is the failure this catches.
-    for (const key of Object.keys(MYSQL_SYNTAX) as (keyof typeof MYSQL_SYNTAX)[]) {
+    // accident is the failure this catches. `batchSeparator` is the one deliberate exception:
+    // neither engine has SQL Server's `GO`, so both leave it `false` — agreeing by having nothing
+    // to disagree about, not by drift.
+    const keys = (Object.keys(MYSQL_SYNTAX) as (keyof typeof MYSQL_SYNTAX)[]).filter(
+      (key) => key !== "batchSeparator"
+    );
+    for (const key of keys) {
       expect(MYSQL_SYNTAX[key], key).not.toBe(POSTGRES_SYNTAX[key]);
     }
+    expect(MYSQL_SYNTAX.batchSeparator).toBe(POSTGRES_SYNTAX.batchSeparator);
   });
 
   it("reads a double-quoted run the way its engine does", () => {
@@ -17,8 +23,9 @@ describe("the two syntax tables", () => {
     // heard of.
     expect(POSTGRES_SYNTAX.doubleQuoteIsIdentifier).toBe(true);
     expect(MYSQL_SYNTAX.doubleQuoteIsIdentifier).toBe(false);
-    // And only MySQL has a quote of its own beside the standard one.
-    expect(MYSQL_SYNTAX.identifierQuote).toBe("`");
+    // And only MySQL has a quote of its own beside the standard one — symmetric, so its pair
+    // opens and closes with the same character.
+    expect(MYSQL_SYNTAX.identifierQuote).toEqual({ open: "`", close: "`" });
     expect(POSTGRES_SYNTAX.identifierQuote).toBeNull();
   });
 

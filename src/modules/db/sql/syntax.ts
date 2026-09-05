@@ -22,9 +22,14 @@ export interface SqlSyntax {
    *  the first close on MySQL is right, and nesting there would swallow real code. */
   nestedBlockComments: boolean;
 
-  /** The engine's own identifier quote beside the standard `"`, or null when it has none.
-   *  MySQL's backtick; PostgreSQL quotes identifiers only the standard way. */
-  identifierQuote: string | null;
+  /**
+   * The engine's own identifier quote beside the standard `"`, or null when it has none. A pair
+   * rather than a single character, because SQL Server's is not symmetric: `[name]` opens with
+   * `[` and closes with `]`, doubling `]` — not `[` — to escape one inside a name. When
+   * `open === close` (every engine below that has one at all) this behaves exactly as the
+   * single-character version it replaces did.
+   */
+  identifierQuote: { open: string; close: string } | null;
 
   /**
    * A double-quoted run is a **name**, not a string.
@@ -47,17 +52,26 @@ export interface SqlSyntax {
   /** `$tag$ ... $tag$` holds text that may contain anything, semicolons included — which is how a
    *  function body is written. PostgreSQL only. */
   dollarQuoting: boolean;
+
+  /**
+   * A line holding nothing but `GO` — optionally followed by a repeat count, `GO 3` — ends the
+   * current batch. `GO` is a client-side convention (`sqlcmd`, SSMS), not a SQL Server keyword:
+   * sending it to the server as a statement is a syntax error, so the splitter must carve it out
+   * before anything downstream ever sees it as code. SQL Server only.
+   */
+  batchSeparator: boolean;
 }
 
 export const MYSQL_SYNTAX: SqlSyntax = {
   hashComments: true,
   dashCommentNeedsSpace: true,
   nestedBlockComments: false,
-  identifierQuote: "`",
+  identifierQuote: { open: "`", close: "`" },
   doubleQuoteIsIdentifier: false,
   backslashEscapes: true,
   escapeStringPrefix: false,
   dollarQuoting: false,
+  batchSeparator: false,
 };
 
 export const POSTGRES_SYNTAX: SqlSyntax = {
@@ -69,6 +83,7 @@ export const POSTGRES_SYNTAX: SqlSyntax = {
   backslashEscapes: false,
   escapeStringPrefix: true,
   dollarQuoting: true,
+  batchSeparator: false,
 };
 
 /**
@@ -86,11 +101,12 @@ export const SQLITE_SYNTAX: SqlSyntax = {
   hashComments: false,
   dashCommentNeedsSpace: false,
   nestedBlockComments: false,
-  identifierQuote: "`",
+  identifierQuote: { open: "`", close: "`" },
   doubleQuoteIsIdentifier: true,
   backslashEscapes: false,
   escapeStringPrefix: false,
   dollarQuoting: false,
+  batchSeparator: false,
 };
 
 /**
@@ -104,11 +120,12 @@ export const CLICKHOUSE_SYNTAX: SqlSyntax = {
   hashComments: true,
   dashCommentNeedsSpace: false,
   nestedBlockComments: true,
-  identifierQuote: "`",
+  identifierQuote: { open: "`", close: "`" },
   doubleQuoteIsIdentifier: true,
   backslashEscapes: true,
   escapeStringPrefix: false,
   dollarQuoting: false,
+  batchSeparator: false,
 };
 
 /** What may sit inside a PostgreSQL identifier after its first character — `$` included. */
