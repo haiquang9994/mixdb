@@ -205,3 +205,67 @@ describe("splitStatements against MSSQL_SYNTAX", () => {
     ]);
   });
 });
+
+describe("splitStatements' batch separator (SQL Server's GO)", () => {
+  it("ends the previous statement and starts a new one, without becoming one itself", () => {
+    expect(splitMssql("SELECT 1\nGO\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1",
+      "SELECT 2",
+    ]);
+  });
+
+  it("still splits on `;` inside each batch", () => {
+    expect(splitMssql("SELECT 1; SELECT 2\nGO\nSELECT 3").map((s) => s.text)).toEqual([
+      "SELECT 1",
+      "SELECT 2",
+      "SELECT 3",
+    ]);
+  });
+
+  it("accepts a repeat count", () => {
+    expect(splitMssql("SELECT 1\nGO 3\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1",
+      "SELECT 2",
+    ]);
+  });
+
+  it("is case-insensitive", () => {
+    expect(splitMssql("SELECT 1\ngo\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1",
+      "SELECT 2",
+    ]);
+  });
+
+  it("opens at the very start of the script too", () => {
+    expect(splitMssql("GO\nSELECT 1").map((s) => s.text)).toEqual(["SELECT 1"]);
+  });
+
+  it("two GOs in a row add no empty statement between them", () => {
+    expect(splitMssql("SELECT 1\nGO\nGO\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1",
+      "SELECT 2",
+    ]);
+  });
+
+  it("is not fooled by a comment that merely contains the word", () => {
+    expect(splitMssql("SELECT 1 -- go\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1 -- go\nSELECT 2",
+    ]);
+  });
+
+  it("is not fooled by a name that merely starts with the word", () => {
+    expect(splitMssql("SELECT good_column FROM t").map((s) => s.text)).toEqual([
+      "SELECT good_column FROM t",
+    ]);
+  });
+
+  it("requires GO to have the line to itself", () => {
+    expect(splitMssql("SELECT 1 GO\nSELECT 2").map((s) => s.text)).toEqual([
+      "SELECT 1 GO\nSELECT 2",
+    ]);
+  });
+
+  it("does not fire when the dialect has no batch separator", () => {
+    expect(texts("SELECT 1\nGO\nSELECT 2")).toEqual(["SELECT 1\nGO\nSELECT 2"]);
+  });
+});
