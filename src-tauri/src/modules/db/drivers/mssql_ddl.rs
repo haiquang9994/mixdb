@@ -8,10 +8,7 @@
 //! clears it, rather than restating the column whole the way MySQL's `CHANGE COLUMN` or building one
 //! `ALTER COLUMN TYPE ... USING ...` the way PostgreSQL's does — see D15 and this plan's Task 5.
 
-use super::mssql::{
-    display_type, end_transaction, map_error, quote_ident, resolve, strip_default_parens,
-    three_part, Connection, Pool,
-};
+use super::mssql::{end_transaction, map_error, quote_ident, resolve, three_part, Connection, Pool};
 use super::mssql_structure::{IndexColumn, TableIndex};
 use crate::error::AppError;
 use serde::Deserialize;
@@ -63,10 +60,11 @@ pub struct IndexSpec {
     #[serde(default)]
     pub index_type: Option<String>,
     pub columns: Vec<IndexColumnSpec>,
-    /// Accepted and ignored: SQL Server keeps no comment on an index — see
-    /// `mssql_structure::TableIndex.comment`.
-    #[serde(default)]
-    pub comment: String,
+    // A `comment` field is deliberately not declared here: the frontend always sends one
+    // (`SqlIndexSpec.comment`), but SQL Server keeps no comment on an index — see
+    // `mssql_structure::TableIndex.comment` — so there is nothing to do with it, and serde drops an
+    // undeclared field rather than erroring on it, the same way `postgres_ddl::ColumnSpec` relies on
+    // for the fields it has no place for.
 }
 
 /// Wraps text as a SQL string literal, doubling the quote that would otherwise end it early. T-SQL
@@ -349,27 +347,21 @@ fn comment_statement(
 struct CurrentColumn {
     object_id: i32,
     column_id: i32,
-    /// Already through `display_type` — `nvarchar(255)`, not `nvarchar` and a byte count (D11).
-    data_type: String,
-    nullable: bool,
     /// The default constraint's own name, which SQL Server usually generates
     /// (`DF__t__col__1A2B3C4D`) — needed to `DROP CONSTRAINT` it, since nothing about `ALTER COLUMN`
     /// takes a default along for the ride (D15).
     default_name: Option<String>,
-    /// The default's definition, already through `strip_default_parens`.
-    default_value: Option<String>,
     identity: bool,
-    collation: Option<String>,
     /// `''` when the column has no `MS_Description` — `comment_statement`'s `exists` is
     /// `!comment.is_empty()`, so a column deliberately commented with nothing and a column never
     /// commented at all are (rarely, harmlessly) treated alike.
     comment: String,
 }
 
-/// Reads one column's full declaration and its default constraint's name — a second, per-column read
-/// beside `mssql_structure::structure_columns`'s per-table one, because [`modify_column`] and
-/// [`drop_column`] need the default constraint's *name* (to drop it), which the Structure tab's own
-/// read has no reason to carry.
+/// Reads what [`modify_column`] and [`drop_column`] need to know about a column before writing to
+/// it: its identity, and its default constraint's *name* (to drop it) — not its full declaration,
+/// since [`modify_column`] always redeclares a column in full rather than diffing against what it
+/// was (D15's "whether or not each one changed"), so a fuller read here would go unused.
 async fn current_column(
     pool: &Pool,
     database: &str,
@@ -379,13 +371,11 @@ async fn current_column(
 ) -> Result<CurrentColumn, AppError> {
     let db = quote_ident(database);
     let sql = format!(
-        "SELECT c.object_id, c.column_id, t.name AS type_name, c.max_length, c.precision, c.scale,
-                c.is_nullable, c.is_identity, c.collation_name, d.name AS default_name, d.definition,
+        "SELECT c.object_id, c.column_id, c.is_identity, d.name AS default_name,
                 COALESCE(CAST(ep.value AS nvarchar(max)), '') AS comment
          FROM {db}.sys.columns c
          JOIN {db}.sys.objects o ON o.object_id = c.object_id
          JOIN {db}.sys.schemas s ON s.schema_id = o.schema_id
-         JOIN {db}.sys.types t ON t.user_type_id = c.user_type_id
          LEFT JOIN {db}.sys.default_constraints d ON d.object_id = c.default_object_id
          LEFT JOIN {db}.sys.extended_properties ep
              ON ep.major_id = c.object_id AND ep.minor_id = c.column_id
@@ -403,21 +393,11 @@ async fn current_column(
         .map_err(map_error)?
         .ok_or_else(|| err!("error.unknownColumn", table = table, name = column))?;
 
-    let type_name: &str = row.get("type_name").unwrap_or("");
     Ok(CurrentColumn {
         object_id: row.get("object_id").unwrap_or(0),
         column_id: row.get("column_id").unwrap_or(0),
-        data_type: display_type(
-            type_name,
-            row.get("max_length").unwrap_or(0),
-            row.get("precision").unwrap_or(0),
-            row.get("scale").unwrap_or(0),
-        ),
-        nullable: row.get("is_nullable").unwrap_or(true),
         default_name: row.get::<&str, _>("default_name").map(str::to_string),
-        default_value: row.get::<&str, _>("definition").map(strip_default_parens),
         identity: row.get("is_identity").unwrap_or(false),
-        collation: row.get::<&str, _>("collation_name").map(str::to_string),
         comment: row.get::<&str, _>("comment").unwrap_or("").to_string(),
     })
 }
@@ -691,7 +671,6 @@ fn index_spec_from(index: &TableIndex) -> IndexSpec {
             .filter_map(|c| c.name.clone())
             .map(|name| IndexColumnSpec { name })
             .collect(),
-        comment: String::new(),
     }
 }
 
@@ -956,7 +935,6 @@ mod index_tests {
             kind: "unique".to_string(),
             index_type: Some("nonclustered".to_string()),
             columns: vec![column("customer"), column("placed")],
-            comment: String::new(),
         };
         assert_eq!(
             create_index_statements("mixdb_agent_test", "sales", "orders", &spec).unwrap(),
@@ -973,7 +951,6 @@ mod index_tests {
             kind: "index".to_string(),
             index_type: None,
             columns: vec![column("email")],
-            comment: String::new(),
         };
         assert_eq!(
             create_index_statements("db", "dbo", "users", &spec).unwrap(),
@@ -988,7 +965,6 @@ mod index_tests {
             kind: "primary".to_string(),
             index_type: Some("CLUSTERED".to_string()),
             columns: vec![column("id")],
-            comment: String::new(),
         };
         assert_eq!(
             create_index_statements("db", "dbo", "t", &spec).unwrap(),
@@ -1003,7 +979,6 @@ mod index_tests {
             kind: "fulltext".to_string(),
             index_type: None,
             columns: vec![column("body")],
-            comment: String::new(),
         };
         assert!(create_index_statements("db", "dbo", "t", &spec).is_err());
     }
