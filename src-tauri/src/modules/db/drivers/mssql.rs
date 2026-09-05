@@ -216,8 +216,10 @@ async fn end_transaction<T>(
     }
 }
 
-/// Binds one edited value at its next placeholder, decoding it first when `binary` says the column
-/// is one (D7, and see [`is_binary_type`]).
+/// Binds one edited value at its next placeholder, given the declared type of the column it is
+/// going into — decoding it first when [`is_binary_type`] says the column is one (D7), and refusing
+/// it outright when [`is_money_type`] says it is one and the text is ambiguous (found live: see
+/// [`reject_money_thousands_separator`]).
 ///
 /// Every other value is bound as the text it arrived as and left for SQL Server to convert on its
 /// own — it does that implicitly for every type here except a binary one, which is the one
@@ -226,14 +228,27 @@ async fn end_transaction<T>(
 fn bind_write<'a>(
     query: &mut tiberius::Query<'a>,
     value: &'a Value,
-    binary: bool,
+    data_type: &str,
 ) -> Result<(), AppError> {
-    match value {
-        Value::String(s) if binary => {
-            query.bind(Some(std::borrow::Cow::<[u8]>::Owned(decode_binary(s)?)));
+    let binary = is_binary_type(data_type);
+    if binary {
+        match value {
+            Value::String(s) => {
+                query.bind(Some(std::borrow::Cow::<[u8]>::Owned(decode_binary(s)?)));
+            }
+            _ => query.bind(Option::<std::borrow::Cow<[u8]>>::None),
         }
+        return Ok(());
+    }
+
+    if is_money_type(data_type) {
+        if let Value::String(s) = value {
+            reject_money_thousands_separator(s)?;
+        }
+    }
+
+    match value {
         Value::String(s) => query.bind(Some(s.as_str())),
-        _ if binary => query.bind(Option::<std::borrow::Cow<[u8]>>::None),
         _ => query.bind(Option::<&str>::None),
     }
     Ok(())
@@ -760,6 +775,33 @@ pub(super) fn select_expr(column: &str, data_type: &str) -> String {
     column.to_string()
 }
 
+/// Whether `data_type`'s base name is one of the fixed-point currency types.
+fn is_money_type(data_type: &str) -> bool {
+    let base = data_type
+        .split('(')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    MONEY_TYPES.contains(&base.as_str())
+}
+
+/// Refuses a money value that reads a comma, rather than let SQL Server guess what it meant.
+///
+/// Found live, not in review: `CAST('9,9999' AS money)` does not fail and does not read 9.9999 with
+/// a mistyped decimal separator — SQL Server's own string-to-money conversion treats a comma as an
+/// optional thousands separator and drops it, so the text becomes the integer `99999`, written out
+/// with money's fixed four decimal places as `99999.0000`. No other type here does this: `decimal`,
+/// `int` and the rest reject a comma outright with a clear conversion error. Money is silent about
+/// it instead, off by two orders of magnitude, which is worse than an error a user would notice —
+/// so this catches it before the value ever reaches the server.
+fn reject_money_thousands_separator(value: &str) -> Result<(), AppError> {
+    if value.contains(',') {
+        return Err(err!("error.mssqlAmbiguousMoney"));
+    }
+    Ok(())
+}
+
 /// The ORDER BY a page is cut out of.
 ///
 /// Always present, because `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY` is grammatically part of
@@ -1164,12 +1206,7 @@ async fn update_row_body(
     updates: &Map<String, Value>,
     key: &Map<String, Value>,
 ) -> Result<(), AppError> {
-    let is_binary = |column: &str| {
-        types
-            .get(column)
-            .map(|t| is_binary_type(t))
-            .unwrap_or(false)
-    };
+    let data_type = |column: &str| types.get(column).map(String::as_str).unwrap_or("");
 
     let count_sql = format!(
         "SELECT COUNT_BIG(*) FROM {qualified} WHERE {}",
@@ -1177,7 +1214,7 @@ async fn update_row_body(
     );
     let mut count_query = tiberius::Query::new(count_sql);
     for (column, value) in key {
-        bind_write(&mut count_query, value, is_binary(column))?;
+        bind_write(&mut count_query, value, data_type(column))?;
     }
     let matched: i64 = count_query
         .query(client)
@@ -1206,10 +1243,10 @@ async fn update_row_body(
     );
     let mut update_query = tiberius::Query::new(update_sql);
     for (column, value) in updates {
-        bind_write(&mut update_query, value, is_binary(column))?;
+        bind_write(&mut update_query, value, data_type(column))?;
     }
     for (column, value) in key {
-        bind_write(&mut update_query, value, is_binary(column))?;
+        bind_write(&mut update_query, value, data_type(column))?;
     }
     update_query.execute(client).await.map_err(map_error)?;
 
@@ -1282,11 +1319,8 @@ async fn insert_rows_body(
         let mut query = tiberius::Query::new(sql);
         let mut bind_err = None;
         for (column, value) in row {
-            let binary = types
-                .get(column)
-                .map(|t| is_binary_type(t))
-                .unwrap_or(false);
-            if let Err(e) = bind_write(&mut query, value, binary) {
+            let data_type = types.get(column).map(String::as_str).unwrap_or("");
+            if let Err(e) = bind_write(&mut query, value, data_type) {
                 bind_err = Some(e);
                 break;
             }
@@ -1378,11 +1412,8 @@ async fn delete_rows_body(
         );
         let mut query = tiberius::Query::new(sql);
         for (column, value) in key {
-            let binary = types
-                .get(column)
-                .map(|t| is_binary_type(t))
-                .unwrap_or(false);
-            bind_write(&mut query, value, binary)?;
+            let data_type = types.get(column).map(String::as_str).unwrap_or("");
+            bind_write(&mut query, value, data_type)?;
         }
         query.execute(client).await.map_err(map_error)?;
     }
@@ -1602,8 +1633,9 @@ fn key_predicate(key: &Map<String, Value>, first: usize) -> String {
 mod tests {
     use super::{
         build_where, column_value, decode_binary, display_type, escape_like_mssql, extra_tokens,
-        full_object_name, is_binary_type, key_predicate, order_by_clause, qualify, quote_ident,
-        resolve, select_expr, strip_default_parens, three_part, Filter,
+        full_object_name, is_binary_type, is_money_type, key_predicate, order_by_clause, qualify,
+        quote_ident, reject_money_thousands_separator, resolve, select_expr, strip_default_parens,
+        three_part, Filter,
     };
     use serde_json::{Map, Value};
     use std::borrow::Cow;
@@ -1999,5 +2031,31 @@ mod tests {
             "([id] = @P4 OR ([id] IS NULL AND @P4 IS NULL)) AND \
              ([region] = @P5 OR ([region] IS NULL AND @P5 IS NULL))"
         );
+    }
+
+    #[test]
+    fn money_types_are_recognized_by_base_name() {
+        assert!(is_money_type("money"));
+        assert!(is_money_type("smallmoney"));
+        assert!(!is_money_type("decimal(19,4)"));
+        assert!(!is_money_type("int"));
+    }
+
+    /// Found live: a user typed `9,9999` meaning `9.9999` (comma as the decimal point, a common
+    /// habit outside en-US locales) and SQL Server's money conversion read it as the integer
+    /// `99999` instead — the comma is an optional thousands separator to it, silently dropped,
+    /// leaving no decimal point at all in what remained. No error, no warning, a value two orders
+    /// of magnitude off. This is the guard that catches it before the value ever reaches the server.
+    #[test]
+    fn a_comma_in_a_money_value_is_refused() {
+        let error =
+            reject_money_thousands_separator("9,9999").expect_err("a comma is ambiguous");
+        assert_eq!(error.code, "error.mssqlAmbiguousMoney");
+    }
+
+    #[test]
+    fn a_money_value_with_only_a_decimal_point_is_accepted() {
+        assert!(reject_money_thousands_separator("9.9999").is_ok());
+        assert!(reject_money_thousands_separator("-42").is_ok());
     }
 }
