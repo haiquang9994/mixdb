@@ -918,6 +918,7 @@ const dbVi: DbDict = {
     sqlite: "SQLite: {{message}}",
     clickhouse: "ClickHouse: {{message}}",
     mssql: "SQL Server: {{message}}",
+    mssqlNotImplementedYet: "Tính năng này chưa có cho SQL Server.",
     // Kết nối
     unknownConnection: "Kết nối này không còn mở — hãy kết nối lại.",
     wrongConnectionKind: "Đây không phải kết nối {{kind}}.",

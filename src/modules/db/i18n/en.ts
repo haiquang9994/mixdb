@@ -937,6 +937,9 @@ const dbEn = {
     sqlite: "SQLite: {{message}}",
     clickhouse: "ClickHouse: {{message}}",
     mssql: "SQL Server: {{message}}",
+    /** Reaching one of `mssqlApi`'s unfinished methods. Nothing routes to them today — the api
+     *  is not in `SQL_ENGINES` — so this showing up at all is a bug in the caller. */
+    mssqlNotImplementedYet: "This is not available for SQL Server yet.",
     // Connections
     unknownConnection: "This connection is no longer open \u2014 connect again.",
     wrongConnectionKind: "This is not a {{kind}} connection.",
