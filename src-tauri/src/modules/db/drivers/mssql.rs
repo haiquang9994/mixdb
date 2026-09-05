@@ -1216,6 +1216,94 @@ async fn update_row_body(
     Ok(())
 }
 
+/// Inserts `rows`, one map per new row, all in a single transaction: if any one of them is
+/// rejected, none of them land.
+///
+/// A row only carries the columns it has something to say about — a column left out of the map is
+/// left out of that row's INSERT too, so the table's own DEFAULT (or IDENTITY, or a computed
+/// expression) is what fills it. That is also why each row is its own statement rather than one
+/// multi-VALUES INSERT: rows may fill in different sets of columns, and the error a rejected row
+/// produces can then say which row it was.
+pub async fn insert_rows(
+    pool: &Pool,
+    database: &str,
+    table: &str,
+    rows: &[Map<String, Value>],
+) -> Result<(), AppError> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let (schema, name) = resolve(table);
+    let qualified = three_part(database, &schema, &name);
+    let column_rows = table_columns(pool, database, &schema, &name).await?;
+    let types: BTreeMap<String, String> = column_rows
+        .iter()
+        .map(|c| (c.name.clone(), c.data_type.clone()))
+        .collect();
+
+    let mut client = pool
+        .get()
+        .await
+        .map_err(|e| err!("error.mssql", message = e))?;
+    client
+        .simple_query("BEGIN TRANSACTION")
+        .await
+        .map_err(map_error)?;
+
+    let result = insert_rows_body(&mut client, &qualified, &types, rows).await;
+    end_transaction(&mut client, result).await
+}
+
+async fn insert_rows_body(
+    client: &mut Connection,
+    qualified: &str,
+    types: &BTreeMap<String, String>,
+    rows: &[Map<String, Value>],
+) -> Result<(), AppError> {
+    for (i, row) in rows.iter().enumerate() {
+        // `DEFAULT VALUES` is the same keyword PostgreSQL uses for "a row that is nothing but
+        // defaults" — T-SQL has it too, unlike MySQL's `() VALUES ()`.
+        let sql = if row.is_empty() {
+            format!("INSERT INTO {qualified} DEFAULT VALUES")
+        } else {
+            let columns = row
+                .keys()
+                .map(|c| quote_ident(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let placeholders = (1..=row.len())
+                .map(|n| format!("@P{n}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("INSERT INTO {qualified} ({columns}) VALUES ({placeholders})")
+        };
+
+        let mut query = tiberius::Query::new(sql);
+        let mut bind_err = None;
+        for (column, value) in row {
+            let binary = types
+                .get(column)
+                .map(|t| is_binary_type(t))
+                .unwrap_or(false);
+            if let Err(e) = bind_write(&mut query, value, binary) {
+                bind_err = Some(e);
+                break;
+            }
+        }
+        if let Some(e) = bind_err {
+            return Err(err!("error.rowFailed", index = i + 1).caused_by(e));
+        }
+
+        query
+            .execute(client)
+            .await
+            .map_err(|e| err!("error.rowFailed", index = i + 1).caused_by(map_error(e)))?;
+    }
+
+    Ok(())
+}
+
 /// One row as the grid reads it: every column by name, whatever the column holds.
 pub(super) fn row_to_json(row: &Row) -> Map<String, Value> {
     let mut obj = Map::new();
