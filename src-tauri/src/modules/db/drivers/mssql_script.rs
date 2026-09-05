@@ -7,6 +7,25 @@
 //! `src/modules/db/sql/statements.ts`'s `splitStatements` by a parallel test suite below — same
 //! input, same statement count — not by a shared shape: Rust has no `SqlSyntax`, and the frontend
 //! splitter runs before any command reaches this file at all (Plan 4).
+//!
+//! **`tiberius` has no call that returns both rows and a rows-affected count, unlike `sqlx`.**
+//! `Client::query`/`simple_query` return a `QueryStream` whose `into_results()` only collects `Row`
+//! and result-set `Metadata` tokens — a plain `UPDATE` with no result set comes back as an empty
+//! `Vec<Vec<Row>>`, its `Done` token silently dropped. `Client::execute` reads the opposite way: it
+//! collects only `Done`/`DoneProc`/`DoneInProc` tokens into an `ExecuteResult`, discarding any row
+//! data those same tokens might have accompanied. `sqlx::raw_sql(...).fetch_many()`, which
+//! `mysql_script`/`postgres_script` use for both at once via `Either<QueryResult, Row>`, has no
+//! `tiberius` equivalent — confirmed by reading `tiberius-0.12.3`'s `result.rs`/`client.rs`, not
+//! assumed. So [`run`] has to guess, from a statement's verb and whether it carries an `OUTPUT`
+//! clause, which of the two calls to make *before* running it — see [`returns_rows`].
+
+use super::mssql::{column_value, map_error, quote_ident, Connection, Pool};
+use crate::error::AppError;
+use crate::modules::db::models::StatementResult;
+use deadpool::managed::Object;
+use serde_json::Value;
+use std::time::Instant;
+use tiberius::Row;
 
 /// One statement carved out of the editor's text, already past its `GO` batch boundary.
 struct Statement {
@@ -186,6 +205,257 @@ fn split_script(sql: &str) -> Vec<Statement> {
         .iter()
         .flat_map(|batch| split_statements(batch))
         .collect()
+}
+
+/// The four verbs whose point is the number of rows they changed, so that a count of zero is still
+/// worth reporting as a count — the same list `postgres_script::is_write_verb` reads, minus MySQL's
+/// `REPLACE`/`LOAD` and plus `MERGE`, which T-SQL has and MySQL does not.
+fn is_write_verb(verb: &str) -> bool {
+    matches!(verb, "INSERT" | "UPDATE" | "DELETE" | "MERGE")
+}
+
+/// Whether `verb`/`text` is one [`run`] must send through `query()` rather than `execute()` — see
+/// this module's top-level doc comment for why the two calls cannot be told apart by running the
+/// statement and looking, the way `mysql_script`/`postgres_script` do through `sqlx`.
+///
+/// `EXEC`/`EXECUTE` always goes through `query()`: a stored procedure may or may not return a result
+/// set, and there is no way to know ahead of time — sending it through `execute()` on the chance it
+/// does not would silently drop any rows one does return. The cost is symmetric and accepted: a
+/// procedure that only writes, with no `SELECT` of its own, reports `"ok"` rather than a row count,
+/// because that count is not visible through this call either way.
+fn returns_rows(verb: &str, text: &str) -> bool {
+    match verb {
+        "SELECT" | "WITH" | "EXEC" | "EXECUTE" => true,
+        _ if is_write_verb(verb) => has_output_clause(text),
+        _ => false,
+    }
+}
+
+/// A case-insensitive, word-bounded search for `OUTPUT` outside a string, a quoted identifier and a
+/// comment. `INSERT`/`UPDATE`/`DELETE`/`MERGE ... OUTPUT inserted.*` (or `deleted.*`) turns an
+/// otherwise row-free statement into one with a real result set — reusing the exact scan
+/// [`split_statements`] already does for strings/identifiers/comments rather than writing a second
+/// lexer, so a column or string merely containing the word cannot be misread as the clause.
+fn has_output_clause(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '-' && chars.get(i + 1) == Some(&'-') {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if c == '/' && chars.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                i += 1;
+            }
+            i += 2;
+            continue;
+        }
+        if c == '\'' || c == '"' || c == '[' {
+            let close = if c == '[' { ']' } else { c };
+            i += 1;
+            while i < chars.len() {
+                if chars[i] == close {
+                    i += 1;
+                    if chars.get(i) == Some(&close) {
+                        i += 1;
+                        continue;
+                    }
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        if c.is_alphabetic() {
+            let start = i;
+            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            let word: String = chars[start..i].iter().collect();
+            if word.eq_ignore_ascii_case("output") {
+                return true;
+            }
+            continue;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// How many rows of one result set are read back. A query without a `TOP` can name more rows than
+/// there is memory for, so the client stops here and says that it did — the same ceiling
+/// `mysql_script`/`postgres_script` use, for the same reason: the grid only ever shows the rows on
+/// screen now.
+const MAX_ROWS: usize = 10_000;
+
+/// The server's own words for one failed statement — never routed through [`map_error`], which
+/// produces a translation code for the *command's* own `Result`, not the per-statement text this
+/// app has always shown the way the server worded it (see `mysql_script`/`postgres_script`, which
+/// keep the same distinction).
+fn statement_error(e: tiberius::error::Error) -> String {
+    match &e {
+        tiberius::error::Error::Server(token) => token.message().to_string(),
+        _ => e.to_string(),
+    }
+}
+
+fn failed(statement: &Statement, started: Instant, message: String) -> StatementResult {
+    StatementResult {
+        statement: statement.text.clone(),
+        verb: statement.verb.clone(),
+        kind: "error".to_string(),
+        columns: Vec::new(),
+        rows: Vec::new(),
+        truncated: false,
+        rows_affected: 0,
+        last_insert_id: None,
+        duration_ms: started.elapsed().as_millis() as u64,
+        error: Some(message),
+    }
+}
+
+/// Runs one statement expected to return a result set — see [`returns_rows`]. `kind` is `"ok"`
+/// rather than `"rows"` when the set turns out empty of columns too: an `EXEC` of a procedure that
+/// writes but selects nothing still has to land somewhere.
+async fn run_returning_rows(client: &mut Connection, statement: &Statement, started: Instant) -> StatementResult {
+    let stream = match client.simple_query(statement.text.clone()).await {
+        Ok(stream) => stream,
+        Err(e) => return failed(statement, started, statement_error(e)),
+    };
+    let rows = match stream.into_first_result().await {
+        Ok(rows) => rows,
+        Err(e) => return failed(statement, started, statement_error(e)),
+    };
+
+    let columns: Vec<String> = rows
+        .first()
+        .map(|row: &Row| row.columns().iter().map(|c| c.name().to_string()).collect())
+        .unwrap_or_default();
+    let truncated = rows.len() > MAX_ROWS;
+    let values: Vec<Vec<Value>> = rows
+        .iter()
+        .take(MAX_ROWS)
+        .map(|row| row.cells().map(|(_, data)| column_value(data)).collect())
+        .collect();
+
+    StatementResult {
+        statement: statement.text.clone(),
+        verb: statement.verb.clone(),
+        kind: if columns.is_empty() { "ok" } else { "rows" }.to_string(),
+        columns,
+        rows: values,
+        truncated,
+        rows_affected: 0,
+        last_insert_id: None,
+        duration_ms: started.elapsed().as_millis() as u64,
+        error: None,
+    }
+}
+
+/// Runs one statement expected to carry no result set — see [`returns_rows`]. A count of zero is
+/// still reported as `"affected"` for one of the four write verbs, the same rule
+/// `mysql_script::is_write_verb`'s callers use: `UPDATE ... 0 rows` says something,
+/// `SET @x = 1 ... 0 rows` does not.
+async fn run_affecting_rows(client: &mut Connection, statement: &Statement, started: Instant) -> StatementResult {
+    match client.execute(statement.text.clone(), &[]).await {
+        Ok(result) => {
+            let rows_affected = result.total();
+            let kind = if is_write_verb(&statement.verb) || rows_affected > 0 {
+                "affected"
+            } else {
+                "ok"
+            };
+            StatementResult {
+                statement: statement.text.clone(),
+                verb: statement.verb.clone(),
+                kind: kind.to_string(),
+                columns: Vec::new(),
+                rows: Vec::new(),
+                truncated: false,
+                rows_affected,
+                last_insert_id: None,
+                duration_ms: started.elapsed().as_millis() as u64,
+                error: None,
+            }
+        }
+        Err(e) => failed(statement, started, statement_error(e)),
+    }
+}
+
+/// The session's own SPID, which is what [`cancel`] names to `KILL` — the counterpart of
+/// `mysql::thread_id`/`postgres_script::backend_pid`.
+async fn session_id(client: &mut Connection) -> Result<u64, AppError> {
+    let row = client
+        .simple_query("SELECT @@SPID")
+        .await
+        .map_err(map_error)?
+        .into_row()
+        .await
+        .map_err(map_error)?
+        .ok_or_else(|| err!("error.mssql", message = "the server reported no @@SPID"))?;
+    Ok(row.get::<i16, _>(0).unwrap_or(0).max(0) as u64)
+}
+
+/// Runs the editor's text batch by batch (D9) and statement by statement within each batch,
+/// reporting each statement's outcome. Everything runs on one connection, so a `USE`, a `SET`, a
+/// temporary table or a transaction opened by one statement is still in force for the next — a
+/// script reads the way it would in `sqlcmd`.
+///
+/// The connection is detached from the pool with [`Object::take`] before the first statement runs,
+/// and simply dropped — closing the TDS session — when `run` returns or is dropped early. Handing it
+/// back to the pool instead would carry whatever the script left set: another database (`USE`), an
+/// open transaction, a temp table, a `SET` no other borrower expects. `Manager::recycle`'s
+/// `SELECT 1` would not catch any of that — only a dead connection fails it. Same reasoning as
+/// `mysql_script::run`'s identical `close_on_drop`.
+///
+/// A statement that fails stops the script: its own result carries the error, and the results
+/// before it are still returned. `announce` is handed the session's SPID once, before the first
+/// statement runs — the only handle another connection has on it, and what [`cancel`] needs to stop
+/// it.
+pub async fn run(
+    pool: &Pool,
+    sql: &str,
+    database: Option<&str>,
+    announce: impl FnOnce(u64),
+) -> Result<Vec<StatementResult>, AppError> {
+    let statements = split_script(sql);
+    if statements.is_empty() {
+        return Err(err!("error.nothingToRun"));
+    }
+
+    let guard = pool.get().await.map_err(|e| err!("error.mssql", message = e))?;
+    let mut client = Object::take(guard);
+
+    if let Some(db) = database.filter(|d| !d.is_empty()) {
+        client
+            .simple_query(format!("USE {}", quote_ident(db)))
+            .await
+            .map_err(map_error)?;
+    }
+
+    announce(session_id(&mut client).await?);
+
+    let mut results = Vec::new();
+    for statement in &statements {
+        let started = Instant::now();
+        let result = if returns_rows(&statement.verb, &statement.text) {
+            run_returning_rows(&mut client, statement, started).await
+        } else {
+            run_affecting_rows(&mut client, statement, started).await
+        };
+        let failed = result.kind == "error";
+        results.push(result);
+        if failed {
+            break;
+        }
+    }
+
+    Ok(results)
 }
 
 /// What the splitter has to get right is where one statement ends and one batch ends — a semicolon
