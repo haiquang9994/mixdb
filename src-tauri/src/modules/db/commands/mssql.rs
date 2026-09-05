@@ -173,3 +173,19 @@ pub async fn mssql_run_script(
     })
     .await
 }
+
+/// Stops the run named by `run_id`, if it is still running — see `mssql_script::cancel` for why
+/// this ends the whole session rather than just the statement (D8), and `DbState::running_queries`
+/// for the map this reads.
+#[tauri::command]
+pub async fn mssql_cancel_query(
+    state: State<'_, DbState>,
+    id: String,
+    run_id: String,
+) -> Result<(), AppError> {
+    let session_id = state.running_queries.lock().unwrap().get(&run_id).copied();
+    let Some(session_id) = session_id else {
+        return Ok(());
+    };
+    mssql_script::cancel(&mssql_pool(&state, &id).await?, session_id).await
+}

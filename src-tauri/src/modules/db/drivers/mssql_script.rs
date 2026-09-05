@@ -458,6 +458,39 @@ pub async fn run(
     Ok(results)
 }
 
+/// SQL Server has no Attention/cancel API `tiberius` exposes publicly — checked against
+/// `tiberius-0.12.3`'s source, not assumed: `AttentionSignal`/`Attention` only appear as internal
+/// packet/token kinds the client reads, with no `pub fn` anywhere that sends one (D8). The only way
+/// left to stop a session from another connection is `KILL <spid>`, which ends the **whole session**,
+/// not just the statement in flight — losing its transaction and any temp table, unlike MySQL's
+/// `KILL QUERY` or PostgreSQL's `pg_cancel_backend`. That is a real, sharper cost than the other two
+/// engines pay, and `mssqlDialect.cancellable`'s own doc comment says so plainly.
+///
+/// `KILL` also needs `ALTER ANY CONNECTION` (or `sysadmin`/`processadmin`) — a login without it
+/// cannot even kill its own session. The test server only has `sa`, which always has it, so this
+/// cannot be measured against an ordinary login (D8 leaves this open rather than resolved against a
+/// login that always passes). Rather than gate the Cancel button on an untested permission probe, it
+/// stays open and any permission error SQL Server gives comes back to the user exactly as the server
+/// worded it — extending `mysql_cancel_query`'s "asking to cancel what already finished is not an
+/// error" with "asking to cancel what you may not kill is the server's answer to give, not this
+/// app's to guess at".
+///
+/// A SPID the server no longer has is not a failure worth showing: error 6106 ("not a valid process
+/// ID") and 6107 ("not an active process ID") are swallowed, matching `mysql::kill_query`'s
+/// `ER_NO_SUCH_THREAD` and `postgres_script::cancel`'s "a pid the server no longer has answers
+/// false". Any other error — permission denied among them — is returned as-is.
+pub async fn cancel(pool: &Pool, session_id: u64) -> Result<(), AppError> {
+    const NO_SUCH_PROCESS: [u32; 2] = [6106, 6107];
+    let guard = pool.get().await.map_err(|e| err!("error.mssql", message = e))?;
+    let mut client = Object::take(guard);
+    let result = client.simple_query(format!("KILL {session_id}")).await;
+    match result {
+        Ok(_) => Ok(()),
+        Err(tiberius::error::Error::Server(e)) if NO_SUCH_PROCESS.contains(&e.code()) => Ok(()),
+        Err(e) => Err(map_error(e)),
+    }
+}
+
 /// What the splitter has to get right is where one statement ends and one batch ends — a semicolon
 /// or `GO` line inside a string, a quoted identifier or a comment is text, not a separator, and
 /// sending the halves of a statement separately is a syntax error at best and half an operation at
