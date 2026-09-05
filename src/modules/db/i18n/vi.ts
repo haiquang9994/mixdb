@@ -26,6 +26,8 @@ const dbVi: DbDict = {
     kindSqlite: "SQLite",
     kindClickhouse: "ClickHouse",
     kindMssql: "SQL Server",
+    workspaceUnavailable:
+      "Đã kết nối {{kind}}. Bản MixDB này chưa duyệt được — chưa có workspace cho loại cơ sở dữ liệu này.",
     kindUnknown: "Không rõ",
     sqlitePathLabel: "File database",
     sqlitePathPlaceholder: "Đường dẫn tới file .db hoặc .sqlite",

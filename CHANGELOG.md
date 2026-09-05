@@ -44,7 +44,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and ver
 
 ### Added
 
-- SQL Server connections: connect, and browse the server's databases and tables.
+- SQL Server connections can be saved and connected. Browsing them is still being built, and the
+  tab says so instead of opening the wrong engine's workspace.
+
+### Changed
+
+- The connection form uses the full width of the pane. The fields keep the width they had; the
+  database-kind row is the one that spreads, and scrolls sideways — fading at whichever end still
+  has kinds behind it — instead of being cut off.
 
 ## [0.0.30] - 2026-09-05
 

@@ -799,22 +799,50 @@ function DbTab({ active, onTitleChange, onBadgesChange, restored, onStateChange 
     );
   }
 
-  const activeSavedConnection = savedConnections.find((c) => c.id === editingId);
+  if (kind === "redis") {
+    const activeSavedConnection = savedConnections.find((c) => c.id === editingId);
+    return (
+      <RedisWorkspace
+        active={active}
+        connectionId={connectionId}
+        initialDatabase={database}
+        status={status}
+        error={error}
+        tunnelled={tunnelType === "ssh"}
+        onDisconnect={disconnect}
+        sidebarWidth={activeSavedConnection?.sidebarWidth}
+        onSidebarWidthChange={updateSidebarWidth}
+        scanLimit={activeSavedConnection?.redisScanLimit}
+        onScanLimitChange={updateRedisScanLimit}
+        readOnly={activeSavedConnection?.readOnly ?? false}
+      />
+    );
+  }
+
+  /* A kind with no workspace to open.
+   *
+   * Redis used to sit here as the unguarded `else`, which made it the workspace for every kind the
+   * three branches above did not claim. That was invisible while they covered every kind, and
+   * stopped being invisible the moment one did not: a SQL Server connection opened Redis's key
+   * browser, which then asked the backend for Redis things and was told "This is not a Redis
+   * connection". The kind reaching here is either one this build knows but cannot browse yet, or
+   * one saved by a newer version — see
+   * docs/superpowers/specs/2026-09-05-unknown-db-kind-crash-and-error-logging-design.md, which
+   * fixed the icon and the label on that path but not this one.
+   *
+   * Saying so is the whole of it. Rendering some other engine's workspace is worse than rendering
+   * nothing, because it fails somewhere the user cannot connect back to what they picked.
+   *
+   * `engines.test.ts` mirrors this chain and asserts every kind is claimed by exactly one branch;
+   * the two must agree, so a branch added or reordered here is a change there too. */
   return (
-    <RedisWorkspace
-      active={active}
-      connectionId={connectionId}
-      initialDatabase={database}
-      status={status}
-      error={error}
-      tunnelled={tunnelType === "ssh"}
-      onDisconnect={disconnect}
-      sidebarWidth={activeSavedConnection?.sidebarWidth}
-      onSidebarWidthChange={updateSidebarWidth}
-      scanLimit={activeSavedConnection?.redisScanLimit}
-      onScanLimitChange={updateRedisScanLimit}
-      readOnly={activeSavedConnection?.readOnly ?? false}
-    />
+    <div className="workspace-unavailable">
+      <DatabaseIcon kind={kind} size="2.5rem" className={`kind-${kind}`} />
+      <p>{t("connection.workspaceUnavailable", { kind: t(kindLabel(kind)) })}</p>
+      <button type="button" onClick={disconnect}>
+        {t("common.disconnect")}
+      </button>
+    </div>
   );
 }
 

@@ -6,6 +6,7 @@ import Button from "../../../../components/Button";
 import Input from "../../../../components/Input";
 import { EyeIcon, EyeOffIcon } from "../../../../icons";
 import { DatabaseIcon } from "../../icons";
+import { useActiveTabInView, useStripScroll } from "../../../../components/TabStrip";
 import { PRIVATE_KEY_PLACEHOLDER } from "../../../../core/ssh";
 import { useTranslation } from "../../../../i18n";
 import { errorMessage } from "../../../../core/errors";
@@ -109,6 +110,18 @@ function ConnectionForm({
 }: Props) {
   const { t } = useTranslation();
   const passwordRef = useRef<HTMLInputElement>(null);
+  /* The database-kind row scrolls sideways rather than wrapping — see the row itself below. Both
+     hooks are the tab strip's: one gives the wheel the axis it lacks and reports which end is
+     overrun, the other keeps the selected kind in view when a saved connection is opened. */
+  const kindScroller = useRef<HTMLDivElement | null>(null);
+  const { overflowing, atStart, atEnd } = useStripScroll(kindScroller);
+  useActiveTabInView(kindScroller);
+  /* Fade only on a side that is actually hiding something: a mask on an edge with nothing past it
+     dims the first and last kind for no reason. */
+  const kindFade = !overflowing
+    ? ""
+    : `${atStart ? "" : " choice-row-fade-start"}${atEnd ? "" : " choice-row-fade-end"}`;
+
   /** What went wrong making a database file, shown under the field. Cleared by the next attempt. */
   const [fileError, setFileError] = useState("");
   useEffect(() => {
@@ -219,22 +232,32 @@ function ConnectionForm({
 
       <fieldset>
         <legend>{t("connection.databaseLegend")}</legend>
-        <div className="choice-row" role="tablist">
-          {(["mysql", "postgres", "mssql", "sqlite", "mongo", "redis", "clickhouse"] as DbKind[]).map((k) => (
-            <button
-              key={k}
-              type="button"
-              role="tab"
-              aria-selected={kind === k}
-              className={`choice kind-${k}${kind === k ? " choice-active" : ""}`}
-              onClick={() => changeKind(k)}
-            >
-              {/* Logo before the name, not instead of it: this row is the one place the kinds are
-                  read side by side, so the word stays and the mark only makes it quicker to find. */}
-              <DatabaseIcon kind={k} className="choice-icon" size="1.05em" />
-              {t(kindLabel(k))}
-            </button>
-          ))}
+        {/* The one row in this form that is allowed the full width of the pane, and the one that
+            needs it: a kind is added to this list every time an engine is, and seven of them
+            already outrun the measure the fields are set to. It scrolls rather than wraps — a
+            segmented control that becomes two rows stops reading as one control. */}
+        <div className={`choice-row choice-row-kind${kindFade}`}>
+          <div className="choice-scroller" ref={kindScroller} role="tablist">
+            {(["mysql", "postgres", "mssql", "sqlite", "mongo", "redis", "clickhouse"] as DbKind[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                role="tab"
+                aria-selected={kind === k}
+                /* `data-active` is what `useActiveTabInView` looks for, so opening a saved
+                   connection whose kind sits off the right-hand end scrolls it into view instead
+                   of showing a row that looks like nothing is selected. */
+                data-active={kind === k ? "" : undefined}
+                className={`choice kind-${k}${kind === k ? " choice-active" : ""}`}
+                onClick={() => changeKind(k)}
+              >
+                {/* Logo before the name, not instead of it: this row is the one place the kinds are
+                    read side by side, so the word stays and the mark only makes it quicker to find. */}
+                <DatabaseIcon kind={k} className="choice-icon" size="1.05em" />
+                {t(kindLabel(k))}
+              </button>
+            ))}
+          </div>
         </div>
         {isSqlite ? (
           /* A path and nothing else. There is no host to reach, no account to be on and no

@@ -101,6 +101,10 @@ src-tauri/src/       Rust backend
 - **Every user-visible string goes through `t("...")`**, added to both `en.ts` and `vi.ts`.
 - **Components use CSS Modules** and live in their own folder — see
   [.agent/conventions/component-structure.md](.agent/conventions/component-structure.md).
+- **The root element of a workspace needs `width: 100%`**, not just `height` — `.tab-panel` is a
+  row-direction flex container, so a root without it is only as wide as its content and hugs the
+  left edge. It comes as a block of five properties, `box-sizing` and the `min-*` pair included:
+  [.agent/conventions/workspace-root.md](.agent/conventions/workspace-root.md).
 - **A new backend command touches five places.** Follow
   [.agent/conventions/adding-a-command.md](.agent/conventions/adding-a-command.md).
 - **Every `std::process::Command` goes through `crate::platform::hide_console`.** Without it

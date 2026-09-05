@@ -248,6 +248,12 @@
   --kind-rgb: 168 121 10;
 }
 
+/* SQL Server's brand red. */
+.kind-mssql {
+  --kind: #cc2927;
+  --kind-rgb: 204 41 39;
+}
+
 /* The brand hues are set for a white page and go muddy on a dark one, so the dark theme carries
    its own cast of all four — the same lift the accent palette takes further down this file. */
 :root[data-theme="dark"] .kind-mysql {
@@ -280,6 +286,11 @@
   --kind-rgb: 255 204 1;
 }
 
+:root[data-theme="dark"] .kind-mssql {
+  --kind: #f26662;
+  --kind-rgb: 242 102 98;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .kind-mysql {
     --kind: #5bbfd6;
@@ -310,6 +321,11 @@
     --kind: #ffcc01;
     --kind-rgb: 255 204 1;
   }
+
+  :root:not([data-theme]) .kind-mssql {
+    --kind: #f26662;
+    --kind-rgb: 242 102 98;
+  }
 }
 
 /* The one entry in the list that isn't an engine, so it borrows the accent through the same two
@@ -325,22 +341,37 @@
   box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
-/* Fills whatever the sidebar leaves, up to a ceiling: past this width a form of three side-by-side
-   fields just spreads out, and Mongo's single full-width connection string turns into one
-   absurdly long input. Growing into the space instead of holding a fixed width is what keeps a
-   narrow window from pushing fields out of view.
+/* How wide a run of fields is allowed to get.
+   
+   Past this a form of three side-by-side fields just spreads out, and Mongo's single full-width
+   connection string turns into one absurdly long input. On a 1440px window, "Host" would be 470px
+   wide while two thirds of the screen below it sat empty. 620px is where Host and Port still stand
+   side by side comfortably, and is the width a form read top-to-bottom should have.
 
-   Trần hạ từ 1020px xuống 620px. Lý do cũ vẫn đúng, chỉ là 1020px chưa đủ thấp để nó thành thật:
-   trên một cửa sổ 1440px, ô "Host" rộng 470px và form trải hết 1020px trong khi hai phần ba màn
-   hình bên dưới bỏ trống — đó vẫn là hình dạng của `width: 100%`, chỉ bị chặn muộn. 620px là chỗ
-   Host và Port còn đứng cạnh nhau vừa vặn, và là bề ngang một form đọc theo chiều dọc nên có. */
+   A measure on the *content*, not on the pane. It used to be `max-width` on `.login-form` itself,
+   which meant the pane stopped at 620px and everything in it — including the database-kind row,
+   which has no business being that narrow — stopped with it. Now the pane fills the space and each
+   run of fields holds this width, so a row that wants the whole pane can have it by simply not
+   opting in. `.choice-row-kind` is the one that does. */
+:root {
+  --form-measure: 620px;
+}
+
 .login-form {
   flex: 1;
   min-width: 0;
-  max-width: 620px;
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* Everything that is a field, a label over one, or a button under them keeps the measure — so the
+   form reads exactly as it did, whatever the pane is now doing around it. */
+.login-form .row,
+.login-form fieldset > legend,
+.login-form .field-warning,
+.login-form .method-tabs {
+  max-width: var(--form-measure);
 }
 
 .workspace {
@@ -348,6 +379,39 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* Where a workspace would be, for a kind that has none — see the fallback at the end of
+   `DbTab.tsx`. Deliberately plain: it is a dead end, and dressing it up would suggest there is
+   something here to work with. */
+.workspace-unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  /* The same root box every workspace in this file takes — see `.sql-workspace`,
+     `.mongo-workspace`, `.redis-workspace` and
+     [.agent/conventions/workspace-root.md](../../../.agent/conventions/workspace-root.md).
+     `width` is the one that is easy to leave off and looks fine until it doesn't: a column flex
+     item shrinks to its content, so without it this centres inside its own width rather than
+     inside the tab. `box-sizing` is what keeps the padding below inside the 100%. */
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 2rem;
+  /* `opacity`, not a muted colour token: this file has no such token, and the one place that
+     reaches for `--text-muted` is reaching for something nothing defines. Every other dimmed run
+     of text here is an opacity. */
+  opacity: 0.75;
+  text-align: center;
+}
+
+.workspace-unavailable p {
+  max-width: 34rem;
+  margin: 0;
 }
 
 /* `<fieldset>` giữ vai ngữ nghĩa của nó — nó nhóm các control lại, và trình đọc màn hình đọc
@@ -476,6 +540,68 @@ fieldset .row input {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--hover-bg);
+}
+
+/* The database-kind row, and only it: full width, and it scrolls instead of wrapping.
+ *
+ * Wrapping was the other option and is worse. A segmented control that breaks onto a second line
+ * stops reading as one control — the shared border ends up around a block rather than a row, and
+ * the selected cell no longer sits in a line of alternatives. So the row keeps its shape and the
+ * cells that do not fit go past the edge, the way the tab strip's do. */
+.choice-row-kind {
+  /* Grows to its choices and stops at the pane, rather than stretching to the pane and standing
+     half empty: it inherits `inline-flex` and `align-self: flex-start` from `.choice-row`, and
+     what changes here is only the ceiling. Below that width it is the control it always was; above
+     it, the scroller inside takes over. This is what "may use the full width" means — may, not
+     must. */
+  max-width: 100%;
+  /* Without this the ceiling is 100% *plus* the border and padding, so the row lands a few pixels
+     wider than the pane and the whole form gets a horizontal scroll — which reads as the form
+     being cut off at the left, not as the row being too wide. This project has no global
+     `box-sizing` reset; see .agent/conventions/workspace-root.md. */
+  box-sizing: border-box;
+  /* The border and the background belong out here, so the mask below fades the *choices* and not
+     the control's own edge — a segmented control whose border dissolves at the ends reads as a
+     rendering fault rather than as "there is more this way". */
+  overflow: hidden;
+}
+
+/* What actually scrolls. No scrollbar: it would sit under the row it belongs to and draw a second
+   edge a hair below the control's real one, which is the same reason the tab strip has none. */
+.choice-scroller {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.choice-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/* Fade only on the side that is hiding something — `ConnectionForm` puts these on and takes them
+   off from `useStripScroll`'s reading, so an end with nothing past it keeps its choice at full
+   strength. Two classes rather than one so a row overrun at both ends fades at both, and a row
+   scrolled hard to one end fades only where there is still something to reach. */
+.choice-row-fade-start .choice-scroller {
+  mask-image: linear-gradient(to right, transparent 0, #000 2rem);
+}
+
+.choice-row-fade-end .choice-scroller {
+  mask-image: linear-gradient(to left, transparent 0, #000 2rem);
+}
+
+.choice-row-fade-start.choice-row-fade-end .choice-scroller {
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 2rem,
+    #000 calc(100% - 2rem),
+    transparent 100%
+  );
 }
 
 .choice {
