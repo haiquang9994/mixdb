@@ -186,6 +186,59 @@ pub(super) fn map_error(e: tiberius::error::Error) -> AppError {
     err!("error.mssql", message = e)
 }
 
+/// Ends the transaction every write function below opens: commits on success, or rolls back and
+/// keeps the original error on failure.
+///
+/// `tiberius` tracks a transaction only by what SQL was sent on this exact connection — there is no
+/// value here whose `Drop` rolls back the way `sqlx::Transaction`'s does for a caller that forgets.
+/// Funnelling every write's fallible body through here, rather than trusting a bare `?` between
+/// `BEGIN` and `COMMIT` to leave the connection how it found it, is what stands in for that: a
+/// connection handed back to the pool mid-transaction would hold whatever locks that transaction
+/// holds until something eventually closes it.
+async fn end_transaction<T>(
+    client: &mut Connection,
+    result: Result<T, AppError>,
+) -> Result<T, AppError> {
+    match result {
+        Ok(value) => {
+            client
+                .simple_query("COMMIT TRANSACTION")
+                .await
+                .map_err(map_error)?;
+            Ok(value)
+        }
+        Err(e) => {
+            // Best-effort: if the rollback itself fails, the connection is unhealthy either way,
+            // and `Manager::recycle`'s `SELECT 1` catches that the next time it is checked out.
+            let _ = client.simple_query("ROLLBACK TRANSACTION").await;
+            Err(e)
+        }
+    }
+}
+
+/// Binds one edited value at its next placeholder, decoding it first when `binary` says the column
+/// is one (D7, and see [`is_binary_type`]).
+///
+/// Every other value is bound as the text it arrived as and left for SQL Server to convert on its
+/// own — it does that implicitly for every type here except a binary one, which is the one
+/// conversion `nvarchar` (what `tiberius` always sends a Rust string as) is not allowed to make,
+/// whether the value is being compared or assigned.
+fn bind_write<'a>(
+    query: &mut tiberius::Query<'a>,
+    value: &'a Value,
+    binary: bool,
+) -> Result<(), AppError> {
+    match value {
+        Value::String(s) if binary => {
+            query.bind(Some(std::borrow::Cow::<[u8]>::Owned(decode_binary(s)?)));
+        }
+        Value::String(s) => query.bind(Some(s.as_str())),
+        _ if binary => query.bind(Option::<std::borrow::Cow<[u8]>>::None),
+        _ => query.bind(Option::<&str>::None),
+    }
+    Ok(())
+}
+
 /// Dials the server and hands back a pool that reaches every database on it.
 ///
 /// `database` is the one a session starts on, and unlike PostgreSQL that is all it is: a command
