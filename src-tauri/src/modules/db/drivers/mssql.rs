@@ -1157,13 +1157,75 @@ pub(super) fn column_value(data: &ColumnData<'static>) -> Value {
     }
 }
 
+/// The catalogue spellings of "raw bytes" that `select_expr` does not already redirect elsewhere.
+const BINARY_TYPES: [&str; 3] = ["binary", "varbinary", "image"];
+
+/// Whether a column's value crosses the wire as base64 rather than as itself.
+///
+/// The write-side twin of `src/modules/db/mssql/columns.ts`'s `isBinary`, and the two files are the
+/// only ones that need to agree: a column that one calls binary is a column this one has to decode
+/// before binding, or SQL Server refuses the statement outright — `nvarchar` (what `tiberius`
+/// always sends a Rust string as) has no implicit conversion to `varbinary`, in an assignment or in
+/// a comparison, unlike every other type this file writes.
+pub(super) fn is_binary_type(data_type: &str) -> bool {
+    let base = data_type
+        .split('(')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    BINARY_TYPES.contains(&base.as_str()) || is_rowversion_type(&base)
+}
+
+/// The bytes a binary cell's text stands for — the base64 [`column_value`]'s `Binary` arm encoded
+/// them as, undone.
+///
+/// Refused rather than passed through some other way when it does not decode: text that is not
+/// valid base64 did not come out of this app's own grid, and guessing at what the user meant would
+/// silently write something other than what they typed.
+pub(super) fn decode_binary(value: &str) -> Result<Vec<u8>, AppError> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(value)
+        .map_err(|e| err!("error.mssqlInvalidBinary", message = e))
+}
+
+/// `[schema].[table]`, always both bracketed and always both present — unlike [`qualify`], whose
+/// output is a *display* string the sidebar can leave a plain-looking name in. This one is embedded
+/// in real SQL text (inside the string literal `DBCC CHECKIDENT` takes), so a name with a space
+/// left unbracketed would break the multi-part name parsing DBCC does on that string, and dropping
+/// `dbo` would leave the server to resolve the unqualified half against whichever schema happens to
+/// be the caller's own default rather than the one this table is actually in (D7).
+pub(super) fn full_object_name(schema: &str, table: &str) -> String {
+    format!("{}.{}", quote_ident(schema), quote_ident(table))
+}
+
+/// A predicate matching every column `key` names, its placeholders numbered from `first`.
+///
+/// `(col = @Pn OR (col IS NULL AND @Pn IS NULL))` rather than `=`, so a key column that is itself
+/// NULL still matches — the same problem PostgreSQL's `IS NOT DISTINCT FROM` and MySQL's `<=>`
+/// solve, spelled out by hand because SQL Server has no equivalent before its 2022 release and
+/// nobody has confirmed either test server, or a user's, is running one that new.
+fn key_predicate(key: &Map<String, Value>, first: usize) -> String {
+    key.keys()
+        .enumerate()
+        .map(|(i, column)| {
+            let col = quote_ident(column);
+            let p = format!("@P{}", first + i);
+            format!("({col} = {p} OR ({col} IS NULL AND {p} IS NULL))")
+        })
+        .collect::<Vec<_>>()
+        .join(" AND ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_where, column_value, display_type, escape_like_mssql, extra_tokens, order_by_clause,
-        qualify, quote_ident, resolve, select_expr, strip_default_parens, three_part, Filter,
+        build_where, column_value, decode_binary, display_type, escape_like_mssql, extra_tokens,
+        full_object_name, is_binary_type, key_predicate, order_by_clause, qualify, quote_ident,
+        resolve, select_expr, strip_default_parens, three_part, Filter,
     };
-    use serde_json::Value;
+    use serde_json::{Map, Value};
     use std::borrow::Cow;
     use std::collections::BTreeMap;
     use tiberius::numeric::Numeric;
@@ -1482,5 +1544,80 @@ mod tests {
             let round_tripped = resolve(&qualify(schema, table));
             assert_eq!(round_tripped, (schema.to_string(), table.to_string()));
         }
+    }
+
+    /// The write-side counterpart of `src/modules/db/mssql/columns.ts`'s `isBinary` — the two must
+    /// agree, because this is what decides whether a value gets base64-decoded before it is bound.
+    /// `rowversion`/`timestamp` is on the list for the same reason it is on that one: it is eight
+    /// raw bytes, base64-encoded on the way out by `column_value`'s `Binary` arm, even though it is
+    /// also server-assigned and never itself the target of a write.
+    #[test]
+    fn binary_types_match_the_frontend_list() {
+        assert!(is_binary_type("varbinary(max)"));
+        assert!(is_binary_type("binary(8)"));
+        assert!(is_binary_type("image"));
+        assert!(is_binary_type("rowversion"));
+        assert!(is_binary_type("timestamp"));
+        assert!(!is_binary_type("nvarchar(255)"));
+        assert!(!is_binary_type("int"));
+    }
+
+    /// The base64 `column_value` encoded a binary column's bytes as, undone. A round trip through
+    /// both is what a copy-then-paste-back of a binary cell actually does.
+    #[test]
+    fn base64_decodes_back_to_the_original_bytes() {
+        assert_eq!(decode_binary("AQID").unwrap(), vec![1, 2, 3]);
+    }
+
+    /// Text that never came out of this app's own grid is refused rather than sent to the server as
+    /// something it is not — the byte string it would decode to (if it decoded at all) has nothing
+    /// to do with what the user typed.
+    #[test]
+    fn text_that_is_not_base64_is_refused() {
+        assert!(decode_binary("not base64!!").is_err());
+    }
+
+    /// Unlike `qualify`, both halves are always bracketed and `dbo` is never dropped: this name is
+    /// embedded in the string literal `DBCC CHECKIDENT` takes, not shown to a person, so there is no
+    /// plain-looking form to prefer — a space left unbracketed would break the multi-part name
+    /// DBCC parses out of that string, and an unqualified table would resolve against whichever
+    /// schema happens to be the caller's own default rather than the one it is actually in (D7).
+    #[test]
+    fn full_object_name_always_carries_its_schema() {
+        assert_eq!(full_object_name("dbo", "users"), "[dbo].[users]");
+        assert_eq!(
+            full_object_name("sales", "Order Details"),
+            "[sales].[Order Details]"
+        );
+        assert_eq!(full_object_name("dbo", "a.b"), "[dbo].[a.b]");
+    }
+
+    /// `col = @Pn` alone never matches a key column that is itself NULL — `NULL = NULL` is NULL,
+    /// not true — so a row a filter or an edit left NULL in its key could never be found again.
+    /// SQL Server has no `IS NOT DISTINCT FROM` before its 2022 release, so this spells the same
+    /// comparison out rather than betting on a version nobody has confirmed either test server or a
+    /// user's is running.
+    #[test]
+    fn a_key_column_that_is_null_still_matches_itself() {
+        let mut key = Map::new();
+        key.insert("id".to_string(), Value::from(9));
+        assert_eq!(
+            key_predicate(&key, 1),
+            "([id] = @P1 OR ([id] IS NULL AND @P1 IS NULL))"
+        );
+    }
+
+    /// Placeholders start at `first`, not at 1 — the SET clause of an UPDATE claims `@P1..@Pn`
+    /// first, and the key predicate's own placeholders have to continue from there.
+    #[test]
+    fn key_predicate_numbers_from_the_given_offset() {
+        let mut key = Map::new();
+        key.insert("id".to_string(), Value::from(1));
+        key.insert("region".to_string(), Value::from("us"));
+        assert_eq!(
+            key_predicate(&key, 4),
+            "([id] = @P4 OR ([id] IS NULL AND @P4 IS NULL)) AND \
+             ([region] = @P5 OR ([region] IS NULL AND @P5 IS NULL))"
+        );
     }
 }
