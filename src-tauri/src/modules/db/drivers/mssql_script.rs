@@ -16,8 +16,18 @@
 //! data those same tokens might have accompanied. `sqlx::raw_sql(...).fetch_many()`, which
 //! `mysql_script`/`postgres_script` use for both at once via `Either<QueryResult, Row>`, has no
 //! `tiberius` equivalent — confirmed by reading `tiberius-0.12.3`'s `result.rs`/`client.rs`, not
-//! assumed. So [`run`] has to guess, from a statement's verb and whether it carries an `OUTPUT`
-//! clause, which of the two calls to make *before* running it — see [`returns_rows`].
+//! assumed.
+//!
+//! Worse, `execute`/`query` are not a free choice between the two even taken separately: both send
+//! their SQL through `sp_executesql` (`RpcProcId::ExecuteSQL`), and SQL Server gives an
+//! `sp_executesql` call its own scope — a local temp table (`#t`) created inside one is dropped the
+//! instant that call returns, invisible to the very next statement even on the same `Connection`.
+//! Found live against the test server, not from source alone: a `CREATE TABLE #t` sent through
+//! `execute`, followed by an `INSERT INTO #t` through another `execute` call on the same session,
+//! failed with "Invalid object name '#t'". So [`run_statement`] never uses `execute`/`query` at
+//! all — everything goes through `simple_query`, a plain TDS batch with no scope of its own, and the
+//! row count `simple_query` cannot give directly is read back with an appended `SELECT @@ROWCOUNT`
+//! in the same batch instead. See [`run_statement`] for the detail.
 
 use super::mssql::{column_value, map_error, quote_ident, Connection, Pool};
 use crate::error::AppError;
@@ -214,79 +224,6 @@ fn is_write_verb(verb: &str) -> bool {
     matches!(verb, "INSERT" | "UPDATE" | "DELETE" | "MERGE")
 }
 
-/// Whether `verb`/`text` is one [`run`] must send through `query()` rather than `execute()` — see
-/// this module's top-level doc comment for why the two calls cannot be told apart by running the
-/// statement and looking, the way `mysql_script`/`postgres_script` do through `sqlx`.
-///
-/// `EXEC`/`EXECUTE` always goes through `query()`: a stored procedure may or may not return a result
-/// set, and there is no way to know ahead of time — sending it through `execute()` on the chance it
-/// does not would silently drop any rows one does return. The cost is symmetric and accepted: a
-/// procedure that only writes, with no `SELECT` of its own, reports `"ok"` rather than a row count,
-/// because that count is not visible through this call either way.
-fn returns_rows(verb: &str, text: &str) -> bool {
-    match verb {
-        "SELECT" | "WITH" | "EXEC" | "EXECUTE" => true,
-        _ if is_write_verb(verb) => has_output_clause(text),
-        _ => false,
-    }
-}
-
-/// A case-insensitive, word-bounded search for `OUTPUT` outside a string, a quoted identifier and a
-/// comment. `INSERT`/`UPDATE`/`DELETE`/`MERGE ... OUTPUT inserted.*` (or `deleted.*`) turns an
-/// otherwise row-free statement into one with a real result set — reusing the exact scan
-/// [`split_statements`] already does for strings/identifiers/comments rather than writing a second
-/// lexer, so a column or string merely containing the word cannot be misread as the clause.
-fn has_output_clause(text: &str) -> bool {
-    let chars: Vec<char> = text.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if c == '-' && chars.get(i + 1) == Some(&'-') {
-            while i < chars.len() && chars[i] != '\n' {
-                i += 1;
-            }
-            continue;
-        }
-        if c == '/' && chars.get(i + 1) == Some(&'*') {
-            i += 2;
-            while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
-                i += 1;
-            }
-            i += 2;
-            continue;
-        }
-        if c == '\'' || c == '"' || c == '[' {
-            let close = if c == '[' { ']' } else { c };
-            i += 1;
-            while i < chars.len() {
-                if chars[i] == close {
-                    i += 1;
-                    if chars.get(i) == Some(&close) {
-                        i += 1;
-                        continue;
-                    }
-                    break;
-                }
-                i += 1;
-            }
-            continue;
-        }
-        if c.is_alphabetic() {
-            let start = i;
-            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
-                i += 1;
-            }
-            let word: String = chars[start..i].iter().collect();
-            if word.eq_ignore_ascii_case("output") {
-                return true;
-            }
-            continue;
-        }
-        i += 1;
-    }
-    false
-}
-
 /// How many rows of one result set are read back. A query without a `TOP` can name more rows than
 /// there is memory for, so the client stops here and says that it did — the same ceiling
 /// `mysql_script`/`postgres_script` use, for the same reason: the grid only ever shows the rows on
@@ -319,52 +256,81 @@ fn failed(statement: &Statement, started: Instant, message: String) -> Statement
     }
 }
 
-/// Runs one statement expected to return a result set — see [`returns_rows`]. `kind` is `"ok"`
-/// rather than `"rows"` when the set turns out empty of columns too: an `EXEC` of a procedure that
-/// writes but selects nothing still has to land somewhere.
-async fn run_returning_rows(client: &mut Connection, statement: &Statement, started: Instant) -> StatementResult {
-    let stream = match client.simple_query(statement.text.clone()).await {
-        Ok(stream) => stream,
+/// Runs one statement and reports its outcome.
+///
+/// Always through `simple_query`, never `execute`/`query` — found live, against the test server,
+/// not from reading `tiberius`'s source alone: both of those call SQL Server's `sp_executesql`
+/// under the hood (`RpcProcId::ExecuteSQL` — see this module's top-level doc), and SQL Server gives
+/// an `sp_executesql` call its own nested scope. A local temp table (`#t`) created inside one is
+/// dropped the instant that call returns — invisible to the very next statement even on the same
+/// connection, session and SPID. `CREATE TABLE #t` through `execute`, then `INSERT INTO #t` through
+/// another `execute` call, failed with "Invalid object name '#t'" the first time this ran against
+/// the real server, despite both calls sharing one `Connection`. `simple_query` sends a plain TDS
+/// batch instead, with no such scope of its own — the same one every other statement in a [`run`]
+/// already shares.
+///
+/// The cost: `simple_query`'s stream exposes rows and result-set boundaries only, never a `Done`
+/// token's row count (this module's top-level doc, again). So `@@ROWCOUNT` — SQL Server's own
+/// answer to "how many rows did the statement just above this one touch" — is read back by
+/// appending `SELECT @@ROWCOUNT AS n` to the same batch, on its own line so a statement ending in an
+/// un-newlined `--` comment cannot swallow it, and taking it as the *last* result set. This also
+/// means every statement, whatever its verb, is asked the same way — no more guessing ahead of time
+/// whether one might return rows, and no more `EXEC` blind spot: a stored procedure's own last
+/// `INSERT`/`UPDATE` sets `@@ROWCOUNT` too, the same approximation SSMS's own "(N rows affected)"
+/// banner relies on for an ad hoc batch.
+///
+/// One limitation this does not solve: a result set with columns but zero rows reads its column
+/// list off the first row collected, so a genuinely empty `SELECT` reports `"ok"` with no columns
+/// rather than `"rows"` with an empty grid. Narrow enough to accept for now — `tiberius`'s
+/// `QueryStream::columns()` could recover it, but only by giving up `into_results()`'s single call
+/// and driving the stream by hand across two result sets, and no query this app runs today is
+/// expected to be both column-bearing and empty.
+async fn run_statement(client: &mut Connection, statement: &Statement, started: Instant) -> StatementResult {
+    let combined = format!("{}\n;SELECT @@ROWCOUNT AS n", statement.text);
+    let mut results = match client.simple_query(combined).await {
+        Ok(stream) => match stream.into_results().await {
+            Ok(results) => results,
+            Err(e) => return failed(statement, started, statement_error(e)),
+        },
         Err(e) => return failed(statement, started, statement_error(e)),
     };
-    let rows = match stream.into_first_result().await {
-        Ok(rows) => rows,
-        Err(e) => return failed(statement, started, statement_error(e)),
-    };
 
-    let columns: Vec<String> = rows
-        .first()
-        .map(|row: &Row| row.columns().iter().map(|c| c.name().to_string()).collect())
-        .unwrap_or_default();
-    let truncated = rows.len() > MAX_ROWS;
-    let values: Vec<Vec<Value>> = rows
-        .iter()
-        .take(MAX_ROWS)
-        .map(|row| row.cells().map(|(_, data)| column_value(data)).collect())
-        .collect();
+    let rows_affected = results
+        .pop()
+        .and_then(|rowcount_set| rowcount_set.into_iter().next())
+        .and_then(|row| row.get::<i32, _>("n"))
+        .unwrap_or(0)
+        .max(0) as u64;
 
-    StatementResult {
-        statement: statement.text.clone(),
-        verb: statement.verb.clone(),
-        kind: if columns.is_empty() { "ok" } else { "rows" }.to_string(),
-        columns,
-        rows: values,
-        truncated,
-        rows_affected: 0,
-        last_insert_id: None,
-        duration_ms: started.elapsed().as_millis() as u64,
-        error: None,
-    }
-}
-
-/// Runs one statement expected to carry no result set — see [`returns_rows`]. A count of zero is
-/// still reported as `"affected"` for one of the four write verbs, the same rule
-/// `mysql_script::is_write_verb`'s callers use: `UPDATE ... 0 rows` says something,
-/// `SET @x = 1 ... 0 rows` does not.
-async fn run_affecting_rows(client: &mut Connection, statement: &Statement, started: Instant) -> StatementResult {
-    match client.execute(statement.text.clone(), &[]).await {
-        Ok(result) => {
-            let rows_affected = result.total();
+    match results.into_iter().next() {
+        Some(rows) => {
+            let columns: Vec<String> = rows
+                .first()
+                .map(|row: &Row| row.columns().iter().map(|c| c.name().to_string()).collect())
+                .unwrap_or_default();
+            let truncated = rows.len() > MAX_ROWS;
+            let values: Vec<Vec<Value>> = rows
+                .iter()
+                .take(MAX_ROWS)
+                .map(|row| row.cells().map(|(_, data)| column_value(data)).collect())
+                .collect();
+            StatementResult {
+                statement: statement.text.clone(),
+                verb: statement.verb.clone(),
+                kind: if columns.is_empty() { "ok" } else { "rows" }.to_string(),
+                columns,
+                rows: values,
+                truncated,
+                rows_affected,
+                last_insert_id: None,
+                duration_ms: started.elapsed().as_millis() as u64,
+                error: None,
+            }
+        }
+        None => {
+            // A count of zero is still reported as `"affected"` for one of the four write verbs —
+            // the same rule `mysql_script`'s callers use: `UPDATE ... 0 rows` says something,
+            // `SET @x = 1 ... 0 rows` does not.
             let kind = if is_write_verb(&statement.verb) || rows_affected > 0 {
                 "affected"
             } else {
@@ -383,7 +349,6 @@ async fn run_affecting_rows(client: &mut Connection, statement: &Statement, star
                 error: None,
             }
         }
-        Err(e) => failed(statement, started, statement_error(e)),
     }
 }
 
@@ -443,11 +408,7 @@ pub async fn run(
     let mut results = Vec::new();
     for statement in &statements {
         let started = Instant::now();
-        let result = if returns_rows(&statement.verb, &statement.text) {
-            run_returning_rows(&mut client, statement, started).await
-        } else {
-            run_affecting_rows(&mut client, statement, started).await
-        };
+        let result = run_statement(&mut client, statement, started).await;
         let failed = result.kind == "error";
         results.push(result);
         if failed {
@@ -475,12 +436,15 @@ pub async fn run(
 /// error" with "asking to cancel what you may not kill is the server's answer to give, not this
 /// app's to guess at".
 ///
-/// A SPID the server no longer has is not a failure worth showing: error 6106 ("not a valid process
-/// ID") and 6107 ("not an active process ID") are swallowed, matching `mysql::kill_query`'s
-/// `ER_NO_SUCH_THREAD` and `postgres_script::cancel`'s "a pid the server no longer has answers
-/// false". Any other error — permission denied among them — is returned as-is.
+/// A SPID the server no longer has is not a failure worth showing: error 6101 ("Session ID %d is
+/// not valid") is what the test server actually answers `KILL 99999` with (found live — public
+/// write-ups of this error more often name 6106/6107, kept here too since the exact number is a
+/// documented engine-version quirk, not a stable contract), swallowed the same way
+/// `mysql::kill_query`'s `ER_NO_SUCH_THREAD` and `postgres_script::cancel`'s "a pid the server no
+/// longer has answers false" are. Any other error — permission denied among them — is returned
+/// as-is.
 pub async fn cancel(pool: &Pool, session_id: u64) -> Result<(), AppError> {
-    const NO_SUCH_PROCESS: [u32; 2] = [6106, 6107];
+    const NO_SUCH_PROCESS: [u32; 3] = [6101, 6106, 6107];
     let guard = pool.get().await.map_err(|e| err!("error.mssql", message = e))?;
     let mut client = Object::take(guard);
     let result = client.simple_query(format!("KILL {session_id}")).await;

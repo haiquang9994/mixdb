@@ -29,8 +29,8 @@ export const mssqlDialect: SqlDialect = {
   // `KILL <spid>` is the only cancel this engine has (D8) — heavier than MySQL's `KILL QUERY` or
   // PostgreSQL's `pg_cancel_backend`, since it ends the whole session, not just the statement in
   // flight. Left open rather than gated on an untested `ALTER ANY CONNECTION` permission probe —
-  // see `mssql_script::cancel`'s doc comment for why, and for the two error numbers it swallows on
-  // its own when the session it is asked to stop is already gone.
+  // see `mssql_script::cancel`'s doc comment for why, and for the error numbers it swallows on its
+  // own when the session it is asked to stop is already gone.
   cancellable: true,
   writable: false,
   dumpRestoreWritable: false,
