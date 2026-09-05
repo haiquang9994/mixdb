@@ -7,6 +7,7 @@ use crate::error::AppError;
 use crate::modules::db::drivers::{mssql, mssql_structure};
 use crate::modules::db::models::ServerInfo;
 use crate::modules::db::state::DbState;
+use serde_json::{Map, Value};
 use tauri::State;
 
 use super::mssql_pool;
@@ -43,6 +44,50 @@ pub async fn mssql_list_tables(
         let pool = mssql_pool(&state, &id).await?;
         mssql::list_tables(&pool, &database).await
     })
+}
+
+/// Not `retry_read!`: these three write, and `retry_read!` only bothers to bound because a SELECT
+/// tried again after failing halfway is harmless — an INSERT/UPDATE/DELETE tried again the same way
+/// could write twice. `postgres_update_row`/`mysql_update_row` skip it for the same reason.
+#[tauri::command]
+pub async fn mssql_update_row(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    updates: Map<String, Value>,
+    key: Map<String, Value>,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql::update_row(&pool, &database, &table, &updates, &key).await
+}
+
+#[tauri::command]
+pub async fn mssql_insert_rows(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    rows: Vec<Map<String, Value>>,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql::insert_rows(&pool, &database, &table, &rows).await
+}
+
+/// `reset_auto_increment` keeps MySQL's name, the way `commands::postgres` does too — it is the
+/// frontend's name for the checkbox; what it resets here is the table's IDENTITY seed.
+#[tauri::command]
+pub async fn mssql_delete_rows(
+    state: State<'_, DbState>,
+    id: String,
+    database: String,
+    table: String,
+    keys: Vec<Map<String, Value>>,
+    all: bool,
+    reset_auto_increment: bool,
+) -> Result<(), AppError> {
+    let pool = mssql_pool(&state, &id).await?;
+    mssql::delete_rows(&pool, &database, &table, &keys, all, reset_auto_increment).await
 }
 
 #[tauri::command]
